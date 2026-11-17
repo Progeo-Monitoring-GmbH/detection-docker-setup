@@ -7,6 +7,7 @@ import {
   ArrowClockwise,
   CheckCircleFill,
   DashCircle,
+  ExclamationCircleFill,
   XCircleFill,
 } from 'react-bootstrap-icons';
 import type { TFunction } from 'i18next';
@@ -171,14 +172,46 @@ export const checkDetail = (t: TFunction, check: ReadinessCheck): string => {
   return t(`readiness_detail_${check.key}`, values);
 };
 
-const StatusIcon = ({ status }: { status: CheckStatus }) =>
-  status === 'pass' ? (
+/** How a check is shown: a failed optional check is a warning, not an error. */
+type Severity = 'pass' | 'fail' | 'warn' | 'na';
+
+const severityOf =(check: ReadinessCheck): Severity =>
+  check.status === 'fail' && check.optional ? 'warn' : check.status;
+
+/**
+ * What each check is worth in the score (0-100): its weight among the checks
+ * that apply (backend evaluate(): score = passed weights * 100 / total) -
+ * "na" checks are left out and worth nothing.
+ */
+export const checkPoints = (checks: ReadinessCheck[]): Map<string, number> => {
+  const total = checks
+    .filter((check) => check.status !== 'na')
+    .reduce((sum, check) => sum + check.weight, 0);
+  return new Map(
+    checks.map((check) => [
+      check.key,
+      check.status === 'na' || !total ? 0 : (check.weight * 100) / total,
+    ]),
+  );
+};
+
+const pointsFormat = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 1,
+});
+
+const StatusIcon = ({ severity }: { severity: Severity }) =>
+  severity === 'pass' ? (
     <CheckCircleFill
       className="checklist-icon checklist-icon--pass"
       aria-hidden
     />
-  ) : status === 'fail' ? (
+  ) : severity === 'fail' ? (
     <XCircleFill className="checklist-icon checklist-icon--fail" aria-hidden />
+  ) : severity === 'warn' ? (
+    <ExclamationCircleFill
+      className="checklist-icon checklist-icon--warn"
+      aria-hidden
+    />
   ) : (
     <DashCircle className="checklist-icon checklist-icon--na" aria-hidden />
   );
@@ -424,7 +457,12 @@ const LocationChecklistView = () => {
   // -- one location ----------------------------------------------------------------
 
   const renderChecklist = (data: Readiness) => {
-    const failed = data.checks.filter((check) => check.status === 'fail');
+    const required = data.checks.filter((check) => !check.optional);
+    const failed = required.filter((check) => check.status === 'fail');
+    const warnings = data.checks.filter(
+      (check) => severityOf(check) === 'warn',
+    );
+    const points = checkPoints(data.checks);
     const level = readinessLevel(data.score);
     return (
       <>
@@ -466,11 +504,24 @@ const LocationChecklistView = () => {
                 {failed.length
                   ? t('readiness_open_count', {
                       count: failed.length,
-                      total: data.checks.length,
+                      total: required.length,
                     })
-                  : t('readiness_all_passed')}
+                  : warnings.length
+                    ? t('readiness_required_passed')
+                    : t('readiness_all_passed')}
+                {warnings.length > 0 && (
+                  <>
+                    {' · '}
+                    <span data-testid="checklist-warn-count">
+                      {t('readiness_warn_count', { count: warnings.length })}
+                    </span>
+                  </>
+                )}
                 {' · '}
                 {t('readiness_checked_at', { at: formatDate(data.at) })}
+              </div>
+              <div className="small text-muted">
+                {t('readiness_points_explain')}
               </div>
             </div>
           </div>
@@ -488,18 +539,21 @@ const LocationChecklistView = () => {
             >
               <ul className="checklist-list">
                 {checks.map((check) => {
+                  const severity = severityOf(check);
                   const path =
                     check.status === 'fail'
                       ? fixPath(check.key, data.location.id)
                       : null;
+                  const worth = pointsFormat.format(points.get(check.key) ?? 0);
                   return (
                     <li
                       key={check.key}
-                      className={`checklist-item checklist-item--${check.status}`}
+                      className={`checklist-item checklist-item--${severity}`}
                       {...repeatedTestId('checklist-check', check.key)}
                       data-status={check.status}
+                      data-severity={severity}
                     >
-                      <StatusIcon status={check.status} />
+                      <StatusIcon severity={severity} />
                       <div className="checklist-item-body">
                         <div>
                           <span className="checklist-item-title">
@@ -511,10 +565,18 @@ const LocationChecklistView = () => {
                             </span>
                           )}
                           <span
-                            className="checklist-weight"
-                            title={t('readiness_weight_title')}
+                            className={`checklist-points checklist-points--${severity}`}
+                            title={t(`readiness_points_${severity}`, {
+                              points: worth,
+                            })}
+                            {...repeatedTestId('checklist-points', check.key)}
                           >
-                            {check.weight}
+                            {check.status === 'na'
+                              ? '–'
+                              : t('readiness_points', {
+                                  points:
+                                    check.status === 'pass' ? `+${worth}` : worth,
+                                })}
                           </span>
                         </div>
                         {check.status === 'fail' && (

@@ -76,6 +76,7 @@ vi.mock('../axiosConfig', () => ({
                 points: 28,
               }),
               check('points_named', 'points', 'na', {}, true),
+              check('lageplan_cropped', 'plan', 'fail', { span: 30 }, true),
             ],
           },
         });
@@ -130,7 +131,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => hooks.translation,
 }));
 
-const { default: LocationChecklistView, checkDetail } =
+const { default: LocationChecklistView, checkDetail, checkPoints } =
   await import('./LocationChecklistView');
 
 let container: HTMLDivElement;
@@ -221,6 +222,41 @@ describe('LocationChecklistView', () => {
     expect(duplicateTestIds(container)).toEqual([]);
   });
 
+  it('shows a failed optional check as a warning, not an error', () => {
+    render('/checklist/location/?location=7');
+
+    const cropped = byKey('checklist-check', 'lageplan_cropped')!;
+    expect(cropped.getAttribute('data-status')).toBe('fail');
+    expect(cropped.getAttribute('data-severity')).toBe('warn');
+    expect(cropped.querySelector('.checklist-icon--warn')).not.toBeNull();
+    expect(cropped.querySelector('.checklist-icon--fail')).toBeNull();
+    expect(
+      byKey('checklist-check', 'devices_online')!.getAttribute('data-severity'),
+    ).toBe('fail');
+    // Only required checks count as open; the optional one is counted apart.
+    expect(
+      container.querySelector('[data-testid="checklist-open-count"]')!
+        .textContent,
+    ).toContain('readiness_open_count:{"count":2,"total":3}');
+    expect(
+      container.querySelector('[data-testid="checklist-warn-count"]')!
+        .textContent,
+    ).toBe('readiness_warn_count:{"count":1}');
+  });
+
+  it('shows what every check is worth in the score', () => {
+    render('/checklist/location/?location=7');
+
+    // Four checks apply, all weight 2: 25 points each; the "na" one counts nothing.
+    expect(byKey('checklist-points', 'address')!.textContent).toBe(
+      'readiness_points:{"points":"+25"}',
+    );
+    expect(byKey('checklist-points', 'devices_online')!.textContent).toBe(
+      'readiness_points:{"points":"25"}',
+    );
+    expect(byKey('checklist-points', 'points_named')!.textContent).toBe('–');
+  });
+
   it('lists every location lowest score first without a location', () => {
     render('/checklist/location/');
 
@@ -251,6 +287,23 @@ describe('LocationChecklistView', () => {
       'readiness_check_devices_online · readiness_check_sensor_devices',
     );
     expect(byKey('readiness-badge', 'overview-8')!.textContent).toBe('100');
+  });
+});
+
+describe('checkPoints', () => {
+  it('splits 100 points by weight among the checks that apply', () => {
+    const points = checkPoints([
+      { ...check('a', 'base', 'pass'), weight: 3 },
+      { ...check('b', 'base', 'fail'), weight: 1 },
+      { ...check('c', 'base', 'na'), weight: 5 },
+    ]);
+    expect(points.get('a')).toBe(75);
+    expect(points.get('b')).toBe(25);
+    expect(points.get('c')).toBe(0);
+  });
+
+  it('is 0 everywhere when nothing applies', () => {
+    expect(checkPoints([check('a', 'base', 'na')]).get('a')).toBe(0);
   });
 });
 
