@@ -169,9 +169,10 @@ def test_columns_the_header_does_not_name_are_found_by_their_content(klemmliste,
     result = klemmliste.read_klemmliste(_pdf(tmp_path / "variant.pdf", build))
 
     if not ruled and headers in (("", "", ""), ("Kabel-Nr.", "Platine", "Klemme")):
-        # Without a ruled table the columns come from the labels - one of them has to be a
-        # known one; how unknown words group depends on the PDF library's font metrics.
-        assert result["rows"] == []
+        # Without a ruled table and without a known label, whether the table is
+        # found at all depends on the PDF library version (PyMuPDF 2.1 finds it,
+        # 1.28 did not) - but it must never come out wrong.
+        assert result["rows"] == [] or _positions(result) == SL_POSITIONS
         return
     assert _positions(result) == SL_POSITIONS
 

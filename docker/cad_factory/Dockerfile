@@ -41,7 +41,7 @@ ENV HOME=/tmp \
     PYTHONUNBUFFERED=1
 
 COPY --from=ezdwg-wheel /wheels /tmp/wheels
-RUN pip install --no-cache-dir /tmp/wheels/*.whl ezdxf==1.4.5 pymupdf==1.28.2 \
+RUN pip install --no-cache-dir /tmp/wheels/*.whl ezdxf==1.4.5 pymupdf==2.1 \
     && rm -rf /tmp/wheels \
     && python -c "from ezdxf.fonts import fonts; fonts.build_system_font_cache()" \
     && chmod -R a+rwX /opt/cache
