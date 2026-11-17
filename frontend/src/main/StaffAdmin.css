@@ -15,6 +15,81 @@
   border-color: var(--bs-success);
 }
 
+/* -- accounts (staffAccounts.tsx): a coloured box per account, the legend -- */
+
+.staff-account-boxes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.staff-account-box {
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+/* Users without any account: an empty box in the legend. */
+.staff-account-box--empty {
+  border: 1.5px dashed var(--bs-gray-500);
+}
+
+.staff-account-more {
+  margin-left: 2px;
+  font-size: 11px;
+  color: var(--bs-secondary-color);
+}
+
+.staff-account-none {
+  font-size: 12px;
+  color: var(--bs-secondary-color);
+}
+
+.staff-account-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.staff-account-legend-title {
+  margin-right: 4px;
+  color: var(--bs-secondary-color);
+}
+
+.staff-account-legend-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--bs-body-color);
+  font: inherit;
+  cursor: pointer;
+}
+
+.staff-account-legend-entry:hover {
+  background: var(--bs-tertiary-bg);
+}
+
+/* The account the list is filtered by. */
+.staff-account-legend-entry--active {
+  border-color: var(--bs-primary);
+  background: var(--bs-primary-bg-subtle);
+}
+
+.staff-account-legend-count {
+  color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
 .staff-permissions-box {
   max-height: 220px;
   overflow-y: auto;

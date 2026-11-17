@@ -118,8 +118,13 @@ export const defaultZeitreiheIds = (sensors: ZeitreiheSensor[]): string[] => {
 };
 
 /** `ids` with `id` removed, or appended (keeps the others' order - and colours). */
-export const toggledId = (ids: string[], id: string) =>
-  ids.includes(id) ? ids.filter((entry) => entry !== id) : [...ids, id];
+export const toggledId = (ids: string[], id: string) => {
+  if (!ids.includes(id)) {
+    return [...ids, id];
+  }
+  // At least one sensor stays plotted - the last one can't be taken out.
+  return ids.length > 1 ? ids.filter((entry) => entry !== id) : ids;
+};
 
 /** `ids` with `selected` first when it is among them - the Zeitreihe's first
  * entry is the selected sensor; the others keep their order. */

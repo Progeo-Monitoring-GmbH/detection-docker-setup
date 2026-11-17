@@ -382,6 +382,15 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     readiness_checks = models.JSONField(null=True, blank=True)
     readiness_at = models.DateTimeField(null=True, blank=True)
 
+    # The location's language ("de" / "en", "" = German): the mails to people
+    # newly invited to it (helper/location_invites.py) are written in it, and
+    # their account starts with it. Set on the Einstellungen tab.
+    class Language(models.TextChoices):
+        GERMAN = "de", "Deutsch"
+        ENGLISH = "en", "English"
+
+    language = models.CharField(max_length=8, choices=Language.choices, blank=True, default="")
+
     # Statistics of the project's own database (all locations of a project
     # share it, so they carry the same values) - refreshed daily by
     # refresh_project_db_stats (helper/project_db_stats.py).

@@ -56,6 +56,14 @@ export const selectedLocationParam = (search: string, locationId: number | null)
 };
 
 /**
+ * "Objektverwaltung": object managers always (it is their /verwaltung/);
+ * everyone else only with more than one location - a list of one is no
+ * overview. Hidden until the count is known, so it never flashes in.
+ */
+export const showsVerwaltungLink = (canCreateLocation: boolean, locationCount: number | null) =>
+  canCreateLocation || (locationCount ?? 0) > 1;
+
+/**
  * The app's sidebar, ported from the "Portal v2" mockup's <aside> (ProGeo
  * Portal v2.dc.html, ~line 40-66 for markup, ~line 1499 for the navDefs data
  * this is built from). Mounted by LocationPortalLayout (with the open
@@ -115,19 +123,23 @@ const LocationSidebar = ({
 
   const [locationCount, setLocationCount] = useState<number | null>(null);
 
+  // Everyone's location count: the "Objektverwaltung" list is pointless for
+  // a single location. Once per login - not on every path change.
+  const canListLocations = hasPermission('module_locations_enabled');
   useEffect(() => {
-    if (!canCreateLocation || !hasPermission('module_locations_enabled')) {
+    if (!canListLocations) {
       setLocationCount(null);
       return;
     }
     void axiosConfig.perform_get(
-      auth,
+      authRef.current,
       '/v1/location/min/',
       (response) =>
         setLocationCount(((response?.data || []) as unknown[]).length),
       () => setLocationCount(null),
     );
-  }, [auth, canCreateLocation, hasPermission]);
+  }, [canListLocations]);
+  const showVerwaltung = showsVerwaltungLink(canCreateLocation, locationCount);
 
   // Cross-object modules, listed under "Alle Objekte". The location list is
   // only extra for object managers - everyone else's "Verwaltung" link above
@@ -412,16 +424,18 @@ const LocationSidebar = ({
         </>
       )}
 
-      {renderGroupLabel(t('nav_alle_objekte'), true, collapsed)}
-      {renderLink({
-        key: 'verwaltung',
-        to: verwaltungPath,
-        active: routerLocation.pathname === verwaltungPath,
-        global: true,
-        icon: renderIcon('M4 6h16M4 12h16M4 18h16'),
-        label: t('nav_verwaltung'),
-        collapsed,
-      })}
+      {(showVerwaltung || canCreateLocation || objectItems.some((item) => item.visible)) &&
+        renderGroupLabel(t('nav_alle_objekte'), true, collapsed)}
+      {showVerwaltung &&
+        renderLink({
+          key: 'verwaltung',
+          to: verwaltungPath,
+          active: routerLocation.pathname === verwaltungPath,
+          global: true,
+          icon: renderIcon('M4 6h16M4 12h16M4 18h16'),
+          label: t('nav_verwaltung'),
+          collapsed,
+        })}
       {canCreateLocation &&
         renderLink({
           key: 'anlegen',

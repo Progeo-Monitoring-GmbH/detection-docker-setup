@@ -889,10 +889,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
-        # with a new user = add, changing an existing rule = edit).
+        # with a new user = add, changing an existing rule = edit) - except
+        # for the requester's own rule: everyone sets how they themselves are
+        # notified about a location they see.
         is_update = bool(request.data.get("id"))
         required = "module_notifications_edit" if is_update else "module_notifications_add"
-        if not has_module_permissions(request.user, required):
+        if not self._is_own_rule_change(request, location, db_name) and not has_module_permissions(
+            request.user, required
+        ):
             return permission_denied_response([required])
 
         access_id = request.data.get("id")
@@ -950,6 +954,27 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 return RequestFailed({"reason": "objektleitung must be a boolean"})
         rule.save(using=db_name)
         return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
+
+    @staticmethod
+    def _is_own_rule_change(request, location, db_name) -> bool:
+        """Does this access POST only set the requester's own notification
+        rule (channel/type) - {id: <own rule>} or {user_id: <self>}? Never
+        the Objektleitung flag, never by email, never for someone else."""
+        data = request.data
+        if data.get("email") or data.get("objektleitung") is not None:
+            return False
+        own_id = request.user.pk
+        user_id = data.get("user_id")
+        if user_id is not None:
+            try:
+                if int(user_id) != own_id:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        access_id = data.get("id")
+        if access_id:
+            return ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location, user_id=own_id).exists()
+        return user_id is not None
 
     @staticmethod
     def _objektleitung_user(request, email):
@@ -1854,12 +1879,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     def geocode(self, request, pk=None, *args, **kwargs):
         """Look up latitude/longitude of the location's saved address
         (Nominatim, helper/legacy/geo.py) and store them. Existing
-        coordinates are kept - this only fills in missing ones."""
+        coordinates are kept - this only fills in missing ones. Staff may
+        send {"force": true} to look a set position up again (Objekt tab)."""
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        force = _is_staff_admin(request.user) and request.data.get("force") in (True, "true", "1", 1)
         # 0/0 is the "unknown" of old imports - fill it in like a missing position.
-        if has_position(location.latitude, location.longitude):
+        if not force and has_position(location.latitude, location.longitude):
             return RequestFailed({"reason": "The location already has coordinates"})
         if not (location.address or location.plz or location.city):
             return RequestFailed({"reason": "The location has no address"})

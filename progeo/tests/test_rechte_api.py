@@ -136,18 +136,68 @@ def test_staff_can_grant_single_access_to_any_customer(api_client, setup):
     assert ProgeoAccess.objects.using(f.DB).filter(location=location, user_id=customer.id).exists()
 
 
-def test_updating_a_rule_needs_edit_permission(api_client, setup):
+def test_updating_someone_elses_rule_needs_edit_permission(api_client, setup):
     account, location, _admin = setup
     viewer = f.make_user(perms=("module_notifications_enabled",), accounts=[account])
-    rule = f.make_access(location, viewer)
+    other_rule = f.make_access(location, f.make_user())
     api_client.force_authenticate(user=viewer)
 
     response = api_client.post(
-        f"/v1/location/{location.id}/access/", {"id": rule.id, "transport": 0, "type": 0}, format="json"
+        f"/v1/location/{location.id}/access/", {"id": other_rule.id, "transport": 0, "type": 0}, format="json"
+    )
+    created = api_client.post(
+        f"/v1/location/{location.id}/access/", {"user_id": other_rule.user_id, "transport": 0, "type": 0},
+        format="json",
     )
 
     assert response.status_code == 403
     assert response.json()["missing_permissions"] == ["module_notifications_edit"]
+    assert created.status_code == 403
+    assert ProgeoAccess.objects.using(f.DB).get(pk=other_rule.pk).transport == other_rule.transport
+
+
+def test_a_normal_user_changes_their_own_notifications(api_client, setup):
+    """Kundennutzer have module_notifications_enabled only - their own rule
+    is theirs to set (Rechte tab), a single-access rule and an account
+    member's first rule alike."""
+    account, location, _admin = setup
+    single = f.make_user(perms=("module_notifications_enabled",))
+    rule = f.make_access(location, single)
+    member = f.make_user(perms=("module_notifications_enabled",), accounts=[account])
+
+    api_client.force_authenticate(user=single)
+    updated = api_client.post(
+        f"/v1/location/{location.id}/access/", {"id": rule.id, "transport": 0, "type": 0}, format="json"
+    )
+    api_client.force_authenticate(user=member)
+    created = api_client.post(
+        f"/v1/location/{location.id}/access/", {"user_id": member.id, "transport": 1, "type": 1}, format="json"
+    )
+
+    assert updated.status_code == 200, updated.content
+    assert ProgeoAccess.objects.using(f.DB).get(pk=rule.pk).transport == 0
+    assert created.status_code == 200, created.content
+    assert ProgeoAccess.objects.using(f.DB).filter(location=location, user_id=member.id, transport=1).exists()
+
+
+def test_the_own_rule_exception_covers_neither_objektleitung_nor_moving_it(api_client, setup):
+    _account, location, _admin = setup
+    single = f.make_user(perms=("module_notifications_enabled",))
+    rule = f.make_access(location, single)
+    stranger = f.make_user()
+    api_client.force_authenticate(user=single)
+
+    flagged = api_client.post(
+        f"/v1/location/{location.id}/access/", {"id": rule.id, "objektleitung": True}, format="json"
+    )
+    moved = api_client.post(
+        f"/v1/location/{location.id}/access/", {"id": rule.id, "user_id": stranger.id, "transport": 1},
+        format="json",
+    )
+
+    assert flagged.status_code == 403
+    assert moved.status_code == 403
+    assert ProgeoAccess.objects.using(f.DB).get(pk=rule.pk).user_id == single.id
 
 
 def test_rule_update_validates_integers(api_client, setup):

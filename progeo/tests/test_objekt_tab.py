@@ -178,6 +178,22 @@ def test_geocode_endpoint_treats_zero_zero_as_missing(api_client, editor_world, 
     assert (body["latitude"], body["longitude"]) == (50.7, 7.09)
 
 
+def test_staff_can_look_a_set_position_up_again(api_client, editor_world, monkeypatch):
+    """Objekt tab, staff: "GPS-Position neu laden" although a position is set."""
+    _account, location, editor = editor_world
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(latitude=50.0, longitude=7.0, city="Bonn")
+    monkeypatch.setattr(locations_viewset.GeoHelper, "fetch_lat_lon", lambda self, *args: (50.7, 7.09))
+
+    api_client.force_authenticate(user=editor)
+    refused = api_client.post(f"/v1/location/{location.pk}/geocode/", {"force": True}, format="json").json()
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=EDIT))
+    body = api_client.post(f"/v1/location/{location.pk}/geocode/", {"force": True}, format="json").json()
+
+    assert refused["reason"] == "The location already has coordinates"
+    assert (body["latitude"], body["longitude"]) == (50.7, 7.09)
+    assert (_reload(location).latitude, _reload(location).longitude) == (50.7, 7.09)
+
+
 def test_has_position():
     from progeo.helper.legacy.geo import has_position
 

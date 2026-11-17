@@ -12,6 +12,7 @@ import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
+import { useAccess } from './access';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 import './LocationObjektTab.css';
@@ -55,6 +56,13 @@ const STAT_FIELDS = [
   'first_measurement_at',
 ] as const;
 
+/**
+ * "Online seit": how long ago the first measurement came in ("vor 3 Mon.,
+ * 5 T.") - `never` without any measurement. The date is the tooltip.
+ */
+export const onlineSince = (firstMeasurementAt: string | null | undefined, never: string, now: number = Date.now()) =>
+  firstMeasurementAt ? formatRelativeTime(firstMeasurementAt, now) : never;
+
 const mergeSaved = (current: LocationDetail, saved: Partial<LocationDetail>): LocationDetail => {
   const merged = { ...current, ...saved };
   for (const field of STAT_FIELDS) {
@@ -77,10 +85,12 @@ const LocationObjektTab = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const role = useProgeoRole();
+  const { isStaffOrSuperuser } = useAccess();
 
   const [form, setForm] = useState<FormState>(() => toForm(location));
   const [saving, setSaving] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [savingPosition, setSavingPosition] = useState(false);
   const [projectTypeOptions, setProjectTypeOptions] = useState<ProjectTypeOption[]>([]);
 
   useEffect(() => {
@@ -154,12 +164,13 @@ const LocationObjektTab = () => {
     (field) => form[field] !== savedAddress[field],
   );
 
-  const geocode = () => {
+  // `force`: staff look a set position up again (the address was wrong).
+  const geocode = (force = false) => {
     setGeocoding(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/geocode/`,
-      {},
+      force ? { force: true } : {},
       (response) => {
         const { latitude, longitude } = response?.data || {};
         setLocation((prev) => (prev ? { ...prev, latitude, longitude } : prev));
@@ -169,6 +180,28 @@ const LocationObjektTab = () => {
       (error) => {
         showErrorBar(enqueueSnackbar, t('objekt_geocode_error', { reason: errorReason(error) }));
         setGeocoding(false);
+      },
+    );
+  };
+
+  // Staff: a position typed in by hand (the address finds nothing, or the wrong spot).
+  const savePosition = (latitude: number, longitude: number) => {
+    setSavingPosition(true);
+    void axiosConfig.perform_patch(
+      auth,
+      `/v1/location/${locationId}/`,
+      { latitude, longitude },
+      (response) => {
+        const saved = (response?.data ?? {}) as Partial<LocationDetail>;
+        setLocation((current) =>
+          current ? mergeSaved(current, { latitude: saved.latitude ?? latitude, longitude: saved.longitude ?? longitude }) : current,
+        );
+        showSuccessBar(enqueueSnackbar, t('objekt_position_saved'));
+        setSavingPosition(false);
+      },
+      (error) => {
+        showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason: errorReason(error) }));
+        setSavingPosition(false);
       },
     );
   };
@@ -197,8 +230,8 @@ const LocationObjektTab = () => {
             <LabeledInput
               testId="objekt-online-since"
               label={t('objekt_field_online_since')}
-              value={formatDate(location?.first_measurement_at, 'date')}
-              title={formatDate(location?.first_measurement_at, 'dateTime')}
+              value={onlineSince(location?.first_measurement_at, t('objekt_online_never'))}
+              title={location?.first_measurement_at ? formatDate(location.first_measurement_at, 'dateTime') : undefined}
               readOnly
             />
             <LabeledInput
@@ -341,9 +374,14 @@ const LocationObjektTab = () => {
       <div className="objekt-side">
         <LocationStandortPanel
           location={location}
-          onGeocode={canEditContact ? geocode : undefined}
+          onGeocode={canEditContact ? () => geocode() : undefined}
           geocoding={geocoding}
           geocodeBlockedReason={addressDirty ? t('objekt_geocode_save_first') : undefined}
+          staffPosition={
+            isStaffOrSuperuser
+              ? { onRegeocode: () => geocode(true), onSave: savePosition, saving: savingPosition }
+              : undefined
+          }
         />
       </div>
     </div>

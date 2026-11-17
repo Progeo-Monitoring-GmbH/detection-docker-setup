@@ -69,6 +69,26 @@ def _language_of(user):
     return getattr(profile, "language", None) or None
 
 
+def invite_language(location, inviter) -> str | None:
+    """The language of the mail to a newly invited person: the location's
+    (ProgeoLocation.language), else the inviter's own."""
+    from progeo.helper.emailhelper import normalize_language
+
+    return normalize_language(getattr(location, "language", "")) or _language_of(inviter)
+
+
+def _start_in_language(user, language):
+    """A new account speaks the language it was invited in - later mails too."""
+    from progeo.v1.models import UserProfile
+
+    if not language:
+        return
+    profile, _ = UserProfile.objects.using(DB).get_or_create(user_id=user.pk)
+    if not profile.language:
+        profile.language = language
+        profile.save(using=DB, update_fields=["language"])
+
+
 def _has_single_access(user, location, account) -> bool:
     from progeo.helper.project_dbs import location_db
     from progeo.v1.models import ProgeoAccess
@@ -144,8 +164,11 @@ def invite_to_location(inviter, location, account, email, scope="single", first_
         raise InviteError(str(exc)) from None
     user = result["user"]
     _grant(user, location, account, scope)
+    language = invite_language(location, inviter)
+    if result.get("created"):
+        _start_in_language(user, language)
     outbound.dispatch(
-        send_login_link_task, user.pk, "invite", "location_invite", _language_of(inviter), mail_context,
+        send_login_link_task, user.pk, "invite", "location_invite", language, mail_context,
     )
     ilog(f"[invites] User {inviter.pk} invited new user {user.pk} to location {location.pk} ({scope})")
     return "invited"

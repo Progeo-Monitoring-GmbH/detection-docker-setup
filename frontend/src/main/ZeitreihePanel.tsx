@@ -93,9 +93,13 @@ const ZeitreihePanel = ({
   );
   const defaultIds = useMemo(() => defaultZeitreiheIds(sensors), [sensors]);
 
-  // A new period can drop sensors - keep the choice of the others.
+  // A new period can drop sensors - keep the choice of the others (none
+  // left: the default again - the plot never goes empty).
   useEffect(() => {
-    setPicked((current) => current && current.filter((id) => byId.has(id)));
+    setPicked((current) => {
+      const kept = current?.filter((id) => byId.has(id)) ?? null;
+      return kept && kept.length > 0 ? kept : null;
+    });
     setHighlighted((current) => (current && byId.has(current) ? current : null));
   }, [byId]);
 

@@ -88,7 +88,7 @@ const legendButtons = () => Array.from(container.querySelectorAll('button'));
 // The plot is the first <svg>; the legend swatches are rendered after it.
 const plotSvg = () => {
   const svg = container.querySelector<SVGSVGElement>('svg')!;
-  expect(svg.getAttribute('viewBox')).toBe('0 0 1000 180');
+  expect(svg.getAttribute('viewBox')).toBe('0 0 1000 186');
   return svg;
 };
 const svgTexts = () => Array.from(plotSvg().querySelectorAll('text')).map((node) => node.textContent);
@@ -148,7 +148,7 @@ describe('ThresholdTrendChart rendering', () => {
     expect(lines).toHaveLength(count);
     expect(lines[COLORS.length].getAttribute('stroke')).toBe(COLORS[0]);
     expect(lines[COLORS.length + 1].getAttribute('stroke')).toBe(COLORS[1]);
-    expect(container.querySelectorAll('[stroke-dasharray]')).toHaveLength(0);
+    lines.forEach((line) => expect(line.hasAttribute('stroke-dasharray')).toBe(false));
   });
 
   it('takes a colour given with the series', () => {
@@ -156,20 +156,22 @@ describe('ThresholdTrendChart rendering', () => {
     expect(polylines()[0].getAttribute('stroke')).toBe('#123456');
   });
 
-  it('draws the 1x threshold line solid', () => {
+  it('draws the 1x threshold line dotted - its legend sample too', () => {
     renderChart([makeSeries('a', [[0, 50]])]);
-    expect(plotSvg().querySelectorAll('line[stroke-dasharray]')).toHaveLength(0);
+    expect(plotSvg().querySelector('[data-testid="threshold-trend-threshold"]')!.getAttribute('stroke-dasharray')).toBe('2 3');
+    const legendSample = container.querySelector('.threshold-trend-legend-threshold line')!;
+    expect(legendSample.getAttribute('stroke-dasharray')).toBe('2 3');
   });
 
-  it('labels the y axis with 0x, 1x and 1.15x the max ratio', () => {
+  it('labels the y axis with 0x, 1x and 1.15x the max ratio - with a German decimal comma', () => {
     // max ratio = 200 / 100 = 2 -> top tick 2.3x
     renderChart([makeSeries('a', [[0, 50], [60 * MIN, 200]])]);
-    expect(svgTexts()).toEqual(expect.arrayContaining(['0.00x', '1.00x', '2.30x']));
+    expect(svgTexts()).toEqual(expect.arrayContaining(['0,00x', '1,00x', '2,30x']));
   });
 
   it('keeps 1x visible (top tick 1.15x) when all readings are below the threshold', () => {
     renderChart([makeSeries('a', [[0, 10], [60 * MIN, 20]])]);
-    expect(svgTexts()).toEqual(expect.arrayContaining(['0.00x', '1.00x', '1.15x']));
+    expect(svgTexts()).toEqual(expect.arrayContaining(['0,00x', '1,00x', '1,15x']));
   });
 
   it('formats ratios >= 10 without decimals', () => {
@@ -253,7 +255,7 @@ describe('ThresholdTrendChart legend interaction', () => {
 describe('ThresholdTrendChart hover tooltip', () => {
   const hoverAt = (clientX: number) => {
     const svg = plotSvg();
-    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 180 } as DOMRect);
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 186 } as DOMRect);
     act(() => {
       svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX, clientY: 50 }));
     });
@@ -263,14 +265,14 @@ describe('ThresholdTrendChart hover tooltip', () => {
     renderChart([makeSeries('a', [[0, 100], [90 * MIN, 250]])]);
     hoverAt(980);
     expect(container.textContent).toContain('Sensor a');
-    expect(container.textContent).toContain('2.50x');
+    expect(container.textContent).toContain('2,50x');
   });
 
   it('shows the "mean of" label for merged points', () => {
     renderChart([makeSeries('a', [[0, 100], [10 * 1000, 300], [90 * MIN, 100]])]);
     hoverAt(41);
     expect(container.textContent).toContain('(mean of 2)');
-    expect(container.textContent).toContain('2.00x');
+    expect(container.textContent).toContain('2,00x');
   });
 
   it('without smoothing draws every reading - no merged mean', () => {
@@ -288,15 +290,15 @@ describe('ThresholdTrendChart hover tooltip', () => {
   it('hides the tooltip outside the plot area and on mouse leave', () => {
     renderChart([makeSeries('a', [[0, 100], [90 * MIN, 250]])]);
     hoverAt(980);
-    expect(container.textContent).toContain('2.50x');
+    expect(container.textContent).toContain('2,50x');
     hoverAt(5);
-    expect(container.textContent).not.toContain('2.50x');
+    expect(container.textContent).not.toContain('2,50x');
 
     hoverAt(980);
     act(() => {
       plotSvg().dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
     });
-    expect(container.textContent).not.toContain('2.50x');
+    expect(container.textContent).not.toContain('2,50x');
   });
 });
 
@@ -344,7 +346,7 @@ describe('ThresholdTrendChart highlighting', () => {
       makeSeries('high', [[0, 300], [90 * MIN, 300]]),
     ]);
     const svg = plotSvg();
-    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 180 } as DOMRect);
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 186 } as DOMRect);
     act(() => {
       svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 980, clientY: 20 }));
     });
@@ -362,11 +364,19 @@ describe('ThresholdTrendChart time axis', () => {
   const axisLabels = () =>
     Array.from(container.querySelectorAll('[data-testid="threshold-trend-axis-label"]')).map((node) => node.textContent);
 
-  it('labels intermediate times, not only start and end', () => {
+  const dayLabels = () =>
+    Array.from(container.querySelectorAll('[data-testid="threshold-trend-axis-day-label"]')).map(
+      (node) => node.textContent,
+    );
+
+  it('labels the times of day and, in a row of their own, the days', () => {
     renderChart([makeSeries('a', [[0, 100], [7 * 24 * 60 * MIN, 250]])]);
-    const labels = axisLabels();
-    expect(labels.length).toBeGreaterThan(2);
-    expect(new Set(labels).size).toBe(labels.length);
+    expect(axisLabels().length).toBeGreaterThan(7);
+    const days = dayLabels();
+    expect(days.length).toBeGreaterThanOrEqual(7);
+    expect(new Set(days).size).toBe(days.length);
+    // A stronger line at every midnight inside the span.
+    expect(container.querySelectorAll('[data-testid="threshold-trend-axis-boundary"]').length).toBeGreaterThanOrEqual(6);
   });
 
   it('a single point still gets one label', () => {

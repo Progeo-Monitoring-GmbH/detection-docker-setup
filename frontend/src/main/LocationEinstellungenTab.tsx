@@ -60,6 +60,12 @@ type ProjectTypeOption = { value: number; label: string };
  * access endpoints as Rechte, filtered to staff users - no separate
  * relation needed).
  */
+/** ProgeoLocation.Language - named in their own language, like a language switch. */
+const LOCATION_LANGUAGES = [
+  { value: 'de', label: 'Deutsch' },
+  { value: 'en', label: 'English' },
+];
+
 const LocationEinstellungenTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
@@ -182,6 +188,29 @@ const LocationEinstellungenTab = () => {
       () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
       (error) => {
         setRainCheckDraft({ locationId, value: previous });
+        showRequestError(enqueueSnackbar, 'Could not save', error);
+      },
+    );
+  };
+
+  // -- Language (ProgeoLocation.language): invitations to new users go out in it --
+  const [languageDraft, setLanguageDraft] = useState<{
+    locationId: typeof locationId;
+    value: string;
+  } | null>(null);
+  const language =
+    languageDraft?.locationId === locationId ? languageDraft.value : (location?.language || 'de');
+
+  const saveLanguage = (value: string) => {
+    const previous = language;
+    setLanguageDraft({ locationId, value });
+    void axiosConfig.perform_patch(
+      auth,
+      `/v1/location/${locationId}/`,
+      { language: value },
+      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
+      (error) => {
+        setLanguageDraft({ locationId, value: previous });
         showRequestError(enqueueSnackbar, 'Could not save', error);
       },
     );
@@ -360,6 +389,31 @@ const LocationEinstellungenTab = () => {
                 }
               }}
             />
+          </div>
+
+          <div className="einstell-card einstell-card--row" data-testid="einstell-language">
+            <div className="einstell-row-text">
+              <div className="einstell-row-title">{t('einstell_language')}</div>
+              <div className="einstell-row-hint">{t('einstell_language_hint')}</div>
+            </div>
+            <select
+              value={language}
+              disabled={!canEdit}
+              onChange={(event) => {
+                if (canEdit && event.target.value !== language) {
+                  saveLanguage(event.target.value);
+                }
+              }}
+              aria-label={t('einstell_language')}
+              className="einstell-select"
+              data-testid="einstell-language-select"
+            >
+              {LOCATION_LANGUAGES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {devicesLoading ? (

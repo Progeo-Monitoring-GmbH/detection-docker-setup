@@ -60,10 +60,14 @@
   opacity: 0.7;
 }
 
+/* Starts where the plot area starts (X0 = 40 of the 1000 wide viewBox) and
+   ends where it ends (X1 = 990), so the entries line up with the plot. */
 .threshold-trend-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 1% 0 4%;
 }
 
 /* A series: a click hides / shows it, hovering highlights it. */

@@ -41,6 +41,13 @@ import StaffMessaging from './StaffMessaging';
 import StaffNotificationCases from './StaffNotificationCases';
 import { staffFlags } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
+import {
+  AccountBoxes,
+  AccountLegend,
+  accountLegend,
+  matchesAccountFilter,
+  type UserAccount,
+} from './staffAccounts';
 import './StaffAdmin.css';
 
 type PermissionDef = {
@@ -64,6 +71,8 @@ type StaffUser = {
   last_activity?: string | null;
   permissions: Record<string, boolean>;
   grantable: Record<string, boolean>;
+  /** The accounts the user is a member of - coloured boxes, see staffAccounts.tsx. */
+  accounts?: UserAccount[];
 };
 
 type UsersResponse = {
@@ -106,6 +115,8 @@ type Filters = {
   twoFactor: '' | 'on' | 'off';
   session: '' | 'in' | 'out';
   permission: string;
+  /** '' = all, an account id, or NO_ACCOUNT (staffAccounts.tsx). */
+  account: string;
 };
 
 const NO_FILTERS: Filters = {
@@ -115,6 +126,7 @@ const NO_FILTERS: Filters = {
   twoFactor: '',
   session: '',
   permission: '',
+  account: '',
 };
 
 /** Small dot before the username: green while logged in, a grey ring if not. */
@@ -652,6 +664,9 @@ const StaffAdmin = () => {
       if (filters.permission && !user.permissions?.[filters.permission]) {
         return false;
       }
+      if (!matchesAccountFilter(user, filters.account)) {
+        return false;
+      }
       if (!needle) {
         return true;
       }
@@ -666,6 +681,7 @@ const StaffAdmin = () => {
         user.logged_in ? t('staff_filter_logged_in') : '',
         ...permissions,
         ...permissions.map(permissionLabel),
+        ...(user.accounts ?? []).map((account) => account.name),
         user.date_joined ? formatDate(user.date_joined) : '',
         user.last_login ? formatDate(user.last_login) : '',
       ]
@@ -704,6 +720,17 @@ const StaffAdmin = () => {
     );
   };
 
+  // Colours of the accounts: by name over all users, so a filter keeps them.
+  const legend = useMemo(() => accountLegend(response.users), [response.users]);
+  const withoutAccount = useMemo(
+    () => response.users.filter((user) => !user.accounts?.length).length,
+    [response.users],
+  );
+  const accountColorOf = useMemo(() => {
+    const colors = new Map(legend.map((entry) => [entry.id, entry.color]));
+    return (id: number) => colors.get(id) ?? '#b8b0b0';
+  }, [legend]);
+
   const columns = useMemo<TableColumn<StaffUser>[]>(
     () => [
       {
@@ -726,6 +753,16 @@ const StaffAdmin = () => {
         selector: (row) => (row.email || '').toLowerCase(),
         format: (row) => row.email || '-',
         sortable: true,
+      },
+      {
+        id: 'accounts',
+        name: t('staff_col_accounts'),
+        // By the number of accounts, then by the first one's name.
+        selector: (row) =>
+          `${String(row.accounts?.length ?? 0).padStart(4, '0')} ${(row.accounts?.[0]?.name ?? '').toLowerCase()}`,
+        sortable: true,
+        cell: (row) => <AccountBoxes userId={row.id} accounts={row.accounts ?? []} colorOf={accountColorOf} />,
+        minWidth: '140px',
       },
       {
         name: t('staff_col_staff'),
@@ -900,7 +937,7 @@ const StaffAdmin = () => {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId, t, roleLabel, isSuperuser],
+    [busyId, t, roleLabel, isSuperuser, accountColorOf],
   );
 
   if (!isStaff) {
@@ -1051,6 +1088,13 @@ const StaffAdmin = () => {
               })}
             </small>
           </div>
+
+          <AccountLegend
+            entries={legend}
+            withoutAccount={withoutAccount}
+            selected={filters.account}
+            onSelect={(value) => setFilter('account', value)}
+          />
 
           <DataTable
             columns={columns}

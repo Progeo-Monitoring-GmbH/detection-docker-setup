@@ -87,6 +87,24 @@ def _two_factor_user_ids():
     )
 
 
+def _accounts_by_user(user_ids=None):
+    """{user id: [{"id", "name"}, ...]} of the accounts the users are members
+    of (Account.users - they see every location of those accounts), sorted
+    by name. One query; `user_ids` limits it. Single-location access
+    (ProgeoAccess, in the project databases) is not part of it."""
+    from progeo.v1.models import Account
+
+    memberships = Account.users.through.objects.using(_USER_DB)
+    if user_ids is not None:
+        memberships = memberships.filter(user_id__in=user_ids)
+    accounts = {}
+    for user_id, account_id, name in memberships.values_list("user_id", "account_id", "account__name"):
+        accounts.setdefault(user_id, []).append({"id": account_id, "name": name})
+    for entries in accounts.values():
+        entries.sort(key=lambda entry: ((entry["name"] or "").lower(), entry["id"]))
+    return accounts
+
+
 def _session_activity_by_user(user_ids=None):
     """{user id: newest creation time} of the refresh tokens still valid (not
     expired, not blacklisted) - the users logged in somewhere. Every login and
@@ -105,14 +123,17 @@ def _session_activity_by_user(user_ids=None):
     return {row["user_id"]: row["last"] for row in tokens.values("user_id").annotate(last=Max("created_at"))}
 
 
-def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sessions=None):
+def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sessions=None, accounts=None):
     """`granted_codes`: the user's entry of _module_codes_by_user() for lists;
     None asks user.has_perm() (single users). `two_factor_ids`: see
     _two_factor_user_ids() (lists); None looks the user up. `sessions`: see
-    _session_activity_by_user() (lists); None looks the user up."""
+    _session_activity_by_user() (lists); None looks the user up. `accounts`:
+    see _accounts_by_user() (lists); None looks the user up."""
     from progeo.helper.two_factor import is_enabled
     if sessions is None:
         sessions = _session_activity_by_user([user.pk])
+    if accounts is None:
+        accounts = _accounts_by_user([user.pk])
     values = {}
     for code in MODULE_PERMISSION_CODES:
         if granted_codes is None:
@@ -134,6 +155,8 @@ def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sess
         "last_activity": sessions[user.pk].isoformat() if sessions.get(user.pk) else None,
         "permissions": values,
         "grantable": {code: values[code] for code in grantable},
+        # The accounts the user belongs to (/staff/: coloured boxes).
+        "accounts": accounts.get(user.pk, []),
     }
 
 
@@ -185,9 +208,10 @@ class StaffUserListView(APIView):
         codes_by_user = _module_codes_by_user()
         two_factor_ids = _two_factor_user_ids()
         sessions = _session_activity_by_user()
+        accounts = _accounts_by_user()
         return RequestSuccess({
             "users": [
-                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions)
+                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts)
                 for user in users
             ],
             "grantable_codes": sorted(grantable),

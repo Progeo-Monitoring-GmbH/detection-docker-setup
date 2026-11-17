@@ -8,7 +8,7 @@
   background-image: repeating-linear-gradient(
     -45deg,
     transparent 0 4px,
-    rgba(var(--bs-emphasis-color-rgb), 0.045) 4px 8px
+    rgba(var(--bs-emphasis-color-rgb), 0.03) 4px 8px
   );
 }
 
@@ -20,8 +20,8 @@
 .list-group-item.location-row-purgeable {
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(var(--bs-danger-rgb), 0.05) 0 6px,
-    rgba(var(--bs-danger-rgb), 0.14) 6px 12px
+    rgba(var(--bs-danger-rgb), 0.025) 0 6px,
+    rgba(var(--bs-danger-rgb), 0.08) 6px 12px
   );
 }
 

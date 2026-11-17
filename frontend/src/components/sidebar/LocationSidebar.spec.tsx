@@ -25,7 +25,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const { default: LocationSidebar, selectedLocationParam } = await import('./LocationSidebar');
+const { default: LocationSidebar, selectedLocationParam, showsVerwaltungLink } = await import('./LocationSidebar');
 
 let container: HTMLDivElement;
 let root: Root;
@@ -89,5 +89,19 @@ describe('LocationSidebar carries the selected location', () => {
     expect(selectedLocationParam('?location=12abc', null)).toBeNull();
     expect(selectedLocationParam('?location=', 5)).toBe('5');
     expect(selectedLocationParam('?location=9', 5)).toBe('9');
+  });
+});
+
+describe('showsVerwaltungLink', () => {
+  it('always shows the link to object managers', () => {
+    expect(showsVerwaltungLink(true, null)).toBe(true);
+    expect(showsVerwaltungLink(true, 1)).toBe(true);
+  });
+
+  it('hides the object list from users with a single location', () => {
+    expect(showsVerwaltungLink(false, null)).toBe(false);
+    expect(showsVerwaltungLink(false, 0)).toBe(false);
+    expect(showsVerwaltungLink(false, 1)).toBe(false);
+    expect(showsVerwaltungLink(false, 2)).toBe(true);
   });
 });

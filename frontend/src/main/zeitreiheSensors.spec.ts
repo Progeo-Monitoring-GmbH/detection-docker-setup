@@ -95,6 +95,11 @@ describe('toggledId', () => {
     expect(toggledId(['a', 'b'], 'c')).toEqual(['a', 'b', 'c']);
     expect(toggledId(['a', 'b', 'c'], 'b')).toEqual(['a', 'c']);
   });
+
+  it('keeps the last plotted sensor - the plot never goes empty', () => {
+    expect(toggledId(['a'], 'a')).toEqual(['a']);
+    expect(toggledId([], 'a')).toEqual(['a']);
+  });
 });
 
 describe('selectedFirst', () => {

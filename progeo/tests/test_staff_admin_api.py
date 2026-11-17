@@ -87,6 +87,22 @@ def test_list_is_sorted_by_username(api_client, staff):
     assert usernames == sorted(usernames)
 
 
+def test_list_names_the_accounts_of_each_user(api_client, staff):
+    """/staff/ shows a coloured box per account the user is a member of."""
+    zeta = f.make_account(name="Zeta Kunde")
+    alpha = f.make_account(name="Alpha Kunde")
+    member = f.make_user(accounts=[zeta, alpha])
+    loner = f.make_user()
+
+    users = {user["id"]: user for user in api_client.get(BASE).json()["users"]}
+
+    assert users[member.pk]["accounts"] == [
+        {"id": alpha.pk, "name": "Alpha Kunde"},
+        {"id": zeta.pk, "name": "Zeta Kunde"},
+    ]
+    assert users[loner.pk]["accounts"] == []
+
+
 def _list_queries(api_client):
     from django.db import connections
     from django.test.utils import CaptureQueriesContext
@@ -101,8 +117,9 @@ def test_list_queries_do_not_grow_with_the_number_of_users(api_client, staff):
     _list_queries(api_client)  # warm-up: the first request fills the staff user's and content type caches
     before = _list_queries(api_client)
 
+    account = f.make_account()
     for _ in range(5):
-        f.make_user(perms=("module_locations_enabled", "module_backup_enabled"))
+        f.make_user(perms=("module_locations_enabled", "module_backup_enabled"), accounts=[account])
 
     assert _list_queries(api_client) == before
 

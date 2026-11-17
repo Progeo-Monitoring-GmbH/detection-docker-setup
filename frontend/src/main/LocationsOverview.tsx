@@ -3,8 +3,8 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import DataTable, { Media } from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Alert, Button, Form, Spinner } from 'react-bootstrap';
-import { Bell, Pencil, Search, XLg } from 'react-bootstrap-icons';
+import { Alert, Form, Spinner } from 'react-bootstrap';
+import { Bell, Search, XLg } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
@@ -12,16 +12,10 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
-import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
-import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
-import LocationEditModal, {
-  type LocationEditRow,
-} from '../components/modal/LocationEditModal.tsx';
-import { staffFlags } from './access';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 import { repeatedTestId } from '../testIds';
@@ -44,7 +38,13 @@ import './LocationsOverview.css';
 
 type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
 
-type LocationRow = LocationEditRow & {
+type LocationRow = {
+  id: number;
+  name?: string | null;
+  city?: string | null;
+  address?: string | null;
+  plz?: string | null;
+  project_id?: number | null;
   /** ProgeoLocation.PROJECT_TYPE_CHOICES - the product (smartex® dm, ...). */
   project_type?: number | null;
   measurement_count?: number;
@@ -151,12 +151,13 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlar
 ];
 
 /**
- * Row colouring by state (classes in LocationsOverview.css): ProGeo orange =
- * has alarms, green = has measurements, grey = none.
+ * Row colouring (classes in LocationsOverview.css): ProGeo orange = open
+ * alarms, green = online, grey = offline or never measured.
  */
 const ROW_CLASSES = {
   alarm: 'locations-row--alarm',
-  measurement: 'locations-row--measurement',
+  online: 'locations-row--online',
+  offline: 'locations-row--offline',
   none: 'locations-row--none',
 };
 
@@ -200,35 +201,58 @@ const mergeDetails = (rows: LocationRow[], details: LocationRow[]) => {
   });
 };
 
-/** Rows with an edited location merged in (counts it didn't send kept). */
-const mergeSaved = (rows: LocationRow[], updated: LocationEditRow) =>
-  rows.map((row) =>
-    row.id === updated.id
-      ? {
-          ...row,
-          ...updated,
-          device_count: updated.device_count ?? row.device_count,
-          has_device: updated.has_device ?? row.has_device,
-        }
-      : row,
-  );
-
 type LocationState = keyof typeof ROW_CLASSES;
 
-/** Priority: alarms (orange) > measurements (green) > none (gray). */
-const locationState = (row: LocationRow, summary: LocationAlarmSummary | undefined): LocationState => {
-  if (summary && summary.count > 0) {
-    return 'alarm';
+/** 25 rows by default - the rows are roomier than they were. */
+export const OVERVIEW_ROWS_PER_PAGE = 25;
+const OVERVIEW_ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100];
+
+/** Online = a measurement within RECENT_MEASUREMENT_HOURS (as on /status and the device list). */
+export type Connectivity = 'online' | 'offline' | 'none';
+
+export const locationConnectivity = (
+  row: Pick<LocationRow, 'last_measurement_at'>,
+  now: number = Date.now(),
+): Connectivity => {
+  if (!row.last_measurement_at) {
+    return 'none';
   }
-  if ((row.measurement_count ?? 0) > 0 || row.last_measurement_at) {
-    return 'measurement';
-  }
-  return 'none';
+  return isRecentMeasurement(row.last_measurement_at, now) ? 'online' : 'offline';
 };
 
-/** The State column: a dot and "2/3 active" / "Measurements" / "No data";
- * a spinner until the alarm summary and the details are loaded. */
-const LocationStateCell = ({
+/** The row colour - open alarms first, then online/offline. */
+export const locationState = (
+  row: Pick<LocationRow, 'last_measurement_at'>,
+  summary: LocationAlarmSummary | undefined,
+  now: number = Date.now(),
+): LocationState => (summary && summary.count > 0 ? 'alarm' : locationConnectivity(row, now));
+
+const CONNECTIVITY_KEYS: Record<Connectivity, string> = {
+  online: 'locations_state_online',
+  offline: 'locations_state_offline',
+  none: 'locations_state_no_data',
+};
+
+/** The State column: a dot and Online / Offline / No data - a spinner until the details are loaded. */
+const LocationStateCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
+  if (row.measurement_count === undefined) {
+    return (
+      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-state-loading', row.id)}>
+        <Spinner size="sm" animation="border" />
+      </div>
+    );
+  }
+  const connectivity = locationConnectivity(row);
+  return (
+    <div className="locations-state" {...repeatedTestId('locations-state', row.id)}>
+      <span className={`locations-state-dot locations-state-dot--${connectivity}`} />
+      <span>{t(CONNECTIVITY_KEYS[connectivity])}</span>
+    </div>
+  );
+};
+
+/** The Alarm column: "2/3 active" with an orange dot, "–" without alarms. */
+const LocationAlarmCell = ({
   row,
   summary,
   t,
@@ -237,69 +261,27 @@ const LocationStateCell = ({
   summary: LocationAlarmSummary | undefined;
   t: TFn;
 }) => {
-  if (!summary || row.measurement_count === undefined) {
+  if (!summary) {
     return (
-      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-state-loading', row.id)}>
+      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-alarm-loading', row.id)}>
         <Spinner size="sm" animation="border" />
       </div>
     );
   }
-  const state = locationState(row, summary);
-  const labels: Record<LocationState, string> = {
-    alarm: t('locations_state_active', { active: summary.active, count: summary.count }),
-    measurement: t('locations_state_measurements'),
-    none: t('locations_state_no_data'),
-  };
+  if (summary.count === 0) {
+    return (
+      <span className="location-list-muted" {...repeatedTestId('locations-alarm', row.id)}>
+        –
+      </span>
+    );
+  }
   return (
-    <div className="d-flex align-items-center gap-2" {...repeatedTestId('locations-state', row.id)}>
-      <span className={`d-inline-block rounded-circle locations-state-dot locations-state-dot--${state}`} />
-      <span className="small">{labels[state]}</span>
+    <div className="locations-state locations-state--alarm" {...repeatedTestId('locations-alarm', row.id)}>
+      <span className="locations-state-dot locations-state-dot--alarm" />
+      <span>{t('locations_state_active', { active: summary.active, count: summary.count })}</span>
     </div>
   );
 };
-
-/** The Actions column: edit, and delete (in the Django admin). */
-const LocationActions = ({
-  row,
-  onEdit,
-  canDelete,
-  t,
-}: {
-  row: LocationRow;
-  /** Null without the permission to edit. */
-  onEdit: ((row: LocationRow) => void) | null;
-  canDelete: boolean;
-  t: TFn;
-}) => (
-  <div className="location-list-actions">
-    {onEdit && (
-      <Button
-        size="sm"
-        variant="outline-primary"
-        className="location-list-icon-button"
-        title={t('locations_edit')}
-        aria-label={t('locations_edit')}
-        {...repeatedTestId('locations-edit', row.id)}
-        onClick={(event) => {
-          event.stopPropagation();
-          onEdit(row);
-        }}
-      >
-        <Pencil />
-      </Button>
-    )}
-    {canDelete && (
-      <DeleteIconButton
-        label={t('locations_delete_admin')}
-        href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
-        target="_blank"
-        onClick={(event) => event.stopPropagation()}
-        testId="locations-delete"
-        testKey={row.id}
-      />
-    )}
-  </div>
-);
 
 /** The Last measurement column: how long ago (green while recent), the date as tooltip. */
 const LastMeasurementCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
@@ -321,24 +303,13 @@ const LastMeasurementCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
   );
 };
 
-/** The contact: the object manager, phone/e-mail as the second line. */
-const contactLines = (row: LocationRow) => {
-  const reach = [row.telefon, row.mail].filter(Boolean).join(' · ');
-  return row.manager ? { primary: row.manager, secondary: reach } : { primary: reach || '–', secondary: '' };
-};
-
 /** Columns of the locations table: compact rows, details as a muted second line. */
 const locationColumns = ({
   alarmSummary,
-  onEdit,
-  canDelete,
   flagsOf,
   t,
 }: {
   alarmSummary: Record<string, LocationAlarmSummary>;
-  /** Null without the permission to edit. */
-  onEdit: ((row: LocationRow) => void) | null;
-  canDelete: boolean;
   /** Staff: the switched-off flags (locationFlags.tsx) - null for everyone else. */
   flagsOf: FlagsOf;
   t: TFn;
@@ -388,8 +359,19 @@ const locationColumns = ({
   {
     id: 'state',
     name: t('locations_col_state'),
-    cell: (row) => <LocationStateCell row={row} summary={alarmSummary[String(row.id)]} t={t} />,
-    width: '140px',
+    // Online first, then offline, never measured last.
+    selector: (row) => ({ online: 2, offline: 1, none: 0 })[locationConnectivity(row)],
+    cell: (row) => <LocationStateCell row={row} t={t} />,
+    sortable: true,
+    width: '130px',
+  },
+  {
+    id: 'alarm',
+    name: t('locations_col_alarm'),
+    selector: (row) => alarmSummary[String(row.id)]?.active ?? -1,
+    cell: (row) => <LocationAlarmCell row={row} summary={alarmSummary[String(row.id)]} t={t} />,
+    sortable: true,
+    width: '130px',
   },
   {
     id: 'last-measurement',
@@ -397,38 +379,8 @@ const locationColumns = ({
     selector: (row) => row.last_measurement_at ?? '',
     cell: (row) => <LastMeasurementCell row={row} t={t} />,
     sortable: true,
-    width: '140px',
+    width: '150px',
     hide: Media.SM,
-  },
-  {
-    id: 'devices',
-    name: t('locations_col_devices'),
-    selector: (row) => row.device_count ?? 0,
-    cell: (row) => <span className="location-list-num">{row.device_count ?? '–'}</span>,
-    sortable: true,
-    right: true,
-    width: '80px',
-  },
-  {
-    id: 'contact',
-    name: t('locations_col_contact'),
-    selector: (row) => row.manager || row.telefon || row.mail || '',
-    cell: (row) => {
-      const { primary, secondary } = contactLines(row);
-      return <TwoLineCell plain primary={primary} secondary={secondary} title={[primary, secondary].filter(Boolean).join(' · ')} />;
-    },
-    sortable: true,
-    grow: 1.4,
-    hide: Media.LG,
-  },
-  {
-    id: 'actions',
-    name: t('locations_col_actions'),
-    width: '84px',
-    right: true,
-    cell: (row) => (
-      <LocationActions row={row} onEdit={onEdit} canDelete={canDelete} t={t} />
-    ),
   },
 ];
 
@@ -443,12 +395,6 @@ const LocationsOverview = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
-  // Backend: PATCH /v1/location/{id}/ requires module_locations_edit.
-  const canEdit = hasPermission('module_locations_edit');
-  // Deleting goes through the Django admin, which needs a staff account on
-  // top of the module permission.
-  const canDelete =
-    hasPermission('module_locations_delete') && staffFlags(auth?.user).isStaff;
   // Backend: /v1/alarm/active/ requires module_measurements_enabled.
   const canListAlarms = hasPermission('module_measurements_enabled');
   const navigate = useNavigate();
@@ -463,12 +409,8 @@ const LocationsOverview = () => {
   >({});
   const [searchText, setSearchText] = useState('');
   const [onlyConnected, setOnlyConnected] = useState(true);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingLocation, setEditingLocation] = useState<LocationRow | null>(
-    null,
-  );
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(OVERVIEW_ROWS_PER_PAGE);
   // Ids for which the full detail fields (device/measurement counts) were
   // already loaded, so the paginated table only fetches what's missing.
   const loadedDetailIds = useRef<Set<number>>(new Set());
@@ -598,22 +540,6 @@ const LocationsOverview = () => {
     rangeSeparatorText: t('locations_range_separator'),
   };
 
-  const openEditModal = (row: LocationRow) => {
-    setEditingLocation(row);
-    setShowEditModal(true);
-  };
-
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setEditingLocation(null);
-  };
-
-  const handleLocationSaved = (updated: LocationEditRow) => {
-    setRows((prev) => mergeSaved(prev, updated));
-    setShowEditModal(false);
-    setEditingLocation(null);
-  };
-
   const filteredRows = useMemo(() => {
     return rows.filter((row) => matchesLocationSearch(row, searchText));
   }, [rows, searchText]);
@@ -650,13 +576,7 @@ const LocationsOverview = () => {
     ...(activeAlarms ?? []).map((row) => row.location.id),
   ]);
 
-  const columns = locationColumns({
-    alarmSummary,
-    onEdit: canEdit ? openEditModal : null,
-    canDelete,
-    flagsOf,
-    t,
-  });
+  const columns = locationColumns({ alarmSummary, flagsOf, t });
   // The stripes first (purgeable red, switched off grey): the table keeps the
   // style of the last matching rule, so the state colour stays.
   const conditionalRowStyles = [
@@ -802,6 +722,7 @@ const LocationsOverview = () => {
             customStyles={progeoTableStyles}
             pagination
             paginationPerPage={rowsPerPage}
+            paginationRowsPerPageOptions={OVERVIEW_ROWS_PER_PAGE_OPTIONS}
             paginationComponentOptions={paginationOptions}
             onChangePage={(page) => setCurrentPage(page)}
             onChangeRowsPerPage={(newPerPage, page) => {
@@ -819,17 +740,9 @@ const LocationsOverview = () => {
             pointerOnHover
             conditionalRowStyles={conditionalRowStyles}
             onRowClicked={handleRowClick}
-            dense
           />
         </div>
       </PanelCard>
-
-      <LocationEditModal
-        show={showEditModal}
-        location={editingLocation}
-        onHide={closeEditModal}
-        onSaved={handleLocationSaved}
-      />
     </div>
   );
 };

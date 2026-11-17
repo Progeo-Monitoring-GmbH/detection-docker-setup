@@ -58,23 +58,54 @@
   font-size: 13px;
 }
 
-/* -- state dot (State column) ---------------------------------------------- */
+/* -- roomier rows (the list has fewer columns than it had) --------------- */
+
+.locations-overview .location-list .rdt_TableRow {
+  min-height: 52px;
+}
+
+.locations-overview .location-list .rdt_TableCell {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+/* -- State (online/offline) and Alarm columns ------------------------------ */
+
+.locations-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.locations-state--alarm {
+  font-weight: 600;
+  color: var(--progeo-orange);
+}
 
 .locations-state-dot {
+  display: inline-block;
+  flex: none;
   width: 10px;
   height: 10px;
+  border-radius: 50%;
 }
 
 .locations-state-dot--alarm {
   background-color: var(--progeo-orange);
 }
 
-.locations-state-dot--measurement {
+.locations-state-dot--online {
   background-color: var(--progeo-contrast-green);
 }
 
+.locations-state-dot--offline {
+  background-color: var(--progeo-warm-gray-3);
+}
+
 .locations-state-dot--none {
-  background-color: var(--progeo-warm-gray-4);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--progeo-warm-gray-3);
 }
 
 /* -- row colours by state (more specific than the data table's row class) - */
@@ -84,12 +115,13 @@
   box-shadow: inset 3px 0 0 var(--progeo-orange);
 }
 
-/* Only the bar: a green tint on every measuring row was more noise than
+/* Only the bar: a green tint on every online row was more noise than
    information (the State column says it). */
-.rdt_TableRow.locations-row--measurement {
+.rdt_TableRow.locations-row--online {
   box-shadow: inset 3px 0 0 var(--progeo-contrast-green);
 }
 
+.rdt_TableRow.locations-row--offline,
 .rdt_TableRow.locations-row--none {
   box-shadow: inset 3px 0 0 var(--progeo-warm-gray-3);
 }

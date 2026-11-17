@@ -25,6 +25,8 @@ export type LocationDetail = {
   first_measurement_at?: string | null;
   last_updated?: string | null;
   pe_geschaltet?: boolean | null;
+  /** "de" / "en" ("" = German): the language of the invitations to new users. */
+  language?: string | null;
   /** The hourly rain check (ProgeoRainEvent) runs for this location. */
   rain_check_enabled?: boolean | null;
   /** The location's Lageplans, active ones first (the first is the main plan). */

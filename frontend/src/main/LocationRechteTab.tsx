@@ -128,6 +128,23 @@ const INVITE_MESSAGE_KEYS: Record<InviteStatus, string> = {
  * admins and ProGeo staff, never by Kundennutzer. There is deliberately no
  * user picker: it listed the users of every customer sharing the account.
  */
+/**
+ * May the viewer change this member's notification rule? Their own always;
+ * other people's with module_notifications_edit - a staff member's only as
+ * staff.
+ */
+export const mayEditRule = ({
+  canEdit,
+  viewerIsStaff,
+  memberIsStaff,
+  isOwn,
+}: {
+  canEdit: boolean;
+  viewerIsStaff: boolean;
+  memberIsStaff: boolean;
+  isOwn: boolean;
+}) => isOwn || (canEdit && (!memberIsStaff || viewerIsStaff));
+
 const LocationRechteTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
@@ -144,6 +161,9 @@ const LocationRechteTab = () => {
   // Staff set their own and other staff's notifications here; customers
   // only ever see staff assigned as Objektleitung (read-only for them).
   const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
+  // Everyone sets their own notifications (the backend allows it without
+  // module_notifications_edit) - only other people's need the permission.
+  const viewerId = (auth?.user as { user_id?: number } | null)?.user_id ?? null;
 
   const [members, setMembers] = useState<Member[]>([]);
   const [canGrantAccount, setCanGrantAccount] = useState(false);
@@ -373,7 +393,12 @@ const LocationRechteTab = () => {
     // can change (customers see staff only as Objektleitung).
     const revokeLocked = member.access !== 'single';
     const isStaff = member.access === 'staff';
-    const canEditRule = canEdit && (!isStaff || viewerIsStaff);
+    const canEditRule = mayEditRule({
+      canEdit,
+      viewerIsStaff,
+      memberIsStaff: isStaff,
+      isOwn: viewerId != null && member.user_id === viewerId,
+    });
     const lockedHint = isStaff
       ? t(viewerIsStaff ? 'rechte_staff_hint_staff' : 'rechte_staff_hint')
       : t('rechte_account_revoke_hint');
@@ -600,7 +625,9 @@ const LocationRechteTab = () => {
             {members.map(renderMember)}
 
             {!canEdit && !canAdd && (
-              <span className="location-rechte-no-permission" data-testid="rechte-no-permission">{t('ui_no_permission_edit')}</span>
+              <span className="location-rechte-no-permission" data-testid="rechte-no-permission">
+                {t('rechte_own_only')}
+              </span>
             )}
           </div>
         )}

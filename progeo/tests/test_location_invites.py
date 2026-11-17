@@ -208,6 +208,37 @@ def test_a_new_address_gets_an_account_and_an_invitation(api_client, world):
     assert "/login/link/" in mail.get_body(preferencelist=("plain",)).get_content()
 
 
+def test_a_new_address_is_invited_in_the_location_language(api_client, world):
+    """ProgeoLocation.language decides the invitation's language - not the
+    inviter's - and the new account keeps it for later mails."""
+    from progeo.v1.models import ProgeoLocation, UserProfile
+
+    _account, location, admin = world
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(language="en")
+    location.refresh_from_db(using=f.DB)
+    UserProfile.objects.using(f.DB).update_or_create(user_id=admin.pk, defaults={"language": "de"})
+    email = f"{f.unique('intl')}@progeo.com"
+    api_client.force_authenticate(user=admin)
+
+    assert _invite(api_client, location, email).json()["status"] == "invited"
+
+    (mail,) = _mails_to(email)
+    assert mail["Subject"].startswith("Invitation to the ProGeo portal")
+    user = User.objects.using(f.DB).get(email=email)
+    assert UserProfile.objects.using(f.DB).get(user=user).language == "en"
+
+
+def test_without_a_location_language_the_inviter_language_is_used():
+    from types import SimpleNamespace
+
+    from progeo.helper.location_invites import invite_language
+
+    inviter = SimpleNamespace(profile=SimpleNamespace(language="en"))
+    assert invite_language(SimpleNamespace(language=""), inviter) == "en"
+    assert invite_language(SimpleNamespace(language="de"), inviter) == "de"
+    assert invite_language(SimpleNamespace(language=""), SimpleNamespace()) is None
+
+
 def test_inviting_someone_with_access_changes_nothing(api_client, world):
     account, location, admin = world
     member = f.make_user(email=f"{f.unique('member')}@progeo.com", accounts=[account])

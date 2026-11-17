@@ -1,7 +1,8 @@
 import { useState, type MouseEvent } from 'react';
 import { formatDate } from '../../main/dateFormat';
 import { childTestId } from '../../testIds';
-import { frameAxisLabels, LABEL_CHAR_WIDTH } from './timeTicks';
+import { LABEL_CHAR_WIDTH } from './timeTicks';
+import { trendTimeAxis } from './trendTimeAxis';
 import './ThresholdTrendChart.css';
 
 type ThresholdTrendPoint = {
@@ -32,7 +33,7 @@ type ThresholdTrendChartProps = {
   onToggleSeries: (id: string) => void;
   emptyLabel: string;
   meanOfLabel: (count: number) => string;
-  /** Legend text for the 1x threshold line. */
+  /** Legend text for the 1x threshold line (dotted, like its swatch). */
   thresholdLabel: string;
   /** The series to highlight (the others fade) - e.g. hovered in a table. */
   highlightedId?: string | null;
@@ -48,7 +49,7 @@ type ThresholdTrendChartProps = {
    * marked with `primaryLabel`. */
   primaryId?: string | null;
   primaryLabel?: string;
-  /** Locale of the time axis labels (default: the browser's). */
+  /** Locale of the time axis labels and the ratios - "1,00x" in German (default: the browser's). */
   locale?: string;
   /** data-testid of the chart; its parts are "<testId>-plot", "-series" / "-legend-entry" (key: the series id), ... */
   testId?: string;
@@ -75,14 +76,19 @@ export const TREND_COLORS = [
 const FADED_OPACITY = 0.18;
 
 const THRESHOLD_COLOR = 'var(--progeo-orange)';
+/** The threshold line is dotted - set apart from the solid series lines. */
+const THRESHOLD_DASH = '2 3';
 
 // Compact plot area - a short, wide strip instead of a mostly-empty square.
+// Below it two rows of time labels: times of day, then the days.
 const VB_W = 1000;
-const VB_H = 180;
+const VB_H = 186;
 const X0 = 40;
 const X1 = 990;
 const Y0 = 10;
 const Y1 = 148;
+const MINOR_LABEL_Y = Y1 + 13;
+const SPAN_LABEL_Y = Y1 + 31;
 
 // How many resolvable x-axis slots the plot area is treated as having -
 // points falling into the same slot are merged (mean time + mean ratio)
@@ -106,9 +112,18 @@ type HoverInfo = {
 };
 
 /** Legend sample of a series/threshold line. */
-const LegendSwatch = ({ color, width = 2.5 }: { color: string; width?: number }) => (
-  <svg width={18} height={6} className="threshold-trend-swatch" aria-hidden="true">
-    <line x1={0} x2={18} y1={3} y2={3} stroke={color} strokeWidth={width} strokeLinecap="round" />
+const LegendSwatch = ({ color, width = 2.5, dash }: { color: string; width?: number; dash?: string }) => (
+  <svg width={22} height={6} className="threshold-trend-swatch" aria-hidden="true">
+    <line
+      x1={1}
+      x2={21}
+      y1={3}
+      y2={3}
+      stroke={color}
+      strokeWidth={width}
+      strokeLinecap="round"
+      strokeDasharray={dash}
+    />
   </svg>
 );
 
@@ -116,7 +131,15 @@ const LegendSwatch = ({ color, width = 2.5 }: { color: string; width?: number })
 const formatTime = (time: number, withYear = false) =>
   formatDate(time, withYear ? 'dateTime' : 'dayMonthTime');
 
-const formatRatio = (ratio: number) => `${ratio.toFixed(ratio < 10 ? 2 : 0)}x`;
+/** "1.00x" - "1,00x" in German: the locale's decimal separator; >= 10 without decimals. */
+export const formatRatio = (ratio: number, locale?: string) => {
+  const digits = ratio < 10 ? 2 : 0;
+  try {
+    return `${ratio.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })}x`;
+  } catch {
+    return `${ratio.toFixed(digits)}x`;
+  }
+};
 
 /** Every reading its own point - the chart without smoothing. */
 const unmergedPoints = (points: RawPoint[]): DisplayPoint[] =>
@@ -127,25 +150,6 @@ const unmergedPoints = (points: RawPoint[]): DisplayPoint[] =>
 // The axis labels are 9 viewBox units high; timeTicks measures 11 px ones.
 const AXIS_FONT = 9;
 const AXIS_CHAR_WIDTH = (LABEL_CHAR_WIDTH * AXIS_FONT) / 11;
-
-/**
- * The time axis from `from` to `to` (ms): labels evenly spread over the plot
- * as far as they fit (frameAxisLabels, the frame slider's), each at its `x`
- * in viewBox units - anchored at its fraction of its own width like there
- * (the first starts at the plot's start, the last ends at its end).
- */
-const trendAxisLabels = (from: number, to: number, locale?: string) => {
-  const width = X1 - X0;
-  if (!(to > from)) {
-    return [{ x: X0, at: X0, label: formatTime(from), ms: from }];
-  }
-  return frameAxisLabels({ from, to, width: (width * 11) / AXIS_FONT, locale }).map(({ fraction, ms, label }) => ({
-    x: X0 + fraction * width - fraction * label.length * AXIS_CHAR_WIDTH,
-    at: X0 + fraction * width,
-    label,
-    ms,
-  }));
-};
 
 /** Sorted points closer together than `minGapTime` get merged into one mean
  * point, so a burst of near-simultaneous readings shows as a single dot
@@ -258,7 +262,7 @@ const ThresholdTrendChart = ({
     ...entry,
     display: smooth ? clusterPoints(entry.points, minGapTime) : unmergedPoints(entry.points),
   }));
-  const axisLabels = trendAxisLabels(minTime, maxTime, locale);
+  const axis = trendTimeAxis(minTime, maxTime, { x0: X0, x1: X1, locale, charWidth: AXIS_CHAR_WIDTH });
 
   const thresholdY = toY(1);
   const yTicks = Array.from(new Set([0, 1, maxRatio])).map((ratio) => ({ ratio, y: toY(ratio) }));
@@ -325,31 +329,78 @@ const ThresholdTrendChart = ({
             <g key={tick.ratio}>
               <line x1={X0} x2={X1} y1={tick.y} y2={tick.y} stroke="var(--progeo-track-soft)" strokeWidth={1} />
               <text x={X0 - 6} y={tick.y + 3} textAnchor="end" fontSize={9} fill="#8B8383">
-                {formatRatio(tick.ratio)}
+                {formatRatio(tick.ratio, locale)}
               </text>
             </g>
           ))}
-          <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} opacity={0.75} />
-
-          {/* The time axis: labels from start to end, as many as fit, each
-              with a faint grid line. */}
+          {/* The time axis: a faint line at every tick of the fine row
+              (times of day), a stronger one at each boundary of the coarse
+              row (midnight), whose labels (the days) sit below. */}
           <g data-testid={childTestId(testId, 'axis')}>
-            {axisLabels.map((tick) => (
-              <g key={`${tick.at}:${tick.ms}`}>
-                <line x1={tick.at} x2={tick.at} y1={Y0} y2={Y1 + 4} stroke="var(--progeo-track-soft)" strokeWidth={1} />
-                <text
-                  x={tick.x}
-                  y={VB_H - 2}
-                  textAnchor="start"
-                  fontSize={AXIS_FONT}
-                  fill="#8B8383"
-                  data-testid={childTestId(testId, 'axis-label')}
-                >
-                  {tick.label}
-                </text>
+            {axis.minor.map((tick) => (
+              <g key={`m${tick.ms}`}>
+                <line
+                  x1={tick.x}
+                  x2={tick.x}
+                  y1={Y0}
+                  y2={Y1 + 3}
+                  stroke="var(--progeo-track-soft)"
+                  strokeWidth={0.8}
+                  data-testid={childTestId(testId, 'axis-grid')}
+                />
+                {tick.label && (
+                  <text
+                    x={tick.x}
+                    y={MINOR_LABEL_Y}
+                    textAnchor="middle"
+                    fontSize={AXIS_FONT}
+                    fill="#8B8383"
+                    data-testid={childTestId(testId, 'axis-label')}
+                  >
+                    {tick.label}
+                  </text>
+                )}
               </g>
             ))}
+            {axis.boundaries.map((tick) => (
+              <line
+                key={`b${tick.ms}`}
+                x1={tick.x}
+                x2={tick.x}
+                y1={Y0}
+                y2={VB_H - 2}
+                stroke="#B8B0B0"
+                strokeWidth={1}
+                opacity={0.7}
+                data-testid={childTestId(testId, 'axis-boundary')}
+              />
+            ))}
+            {axis.spans.map((span) => (
+              <text
+                key={`s${span.x}`}
+                x={span.x}
+                y={SPAN_LABEL_Y}
+                textAnchor="middle"
+                fontSize={AXIS_FONT}
+                fontWeight={600}
+                fill="#6E6868"
+                data-testid={childTestId(testId, 'axis-day-label')}
+              >
+                {span.label}
+              </text>
+            ))}
           </g>
+
+          <line
+            x1={X0}
+            x2={X1}
+            y1={thresholdY}
+            y2={thresholdY}
+            stroke={THRESHOLD_COLOR}
+            strokeWidth={1.5}
+            strokeDasharray={THRESHOLD_DASH}
+            data-testid={childTestId(testId, 'threshold')}
+          />
 
           {displaySeries.map((entry) => {
             const emphasized = entry.id === highlight;
@@ -404,7 +455,7 @@ const ThresholdTrendChart = ({
               {formatTime(hover.time, withYear)}
               {hover.count > 1 && <span className="threshold-trend-tooltip-muted"> ({meanOfLabel(hover.count)})</span>}
             </div>
-            <div>{formatRatio(hover.ratio)}</div>
+            <div>{formatRatio(hover.ratio, locale)}</div>
           </div>
         )}
       </div>
@@ -438,7 +489,7 @@ const ThresholdTrendChart = ({
           </button>
         ))}
         <span className="threshold-trend-legend-threshold">
-          <LegendSwatch color={THRESHOLD_COLOR} width={1.3} />
+          <LegendSwatch color={THRESHOLD_COLOR} width={1.6} dash={THRESHOLD_DASH} />
           {thresholdLabel}
         </span>
       </div>
