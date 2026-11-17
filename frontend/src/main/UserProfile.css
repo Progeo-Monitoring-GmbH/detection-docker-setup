@@ -65,7 +65,13 @@
   gap: 22px;
 }
 
-/* Keep in sync with sectionLabelStyle (MatrixChatSection's labelStyle). */
+/* The user's name under the title. */
+.profile-subtitle {
+  font-size: 13px;
+  color: #6e6868;
+  margin-top: 2px;
+}
+
 .profile-section-label {
   font-size: 11px;
   letter-spacing: 0.11em;
@@ -112,22 +118,71 @@
   color: var(--progeo-blue);
 }
 
-.profile-messenger-hint {
-  grid-column: span 2;
-  font-size: 12px;
-  color: #8b8383;
-}
-
-.profile-warning {
-  color: #c44d26;
-  margin-top: 4px;
-}
-
 .profile-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   align-items: flex-start;
+}
+
+/* The access / 2FA actions: real buttons with an icon, not text links. */
+.profile-button.profile-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-button.profile-action--open {
+  box-shadow: inset 0 0 0 1px var(--progeo-orange);
+}
+
+.profile-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.profile-status-row {
+  margin-bottom: 10px;
+}
+
+.profile-status {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--progeo-track);
+  color: #6e6868;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.profile-status--on {
+  background: #e6f0df;
+  color: #3f7a1c;
+}
+
+/* Form inside a ConfirmDialog (request access, delete account). */
+.profile-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.profile-dialog-text {
+  margin: 0;
+}
+
+.profile-textarea {
+  width: 100%;
+  padding: 10px 13px;
+  border: none;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
 }
 
 .profile-hint {

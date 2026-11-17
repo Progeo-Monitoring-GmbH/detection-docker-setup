@@ -34,7 +34,6 @@ const BROWSER_STORAGE = [
   { name: 'i18nextLng', code: true, kind: 'Local Storage', purpose: 'Selected language', duration: 'until deleted in the browser' },
   { name: 'progeo.languageChosen', code: true, kind: 'Session Storage', purpose: 'Language selected on the sign-in page - stored in your profile after signing in', duration: 'until signing in or closing the tab' },
   { name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed', code: true, kind: 'Local Storage', purpose: 'Display: collapsed sidebar or legend', duration: 'until deleted in the browser' },
-  { name: 'progeo:matrix-promo-dismissed', code: true, kind: 'Local Storage', purpose: 'Remembers that you hid the ProGeo chat recommendation', duration: 'until deleted in the browser' },
   { name: 'demoToken', code: true, kind: 'Local Storage', purpose: 'Public demo only: signing in again with the same demo link', duration: 'until the demo link expires' },
   { name: 'impersonatorTokens, viewAsUser', code: true, kind: 'Local Storage', purpose: 'ProGeo staff only: support view ("log in as", "show as user")', duration: 'until sign-out' },
   { name: 'Cache', code: false, kind: 'Session Storage', purpose: 'Speeds up loading data that was already retrieved', duration: 'until the tab is closed' },

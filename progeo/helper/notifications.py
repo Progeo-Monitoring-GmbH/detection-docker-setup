@@ -79,6 +79,32 @@ def notification_recipients(location, db_name, notify_type=None):
     return recipients
 
 
+def switch_on_transport(user, bit) -> int:
+    """Switch the channel `bit` (ProgeoAccess.NotifiTrans) on for every
+    location `user` gets notifications of (alarm / offline / news) - in
+    addition to the channels chosen there. Returns the number of
+    subscriptions that got the channel. Used by the channel choice of the
+    notifications tab (SMS) and by Matrix as the primary messenger."""
+    from progeo.helper.location_access import access_databases
+    from progeo.v1.models import ProgeoAccess, ProgeoAccessIndex, ProgeoLocation
+
+    bit = int(bit)
+    location_ids = ProgeoAccessIndex.objects.using("default").filter(user_id=user.pk).values("location_id")
+    databases = {"default"}
+    for location in ProgeoLocation.objects.using("default").filter(pk__in=location_ids).only("id", "project_id"):
+        databases.update(access_databases(location))
+    changed = 0
+    for database in sorted(databases):
+        for rule in ProgeoAccess.objects.using(database).filter(user_id=user.pk).exclude(type__isnull=True) \
+                .exclude(type=0):
+            transport = ProgeoAccess._as_int(rule.transport)
+            if not transport & bit:
+                rule.transport = transport | bit
+                rule.save(using=database, update_fields=["transport"])
+                changed += 1
+    return changed
+
+
 def format_number(value):
     if value is None:
         return "-"

@@ -119,18 +119,25 @@ Unreachable cases show in the monitoring, the staff digest and the Prometheus al
 
 Every mail goes out in its recipient's language:
 
-- **Storage:** the language is `UserProfile.language`. It is stored when the user changes the language in Mein Konto or with the top bar's switch (`POST /v1/user/language/`).
+- **Storage:** the language is `UserProfile.language`. It is stored when the user changes the language in Mein Konto or with the top bar's switch (`POST /v1/user/language/`). A saved language is also the portal language on other devices: after the sign-in the top bar switches to it (`language_saved` of `/v1/user/profile/`), unless a language was just chosen on the login page.
 - **Lookup:** `send_template_mail` resolves it from the recipient address (`emailhelper.recipient_language`) and renders `progeo/templates/emails/<language>/<name>.html`.
 - **Fallback:** the German template in `emails/` is used for unknown addresses (such as the location's contact mail), users without a stored language, and templates without a translation (the staff mails).
 - **SMS and messenger:** the alarm texts are chosen per recipient the same way (`notification_cases.ALARM_WORDS`).
-- **Public pages:** the login page and every other public page (sign-in link, password reset, access request, privacy policy) have a DE/EN switch. The mails these pages trigger go out in the language chosen there: the sign-in link and password reset mails (the page sends `language`; without one, the user's profile language), and the access request confirmation (`AccessRequest.language`). A language chosen explicitly on the login page is saved to the profile after the sign-in (the top bar sends it once).
+- **Public pages:** the login page and every other public page (sign-in link, password reset, access request, privacy policy) have a DE/EN switch. The mails these pages trigger go out in the language chosen there: the sign-in link and password reset mails (the page sends `language`; without one, the user's profile language), and the access request confirmation (`AccessRequest.language`). The form errors of the access request and the password rules of the public pages come in the page's language, too. A language chosen explicitly on the login page is saved to the profile after the sign-in (the top bar sends it once).
 - **Access request decisions:** when staff approve or reject a request, they choose the language in the dialog, preselected with the language of the request form. The approval or rejection mail uses it, and on approval it becomes the user's `UserProfile.language`.
 
 Preview the English mails with `python manage.py test_mail --templates --language en`. A new template needs both files; `test_english_templates_render_and_fall_back_to_german` renders every template in English.
 
-## Messenger (ProGeo chat) as the primary channel
+## Mobile channel: SMS or ProGeo chat
 
-Mein Konto and the notification tab recommend our own Matrix chat. The setup dialog signs the phone in by QR code, without a password, and switches the messenger channel on for all of the user's subscriptions. Details: [docker/matrix/README.md](../docker/matrix/README.md).
+The notifications tab of an object has a card "Notifications on your phone" (`NotificationChannelCard`):
+
+1. The user enters the mobile number: a country code dropdown plus the number (`PhoneInput`).
+2. The user picks the channel: **SMS** (default) or **ProGeo Chat** (our Matrix chat, only where the server has it). WhatsApp is not offered (cost).
+
+`POST /v1/user/notification-channel/ {mobile, channel}` stores the number. With SMS it switches the SMS channel on for every location the user gets notifications of (`notifications.switch_on_transport`), in addition to the channels chosen there. With the chat it opens the setup dialog; it signs the phone in by QR code, without a password, and at its end switches the messenger channel on for all of the user's subscriptions. Details: [docker/matrix/README.md](../docker/matrix/README.md).
+
+**Phone numbers** are stored in E.164 (`+4917112345678`, `helper/phone_numbers.py`): the user's mobile number, the object contact's phone and the access request's phone. A national number (`0171 …`) gets the German calling code. Values stored before stay as they are until they are changed; a new implausible number is refused (`phone_invalid`).
 
 ## Monitoring
 

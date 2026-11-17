@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Spinner } from 'react-bootstrap';
-import FrameSlider, { type AlarmSpan, frameAt } from './FrameSlider';
+import FrameSlider, { type AlarmSpan, frameAt, focusFrameIndex } from './FrameSlider';
 import { seriesRange } from './heatmapGrid';
 import { heatColorAt, heatColorTable } from './heatmapCanvas';
 import {
@@ -9,8 +9,10 @@ import {
   chartLayout,
   cursorTarget,
   frameWeights,
+  absoluteTick,
   heatReference,
   hoverTarget,
+  locationThreshold,
   isOverDrawn,
   planLocation,
   plotSensors,
@@ -37,6 +39,7 @@ import { useHeatSigma } from './useHeatSigma';
 import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImageState } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
+import SuspicionMarkersOverlay, { placeSuspicionMarkers, type SuspicionPlanMarker } from './SuspicionMarkers';
 import { childTestId } from '../../testIds';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { getBackendUrl } from '../../backendUrl';
@@ -64,6 +67,15 @@ type SensorHeatmap2DProps = {
   onTimeChange?: (ms: number) => void;
   /** Leaves out the own slider - the page shows one for everything (with `time`). */
   hideFrameSlider?: boolean;
+  /**
+   * Not coupled (no `onTimeChange`): the frame shown until one is picked on
+   * the slider - the one holding this time (epoch ms) while the frames reach
+   * back to it, else the newest. E.g. the time of a notification's event.
+   */
+  focusTime?: number | null;
+  /** Controls beside the slider's play button - e.g. the page's step width,
+   * which only matters for the animation. */
+  frameToolbar?: ReactNode;
   /** Controls of the page at the start of the toolbar row (e.g. its plan switcher). */
   toolbarStart?: ReactNode;
   /** Alarm periods, marked on the timestamp slider. */
@@ -128,6 +140,9 @@ type SensorHeatmap2DProps = {
    * dimmed under a spinner, and takes no input - instead of collapsing.
    */
   busy?: boolean;
+  /** smartex® mx-PEEL: computed suspicion points, drawn as lettered rings
+   * over the heat (SuspicionMarkers.tsx). */
+  suspicions?: SuspicionPlanMarker[];
   /**
    * data-testid of the heatmap (its card); its parts are "<testId>-plot",
    * "-canvas", "-toolbar", "-frame-slider", "-zoom", ... With the default,
@@ -207,6 +222,8 @@ const SensorHeatmap2D = ({
   time = null,
   onTimeChange,
   hideFrameSlider = false,
+  focusTime = null,
+  frameToolbar,
   toolbarStart,
   alarms,
   field,
@@ -225,6 +242,7 @@ const SensorHeatmap2D = ({
   planId = null,
   onPlanChange,
   busy = false,
+  suspicions,
   testId = DEFAULT_TEST_ID,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
@@ -235,9 +253,11 @@ const SensorHeatmap2D = ({
   const fieldDecimals = field?.decimals ?? 1;
   const fieldMode = fieldUnit != null;
   const [hover, setHover] = useState<Hover | null>(null);
-  // What is drawn (the floating controls): the dots, the dm band lines and -
-  // staff - the heat normalized to the period's highest value.
+  // What is drawn (the floating controls): the dots, their labels (off by
+  // default - field mode names devices, so there they start on), the dm band
+  // lines and - staff - the absolute scale (to the period's highest value).
   const [showDots, setShowDots] = useState(true);
+  const [showLabels, setShowLabels] = useState(fieldMode);
   const [showLines, setShowLines] = useState(true);
   const [normalize, setNormalize] = useState(false);
   // Area selection: the mode (drag selects instead of moving the plan) and
@@ -252,9 +272,13 @@ const SensorHeatmap2D = ({
     [response],
   );
   // The frame picked on the own slider - for these timestamps only: new
-  // data (another period or step) starts at the newest frame again.
+  // data (another period or step) starts at the newest frame again (or the
+  // one holding `focusTime`).
   const [ownPick, setOwnPick] = useState<{ timestamps: number[]; index: number } | null>(null);
-  const ownIndex = ownPick?.timestamps === timestamps ? ownPick.index : timestamps.length - 1;
+  const ownIndex =
+    ownPick?.timestamps === timestamps
+      ? ownPick.index
+      : (focusFrameIndex(timestamps, focusTime) ?? timestamps.length - 1);
   // Coupled (onTimeChange): the frame holding `time`.
   const timestampIndex = !onTimeChange
     ? ownIndex
@@ -354,6 +378,16 @@ const SensorHeatmap2D = ({
     () => (normalized ? seriesPeak(sensors) : heatReference(location)),
     [normalized, sensors, location],
   );
+  // Normalized is the absolute scale: its ticks are readings (mV), and the
+  // alarm threshold (|WP - EP| only) is marked on it - values above it stay
+  // apart instead of all being full red.
+  const absoluteScale = normalized && heatScale != null ? heatScale : null;
+  const thresholdMark = useMemo(() => {
+    const threshold = locationThreshold(location);
+    return absoluteScale != null && threshold != null && profile === 'diff' && !forceNormalize
+      ? [threshold / absoluteScale]
+      : [];
+  }, [absoluteScale, forceNormalize, location, profile]);
   const frame = useMemo(
     () =>
       layout && timestamps.length > 0
@@ -366,6 +400,11 @@ const SensorHeatmap2D = ({
     [layout, timestamps.length, sensors, frameIndex, fieldMode, sigma, heatScale, fieldScale],
   );
   const hasLines = Boolean(layout?.lines.some((line) => line != null));
+  // mx-PEEL: the computed suspicion points on the plan (same alignment as the sensors).
+  const placedSuspicions = useMemo(
+    () => (layout ? placeSuspicionMarkers(suspicions, location, imageSize, flipY, layout.world) : []),
+    [suspicions, layout, location, imageSize, flipY],
+  );
 
   const colorTable = useMemo(() => heatColorTable(), []);
   const heatCanvas = useMemo(
@@ -397,15 +436,25 @@ const SensorHeatmap2D = ({
             scaleTitle:
               fieldScale?.unit ??
               heatTitle ??
-              (profile === 'diff' ? t('heatmap_heat') : t(`heatmap_profile_${profile}`)),
+              (profile !== 'diff'
+                ? t(`heatmap_profile_${profile}`)
+                : absoluteScale != null
+                  ? t('heatmap_scale_unit')
+                  : t('heatmap_heat')),
             tickLabel: (value) =>
-              fieldScale ? fieldReading(fieldScale, value).toFixed(fieldScale.decimals) : value.toFixed(1),
+              fieldScale
+                ? fieldReading(fieldScale, value).toFixed(fieldScale.decimals)
+                : absoluteScale != null
+                  ? absoluteTick(value * absoluteScale)
+                  : value.toFixed(1),
+            scaleMarks: thresholdMark,
             limits,
             showSensors: showDots,
+            showLabels,
             showLines: hasLines && showLines,
           }
         : null,
-    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits, profile, heatTitle, showDots, hasLines, showLines],
+    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits, profile, heatTitle, absoluteScale, thresholdMark, showDots, showLabels, hasLines, showLines],
   );
 
   // ---------------------------------------------------------------- viewport
@@ -612,6 +661,7 @@ const SensorHeatmap2D = ({
               onChange={setTimestampIndex}
               disabled={videoExport.videoExporting}
               alarms={alarms}
+              toolbar={frameToolbar}
               testId={childTestId(testId, 'frame-slider')}
             />
           </div>
@@ -673,8 +723,12 @@ const SensorHeatmap2D = ({
             }}
           />
         )}
+        {view && placedSuspicions.length > 0 && (
+          <SuspicionMarkersOverlay markers={placedSuspicions} view={view} width={width} height={canvasHeight} />
+        )}
         <HeatmapDisplayControls
           dots={{ value: showDots, onChange: setShowDots }}
+          labels={{ value: showLabels, onChange: setShowLabels }}
           area={onAreaSelect ? { value: areaMode, onChange: setAreaMode } : null}
           lines={hasLines ? { value: showLines, onChange: setShowLines } : null}
           normalize={
@@ -716,6 +770,7 @@ const SensorHeatmap2D = ({
             meters={underCursor.meters}
             heat={underCursor.heat}
             fieldScale={fieldScale}
+            absoluteScale={absoluteScale}
             testId={childTestId(testId, 'readout')}
           />
         )}
@@ -802,18 +857,26 @@ const CursorReadout = ({
   meters,
   heat,
   fieldScale,
+  absoluteScale = null,
   testId,
 }: {
   meters: [number, number] | null;
   heat: number | null;
   fieldScale: FieldScale | null;
+  /** Staff's absolute scale: the reading (mV) of a heat of 1. */
+  absoluteScale?: number | null;
   testId?: string;
 }) => {
   const { t } = useTranslation();
-  const heatText = (value: number) =>
-    fieldScale
-      ? formatReading(fieldScale, fieldReading(fieldScale, value))
-      : `${t('heatmap_heat')} ${value.toFixed(2)}`;
+  const heatText = (value: number) => {
+    if (fieldScale) {
+      return formatReading(fieldScale, fieldReading(fieldScale, value));
+    }
+    if (absoluteScale != null) {
+      return `${t('heatmap_heat')} ${absoluteTick(value * absoluteScale)} ${t('heatmap_scale_unit')}`;
+    }
+    return `${t('heatmap_heat')} ${value.toFixed(2)}`;
+  };
   return (
     <div className="heatmap2d-readout small" data-testid={testId}>
       {[meters ? formatMeters(meters) : null, heat == null ? null : heatText(heat)]

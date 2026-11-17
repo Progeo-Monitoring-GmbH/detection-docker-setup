@@ -23,6 +23,7 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
+from progeo.helper.suspicion_clusters import computed_suspicion_points
 from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoRainEvent
 from progeo.v1.serializers import ProgeoAlarmSerializer, ProgeoRainEventSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -263,6 +264,25 @@ class AlarmViewSet(ProgeoModalViewSet):
         Returns {"clusters": [...], "top_sensors": [...]}, clusters sorted
         most urgent (neu) first, then highest reading first.
         """
+        loaded = self._location_alarms(request)
+        if not isinstance(loaded, tuple):
+            return loaded
+        _account, _db, _location_id, alarms = loaded
+        if alarms is None:
+            return RequestSuccess({"clusters": [], "top_sensors": []})
+
+        groups = self._group_alarms_by_sensor(alarms)
+        clusters = self._sorted_clusters(groups)
+
+        return RequestSuccess({
+            "clusters": clusters,
+            "top_sensors": self._top_sensors(groups),
+        })
+
+    def _location_alarms(self, request):
+        """The alarms of ?location= in the ?days= window, as clusters reads
+        them: (account, db, location_id, alarms) - alarms None without an
+        account - or the RequestFailed of an invalid request."""
         account = self._resolve_request_account(request)
         location_id = request.query_params.get("location")
         if not location_id:
@@ -281,7 +301,7 @@ class AlarmViewSet(ProgeoModalViewSet):
         cutoff = timezone.now() - timedelta(days=days)
 
         if not account:
-            return RequestSuccess({"clusters": [], "top_sensors": []})
+            return None, None, location_id, None
         db = self._db_for(account, location_id)
         alarms = list(
             ProgeoAlarm.objects.using(db)
@@ -295,13 +315,16 @@ class AlarmViewSet(ProgeoModalViewSet):
             .select_related("measurement__device", "evaluated_by")
             .order_by("triggered_at", "id")
         )
+        return account, db, location_id, alarms
 
-        groups = self._group_alarms_by_sensor(alarms)
+    @classmethod
+    def _sorted_clusters(cls, groups):
+        """The Verdachtsstellen (one per sensor) of `groups`, most urgent
+        (neu) first, then highest reading first."""
         clusters = [
-            self._build_cluster(sensor_id, group_alarms)
+            cls._build_cluster(sensor_id, group_alarms)
             for sensor_id, group_alarms in groups.items()
         ]
-
         state_order = {"neu": 2, "quittiert": 1, "geloest": 0}
         clusters.sort(
             key=lambda cluster: (
@@ -309,11 +332,42 @@ class AlarmViewSet(ProgeoModalViewSet):
                 -(cluster["max_value"] or 0),
             )
         )
+        return clusters
 
-        return RequestSuccess({
-            "clusters": clusters,
-            "top_sensors": self._top_sensors(groups),
-        })
+    @require_module_permissions("module_measurements_enabled")
+    @action(detail=False, url_path="computed-clusters", methods=["GET"])
+    def computed_clusters(self, request, *args, **kwargs):
+        """
+        smartex® mx-PEEL: the over-threshold sensors of the ?days= window
+        aggregated into computed suspicion points (helper/
+        suspicion_clusters.py, docs/mx_peel_suspicion_points.md) - a weighted
+        KDE over the sensors' positions on the Lageplan and its peaks. Same
+        parameters, scoping and window as clusters.
+
+        Returns {"points": [...], "sigma": {lageplan: sigma}, "sensors": n}:
+        each point with its position (x, y: the normalized coordinates of
+        the heatmap's sensor_points; x_m, y_m on a calibrated plan), the
+        Lageplan it lies on, strength (0..1 of the strongest), the member
+        sensor_ids, worst state/severity, peak reading, first/last seen
+        and pending_ack_alarm_ids (acknowledged via alarm/<id>/acknowledge).
+        """
+        loaded = self._location_alarms(request)
+        if not isinstance(loaded, tuple):
+            return loaded
+        account, db, location_id, alarms = loaded
+        if alarms is None:
+            return RequestSuccess({"points": [], "sigma": {}, "sensors": 0})
+        location = (
+            ProgeoLocation.objects.using(db)
+            .filter(location_q(request.user, account))
+            .filter(pk=location_id)
+            .first()
+        )
+        if location is None:
+            return RequestSuccess({"points": [], "sigma": {}, "sensors": 0})
+        clusters = self._sorted_clusters(self._group_alarms_by_sensor(alarms))
+        points, sigmas = computed_suspicion_points(location, db, clusters)
+        return RequestSuccess({"points": points, "sigma": sigmas, "sensors": len(clusters)})
 
     @classmethod
     def _sensor_max_value_pairs(cls, alarm):

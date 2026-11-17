@@ -7,6 +7,7 @@ import FrameSlider, {
   ANIMATION_FRAME_MS,
   type AlarmSpan,
   draggedSelection,
+  focusFrameIndex,
   frameAt,
 } from './FrameSlider';
 
@@ -285,5 +286,25 @@ describe('FrameSlider selection', () => {
   it('has no strip without onSelectionChange', () => {
     act(() => root.render(<FrameSlider id="frames" timestamps={TIMESTAMPS} index={0} onChange={() => {}} />));
     expect(container.querySelector('[data-testid="frame-slider-selection-strip"]')).toBeNull();
+  });
+});
+
+describe('focusFrameIndex', () => {
+  const timestamps = [1000, 2000, 3000, 4000];
+
+  it('gives the frame holding the time', () => {
+    expect(focusFrameIndex(timestamps, 2500 * 1000)).toBe(1);
+    expect(focusFrameIndex(timestamps, 1000 * 1000)).toBe(0);
+  });
+
+  it('gives the newest frame for a time after it', () => {
+    expect(focusFrameIndex(timestamps, 9000 * 1000)).toBe(3);
+  });
+
+  it('gives null without a time, without frames or before the first frame', () => {
+    expect(focusFrameIndex(timestamps, null)).toBeNull();
+    expect(focusFrameIndex(timestamps, Number.NaN)).toBeNull();
+    expect(focusFrameIndex([], 2000 * 1000)).toBeNull();
+    expect(focusFrameIndex(timestamps, 500 * 1000)).toBeNull();
   });
 });

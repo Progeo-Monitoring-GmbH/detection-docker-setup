@@ -669,7 +669,7 @@ def test_saving_the_own_settings_leaves_the_mirror_to_celery(api_client, monkeyp
     monkeypatch.setattr(_MirrorBatch, "flush", lambda self: pytest.fail("mirrored inside the request"))
 
     with django_capture_on_commit_callbacks(execute=True):
-        response = api_client.post("/v1/user/settings/", {"email": "nachher@progeo.com", "mobile": "+49 151 2"},
+        response = api_client.post("/v1/user/settings/", {"email": "nachher@progeo.com", "mobile": "+49 151 2345678"},
                                    format="json")
 
     assert response.status_code == 200, response.content

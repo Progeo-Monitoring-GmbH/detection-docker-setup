@@ -150,6 +150,12 @@ NOTIFY_STAFF_ADDRESS = (os.getenv("NOTIFY_STAFF_ADDRESS") or "kontakt@progeo.com
 # One-time links (helper/login_links.py).
 MAGIC_LINK_LOGIN_MINUTES = parse_int(os.getenv("MAGIC_LINK_LOGIN_MINUTES"), 15)
 MAGIC_LINK_INVITE_HOURS = parse_int(os.getenv("MAGIC_LINK_INVITE_HOURS"), 72)
+# Saving a location with a changed address looks its position up again
+# (Nominatim) - LocationViewSet.perform_update.
+GEOCODE_ON_SAVE = parse_boolean(os.getenv("GEOCODE_ON_SAVE", "true"))
+# Invitations by email from the Rechte tab (LocationViewSet.access_invite):
+# at most this many per inviting user and hour.
+ACCESS_INVITES_PER_HOUR = parse_int(os.getenv("ACCESS_INVITES_PER_HOUR"), 20)
 # One-time migration campaign (helper/migration_invites.py, manage.py
 # migration_invites): the info mail with a "set your password" link to the
 # users of the old platform. Sending only while ENABLED - switch it off once
@@ -202,6 +208,15 @@ AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
 AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
 AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
 AIRTABLE_DOCUMENTS_TABLE = (os.getenv("AIRTABLE_DOCUMENTS_TABLE") or "Dokumente").strip()
+# Field of the projects table that manage.py lageplan_resolution --airtable
+# writes the grade of a low-res Lageplan into (a text field, created by hand).
+AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = (
+    os.getenv("AIRTABLE_LAGEPLAN_RESOLUTION_FIELD") or "Lageplan Auflösung"
+).strip()
+# Detect the heat limitations (building outlines) of a Lageplan automatically
+# after an upload, a CAD import, a placement or an alignment
+# (helper/auto_heat_limits.py) - celery task, hand-made areas are kept.
+AUTO_HEAT_LIMITATIONS = parse_boolean(os.getenv("AUTO_HEAT_LIMITATIONS", "1"))
 
 # Origin the provisioned controllers send their samples to (control.url of the
 # config, helper/device_provisioning.py) - on a local dev system e.g. the LAN

@@ -231,6 +231,11 @@ export const heatReference = (location: SensorHeatmapLocation | null) => {
   return threshold != null ? threshold * HEAT_FULL_MULTIPLIER : null;
 };
 
+/** A tick of the absolute heat scale (staff): a reading in mV, rounded to
+ * what the colour bar has room for. */
+export const absoluteTick = (value: number) =>
+  Math.abs(value) >= 10 ? String(Math.round(value)) : value.toFixed(1);
+
 /**
  * Effective location: the selected Lageplan's url and alignment merged into
  * the location payload (without plans: the location as it is).
@@ -350,7 +355,7 @@ export const computeAutoSigma = (points: Array<{ x: number; y: number }>) => {
  * Sensor y follows the mirrored convention (see plotSensors), so the plot y
  * transform collapses to  plotY = y * scaleY + (1 - scaleY) - offsetNormY.
  */
-const plotTransform = (location: SensorHeatmapLocation | null, imageSize: ImageSize | null) => {
+export const plotTransform = (location: SensorHeatmapLocation | null, imageSize: ImageSize | null) => {
   const scaleX = positiveOr(location?.scale_x ?? 1, 1);
   const scaleY = positiveOr(location?.scale_y ?? 1, 1);
   const wizardScale = imageSize ? alignmentBaseScale(imageSize.width, imageSize.height) : 1;

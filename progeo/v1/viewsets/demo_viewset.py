@@ -188,3 +188,10 @@ class DemoViewSet(viewsets.ViewSet):
         if not self._allowed(request):
             return _forbidden()
         return self._delegate(AlarmViewSet, "clusters", request)
+
+    @action(detail=False, methods=["GET"], url_path="alarm-computed-clusters")
+    def alarm_computed_clusters(self, request, *args, **kwargs):
+        # smartex® mx-PEEL: the computed suspicion points (helper/suspicion_clusters.py).
+        if not self._allowed(request):
+            return _forbidden()
+        return self._delegate(AlarmViewSet, "computed_clusters", request)

@@ -40,7 +40,6 @@ describe('APP_ROUTE_ACCESS', () => {
     expect(allowed(PLAIN_WITH_ALL_PERMISSIONS)).toEqual(
       [
         '*',
-        '/backup/:account/overview/',
         '/device/:id/update/',
         '/device/overview',
         '/location/:id/alarms',
@@ -88,8 +87,18 @@ describe('portalItemRule', () => {
     expect(portalItemRule(einstell)(SUPERUSER)).toBe(true);
   });
 
+  it('keeps the "Analyse" staff-only, also for customers holding its permission', () => {
+    const analyse = PORTAL_NAV_ITEMS.find((item) => item.key === 'analyse')!;
+    expect(portalItemRule(analyse)(PLAIN_WITH_ALL_PERMISSIONS)).toBe(false);
+    expect(portalItemRule(analyse)(STAFF_WITHOUT_PERMISSIONS)).toBe(false);
+    expect(
+      portalItemRule(analyse)({ isStaff: true, isSuperuser: false, hasPermission: ALL }),
+    ).toBe(true);
+    expect(portalItemRule(analyse)(SUPERUSER)).toBe(true);
+  });
+
   it('gates the other items by their module permission', () => {
-    PORTAL_NAV_ITEMS.filter((item) => item.key !== 'einstell').forEach(
+    PORTAL_NAV_ITEMS.filter((item) => !['einstell', 'analyse'].includes(item.key)).forEach(
       (item) => {
         const only = (code: string) => code === item.permission;
         expect(

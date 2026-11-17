@@ -615,10 +615,10 @@ def test_demo_people_give_the_rechte_tab_something_to_show(api_client, demo):
     assert {"demo.erika.mustermann", "demo.max.mustermann"} <= by_access["account"]
     assert by_access["single"] == {"demo.jonas.weber"}  # only smartex
     assert "staff" not in by_access
-    # Users of the partner account can be granted access.
-    assert {candidate["username"] for candidate in access["candidates"]} == {
-        "demo.laura.fischer", "demo.paul.wagner", "demo.mia.becker", "demo.felix.schulz"
-    }
+    # No user picker any more (people are invited by email) - the partner
+    # account's users are not listed.
+    assert "candidates" not in access
+    assert access["users"] == []
 
     # Nobody can log in as them.
     people = User.objects.using("default").filter(username__startswith="demo.")

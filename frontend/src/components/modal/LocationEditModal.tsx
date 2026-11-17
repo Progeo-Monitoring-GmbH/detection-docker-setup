@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import PhoneInput from '../ui/PhoneInput';
 
 export type LocationEditRow = {
   id: number;
@@ -235,13 +236,12 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>{t('objekt_field_phone')}</Form.Label>
-            <Form.Control
-              value={form.telefon}
-              data-testid="location-edit-phone"
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, telefon: event.target.value }))
-              }
+            <PhoneInput
+              variant="bootstrap"
+              label={t('objekt_field_phone')}
+              value={form.telefon || ''}
+              onChange={(value) => setForm((prev) => ({ ...prev, telefon: value }))}
+              testId="location-edit-phone"
             />
           </div>
           <div className="col-md-4">

@@ -14,6 +14,7 @@ import {
   sensorRowsOf,
   sensorStatsOf,
   severityColor,
+  splitResolved,
   toggledSet,
   viewHeatmapOf,
   viewPointsOf,
@@ -393,5 +394,23 @@ describe('next measurement', () => {
     expect(formatMinutes(2)).toBe('2 min');
     expect(formatMinutes(80)).toBe('1 h 20 min');
     expect(formatMinutes(120)).toBe('2 h');
+  });
+});
+
+describe('splitResolved', () => {
+  it('keeps resolved clusters out of the default view, both lists in their order', () => {
+    const clusters = [
+      { id: 'a', state: 'neu' },
+      { id: 'b', state: 'geloest' },
+      { id: 'c', state: 'quittiert' },
+      { id: 'd', state: 'geloest' },
+    ] as Pick<VerdachtsstelleCluster, 'id' | 'state'>[];
+    const { open, resolved } = splitResolved(clusters);
+    expect(open.map((cluster) => cluster.id)).toEqual(['a', 'c']);
+    expect(resolved.map((cluster) => cluster.id)).toEqual(['b', 'd']);
+  });
+
+  it('gives two empty lists without clusters', () => {
+    expect(splitResolved([])).toEqual({ open: [], resolved: [] });
   });
 });

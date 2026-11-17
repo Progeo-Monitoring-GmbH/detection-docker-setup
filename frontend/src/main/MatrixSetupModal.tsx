@@ -9,10 +9,25 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import { repeatedTestId } from '../testIds';
-import type { MatrixAccount } from './MatrixChatSection';
 import './MatrixSetupModal.css';
 
 export type SetupStep = 1 | 2 | 3;
+
+type ChatApp = 'element_x' | 'fluffychat';
+
+/** The user's account on our Matrix server (/v1/user/profile/ `matrix`, helper/matrix_accounts.account_info). */
+export type MatrixAccount = {
+  user_id: string;
+  homeserver: string;
+  /** Last login in a chat app (the portal handed MAS a token), ISO time. */
+  connected_at?: string | null;
+  /** Per app: the link behind its QR code and the code (PNG data URI). */
+  apps: Record<ChatApp, { link: string; qr: string }>;
+  /** Setup step 1: Element X (store, or the app with our server preset). */
+  download?: { link: string; qr: string; stores: { ios?: string; android?: string } };
+  /** Matrix is the user's messenger already. */
+  primary?: boolean;
+};
 
 type QrLogin = { link: string; qr: string; expires_at: string; valid_seconds: number };
 

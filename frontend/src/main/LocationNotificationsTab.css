@@ -37,11 +37,34 @@
   flex-direction: column;
 }
 
+.benach-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* A button: a click opens Status -> Heatmap at the event's time. */
 .benach-event {
   display: flex;
   gap: 14px;
+  width: 100%;
   padding: 15px 4px;
-  border-top: none;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.benach-event:hover:not(:disabled),
+.benach-event:focus-visible {
+  background: var(--progeo-surface);
+}
+
+.benach-event:disabled {
+  cursor: default;
 }
 
 /* A divider between events, not above the first. */

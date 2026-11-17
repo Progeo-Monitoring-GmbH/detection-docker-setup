@@ -106,6 +106,7 @@ const fixPath = (key: string, id: number): string | null => {
     case 'lageplan_aligned':
     case 'lageplan_calibrated':
     case 'lageplan_cropped':
+    case 'lageplan_resolution':
     case 'measure_points':
     case 'sensor_devices':
     case 'points_named':
@@ -130,6 +131,16 @@ export const checkDetail = (t: TFunction, check: ReadinessCheck): string => {
   }
   if (check.key === 'devices_online' && !values.total) {
     return t('readiness_detail_needs_devices');
+  }
+  if (check.key === 'lageplan_resolution') {
+    // Low-res legacy plan (helper/plan_resolution.py): upload it again.
+    return values.score == null
+      ? t('readiness_detail_lageplan')
+      : t('readiness_detail_lageplan_resolution', {
+          score: values.score,
+          grade: t(`readiness_resolution_${values.grade}`),
+          long_side: values.long_side,
+        });
   }
   if (check.key === 'sensor_devices') {
     const parts: string[] = [];

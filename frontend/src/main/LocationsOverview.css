@@ -1,21 +1,98 @@
-/* The locations overview table (LocationsOverview.tsx): state dots, the name
-   cell with its favorite star and the search field. */
+/* The locations overview (LocationsOverview.tsx): the object list in a
+   panel with its search and filters in the panel header, state dots and
+   row colours, the name cell with its favorite star. Panels, pills and the
+   search field: components/ui/kit/kit.css; theme variables: scss/main.css. */
 
-/* The colour comes from the state (inline). */
+.locations-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.locations-overview-heading {
+  margin-bottom: 0;
+}
+
+.locations-list-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.locations-list-count {
+  font-size: 12.5px;
+  color: #8b8383;
+  font-weight: 400;
+}
+
+/* Search, "only connected" switch and "active alarms" in the panel head. */
+.locations-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.progeo-table-search.locations-search {
+  flex: 1 1 280px;
+  min-width: 240px;
+  max-width: 380px;
+}
+
+.form-check.locations-only-connected {
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
+.locations-empty {
+  padding: 14px 2px;
+  color: #8b8383;
+  font-size: 13px;
+}
+
+/* -- state dot (State column) ---------------------------------------------- */
+
 .locations-state-dot {
   width: 10px;
   height: 10px;
 }
 
+.locations-state-dot--alarm {
+  background-color: var(--progeo-orange);
+}
+
+.locations-state-dot--measurement {
+  background-color: var(--progeo-contrast-green);
+}
+
+.locations-state-dot--none {
+  background-color: var(--progeo-warm-gray-4);
+}
+
+/* -- row colours by state (more specific than the data table's row class) - */
+
+.rdt_TableRow.locations-row--alarm {
+  background-color: rgba(235, 99, 59, 0.1);
+  box-shadow: inset 3px 0 0 var(--progeo-orange);
+}
+
+.rdt_TableRow.locations-row--measurement {
+  background-color: rgba(141, 193, 96, 0.12);
+  box-shadow: inset 3px 0 0 var(--progeo-contrast-green);
+}
+
+.rdt_TableRow.locations-row--none {
+  box-shadow: inset 3px 0 0 var(--progeo-warm-gray-3);
+}
+
+/* -- name cell ------------------------------------------------------------- */
+
 .locations-name-cell {
   min-width: 0;
+  font-weight: 500;
 }
 
 .locations-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.form-control.locations-search {
-  min-width: 260px;
 }

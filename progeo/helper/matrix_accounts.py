@@ -193,36 +193,14 @@ def make_primary(user) -> int:
     for every location the user gets notifications of (alarm / offline) -
     in addition to the channels chosen there. Returns the number of
     subscriptions that got the channel."""
-    from progeo.helper.location_access import access_databases
-    from progeo.v1.models import (
-        Messenger,
-        ProgeoAccess,
-        ProgeoAccessIndex,
-        ProgeoLocation,
-        UserProfile,
-    )
+    from progeo.helper.notifications import switch_on_transport
+    from progeo.v1.models import Messenger, ProgeoAccess, UserProfile
 
     profile, _ = UserProfile.objects.using("default").get_or_create(user_id=user.pk)
     profile.messenger = Messenger.MATRIX
     profile.messenger_id = matrix_user_id(user)
     profile.save(using="default", update_fields=["messenger", "messenger_id"])
-
-    messenger_bit = int(ProgeoAccess.NotifiTrans.MESSENGER)
-    location_ids = ProgeoAccessIndex.objects.using("default").filter(user_id=user.pk).values("location_id")
-    databases = set()
-    for location in ProgeoLocation.objects.using("default").filter(pk__in=location_ids).only("id", "project_id"):
-        databases.update(access_databases(location))
-    databases.add("default")
-    changed = 0
-    for database in sorted(databases):
-        for rule in ProgeoAccess.objects.using(database).filter(user_id=user.pk).exclude(type__isnull=True) \
-                .exclude(type=0):
-            transport = ProgeoAccess._as_int(rule.transport)
-            if not transport & messenger_bit:
-                rule.transport = transport | messenger_bit
-                rule.save(using=database, update_fields=["transport"])
-                changed += 1
-    return changed
+    return switch_on_transport(user, ProgeoAccess.NotifiTrans.MESSENGER)
 
 
 # ---------------------------------------------------------------------------- statistics

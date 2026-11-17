@@ -142,10 +142,15 @@ def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original
 	# (the Lageplan wizard's alignment starts from there).
 	# Last of the location's plans (ProgeoLageplan.ORDER) - the wizard reorders them.
 	last = ProgeoLageplan.objects.using(db).filter(location=location).aggregate(last=Max("position"))["last"]
-	return ProgeoLageplan.objects.using(db).create(
+	plan = ProgeoLageplan.objects.using(db).create(
 		location=location, lageplan=saved_name, name=original_name, flip_y=True,
 		position=0 if last is None else last + 1,
 	)
+	# The first plan shows the location's unplaced points: clip their heat
+	# at the building outlines (helper/auto_heat_limits.py).
+	from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
+	schedule_auto_heat_limitations(db, plan.pk)
+	return plan
 
 
 def _alarm_window_end(alarm) -> Any:

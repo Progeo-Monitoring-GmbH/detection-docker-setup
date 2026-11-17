@@ -1,124 +1,119 @@
-﻿import random
+﻿from django.db.models import Q
 
-from django.conf import settings
-from django.db.models import Q
-
-from progeo.helper.basics import dlog, elog, ilog, wlog
+from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import ProgeoLocation
 
-DRY_RUN_SAMPLE_SIZE = 30
+# Nominatim's usage policy: at most one request per second.
+NOMINATIM_DELAY_SECONDS = 1.0
 
 
 def _blank(value) -> bool:
     return value is None or str(value).strip() == ""
 
 
+def missing_position_q():
+    """Locations without a usable GPS position: no coordinates, or 0/0 -
+    what old imports wrote for "unknown" (a point in the Atlantic)."""
+    return Q(latitude__isnull=True) | Q(longitude__isnull=True) | Q(latitude=0, longitude=0)
+
+
+def _location_databases():
+    """The databases holding the locations themselves: those of the
+    configured accounts. Project databases only hold mirrors, which follow
+    "default" on save (project_db_signals)."""
+    from progeo.helper.location_access import configured_accounts
+    from progeo.helper.project_dbs import is_project_alias
+
+    return sorted({account.db_name for account in configured_accounts() if not is_project_alias(account.db_name)})
+
+
 class Command(BaseCommand):
     help = (
-        "Finds ProgeoLocation rows without coordinates and splits them into locations "
-        "with no address data at all (nothing to geocode) and locations with address "
-        "data that GeoHelper.fetch_lat_lon could not resolve. Locations that do resolve "
-        "are patched with their new coordinates.\n\n"
+        "Finds locations without a GPS position - no coordinates or 0/0 - and looks\n"
+        "their address up (Nominatim, at most one request per second). Reports per\n"
+        "location: the position found, 'no address' (nothing to look up) or\n"
+        "'not found' (the address could not be resolved - fix it in the Objekt tab).\n\n"
+        "Dry run by default: nothing is written without --apply.\n\n"
         "Examples:\n"
         "  python manage.py fix_locations\n"
-        "  python manage.py fix_locations --dry-run\n"
-        "  python manage.py fix_locations --db default"
+        "  python manage.py fix_locations --limit 20\n"
+        "  python manage.py fix_locations --apply\n"
+        "  python manage.py fix_locations --apply --db default"
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--db",
             default=None,
-            help="Only process a single database (defaults to all configured databases).",
+            help="Only process this database (default: the databases of the configured accounts).",
         )
+        parser.add_argument("--apply", action="store_true", help="Save the positions found.")
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="Only report findings without saving any coordinates.",
+            help="Report only (the default; kept for older call sites).",
+        )
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=None,
+            help="Look up at most this many locations per database (e.g. for a first look).",
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
-        dry_run = options["dry_run"]
+        apply = options["apply"] and not options["dry_run"]
+        db_names = [options["db"]] if options.get("db") else _location_databases()
+        geo_helper = GeoHelper(logger=dlog, min_delay_seconds=NOMINATIM_DELAY_SECONDS)
 
-        geo_helper = GeoHelper(logger=dlog)
-
-        total_missing_address = 0
-        total_invalid = 0
-        total_fixed = 0
-
+        totals = {"found": 0, "no_address": 0, "not_found": 0}
         for db_name in db_names:
             try:
-                missing_address, invalid, fixed = self._fix_db(db_name, geo_helper, dry_run=dry_run)
+                counts = self._fix_db(db_name, geo_helper, apply=apply, limit=options["limit"])
             except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[fix_locations] db={db_name} failed: {exc}")
+                self.stdout.write(self.style.ERROR(f"db={db_name}: failed ({exc})"))
                 continue
+            for key, value in counts.items():
+                totals[key] += value
+            ilog(f"[fix_locations] db={db_name} {counts}")
 
-            total_missing_address += missing_address
-            total_invalid += invalid
-            total_fixed += fixed
-            ilog(f"[fix_locations] db={db_name} no_address={missing_address} invalid={invalid} fixed={fixed}")
+        verb = "Set" if apply else "Would set"
+        self.stdout.write(self.style.SUCCESS(
+            f"{verb} {totals['found']} position(s); {totals['no_address']} location(s) without an address, "
+            f"{totals['not_found']} whose address could not be resolved."
+            + ("" if apply else " Dry run - nothing saved, use --apply.")
+        ))
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Fixed {total_fixed} location(s), {total_missing_address} without any address data, "
-                f"{total_invalid} with address data that could not be geocoded."
-                + (" (dry run, nothing changed)" if dry_run else "")
-            )
-        )
-
-    def _fix_db(self, db: str, geo_helper: GeoHelper, dry_run: bool = False) -> tuple[int, int, int]:
-        """Categorizes+fixes coordinate-less locations of one database. Returns (no_address, invalid, fixed)."""
-        locations = list(ProgeoLocation.objects.using(db).filter(
-            Q(latitude__isnull=True) | Q(longitude__isnull=True)
-        ).distinct())
-
-        if dry_run and len(locations) > DRY_RUN_SAMPLE_SIZE:
-            locations = random.sample(locations, DRY_RUN_SAMPLE_SIZE)
-
-        no_address = 0
-        invalid = 0
-        fixed = 0
-
+    def _fix_db(self, db: str, geo_helper: GeoHelper, apply: bool = False, limit=None) -> dict:
+        """Looks up the missing positions of one database. Returns the counts
+        {"found", "no_address", "not_found"}."""
+        locations = list(ProgeoLocation.objects.using(db).filter(missing_position_q()).order_by("project_id", "pk"))
+        counts = {"found": 0, "no_address": 0, "not_found": 0}
+        looked_up = 0
         for location in locations:
-            has_address = not any(_blank(v) for v in (location.address, location.plz, location.city))
-
-            if not has_address:
-                no_address += 1
-                wlog(
-                    f"[fix_locations] db={db} project={location.project_id} '{location.name}' "
-                    f"has no address data (address={location.address!r}, plz={location.plz!r}, city={location.city!r})"
-                )
+            label = f"db={db} project={location.project_id} id={location.pk} '{location.name}'"
+            if all(_blank(value) for value in (location.address, location.plz, location.city)):
+                counts["no_address"] += 1
+                self.stdout.write(f"{label}: no address")
                 continue
-
+            if limit is not None and looked_up >= limit:
+                continue
+            looked_up += 1
             lat, lon = geo_helper.fetch_lat_lon(
-                project_id=location.project_id,
-                address=location.address,
-                plz=location.plz,
-                city=location.city,
+                location.project_id, location.address or "", location.plz or "", location.city or ""
             )
-
             if lat is None or lon is None:
-                invalid += 1
-                wlog(
-                    f"[fix_locations] db={db} project={location.project_id} '{location.name}' "
-                    f"has invalid/unresolvable address data (address={location.address!r}, "
-                    f"plz={location.plz!r}, city={location.city!r})"
+                counts["not_found"] += 1
+                self.stdout.write(
+                    f"{label}: not found (address={location.address!r}, plz={location.plz!r}, city={location.city!r})"
                 )
                 continue
-
-            fixed += 1
-            if dry_run:
-                self.stdout.write(
-                    f"[dry-run] would set project={location.project_id} '{location.name}' "
-                    f"to lat={lat}, lon={lon}"
-                )
-            else:
+            counts["found"] += 1
+            self.stdout.write(f"{label}: {lat}, {lon}" + ("" if apply else " (dry run)"))
+            if apply:
                 location.latitude = lat
                 location.longitude = lon
                 location.save(using=db, update_fields=["latitude", "longitude"])
-                ilog(f"[fix_locations] db={db} project={location.project_id} fixed -> lat={lat}, lon={lon}")
-
-        return no_address, invalid, fixed
+        return counts

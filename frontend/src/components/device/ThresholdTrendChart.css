@@ -85,6 +85,22 @@
   font-weight: 600;
 }
 
+/* The selected sensor's entry: bold, with a "selected" badge. */
+.threshold-trend-legend-entry--primary {
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.threshold-trend-primary-badge {
+  padding: 1px 7px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-orange);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
 .threshold-trend-legend-entry--hidden {
   color: #b8b0b0;
 }

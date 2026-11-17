@@ -32,13 +32,15 @@ type LocationStandortPanelProps = {
   geocodeBlockedReason?: string;
 };
 
+/** A usable position - 0/0 is what old imports wrote for "unknown" (backend has_position). */
 const hasCoordinates = (
   location: LocationDetail | null,
 ): location is LocationDetail & { latitude: number; longitude: number } =>
   typeof location?.latitude === 'number' &&
   Number.isFinite(location.latitude) &&
   typeof location?.longitude === 'number' &&
-  Number.isFinite(location.longitude);
+  Number.isFinite(location.longitude) &&
+  !(location.latitude === 0 && location.longitude === 0);
 
 /** The mockup's "Standort" side panel: a single-marker map, or a placeholder when no coordinates are set. */
 const LocationStandortPanel = ({
@@ -55,10 +57,13 @@ const LocationStandortPanel = ({
       <div className="standort-map" data-testid="standort-map">
         {hasCoordinates(location) ? (
           <>
+            {/* Leaflet reads `center` only once: a new position (address
+                saved, re-geocoded) remounts the map around it. */}
             <AnyMapContainer
+              key={`${location.latitude},${location.longitude}`}
               center={[location.latitude, location.longitude]}
               zoom={15}
-              style={{ height: '100%', width: '100%' }}
+              className="standort-leaflet"
               scrollWheelZoom={false}
               dragging={false}
               zoomControl={false}

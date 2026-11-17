@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import FrameSlider, { type AlarmSpan } from '../components/device/FrameSlider';
+import FrameSlider, { focusFrameIndex, type AlarmSpan } from '../components/device/FrameSlider';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
 import SensorStatusTiles from '../components/device/SensorStatusTiles';
+import type { SuspicionPlanMarker } from '../components/device/SuspicionMarkers';
+import { suspicionsOnPlan } from './computedSuspicion';
 import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PlotHelp from '../components/ui/PlotHelp';
@@ -39,6 +41,18 @@ type LocationPlanPanelProps = {
   profile?: HeatProfile;
   onProfileChange?: (profile: HeatProfile) => void;
   profileLoading?: boolean;
+  /** A time of interest (ms, e.g. a notification's event): shown until a
+   * frame is picked, while the frames reach back to it - else the newest. */
+  focusTime?: number | null;
+  /** Controls beside the frame slider's play button (the step width). */
+  frameToolbar?: ReactNode;
+  /** The sensor (pos) selected on the plan - marked there; a click on a
+   * sensor reports it (the heatmap only). */
+  selectedSensor?: number | null;
+  onSensorSelect?: (pos: number) => void;
+  /** smartex® mx-PEEL: the computed suspicion points - over the heat of the
+   * view (Lageplan) they lie on. */
+  suspicions?: SuspicionPlanMarker[];
   /** data-testid of the panel (default "plan-panel"); its parts derive from it. */
   testId?: string;
 };
@@ -65,6 +79,11 @@ const LocationPlanPanel = ({
   profile = 'diff',
   onProfileChange,
   profileLoading = false,
+  focusTime = null,
+  frameToolbar,
+  selectedSensor = null,
+  onSensorSelect,
+  suspicions,
   testId = 'plan-panel',
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
@@ -78,8 +97,10 @@ const LocationPlanPanel = ({
     index: number | null;
   }>({ heatmap: null, index: null });
   const frameTotal = heatmap?.timestamps.length ?? 0;
-  const newestFrame = frameTotal > 0 ? frameTotal - 1 : null;
-  const frameIndex = withHeat || picked.heatmap === heatmap ? picked.index : newestFrame;
+  // Until a frame is picked: the one of the time of interest, else the newest.
+  const startFrame =
+    (heatmap ? focusFrameIndex(heatmap.timestamps, focusTime) : null) ?? (frameTotal > 0 ? frameTotal - 1 : null);
+  const frameIndex = withHeat || picked.heatmap === heatmap ? picked.index : startFrame;
   // Stable per heatmap: SensorHeatmap2D reports its frame from an effect on it.
   const setFrameIndex = useCallback(
     (index: number | null) =>
@@ -89,8 +110,14 @@ const LocationPlanPanel = ({
     [heatmap],
   );
 
+  const selectedPositions = useMemo(() => (selectedSensor != null ? [selectedSensor] : []), [selectedSensor]);
+
   const planViews = useMemo(() => planViewsOf(heatmap), [heatmap]);
   const shownPlan = planViews.find((plan) => plan.id === selectedPlanId) ?? planViews[0] ?? null;
+  const shownSuspicions = useMemo(
+    () => suspicionsOnPlan(suspicions, shownPlan?.id ?? null),
+    [suspicions, shownPlan],
+  );
   const sensorPoints = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
   const viewPoints = useMemo(
     () => viewPointsOf(sensorPoints, planViews, shownPlan),
@@ -188,6 +215,11 @@ const LocationPlanPanel = ({
               profile={profile}
               onProfileChange={onProfileChange}
               profileLoading={profileLoading}
+              focusTime={focusTime}
+              frameToolbar={frameToolbar}
+              selectedPositions={selectedPositions}
+              onSensorClick={onSensorSelect}
+              suspicions={shownSuspicions}
             />
           </div>
           {sensorTable}
@@ -204,6 +236,7 @@ const LocationPlanPanel = ({
               index={Math.min(frameIndex, frameTotal - 1)}
               onChange={setFrameIndex}
               alarms={alarmSpans}
+              toolbar={frameToolbar}
             />
           </div>
         )}

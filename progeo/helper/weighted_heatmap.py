@@ -520,9 +520,11 @@ def find_peaks(
 
     Notes
     -----
-    Requires scipy.
+    Plain numpy (no scipy): the local maximum is a sliding window over the
+    edge-padded map (like scipy.ndimage.maximum_filter, mode="nearest").
+    Equal maxima closer than min_distance (a flat top) count once.
     """
-    from scipy.ndimage import maximum_filter
+    heatmap = np.asarray(heatmap, dtype=float)
 
     if heatmap.ndim != 2:
         raise ValueError("heatmap must be 2D")
@@ -534,13 +536,14 @@ def find_peaks(
 
     threshold = maximum * threshold_rel
 
+    min_distance = max(0, int(min_distance))
     size = 2 * min_distance + 1
 
-    local_max = maximum_filter(
-        heatmap,
-        size=size,
-        mode="nearest",
-    )
+    padded = np.pad(heatmap, min_distance, mode="edge")
+    local_max = np.lib.stride_tricks.sliding_window_view(
+        padded,
+        (size, size),
+    ).max(axis=(2, 3))
 
     mask = (
         (heatmap == local_max) &
@@ -562,6 +565,16 @@ def find_peaks(
         key=lambda peak: peak["value"],
         reverse=True,
     )
+
+    # A flat top yields several equal maxima side by side: keep the first.
+    kept = []
+    for peak in peaks:
+        if all(
+            max(abs(peak["row"] - other["row"]), abs(peak["col"] - other["col"])) > min_distance
+            for other in kept
+        ):
+            kept.append(peak)
+    peaks = kept
 
     if max_peaks is not None:
         peaks = peaks[:max_peaks]

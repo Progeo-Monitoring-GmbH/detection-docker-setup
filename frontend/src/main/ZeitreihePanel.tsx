@@ -11,12 +11,14 @@ import PillButton from '../components/ui/kit/PillButton';
 import PlotHelp from '../components/ui/PlotHelp';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
 import { staffFlags } from './access';
+import { dateLocale, PRETTY_LOCALE } from './dateFormat';
 import './ZeitreihePanel.css';
 import {
   ACTIVE_RANGE,
   byPeak,
   byRange,
   defaultZeitreiheIds,
+  selectedFirst,
   SILENT_RANGE,
   toggledId,
   type ZeitreiheSensor,
@@ -56,9 +58,22 @@ const SensorSwatch = ({ color }: { color: string | null }) => (
  * sensor to the plot (or removes it), hovering a row, a line or a legend
  * entry highlights it. "Nur ausgelöste Sensoren" plots exactly the
  * triggered ones; "Zurücksetzen" goes back to the default.
+ *
+ * The first entry is the selected sensor (picked on the plan, else the top
+ * one) - bolder and marked "selected". "Glättung" (on by default) merges
+ * readings close together into their mean; off, every reading shows.
  */
-const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: ZeitreiheSensor[] }) => {
-  const { t } = useTranslation();
+const ZeitreihePanel = ({
+  loading,
+  sensors,
+  selectedSensorId = null,
+}: {
+  loading: boolean;
+  sensors: ZeitreiheSensor[];
+  /** The sensor picked on the plan: added to the plot as its first entry. */
+  selectedSensorId?: number | null;
+}) => {
+  const { t, i18n } = useTranslation();
   const auth = useAuth();
   // "Aktive" and "Ruhige Sensoren" are an analysis aid for ProGeo staff;
   // customers get the triggered sensors only.
@@ -69,6 +84,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
   const [picked, setPicked] = useState<string[] | null>(null);
   const [onlyTriggered, setOnlyTriggered] = useState(false);
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [smooth, setSmooth] = useState(true);
 
   const byId = useMemo(() => new Map(sensors.map((sensor) => [sensor.id, sensor])), [sensors]);
   const triggeredIds = useMemo(
@@ -83,7 +99,21 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
     setHighlighted((current) => (current && byId.has(current) ? current : null));
   }, [byId]);
 
-  const shownIds = onlyTriggered ? triggeredIds : (picked ?? defaultIds);
+  // A sensor picked on the plan joins the plot (once per pick - it can be
+  // taken out again like any other).
+  const selectedId = selectedSensorId != null ? `sensor-${selectedSensorId}` : null;
+  const [appliedSelection, setAppliedSelection] = useState<string | null>(null);
+  if (selectedId !== appliedSelection && byId.size > 0) {
+    setAppliedSelection(selectedId);
+    if (selectedId && byId.has(selectedId)) {
+      const current = onlyTriggered ? triggeredIds : (picked ?? defaultIds);
+      setPicked(current.includes(selectedId) ? current : [selectedId, ...current]);
+      setOnlyTriggered(false);
+    }
+  }
+  const shownIds = selectedFirst(onlyTriggered ? triggeredIds : (picked ?? defaultIds), selectedId);
+  // The first entry is the selected sensor.
+  const primaryId = shownIds[0] ?? null;
   // A plotted disabled sensor is gray - the others keep their slot's colour.
   const colorOf = (id: string) => {
     const index = shownIds.indexOf(id);
@@ -133,6 +163,11 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
             >
               {sensor.label}
             </span>
+            {sensor.id === primaryId && (
+              <span data-tag="allowRowEvents" className="zeitreihe-selected-badge" data-testid="zeitreihe-selected-badge">
+                {t('status_zeitreihe_selected')}
+              </span>
+            )}
           </span>
         ),
       },
@@ -173,7 +208,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
         cell: (sensor) => <PercentCell percent={sensor.trend} change={sensor.max - sensor.min} />,
       },
     ],
-    // colorOf follows shownIds.
+    // colorOf and primaryId follow shownIds.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [t, shownIds.join(',')],
   );
@@ -205,6 +240,13 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
               {customized && (
                 <PillButton testId="zeitreihe-reset" variant="ghost" label={t('status_zeitreihe_reset')} onClick={reset} />
               )}
+              <PillButton
+                testId="zeitreihe-smooth"
+                variant={smooth ? 'accent' : 'ghost'}
+                label={t('status_zeitreihe_smooth')}
+                title={t('status_zeitreihe_smooth_hint')}
+                onClick={() => setSmooth((on) => !on)}
+              />
             </>
           )}
           <PlotHelp topic="status_zeitreihe" testId="zeitreihe-help" />
@@ -228,6 +270,10 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
             thresholdLabel={t('status_zeitreihe_threshold_legend')}
             highlightedId={highlighted}
             onHighlight={setHighlighted}
+            smooth={smooth}
+            primaryId={primaryId}
+            primaryLabel={t('status_zeitreihe_selected')}
+            locale={dateLocale(i18n.language) ?? PRETTY_LOCALE}
           />
 
           {sensors.length > 0 && (

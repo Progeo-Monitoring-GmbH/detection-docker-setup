@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
-import { useNavigate } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
@@ -49,11 +49,20 @@ import {
 import { zeitreiheSensorsOf } from './zeitreiheSensors';
 import ZeitreihePanel from './ZeitreihePanel';
 import { useAlarmClusters } from './useAlarmClusters';
+import ComputedSuspicionPanel, { SuspicionModeSwitch } from './ComputedSuspicionPanel';
+import {
+  effectiveSuspicionMode,
+  suspicionMarkersOf,
+  usesComputedSuspicion,
+  type SuspicionMode,
+} from './computedSuspicion';
+import { useComputedSuspicion } from './useComputedSuspicion';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { staffFlags } from './access';
+import { parseStatusAt, rangeContaining } from './statusAt';
 import './LocationStatusView.css';
 
 type LocationStatusViewProps = {
@@ -315,7 +324,6 @@ const LocationStatusView = ({
   demo = false,
 }: LocationStatusViewProps) => {
   const auth = useAuth();
-  const navigate = useNavigate();
   const { t } = useTranslation();
   // The demo user sees the regular portal, but no actions with real side
   // effects (a measurement request reaches the devices).
@@ -330,6 +338,27 @@ const LocationStatusView = ({
   const [pickedStep, setPickedStep] = useState<number | null>(null);
   // "Now" until the data arrives (the parent remounts per location).
   const [openedAt] = useState(() => Date.now());
+  // The sensor picked on the plan - the Zeitreihe's first entry.
+  const [selectedSensor, setSelectedSensor] = useState<number | null>(null);
+
+  // ?at=<ISO-8601> (e.g. an event of the notification history): the plan at
+  // that moment - a range that contains it, its frame shown first.
+  const [searchParams] = useSearchParams();
+  const atParam = searchParams.get('at');
+  const focusAt = useMemo(() => parseStatusAt(atParam), [atParam]);
+  const [appliedAt, setAppliedAt] = useState<number | null>(null);
+  if (focusAt !== appliedAt) {
+    setAppliedAt(focusAt);
+    const focusRange =
+      focusAt != null
+        ? rangeContaining(focusAt, openedAt, timeRangeCandidates({ long: true, staff: isStaff }))
+        : null;
+    if (focusRange) {
+      setStatusView('roof');
+      setSelectedRange(focusRange);
+      setPickedStep(null);
+    }
+  }
 
   // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
@@ -377,6 +406,19 @@ const LocationStatusView = ({
     acknowledging,
     acknowledge,
   } = useAlarmClusters(locationId, demo, !isLorawan);
+  // smartex® mx-PEEL: computed suspicion points of the range instead of one
+  // Verdachtsstelle per sensor - staff can switch (computedSuspicion.ts).
+  const [pickedSuspicionMode, setSuspicionMode] = useState<SuspicionMode>('computed');
+  const suspicionMode = effectiveSuspicionMode(
+    usesComputedSuspicion(location?.project_type),
+    isStaff,
+    pickedSuspicionMode,
+  );
+  const computed = useComputedSuspicion(locationId, rangeDays, demo, suspicionMode === 'computed');
+  const suspicionMarkers = useMemo(
+    () => (suspicionMode === 'computed' ? suspicionMarkersOf(computed.points) : undefined),
+    [suspicionMode, computed.points],
+  );
 
   // The step of the loaded history: the plan's steps must be multiples.
   const baseStep = history?.step ?? historySpec?.step ?? null;
@@ -503,24 +545,15 @@ const LocationStatusView = ({
                 setPickedStep(null);
               }}
             />
-            {statusView === 'roof' && stepOptions.length > 1 && (
-              <PillSelect
-                testId="status-step"
-                label={t('heatmap_step_label')}
-                title={t('heatmap_step_hint')}
-                options={stepOptions.map((step) => ({
-                  value: String(step.seconds),
-                  label: t(`heatmap_step_${step.key}`),
-                }))}
-                value={String(heatmapStep)}
-                onChange={(value) => setPickedStep(Number(value))}
-              />
-            )}
           </div>
 
           {statusView === 'zeitreihe' ? (
             <>
-              <ZeitreihePanel loading={historyLoading} sensors={zeitreiheSensors} />
+              <ZeitreihePanel
+                loading={historyLoading}
+                sensors={zeitreiheSensors}
+                selectedSensorId={selectedSensor}
+              />
               {isStaff && (
                 <LocationBatteryVoltagePanel
                   locationId={locationId}
@@ -543,20 +576,54 @@ const LocationStatusView = ({
                   profile={heatProfile}
                   onProfileChange={setHeatProfile}
                   profileLoading={heatProfile !== 'diff' && profileHistory.loading}
+                  focusTime={focusAt}
+                  // The step only matters for the animation: beside its start.
+                  frameToolbar={
+                    stepOptions.length > 1 && (
+                      <PillSelect
+                        testId="status-step"
+                        label={t('heatmap_step_label')}
+                        title={t('heatmap_step_hint')}
+                        options={stepOptions.map((step) => ({
+                          value: String(step.seconds),
+                          label: t(`heatmap_step_${step.key}`),
+                        }))}
+                        value={String(heatmapStep)}
+                        onChange={(value) => setPickedStep(Number(value))}
+                      />
+                    )
+                  }
+                  selectedSensor={selectedSensor}
+                  onSensorSelect={(pos) => setSelectedSensor((current) => (current === pos ? null : pos))}
+                  suspicions={suspicionMarkers}
                 />
               </div>
               <div className="status-column-side">
-                <VerdachtsstellenPanel
-                  clusters={clusters}
-                  denied={clustersDenied}
-                  sensorLabel={sensorLabel}
-                  metersOf={metersOf}
-                  disabledOf={(sensorId) => Boolean(measurePointOf(sensorId)?.disabled)}
-                  acknowledging={acknowledging}
-                  onAcknowledge={acknowledge}
-                  onViewAll={demo ? undefined : () => navigate(`/location/${locationId}/alarms`)}
-                  readOnly={demo}
-                />
+                {suspicionMode != null && isStaff && (
+                  <SuspicionModeSwitch mode={suspicionMode} onChange={setSuspicionMode} />
+                )}
+                {suspicionMode === 'computed' ? (
+                  <ComputedSuspicionPanel
+                    points={computed.points}
+                    loading={computed.loading}
+                    denied={computed.denied}
+                    sensorLabel={sensorLabel}
+                    acknowledging={computed.acknowledging}
+                    onAcknowledge={computed.acknowledge}
+                    readOnly={demo}
+                  />
+                ) : (
+                  <VerdachtsstellenPanel
+                    clusters={clusters}
+                    denied={clustersDenied}
+                    sensorLabel={sensorLabel}
+                    metersOf={metersOf}
+                    disabledOf={(sensorId) => Boolean(measurePointOf(sensorId)?.disabled)}
+                    acknowledging={acknowledging}
+                    onAcknowledge={acknowledge}
+                    readOnly={demo}
+                  />
+                )}
               </div>
             </div>
           )}

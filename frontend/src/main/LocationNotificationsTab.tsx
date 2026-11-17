@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { useNavigate, useOutletContext } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,7 @@ import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
-import MatrixPromoBanner from './MatrixPromoBanner';
+import NotificationChannelCard from './NotificationChannelCard';
 import './LocationNotificationsTab.css';
 
 type TimelineEvent = {
@@ -40,6 +40,13 @@ type TestRecipient = {
 
 const DAYS_WINDOW = 90;
 
+/**
+ * Status -> Heatmap at the time of an event (`?at=<ISO>`, read by the
+ * status view): a click on an event of the history opens it there.
+ */
+export const statusAtPath = (locationId: string | number, at: string) =>
+  `/location/${locationId}/status?at=${encodeURIComponent(at)}`;
+
 /** Messenger events carry the service (signal/whatsapp/matrix) as title. */
 const MESSENGER_LABELS: Record<string, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
 
@@ -56,6 +63,7 @@ const LocationNotificationsTab = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,8 +198,8 @@ const LocationNotificationsTab = () => {
   };
 
   return (
-    <>
-    <MatrixPromoBanner />
+    <div className="benach-page">
+    <NotificationChannelCard />
     <PanelCard
       testId="page-location-benachrichtigungen"
       title={t('benach_title')}
@@ -224,9 +232,13 @@ const LocationNotificationsTab = () => {
       ) : (
         <div className="benach-events" data-testid="benach-events">
           {events.map((event, index) => (
-            <div
+            <button
+              type="button"
               key={index}
               className="benach-event"
+              disabled={!event.at}
+              title={event.at ? t('benach_event_open_status') : undefined}
+              onClick={() => event.at && navigate(statusAtPath(locationId, event.at))}
               // Events have no id: the position in the feed tells them apart.
               {...repeatedTestId('benach-event', index)}
             >
@@ -245,7 +257,7 @@ const LocationNotificationsTab = () => {
                   </span>
                 )}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -284,7 +296,7 @@ const LocationNotificationsTab = () => {
         </div>
       }
     />
-    </>
+    </div>
   );
 };
 

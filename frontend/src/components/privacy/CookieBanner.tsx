@@ -128,6 +128,8 @@ const CookieDialog = () => {
           {t('consent_intro')}{' '}
           <Link
             to={PRIVACY_POLICY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="cookie-banner__link"
             data-testid="cookie-banner-privacy-link"
           >

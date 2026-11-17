@@ -8,18 +8,20 @@
   flex-wrap: wrap;
 }
 
+/* The info column stays narrow; the Standort map takes the rest of the row.
+   Below ~860px both wrap into one column. */
 .objekt-main {
-  flex: 1 1 480px;
+  flex: 1 1 380px;
   min-width: 0;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
 .objekt-side {
-  flex: 1 1 300px;
+  flex: 2 1 420px;
   min-width: 0;
-  max-width: 360px;
 }
 
 .objekt-grid {

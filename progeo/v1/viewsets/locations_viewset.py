@@ -61,7 +61,7 @@ from progeo.helper.cacher import (
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
 from progeo.helper.demo import demo_export_throttle, is_demo_user
-from progeo.helper.legacy.geo import GeoHelper
+from progeo.helper.legacy.geo import GeoHelper, has_position
 from progeo.helper.location_access import (
     can_see_location,
     configured_accounts,
@@ -148,6 +148,13 @@ def _target_lageplan(db_name, location, lageplan_id):
 def _is_staff_admin(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
+
+def _is_customer_admin(user) -> bool:
+    """Kundenadmin or ProGeo staff (frontend roleModel.ts): may add people to
+    a location. Customers need module_locations_edit - Kundennutzer
+    (view-only) never add anyone."""
+    return _is_staff_admin(user) or has_module_permissions(user, "module_locations_edit")
+
 # Geo- and address fields that can be exported / imported (updated) via the
 # dedicated geo_export / geo_import routes. `id`/`project_id` are used for
 # matching on import and are always included in the export.
@@ -167,6 +174,11 @@ LOCATION_GEO_FIELDS = [
 LOCATION_GEO_CSV_FIELDS = ["id", "project_id", *LOCATION_GEO_FIELDS]
 
 # PDF-Report table limits: latest N measurements, sensors per table width.
+# Saving a changed address looks its position up again (perform_update) -
+# within the request, so the Objekt tab's map follows at once; Nominatim gets
+# less time than in the batch jobs.
+GEOCODE_ADDRESS_FIELDS = ("address", "plz", "city", "country")
+GEOCODE_SAVE_TIMEOUT = 8
 PDF_MAX_ROWS = 200
 PDF_SENSORS_PER_TABLE = 14
 
@@ -762,16 +774,19 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
         GET  -> {"access": [...], "users": [{id, username, email, mobile}...],
                  "staff_users": [{id, username, email}...],
-                 "members": [...], "candidates": [...]}
+                 "members": [...], "can_grant_account", "can_invite"}
                (requires module_notifications_enabled). "users" are this
-               account's customer users; "staff_users" are ProGeo staff
-               (Objektleitung candidates, Einstellungen) - both are assigned
-               the same way, via a POST below. "members" is everyone with
-               access to this location (Rechte tab): account members
+               account's users and "staff_users" ProGeo staff (Objektleitung
+               candidates, Einstellungen) - both for staff only, both are
+               assigned the same way, via a POST below. "members" is everyone
+               with access to this location (Rechte tab): account members
                (access "account" - all locations of the account) and
                single-access users (access "single" - a ProgeoAccess row for
-               this location only), each with their notification rule.
-               "candidates" are customer users that can still be added.
+               this location only), each with their notification rule; ProGeo
+               staff (access "staff") only for staff viewers. There is no
+               list of further users to pick from: customers add people by
+               email address (access/invite) - a picker exposed the users of
+               every customer sharing the account.
         POST -> create (module_notifications_add) or update an existing rule
                 (module_notifications_edit): body {user_id, transport, type}
                 or {id, transport, type, user_id?}. transport/type are the
@@ -809,7 +824,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             if not manages:
                 rows = [rule for rule in rows if rule.user_id == viewer.pk or rule.objektleitung]
             users = []
-            if account and manages:
+            # Staff only (Verwaltung): the account can be shared by many
+            # customers (everything lives in one account today) - its member
+            # list is nothing a customer may see.
+            if account and is_staff:
                 for user in account.users.all().order_by("username"):
                     profile = getattr(user, "profile", None)
                     users.append({
@@ -840,9 +858,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 "users": users,
                 "staff_users": staff_users,
                 "members": members,
-                "candidates": self._access_candidates(request, {member["user_id"] for member in members})
-                if manages else [],
                 "can_grant_account": is_staff or account.users.filter(pk=viewer.pk).exists(),
+                # "Nutzer hinzufuegen" (access/invite): customer admins and staff only.
+                "can_invite": _is_customer_admin(viewer)
+                and has_module_permissions(viewer, "module_notifications_add"),
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
@@ -999,47 +1018,82 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return True
         if ProgeoAccess.objects.using(location_db(location, account)).filter(location=location, user_id=user_id).exists():
             return True
-        # ProGeo staff and superusers (Objektleitung, their own notifications) -
-        # assignable by staff only.
-        if _is_staff_admin(request.user) and _staff_user_ids({user_id}):
-            return True
-        return user_id in {candidate["user_id"] for candidate in cls._access_candidates(request, set())}
-
-    @classmethod
-    def _access_candidates(cls, request, exclude_ids):
-        """Customer users that can be granted access. Staff pick from every
-        customer; everyone else only from the accounts they belong to, so no
-        users of foreign tenants are exposed."""
-        users = User.objects.filter(is_staff=False, is_superuser=False, is_active=True)
-        if not _is_staff_admin(request.user):
-            users = users.filter(accounts__in=request.user.accounts.all()).distinct()
-        return [
-            cls._user_contact(user)
-            for user in users.exclude(pk__in=exclude_ids).order_by("username")
-        ]
+        # Anyone else only by staff (Verwaltung; Objektleitung and their own
+        # notifications). Customers can't hand access to a user id: they
+        # invite by email address (access/invite) - picking from user ids
+        # let them reach the users of every customer sharing the account.
+        return _is_staff_admin(request.user) and User.objects.filter(pk=user_id, is_active=True).exists()
 
     @require_module_permissions("module_notifications_enabled", "module_notifications_add")
     @action(detail=True, url_path="access/account-member", methods=["POST"])
     def access_account_member(self, request, pk=None, *args, **kwargs):
         """Grant multi-access: add a user to this location's Account, i.e. to
         every location of that account. POST {"user_id": N}. Only staff and
-        members of that account may do this. Revoking account membership is
-        intentionally not offered per location (it would affect all of them)."""
+        customer admins who are members of that account may do this, and
+        customers only for users who already have access to this location
+        (single access) - new people come in by email (access/invite).
+        Revoking account membership is intentionally not offered per
+        location (it would affect all of them)."""
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        if not (_is_staff_admin(request.user) or account.users.filter(pk=request.user.pk).exists()):
+        is_staff = _is_staff_admin(request.user)
+        if not (is_staff or account.users.filter(pk=request.user.pk).exists()):
             return permission_denied_response(["account_member"])
+        if not _is_customer_admin(request.user):
+            return permission_denied_response(["module_locations_edit"])
         try:
             user_id = int(request.data.get("user_id"))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "user_id required"})
-        allowed_ids = {candidate["user_id"] for candidate in self._access_candidates(request, set())}
-        user = User.objects.filter(pk=user_id).first()
-        if not user or user_id not in allowed_ids and not account.users.filter(pk=user_id).exists():
+        user = User.objects.filter(pk=user_id, is_active=True).first()
+        allowed = user is not None and not _staff_user_ids({user_id}) and (
+            is_staff
+            or account.users.filter(pk=user_id).exists()
+            or ProgeoAccess.objects.using(location_db(location, account))
+            .filter(location=location, user_id=user_id)
+            .exists()
+        )
+        if not allowed:
             return RequestFailed({"reason": "User not found"})
         account.users.add(user)
         return RequestSuccess({"user_id": user.id, "account": account.id})
+
+    @require_module_permissions("module_notifications_enabled", "module_notifications_add")
+    @action(detail=True, url_path="access/invite", methods=["POST"])
+    def access_invite(self, request, pk=None, *args, **kwargs):
+        """"Nutzer hinzufügen" by email address (helper/location_invites.py).
+        POST {"email", "scope": "single"|"account", "first_name"?, "last_name"?}
+        -> {"status": "granted"|"invited"|"already"|"staff"}.
+        Customer admins (module_locations_edit) and staff only - never
+        Kundennutzer; "account" only for staff and members of the location's
+        account (all its locations)."""
+        from progeo.helper.location_invites import (
+            InviteError,
+            invite_to_location,
+            take_invite_slot,
+        )
+
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        user = request.user
+        if not _is_customer_admin(user):
+            return permission_denied_response(["module_locations_edit"])
+        scope = str(request.data.get("scope") or "single")
+        if scope == "account" and not (_is_staff_admin(user) or account.users.filter(pk=user.pk).exists()):
+            return permission_denied_response(["account_member"])
+        if not take_invite_slot(user):
+            return Response({"success": False, "reason": "Too many invitations - please try again later"}, status=429)
+        try:
+            result = invite_to_location(
+                user, location, account, request.data.get("email"), scope=scope,
+                first_name=str(request.data.get("first_name") or "").strip(),
+                last_name=str(request.data.get("last_name") or "").strip(),
+            )
+        except InviteError as exc:
+            return RequestFailed({"reason": str(exc)})
+        return RequestSuccess({"status": result})
 
     @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
     @action(detail=True, url_path="access/delete", methods=["POST"])
@@ -1283,9 +1337,16 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
         mobile = request.data.get("mobile")
         if mobile is not None and str(mobile).strip():
+            from progeo.helper.phone_numbers import InvalidPhoneNumber, clean_phone
+
+            stored = UserProfile.objects.using(db_name).filter(user_id=user_id).values_list("mobile", flat=True).first()
+            try:
+                mobile = clean_phone(mobile, stored)
+            except InvalidPhoneNumber:
+                return RequestFailed({"reason": "invalid phone number", "code": "phone_invalid"})
             profile, _ = UserProfile.objects.using(db_name).update_or_create(
                 user_id=user_id,
-                defaults={"mobile": str(mobile).strip()},
+                defaults={"mobile": mobile},
             )
         elif mobile is not None:
             profile = UserProfile.objects.using(db_name).filter(user_id=user_id).first()
@@ -1773,7 +1834,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        if location.latitude is not None and location.longitude is not None:
+        # 0/0 is the "unknown" of old imports - fill it in like a missing position.
+        if has_position(location.latitude, location.longitude):
             return RequestFailed({"reason": "The location already has coordinates"})
         if not (location.address or location.plz or location.city):
             return RequestFailed({"reason": "The location has no address"})
@@ -1794,7 +1856,39 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     def perform_update(self, serializer):
         self._check_references(serializer)
+        instance = serializer.instance
+        address_before = tuple(getattr(instance, field) for field in GEOCODE_ADDRESS_FIELDS)
+        position_sent = "latitude" in serializer.validated_data or "longitude" in serializer.validated_data
         super().perform_update(serializer)
+        instance = serializer.instance
+        self._geocode_status = None
+        if not position_sent and tuple(getattr(instance, f) for f in GEOCODE_ADDRESS_FIELDS) != address_before:
+            self._geocode_status = self._geocode_moved(instance)
+        if split_enabled():
+            # get_queryset carries no stats with the split on: without them the
+            # answer would blank the Objekt tab's device/measurement figures.
+            prepare_locations([instance], self._primary_account(self.request), lageplans=False)
+
+    @staticmethod
+    def _geocode_moved(location):
+        """The address of `location` changed: look its position up again
+        (Nominatim), so the map marker follows the address. A miss keeps the
+        old position - the answer says so ("not_found"), the user can still
+        correct the address. Returns "updated", "not_found", "no_address" or
+        None (switched off: settings.GEOCODE_ON_SAVE)."""
+        if not getattr(settings, "GEOCODE_ON_SAVE", True):
+            return None
+        if not (location.address or location.plz or location.city):
+            return "no_address"
+        latitude, longitude = GeoHelper(logger=dlog, timeout=GEOCODE_SAVE_TIMEOUT).fetch_lat_lon(
+            location.project_id, location.address or "", location.plz or "", location.city or ""
+        )
+        if latitude is None or longitude is None:
+            return "not_found"
+        location.latitude = latitude
+        location.longitude = longitude
+        location.save(using=location._state.db, update_fields=["latitude", "longitude"])
+        return "updated"
 
     def _check_references(self, serializer):
         """fields="__all__" accepts any account / parent location id: a
@@ -1827,7 +1921,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
+        self._geocode_status = None
+        response = super().update(request, *args, **kwargs)
+        # "updated" / "not_found" / "no_address": the address changed and its
+        # position was looked up again (perform_update).
+        if self._geocode_status and isinstance(getattr(response, "data", None), dict):
+            response.data["geocode"] = self._geocode_status
+        return response
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def partial_update(self, request, *args, **kwargs):
@@ -1880,6 +1980,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "flip_x",
             "flip_y",
         ])
+        # Automatic heat limitations follow the new alignment (helper/auto_heat_limits.py).
+        from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
+
+        schedule_auto_heat_limitations(db_name, lageplan.pk)
 
         return RequestSuccess({
             "location_id": location.project_id,
@@ -3154,6 +3258,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             value = (request.data.get(field) or "").strip()
             return value or None
 
+        from progeo.helper.phone_numbers import InvalidPhoneNumber, to_e164
+
+        try:
+            telefon = to_e164(_clean("telefon"))
+        except InvalidPhoneNumber:
+            return RequestFailed({"reason": "invalid phone number", "code": "phone_invalid"})
+
         location = ProgeoLocation.objects.using(db_name).create(
             account=account,
             name=name,
@@ -3166,7 +3277,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             country=_clean("country"),
             manager=_clean("manager"),
             mail=_clean("mail"),
-            telefon=_clean("telefon"),
+            telefon=telefon,
         )
 
         lageplan_ids = [

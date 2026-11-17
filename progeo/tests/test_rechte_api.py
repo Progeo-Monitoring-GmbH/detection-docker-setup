@@ -75,7 +75,7 @@ def test_access_without_manage_rights_shows_only_own_member_and_rule_and_objektl
     assert {rule["id"] for rule in body["access"]} == {own_rule.id, ol_rule.id}
     assert set(_members_by_name(body)) == {viewer.username}
     assert body["users"] == []
-    assert body["candidates"] == []
+    assert "candidates" not in body
 
 
 def test_account_member_with_rule_stays_account_access(api_client, setup):
@@ -90,23 +90,19 @@ def test_account_member_with_rule_stays_account_access(api_client, setup):
     assert member["rule"]["id"] == rule.id
 
 
-def test_candidates_are_limited_to_the_requesters_accounts(api_client, setup):
+def test_no_user_lists_are_offered_to_customers(api_client, setup):
+    """New people come in by email (access/invite, test_location_invites) -
+    the picker of users sharing an account is gone."""
     account, _location, admin = setup
-    colleague = f.make_user(accounts=[account])
-    other_account = f.make_account()
-    foreigner = f.make_user(accounts=[other_account])
-    # The colleague is already a member - add a fresh same-account user as candidate.
-    newcomer = f.make_user(accounts=[account])
+    f.make_user(accounts=[account])
+    f.make_user(accounts=[f.make_account()])
     location_two = f.make_location(account)
     api_client.force_authenticate(user=admin)
 
     body = _access(api_client, location_two)
-    candidate_ids = {candidate["user_id"] for candidate in body["candidates"]}
 
-    assert foreigner.id not in candidate_ids
-    # Account members are members of every location - never candidates.
-    assert colleague.id not in candidate_ids
-    assert newcomer.id not in candidate_ids
+    assert "candidates" not in body
+    assert body["users"] == []
     assert body["can_grant_account"] is True
 
 

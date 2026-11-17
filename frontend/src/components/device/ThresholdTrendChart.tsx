@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { formatDate } from '../../main/dateFormat';
 import { childTestId } from '../../testIds';
+import { frameAxisLabels, LABEL_CHAR_WIDTH } from './timeTicks';
 import './ThresholdTrendChart.css';
 
 type ThresholdTrendPoint = {
@@ -37,6 +38,18 @@ type ThresholdTrendChartProps = {
   highlightedId?: string | null;
   /** A line or legend entry is hovered (null when left). */
   onHighlight?: (id: string | null) => void;
+  /**
+   * Merge readings closer together than a slot of the plot into their mean
+   * (default) - off: every reading is drawn, abrupt changes (switched off,
+   * calibration) stay visible.
+   */
+  smooth?: boolean;
+  /** The series of the selected sensor: drawn bolder, its legend entry
+   * marked with `primaryLabel`. */
+  primaryId?: string | null;
+  primaryLabel?: string;
+  /** Locale of the time axis labels (default: the browser's). */
+  locale?: string;
   /** data-testid of the chart; its parts are "<testId>-plot", "-series" / "-legend-entry" (key: the series id), ... */
   testId?: string;
 };
@@ -105,6 +118,35 @@ const formatTime = (time: number, withYear = false) =>
 
 const formatRatio = (ratio: number) => `${ratio.toFixed(ratio < 10 ? 2 : 0)}x`;
 
+/** Every reading its own point - the chart without smoothing. */
+const unmergedPoints = (points: RawPoint[]): DisplayPoint[] =>
+  [...points]
+    .sort((a, b) => a.time - b.time)
+    .map((point) => ({ key: `p${point.id}`, time: point.time, ratio: point.ratio, count: 1 }));
+
+// The axis labels are 9 viewBox units high; timeTicks measures 11 px ones.
+const AXIS_FONT = 9;
+const AXIS_CHAR_WIDTH = (LABEL_CHAR_WIDTH * AXIS_FONT) / 11;
+
+/**
+ * The time axis from `from` to `to` (ms): labels evenly spread over the plot
+ * as far as they fit (frameAxisLabels, the frame slider's), each at its `x`
+ * in viewBox units - anchored at its fraction of its own width like there
+ * (the first starts at the plot's start, the last ends at its end).
+ */
+const trendAxisLabels = (from: number, to: number, locale?: string) => {
+  const width = X1 - X0;
+  if (!(to > from)) {
+    return [{ x: X0, at: X0, label: formatTime(from), ms: from }];
+  }
+  return frameAxisLabels({ from, to, width: (width * 11) / AXIS_FONT, locale }).map(({ fraction, ms, label }) => ({
+    x: X0 + fraction * width - fraction * label.length * AXIS_CHAR_WIDTH,
+    at: X0 + fraction * width,
+    label,
+    ms,
+  }));
+};
+
 /** Sorted points closer together than `minGapTime` get merged into one mean
  * point, so a burst of near-simultaneous readings shows as a single dot
  * instead of a dense, unreadable cluster. */
@@ -154,6 +196,10 @@ const ThresholdTrendChart = ({
   thresholdLabel,
   highlightedId = null,
   onHighlight,
+  smooth = true,
+  primaryId = null,
+  primaryLabel,
+  locale,
   testId = 'threshold-trend',
 }: ThresholdTrendChartProps) => {
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -210,8 +256,9 @@ const ThresholdTrendChart = ({
   const minGapTime = (maxTime - minTime) / TARGET_SLOTS;
   const displaySeries = visibleSeries.map((entry) => ({
     ...entry,
-    display: clusterPoints(entry.points, minGapTime),
+    display: smooth ? clusterPoints(entry.points, minGapTime) : unmergedPoints(entry.points),
   }));
+  const axisLabels = trendAxisLabels(minTime, maxTime, locale);
 
   const thresholdY = toY(1);
   const yTicks = Array.from(new Set([0, 1, maxRatio])).map((ratio) => ({ ratio, y: toY(ratio) }));
@@ -284,15 +331,29 @@ const ThresholdTrendChart = ({
           ))}
           <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} opacity={0.75} />
 
-          <text x={X0} y={VB_H - 2} textAnchor="start" fontSize={9} fill="#8B8383">
-            {formatTime(minTime, withYear)}
-          </text>
-          <text x={X1} y={VB_H - 2} textAnchor="end" fontSize={9} fill="#8B8383">
-            {formatTime(maxTime, withYear)}
-          </text>
+          {/* The time axis: labels from start to end, as many as fit, each
+              with a faint grid line. */}
+          <g data-testid={childTestId(testId, 'axis')}>
+            {axisLabels.map((tick) => (
+              <g key={`${tick.at}:${tick.ms}`}>
+                <line x1={tick.at} x2={tick.at} y1={Y0} y2={Y1 + 4} stroke="var(--progeo-track-soft)" strokeWidth={1} />
+                <text
+                  x={tick.x}
+                  y={VB_H - 2}
+                  textAnchor="start"
+                  fontSize={AXIS_FONT}
+                  fill="#8B8383"
+                  data-testid={childTestId(testId, 'axis-label')}
+                >
+                  {tick.label}
+                </text>
+              </g>
+            ))}
+          </g>
 
           {displaySeries.map((entry) => {
             const emphasized = entry.id === highlight;
+            const primary = entry.id === primaryId;
             const opacity = highlight == null || emphasized ? 1 : FADED_OPACITY;
             return (
               <g key={entry.id} data-series={entry.id} data-testid={childTestId(testId, 'series')} data-test-key={entry.id}>
@@ -300,7 +361,7 @@ const ThresholdTrendChart = ({
                   points={entry.display.map((point) => `${toX(point.time)},${toY(point.ratio)}`).join(' ')}
                   fill="none"
                   stroke={entry.color}
-                  strokeWidth={emphasized ? 3.2 : 1.8}
+                  strokeWidth={emphasized ? 3.2 : primary ? 2.6 : 1.8}
                   strokeOpacity={opacity}
                   strokeLinejoin="round"
                 />
@@ -362,12 +423,18 @@ const ThresholdTrendChart = ({
             onBlur={() => onHighlight?.(null)}
             className={[
               'threshold-trend-legend-entry',
+              entry.id === primaryId ? 'threshold-trend-legend-entry--primary' : '',
               entry.id === highlight ? 'threshold-trend-legend-entry--highlight' : '',
               hiddenSeries.has(entry.id) ? 'threshold-trend-legend-entry--hidden' : '',
             ].filter(Boolean).join(' ')}
           >
             <LegendSwatch color={hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color} />
             {entry.label}
+            {entry.id === primaryId && primaryLabel && (
+              <span className="threshold-trend-primary-badge" data-testid={childTestId(testId, 'primary-badge')}>
+                {primaryLabel}
+              </span>
+            )}
           </button>
         ))}
         <span className="threshold-trend-legend-threshold">

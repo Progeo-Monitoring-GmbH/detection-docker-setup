@@ -10,10 +10,12 @@ import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx'
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import PhoneInput from '../components/ui/PhoneInput';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { staffFlags } from './access';
+import { useProgeoRole } from './roleModel';
 import { repeatedTestId } from '../testIds';
 import './LocationRechteTab.css';
 
@@ -98,6 +100,16 @@ const ScopeBadge = ({ scope, label }: { scope: Access; label: string }) => (
   </span>
 );
 
+/** Answer of POST access/invite (backend helper/location_invites.py). */
+type InviteStatus = 'granted' | 'invited' | 'already' | 'staff';
+
+const INVITE_MESSAGE_KEYS: Record<InviteStatus, string> = {
+  granted: 'rechte_invite_granted',
+  invited: 'rechte_invite_invited',
+  already: 'rechte_invite_already',
+  staff: 'rechte_invite_staff',
+};
+
 /**
  * Rechte (Berechtigungen): everyone who can see this object and how they are
  * notified. Access comes from two sources (see backend
@@ -111,6 +123,10 @@ const ScopeBadge = ({ scope, label }: { scope: Access; label: string }) => (
  *
  * The ProgeoAccess row doubles as the notification rule, so account members
  * get one created on demand the first time their notifications are changed.
+ *
+ * New people are added by email address (access/invite) - only by customer
+ * admins and ProGeo staff, never by Kundennutzer. There is deliberately no
+ * user picker: it listed the users of every customer sharing the account.
  */
 const LocationRechteTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
@@ -119,18 +135,23 @@ const LocationRechteTab = () => {
   const { hasPermission } = usePermissions();
   const { t } = useTranslation();
 
+  const role = useProgeoRole();
   const canEdit = hasPermission('module_notifications_edit');
-  const canAdd = hasPermission('module_notifications_add');
+  // The backend decides (`can_invite`); the role check keeps the button
+  // hidden in "view as normal user", where the backend still answers as staff.
+  const [canInvite, setCanInvite] = useState(false);
+  const canAdd = canInvite && role !== 'nutzer' && hasPermission('module_notifications_add');
   // Staff set their own and other staff's notifications here; customers
   // only ever see staff assigned as Objektleitung (read-only for them).
   const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const [members, setMembers] = useState<Member[]>([]);
-  const [candidates, setCandidates] = useState<UserContact[]>([]);
   const [canGrantAccount, setCanGrantAccount] = useState(false);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
-  const [newUserId, setNewUserId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
   const [newScope, setNewScope] = useState<Scope>('single');
   const [adding, setAdding] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<Member | null>(null);
@@ -151,8 +172,8 @@ const LocationRechteTab = () => {
         // ProGeo staff are for staff eyes only (the backend sends them to
         // nobody else - this keeps it so with an older backend, too).
         setMembers(viewerIsStaff ? loaded : loaded.filter((member) => member.access !== 'staff'));
-        setCandidates((response?.data?.candidates || []) as UserContact[]);
         setCanGrantAccount(Boolean(response?.data?.can_grant_account));
+        setCanInvite(Boolean(response?.data?.can_invite));
         setLoading(false);
       },
       (error) => {
@@ -199,40 +220,44 @@ const LocationRechteTab = () => {
     saveRule(member, member.rule?.transport ?? 0, current & bit ? current & ~bit : current | bit);
   };
 
+  const closeAdd = () => {
+    setInviteEmail('');
+    setInviteFirstName('');
+    setInviteLastName('');
+    setNewScope('single');
+    setAddOpen(false);
+  };
+
+  const inviteValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim());
+
   const addUser = () => {
-    if (!newUserId) {
+    if (!inviteValid) {
       return;
     }
+    const email = inviteEmail.trim();
     setAdding(true);
-    const done = () => {
-      showSuccessBar(enqueueSnackbar, t('rechte_added'));
-      setAdding(false);
-      setNewUserId('');
-      setNewScope('single');
-      setAddOpen(false);
-      load();
-    };
-    const failed = (error: { response?: { data?: { reason?: string } }; message: string }) => {
-      showRequestError(enqueueSnackbar, 'Could not add user', error);
-      setAdding(false);
-    };
-    if (newScope === 'account') {
-      void axiosConfig.perform_post(
-        auth,
-        `/v1/location/${locationId}/access/account-member/`,
-        { user_id: Number(newUserId) },
-        done,
-        failed,
-      );
-    } else {
-      void axiosConfig.perform_post(
-        auth,
-        `/v1/location/${locationId}/access/`,
-        { user_id: Number(newUserId), transport: 1, type: 1 },
-        done,
-        failed,
-      );
-    }
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/access/invite/`,
+      {
+        email,
+        scope: newScope,
+        first_name: inviteFirstName.trim(),
+        last_name: inviteLastName.trim(),
+      },
+      (response) => {
+        const status = response?.data?.status as InviteStatus | undefined;
+        const messageKey = (status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added';
+        showSuccessBar(enqueueSnackbar, t(messageKey, { email }));
+        setAdding(false);
+        closeAdd();
+        load();
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not add user', error);
+        setAdding(false);
+      },
+    );
   };
 
   const revoke = () => {
@@ -301,12 +326,21 @@ const LocationRechteTab = () => {
               : null;
           return editing ? (
             <div key={field} className="location-rechte-contact-edit">
-              <LabeledInput
-                testId="rechte-contact-input"
-                label={t(label)}
-                value={editing.value}
-                onChange={(value) => setContactEdit({ ...editing, value })}
-              />
+              {field === 'mobile' ? (
+                <PhoneInput
+                  testId="rechte-contact-input"
+                  label={t(label)}
+                  value={editing.value}
+                  onChange={(value) => setContactEdit({ ...editing, value })}
+                />
+              ) : (
+                <LabeledInput
+                  testId="rechte-contact-input"
+                  label={t(label)}
+                  value={editing.value}
+                  onChange={(value) => setContactEdit({ ...editing, value })}
+                />
+              )}
               <PillButton testId="rechte-contact-save" label={t('rechte_save')} onClick={saveContact} />
             </div>
           ) : (
@@ -496,29 +530,32 @@ const LocationRechteTab = () => {
             {addOpen && (
               <div className="location-rechte-add" data-testid="rechte-add">
                 <div className="location-rechte-add-user">
-                  <div className="location-rechte-label">{t('rechte_select_user')}</div>
-                  {candidates.length === 0 ? (
-                    <div className="location-rechte-no-candidates" data-testid="rechte-no-candidates">
-                      {t('rechte_no_candidates')}
-                    </div>
-                  ) : (
-                    <select
-                      value={newUserId}
-                      onChange={(event) => setNewUserId(event.target.value)}
-                      autoComplete="off"
-                      className="location-rechte-user-select"
-                      data-testid="rechte-user-select"
-                    >
-                      <option value="">{t('rechte_select_user_placeholder')}</option>
-                      {candidates.map((user) => (
-                        <option key={user.user_id} value={user.user_id}>
-                          {displayName(user)}
-                          {user.email ? ` (${user.email})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  <LabeledInput
+                    testId="rechte-invite-email"
+                    label={t('rechte_invite_email')}
+                    type="email"
+                    autoComplete="off"
+                    value={inviteEmail}
+                    onChange={setInviteEmail}
+                  />
                 </div>
+                <div className="location-rechte-add-name">
+                  <LabeledInput
+                    testId="rechte-invite-first-name"
+                    label={t('rechte_invite_first_name')}
+                    value={inviteFirstName}
+                    onChange={setInviteFirstName}
+                  />
+                </div>
+                <div className="location-rechte-add-name">
+                  <LabeledInput
+                    testId="rechte-invite-last-name"
+                    label={t('rechte_invite_last_name')}
+                    value={inviteLastName}
+                    onChange={setInviteLastName}
+                  />
+                </div>
+                <div className="location-rechte-add-hint">{t('rechte_invite_hint')}</div>
                 {canGrantAccount && (
                   <div>
                     <div className="location-rechte-label">{t('rechte_scope')}</div>
@@ -542,13 +579,13 @@ const LocationRechteTab = () => {
                     testId="rechte-add-confirm"
                     label={t('rechte_add_confirm')}
                     onClick={addUser}
-                    disabled={!newUserId || adding}
+                    disabled={!inviteValid || adding}
                   />
                   <PillButton
                     testId="rechte-add-cancel"
                     variant="ghost"
                     label={t('rechte_cancel')}
-                    onClick={() => setAddOpen(false)}
+                    onClick={closeAdd}
                   />
                 </div>
               </div>

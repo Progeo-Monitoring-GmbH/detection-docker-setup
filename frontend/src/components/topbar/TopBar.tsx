@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
 import { Archive, DoorOpen, Eye, InfoCircle, PersonGear } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
-import { UserProfileModal } from '../../main/UserProfile.tsx';
+import { UserProfileModal, displayName } from '../../main/UserProfile.tsx';
+import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
 import { isDemoUser } from '../../main/demo';
@@ -27,7 +27,9 @@ const TopBar = () => {
   // heartbeat (a no-op for everyone else).
   useDemoHeartbeat();
 
-  const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
+  const [initials, setInitials] = useState('');
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -36,18 +38,41 @@ const TopBar = () => {
   const [hideArchived, setHideArchived] = useState<boolean | null>(null);
   const [archivedBusy, setArchivedBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // The profile language is applied once per page load - unless a language
+  // was just chosen on the login page (that one wins and is saved).
+  const languageSynced = useRef(false);
 
-  useEffect(() => {
+  // Again after Mein Konto closed: the name may have changed there.
+  const loadProfile = () => {
     void axiosConfig.perform_get(
       auth,
       '/v1/user/profile/',
       (response) => {
-        setUsername(response?.data?.username || '');
+        const data = response?.data || {};
+        // First and last name - the login name only when both are empty.
+        setName(displayName(data));
+        const parts = [data.first_name, data.last_name].map((part) => String(part || '').trim()).filter(Boolean);
+        setInitials(
+          (parts.length ? parts.map((part) => part[0]).join('') : String(data.username || '').slice(0, 2)).toUpperCase(),
+        );
         const hide = response?.data?.hide_archived_measurements;
         setHideArchived(typeof hide === 'boolean' ? hide : null);
+        // Another device or browser: the portal follows the language saved in
+        // the profile (the one of the mails and messenger messages, too).
+        if (!languageSynced.current) {
+          languageSynced.current = true;
+          const saved = data.language_saved ? String(data.language || '') : '';
+          if ((saved === 'de' || saved === 'en') && !(i18n.language || '').startsWith(saved)) {
+            void i18n.changeLanguage(saved);
+          }
+        }
       },
       () => {},
     );
+  };
+
+  useEffect(() => {
+    loadProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -88,11 +113,11 @@ const TopBar = () => {
     }
     const chosen = takeChosenLanguage();
     if (chosen) {
+      languageSynced.current = true;
       void axiosConfig.perform_post(auth, '/v1/user/language/', { language: chosen }, () => {}, () => {});
     }
   }, [auth]);
 
-  const initials = username.slice(0, 2).toUpperCase() || '?';
   const demo = isDemoUser(auth.user);
   const currentLang =
     (i18n.language || 'de').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de';
@@ -158,14 +183,16 @@ const TopBar = () => {
           <div className="topbar-popover topbar-popover--info" data-testid="topbar-info-popover">
             {t('topbar_info_company')}
             <div className="topbar-info-links">
-              <Link
-                to={PRIVACY_POLICY_URL}
+              <a
+                href={PRIVACY_POLICY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 onClick={() => setInfoOpen(false)}
                 className="topbar-info-link"
                 data-testid="topbar-privacy-link"
               >
                 {t('consent_privacy_policy')}
-              </Link>
+              </a>
               <button
                 type="button"
                 onClick={() => {
@@ -231,16 +258,16 @@ const TopBar = () => {
         data-testid="topbar-account"
       >
         <span className="topbar-avatar">
-          {initials}
+          {initials || '?'}
         </span>
         <span className="topbar-username" data-testid="topbar-username">
-          {username}
+          {name}
         </span>
       </button>
 
       <button
         type="button"
-        onClick={() => auth.logoutAction()}
+        onClick={() => setLogoutOpen(true)}
         title={t('topbar_logout')}
         aria-label={t('topbar_logout')}
         className="topbar-pill topbar-pill--icon"
@@ -251,7 +278,26 @@ const TopBar = () => {
 
       <UserProfileModal
         show={profileOpen}
-        onHide={() => setProfileOpen(false)}
+        onHide={() => {
+          setProfileOpen(false);
+          loadProfile();
+        }}
+      />
+
+      {/* Against misclicks (trade fair screens): logging out asks first. */}
+      <ConfirmDialog
+        testId="topbar-logout-dialog"
+        show={logoutOpen}
+        danger={false}
+        title={t('topbar_logout_confirm_title')}
+        message={t('topbar_logout_confirm_text')}
+        confirmLabel={t('topbar_logout')}
+        cancelLabel={t('tfa_cancel')}
+        onCancel={() => setLogoutOpen(false)}
+        onConfirm={() => {
+          setLogoutOpen(false);
+          auth.logoutAction();
+        }}
       />
     </div>
   );

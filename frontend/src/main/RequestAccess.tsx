@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { currentLanguage } from '../components/ui/LanguageSwitch';
 import axiosConfig from '../axiosConfig';
 import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { PRIVACY_POLICY_URL } from '../components/privacy/consent';
 import { testId } from '../testIds';
+import PhoneInput from '../components/ui/PhoneInput';
+import { isPhoneSavable } from '../components/ui/phone';
 
 type RequestForm = {
   first_name: string;
@@ -51,7 +53,8 @@ const TEXT_FIELDS: {
     required: true,
     autoComplete: 'email',
   },
-  { name: 'phone', label: 'access_phone', type: 'tel', autoComplete: 'tel' },
+  // Rendered as PhoneInput (calling code + number, E.164).
+  { name: 'phone', label: 'access_phone' },
   { name: 'project', label: 'access_project' },
 ];
 
@@ -63,9 +66,10 @@ const TEXT_FIELDS: {
  */
 const RequestAccess = () => {
   const { t, i18n } = useTranslation();
-  const { register, handleSubmit, formState } = useForm<RequestForm>({
-    defaultValues: { privacy_accepted: false, website: '' },
+  const { register, handleSubmit, formState, setValue, control } = useForm<RequestForm>({
+    defaultValues: { privacy_accepted: false, website: '', phone: '' },
   });
+  const phone = useWatch({ control, name: 'phone' });
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -73,6 +77,10 @@ const RequestAccess = () => {
   const onSubmit = async (data: RequestForm) => {
     setError('');
     setFieldErrors({});
+    if (!isPhoneSavable(data.phone)) {
+      setFieldErrors({ phone: t('phone_invalid') });
+      return;
+    }
     await axiosConfig.perform_post(
       undefined,
       '/api/auth-support/access-requests/',
@@ -109,7 +117,21 @@ const RequestAccess = () => {
       testId="page-request-access"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="request-access-form">
-        {TEXT_FIELDS.map((field) => (
+        {TEXT_FIELDS.map((field) => field.name === 'phone' ? (
+          <div key={field.name}>
+            <PhoneInput
+              variant="auth"
+              label={t(field.label)}
+              labelSuffix={`(${t('access_optional')})`}
+              value={phone || ''}
+              onChange={(value) => setValue('phone', value)}
+              testId="request-access-phone"
+            />
+            {fieldErrors.phone && (
+              <p className="auth-error" data-testid="request-access-phone-error">{fieldErrors.phone}</p>
+            )}
+          </div>
+        ) : (
           <label key={field.name} className="auth-label">
             <span className="auth-field-label">
               {t(field.label)}
@@ -162,7 +184,7 @@ const RequestAccess = () => {
           />
           <span>
             {t('access_privacy_prefix')}{' '}
-            <Link to={PRIVACY_POLICY_URL} data-testid="request-access-privacy-link">{t('consent_privacy_policy')}</Link>{' '}
+            <Link to={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" data-testid="request-access-privacy-link">{t('consent_privacy_policy')}</Link>{' '}
             {t('access_privacy_suffix')}
           </span>
         </label>

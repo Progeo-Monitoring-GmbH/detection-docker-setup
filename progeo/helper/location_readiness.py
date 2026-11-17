@@ -133,6 +133,21 @@ def check_heat_limitation(facts):
     return _result(areas > 0, areas=areas)
 
 
+def check_lageplan_resolution(facts):
+    """The main plan is sharp enough for the heatmap (helper/plan_resolution.py) -
+    a low-res legacy plan is to be uploaded again."""
+    main = _main_plan(facts)
+    resolution = main.get("resolution") if main else None
+    if not resolution:
+        # No plan (check "lageplan" fails already) or its image can't be read.
+        return _na(score=None, grade=None)
+    return _result(
+        resolution["grade"] == "ok",
+        score=resolution["score"], grade=resolution["grade"], long_side=resolution["long_side"],
+        px_per_m=resolution["px_per_m"], spacing_px=resolution["spacing_px"], limiting=resolution["limiting"],
+    )
+
+
 def check_devices(facts):
     return _result(bool(facts.devices), count=len(facts.devices))
 
@@ -267,6 +282,7 @@ CHECKS = (
     Check("lageplan_calibrated", "plan", 1, check_lageplan_calibrated, optional=True),
     Check("lageplan_cropped", "plan", 1, check_lageplan_cropped, optional=True),
     Check("heat_limitation", "plan", 1, check_heat_limitation),
+    Check("lageplan_resolution", "plan", 1, check_lageplan_resolution, optional=True),
     Check("devices", "devices", 3, check_devices),
     Check("devices_online", "devices", 3, check_devices_online),
     Check("measure_points", "points", 3, check_measure_points),
@@ -347,6 +363,7 @@ def _notifications_disabled(location) -> bool:
 def collect_facts(location, account=None, now=None) -> Facts:
     from progeo.helper.device_overview import device_label, is_online
     from progeo.helper.plan_meters import image_size, is_calibrated
+    from progeo.helper.plan_resolution import plan_resolution
     from progeo.helper.project_dbs import location_db
     from progeo.v1.models import (
         ProgeoAccess,
@@ -375,6 +392,7 @@ def collect_facts(location, account=None, now=None) -> Facts:
         for plan in plans:
             on_plan = [point for point in points
                        if point.lageplan_id == plan.pk or (point.lageplan_id is None and plan.pk == main_id)]
+            size = image_size(plan) if plan.lageplan else None
             facts.plans.append({
                 "id": plan.pk,
                 "has_file": bool(plan.lageplan),
@@ -382,7 +400,8 @@ def collect_facts(location, account=None, now=None) -> Facts:
                 "aligned": plan.offset_x is not None and plan.offset_y is not None,
                 "calibrated": is_calibrated(plan),
                 "heat_areas": len(plan.heat_limitations or []),
-                "span": _points_span(on_plan, plan, image_size(plan)) if plan.lageplan else None,
+                "span": _points_span(on_plan, plan, size) if plan.lageplan else None,
+                "resolution": plan_resolution(plan, on_plan, size) if size else None,
             })
         facts.points = [{
             "sensor_order": point.sensor_order, "device_id": point.device_id, "lageplan_id": point.lageplan_id,

@@ -35,9 +35,15 @@ export type Scene = {
   /** The Lageplan's heat limitations (world coordinates): the heat field is
    * only drawn inside them. Empty: everywhere. */
   limits: Array<Array<[number, number]>>;
-  /** The sensor markers (dots) with their labels - without them only the
-   * hovered / highlighted one. */
+  /** The sensor markers (dots) - without them only the hovered /
+   * highlighted / selected one. */
   showSensors: boolean;
+  /** The sensors' labels (their numbers) - without them only the
+   * highlighted one's. Independent of the markers. */
+  showLabels: boolean;
+  /** Marks on the colour scale (0..1 of it), e.g. where the alarm threshold
+   * lies on an absolute scale - drawn as an orange line across the bar. */
+  scaleMarks?: number[];
   /** smartex® dm: the sensors' band lines. */
   showLines: boolean;
 };
@@ -267,7 +273,8 @@ const drawLineLabel = (
 
 /** Sensor markers (screen size at any zoom) - the highlighted one last, on
  * top of its neighbours' labels; markers off screen are skipped. Without
- * `showSensors` only the hovered and highlighted one. A band sensor whose
+ * `showSensors` only the hovered, highlighted and selected one; without
+ * `showLabels` no labels but the highlighted one's. A band sensor whose
  * line is drawn gets no marker: only its label, in the line's middle - its
  * hover, highlight and selection show on the line (drawLines). */
 const drawSensors = (
@@ -300,15 +307,21 @@ const drawSensors = (
     const hovered = overlay.hovered === index;
     const selected = overlay.selected?.has(index) ?? false;
     // Without the dots: still the hovered, highlighted and selected ones.
-    if (!scene.showSensors && !highlighted && !hovered && !selected) {
-      return;
-    }
+    const withMarker = scene.showSensors || highlighted || hovered || selected;
+    // The labels are a toggle of their own (off by default).
+    const withLabel = scene.showLabels || highlighted;
     if (asLine) {
-      drawLineLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
+      if (withLabel) {
+        drawLineLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
+      }
       return;
     }
-    drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, markerState(scene, index), selected);
-    drawMarkerLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
+    if (withMarker) {
+      drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, markerState(scene, index), selected);
+    }
+    if (withLabel) {
+      drawMarkerLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
+    }
   });
   ctx.restore();
 };
@@ -344,6 +357,14 @@ const drawColorBar = (ctx: CanvasRenderingContext2D, scene: Scene, { width, heig
     ctx.fillRect(barX + 10, y - 0.5, 3, 1);
     ctx.fillText(scene.tickLabel(value), barX + 15, y);
   }
+  // E.g. the alarm threshold on an absolute scale: an orange line across the bar.
+  ctx.fillStyle = plotTheme.brandOrange;
+  (scene.scaleMarks ?? []).forEach((mark) => {
+    if (mark >= 0 && mark <= 1) {
+      const y = barBottom - mark * (barBottom - barTop);
+      ctx.fillRect(barX - 3, y - 1, 16, 2);
+    }
+  });
   ctx.restore();
 };
 

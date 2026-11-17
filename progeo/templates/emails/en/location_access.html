@@ -1,0 +1,10 @@
+{% extends "emails/en/base.html" %}
+{# Rechte tab: an existing user was given access to an object (English). #}
+{% block subject %}New object access in the ProGeo portal: {{ location_name }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">New object access</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
+<p style="margin:0 0 4px;">{{ inviter_name }} has given you access to the object <strong>{{ location_name }}</strong> in the ProGeo portal. You will find it in your object overview from now on.</p>
+{% include "emails/_button.html" with url=location_url label="Open object" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">If you did not expect this access, please contact {{ inviter_name }} or ProGeo.</p>
+{% endblock %}

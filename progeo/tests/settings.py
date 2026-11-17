@@ -31,6 +31,10 @@ DATETIME_FORMAT = PRETTY_DATE_FORMAT
 # Outbound SMS / messenger (see progeo/settings.py) - tests always start in
 # the dry runs; tests of the real send path switch them off explicitly.
 SMS_DRY_RUN = True
+# No Nominatim lookups from tests: the re-geocoding on save is switched on
+# (and the lookup mocked) by the tests that cover it.
+GEOCODE_ON_SAVE = False
+ACCESS_INVITES_PER_HOUR = 20
 MESSENGER_DRY_RUN = True
 MAIL_ENVELOPE_FROM = ""
 OUTBOUND_LIMITS = {
@@ -68,6 +72,9 @@ MAGIC_LINK_INVITE_HOURS = 72
 MIGRATION_INVITES_ENABLED = False
 MIGRATION_INVITE_DAYS = 21
 MIGRATION_INVITES_PER_HOUR = 40
+# helper/auto_heat_limits.py - no celery queueing from the tests; their tests switch it on.
+AUTO_HEAT_LIMITATIONS = False
+AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = "Lageplan Auflösung"
 ACCESS_REQUEST_VERIFY_HOURS = 48
 MAGIC_LINK_ALLOW_STAFF = False
 # Usage analysis (helper/activity.py) - off, as in production; its tests switch it on.

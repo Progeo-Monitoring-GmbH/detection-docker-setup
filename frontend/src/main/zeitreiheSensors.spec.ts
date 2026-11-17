@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   defaultZeitreiheIds,
+  selectedFirst,
   toggledId,
   ZEITREIHE_DEFAULT_SENSORS,
   zeitreiheSensorsOf,
@@ -93,5 +94,18 @@ describe('toggledId', () => {
   it('appends a new id and keeps the order of the others', () => {
     expect(toggledId(['a', 'b'], 'c')).toEqual(['a', 'b', 'c']);
     expect(toggledId(['a', 'b', 'c'], 'b')).toEqual(['a', 'c']);
+  });
+});
+
+describe('selectedFirst', () => {
+  it('moves the selected sensor to the front, keeping the others in order', () => {
+    expect(selectedFirst(['a', 'b', 'c'], 'c')).toEqual(['c', 'a', 'b']);
+    expect(selectedFirst(['a', 'b', 'c'], 'a')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('leaves the list as it is without a selection or when it is not plotted', () => {
+    const ids = ['a', 'b'];
+    expect(selectedFirst(ids, null)).toBe(ids);
+    expect(selectedFirst(ids, 'x')).toBe(ids);
   });
 });

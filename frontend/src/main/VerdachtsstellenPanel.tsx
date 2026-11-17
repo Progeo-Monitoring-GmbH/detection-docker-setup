@@ -7,7 +7,7 @@ import { formatMeters } from '../components/device/planMeters';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
-import { toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
+import { splitResolved, toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import './VerdachtsstellenPanel.css';
@@ -23,14 +23,13 @@ type VerdachtsstellenPanelProps = {
   disabledOf?: (sensorId: number) => boolean;
   acknowledging: Set<string>;
   onAcknowledge: (cluster: VerdachtsstelleCluster) => void;
-  /** Link to every alarm of the location; none in the demo view. */
-  onViewAll?: () => void;
   /** Demo view: no write actions. */
   readOnly: boolean;
 };
 
 /** The Verdachtsstellen (suspected leaks) of the location, each expandable
- * to its alarm history and acknowledgement. */
+ * to its alarm history and acknowledgement. Resolved ones are not in the
+ * default view: they wait in a collapsed "Resolved (n)" section. */
 const VerdachtsstellenPanel = ({
   clusters,
   denied,
@@ -39,58 +38,67 @@ const VerdachtsstellenPanel = ({
   disabledOf,
   acknowledging,
   onAcknowledge,
-  onViewAll,
   readOnly,
 }: VerdachtsstellenPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showResolved, setShowResolved] = useState(false);
+  const { open, resolved } = splitResolved(clusters);
+
+  const rows = (list: VerdachtsstelleCluster[]) =>
+    list.map((cluster) => (
+      <VerdachtsstelleRow
+        key={cluster.id}
+        cluster={cluster}
+        label={sensorLabel(cluster.sensor_id)}
+        meters={metersOf(cluster.sensor_id)}
+        disabled={disabledOf?.(cluster.sensor_id) ?? false}
+        expanded={expanded.has(cluster.id)}
+        onToggle={() => setExpanded((prev) => toggledSet(prev, cluster.id))}
+        onAcknowledge={() => onAcknowledge(cluster)}
+        acknowledging={acknowledging.has(cluster.id)}
+        readOnly={readOnly}
+        t={t}
+      />
+    ));
 
   return (
-    <PanelCard
-      testId="verdachtsstellen"
-      title={t('status_verdachtsstellen_title')}
-      actions={
-        onViewAll && (
-          <a
-            href="#"
-            onClick={(event) => {
-              event.preventDefault();
-              onViewAll();
-            }}
-            className="verdachtsstellen-view-all"
-            data-testid="verdachtsstellen-view-all"
-          >
-            {t('status_view_all')}
-          </a>
-        )
-      }
-    >
+    <PanelCard testId="verdachtsstellen" title={t('status_verdachtsstellen_title')}>
       {denied ? (
         <div className="verdachtsstellen-denied" data-testid="verdachtsstellen-denied">
           {t('status_no_measurement_access')}
         </div>
-      ) : clusters.length === 0 ? (
-        <div className="verdachtsstellen-empty" data-testid="verdachtsstellen-empty">
-          {t('status_verdachtsstellen_empty')}
-        </div>
       ) : (
-        <div className="verdachtsstellen-list" data-testid="verdachtsstellen-list">
-          {clusters.map((cluster) => (
-            <VerdachtsstelleRow
-              key={cluster.id}
-              cluster={cluster}
-              label={sensorLabel(cluster.sensor_id)}
-              meters={metersOf(cluster.sensor_id)}
-              disabled={disabledOf?.(cluster.sensor_id) ?? false}
-              expanded={expanded.has(cluster.id)}
-              onToggle={() => setExpanded((prev) => toggledSet(prev, cluster.id))}
-              onAcknowledge={() => onAcknowledge(cluster)}
-              acknowledging={acknowledging.has(cluster.id)}
-              readOnly={readOnly}
-              t={t}
-            />
-          ))}
-        </div>
+        <>
+          {open.length === 0 ? (
+            <div className="verdachtsstellen-empty" data-testid="verdachtsstellen-empty">
+              {t('status_verdachtsstellen_empty')}
+            </div>
+          ) : (
+            <div className="verdachtsstellen-list" data-testid="verdachtsstellen-list">
+              {rows(open)}
+            </div>
+          )}
+          {resolved.length > 0 && (
+            <div className="verdachtsstellen-resolved" data-testid="verdachtsstellen-resolved">
+              <button
+                type="button"
+                onClick={() => setShowResolved((shown) => !shown)}
+                aria-expanded={showResolved}
+                className="verdachtsstellen-resolved-toggle"
+                data-testid="verdachtsstellen-resolved-toggle"
+              >
+                {showResolved ? <ChevronDown /> : <ChevronRight />}
+                {t('status_verdachtsstellen_resolved', { count: resolved.length })}
+              </button>
+              {showResolved && (
+                <div className="verdachtsstellen-list" data-testid="verdachtsstellen-resolved-list">
+                  {rows(resolved)}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </PanelCard>
   );

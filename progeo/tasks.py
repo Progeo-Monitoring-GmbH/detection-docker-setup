@@ -670,6 +670,17 @@ def run_cad_import(job_id: str):
 
 
 @shared_task
+def auto_heat_limitations_task(db_name: str, lageplan_id: int):
+    """Detect the heat limitations (building outlines) of a Lageplan while it
+    has none or only automatic ones - queued after a plan upload, a CAD
+    import, a placement or an alignment (helper/auto_heat_limits.py)."""
+    from progeo.helper.auto_heat_limits import run_for_plan
+
+    result = run_for_plan(db_name, lageplan_id)
+    return {"status": result.status if result else "missing", "areas": len(result.areas) if result else 0}
+
+
+@shared_task
 def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
     """Open/extend the alarm case of a new alarm and send its first stage
     (helper/notifications.notify_alarm) - queued by queue_alarm_notification."""
@@ -767,13 +778,14 @@ def send_template_mail_task(sent_to: list, template_name: str, context: dict | N
 
 @shared_task
 def send_login_link_task(user_id: int, purpose: str = "login", template: str | None = None,
-                         language: str | None = None):
+                         language: str | None = None, context: dict | None = None):
     """Create a one-time login link for the user and mail it - the token is
     made here, inside the worker, so it never passes the broker. `language`:
-    the one chosen on the page that asked for it (else the user's)."""
+    the one chosen on the page that asked for it (else the user's).
+    `context`: extra template values (location invites), never secrets."""
     from progeo.helper.login_links import send_login_link
 
-    return send_login_link(user_id, purpose, template, language=language)
+    return send_login_link(user_id, purpose, template, language=language, context=context)
 
 
 @shared_task

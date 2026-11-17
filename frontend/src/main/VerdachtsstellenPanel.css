@@ -2,12 +2,30 @@
    clusters as expandable rows with their alarm history and acknowledge
    button. Theme variables: scss/main.css. */
 
-/* Also on hover: the global a:hover colour must not win. */
-.verdachtsstellen-view-all,
-.verdachtsstellen-view-all:hover {
+/* The collapsed "Resolved (n)" section below the open ones. */
+.verdachtsstellen-resolved {
+  margin-top: 10px;
+  border-top: 1px solid var(--progeo-track-soft);
+  padding-top: 6px;
+}
+
+.verdachtsstellen-resolved-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-family: inherit;
   font-size: 12.5px;
-  color: var(--progeo-orange);
   font-weight: 500;
+  color: #8b8383;
+  cursor: pointer;
+}
+
+.verdachtsstellen-resolved-toggle:hover {
+  background: var(--progeo-surface);
 }
 
 .verdachtsstellen-denied {

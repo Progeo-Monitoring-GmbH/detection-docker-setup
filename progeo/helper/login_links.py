@@ -77,14 +77,17 @@ def create_link(user, purpose: str) -> str | None:
 
 
 # Mail templates a link may go out with instead of the purpose's own.
-LINK_TEMPLATES = {}
+# location_invite: a customer admin added a new address in the Rechte tab
+# (helper/location_invites.py) - names the object and who invited.
+LINK_TEMPLATES = {"location_invite": "invite"}
 
 
 def send_login_link(user_id: int, purpose: str = "login", template: str | None = None,
-                    language: str | None = None) -> bool:
+                    language: str | None = None, context: dict | None = None) -> bool:
     """Create a link and mail it to the user (runs in the worker).
     `template`: one of LINK_TEMPLATES for that purpose, else the default.
-    `language`: the page's language (login screen), else the user's."""
+    `language`: the page's language (login screen), else the user's.
+    `context`: extra template values (no secrets - task arguments)."""
     from progeo.helper.emailhelper import portal_url, send_template_mail
     from progeo.v1.models import LoginLink
 
@@ -100,6 +103,7 @@ def send_login_link(user_id: int, purpose: str = "login", template: str | None =
 
     invite = purpose == LoginLink.Purpose.INVITE
     context = {
+        **(context or {}),
         "first_name": user.first_name,
         "username": user.username,
         "valid_minutes": settings.MAGIC_LINK_LOGIN_MINUTES,

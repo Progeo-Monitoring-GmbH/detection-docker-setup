@@ -88,6 +88,17 @@ export const frameAt = (timestamps: number[], ms: number) => {
   return seconds - timestamps[previous] < step || next < 0 ? previous : next;
 };
 
+/** The frame to show for a time of interest (ms, e.g. a notification's
+ * event): the one holding it (frameAt) - null without a time, without frames
+ * or when the frames don't reach back to it. A time after the newest frame
+ * gets the newest. */
+export const focusFrameIndex = (timestamps: number[], ms: number | null | undefined) => {
+  if (ms == null || !Number.isFinite(ms) || timestamps.length === 0 || ms < timestamps[0] * 1000) {
+    return null;
+  }
+  return frameAt(timestamps, ms);
+};
+
 /** Narrowest mark (px): an alarm within one frame stays visible. */
 const MIN_ALARM_WIDTH = 4;
 

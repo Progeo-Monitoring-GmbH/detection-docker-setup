@@ -39,13 +39,42 @@ FIELD_LIMITS = {
 }
 REQUIRED_FIELDS = ("first_name", "last_name", "email")
 
-# Django's password validators speak English (USE_I18N is off) - the form is German.
+# Django's password validators speak English (USE_I18N is off) - the
+# public pages are German or English (their language switch, `language`).
 PASSWORD_MESSAGES = {
     "password_too_short": "Das Passwort ist zu kurz (mindestens 8 Zeichen).",
     "password_too_common": "Das Passwort ist zu gebräuchlich.",
     "password_entirely_numeric": "Das Passwort darf nicht nur aus Ziffern bestehen.",
     "password_too_similar": "Das Passwort ist Ihrem Namen oder Ihrer E-Mail-Adresse zu ähnlich.",
 }
+PASSWORD_MESSAGES_EN = {
+    "password_too_short": "The password is too short (at least 8 characters).",
+    "password_too_common": "The password is too common.",
+    "password_entirely_numeric": "The password must not consist of digits only.",
+    "password_too_similar": "The password is too similar to your name or e-mail address.",
+}
+
+# The form's field errors, per language.
+FIELD_MESSAGES = {
+    "de": {
+        "too_long": "Höchstens {limit} Zeichen.",
+        "required": "Pflichtfeld.",
+        "email": "Bitte geben Sie eine gültige E-Mail-Adresse an.",
+        "phone": "Bitte geben Sie eine gültige Telefonnummer an.",
+        "privacy": "Bitte stimmen Sie der Datenschutzerklärung zu.",
+    },
+    "en": {
+        "too_long": "At most {limit} characters.",
+        "required": "Required.",
+        "email": "Please enter a valid e-mail address.",
+        "phone": "Please enter a valid phone number.",
+        "privacy": "Please accept the privacy policy.",
+    },
+}
+
+
+def _messages(language) -> dict:
+    return FIELD_MESSAGES["en"] if str(language or "").lower().startswith("en") else FIELD_MESSAGES["de"]
 
 
 def is_pending_user(user) -> bool:
@@ -59,23 +88,31 @@ def is_pending_user(user) -> bool:
 
 
 def _clean(data: dict) -> tuple[dict, dict]:
+    messages = _messages(data.get("language"))
     values, errors = {}, {}
     for field, limit in FIELD_LIMITS.items():
         value = str(data.get(field) or "").strip()
         if len(value) > limit:
-            errors[field] = f"Höchstens {limit} Zeichen."
+            errors[field] = messages["too_long"].format(limit=limit)
         values[field] = value
     for field in REQUIRED_FIELDS:
         if not values[field]:
-            errors[field] = "Pflichtfeld."
+            errors[field] = messages["required"]
     values["email"] = outbound.normalize_address(values["email"])
     if values["email"] and "email" not in errors:
         try:
             validate_email(values["email"])
         except ValidationError:
-            errors["email"] = "Bitte geben Sie eine gültige E-Mail-Adresse an."
+            errors["email"] = messages["email"]
+    if values["phone"] and "phone" not in errors:
+        from progeo.helper.phone_numbers import InvalidPhoneNumber, to_e164
+
+        try:
+            values["phone"] = to_e164(values["phone"])
+        except InvalidPhoneNumber:
+            errors["phone"] = messages["phone"]
     if data.get("privacy_accepted") is not True:
-        errors["privacy_accepted"] = "Bitte stimmen Sie der Datenschutzerklärung zu."
+        errors["privacy_accepted"] = messages["privacy"]
     return values, errors
 
 
@@ -165,11 +202,13 @@ def _username_for(email: str) -> str:
     return username
 
 
-def password_errors(password: str, user) -> list[str]:
+def password_errors(password: str, user, language=None) -> list[str]:
+    """The validators' complaints in `language` (German by default)."""
+    texts = PASSWORD_MESSAGES_EN if str(language or "").lower().startswith("en") else PASSWORD_MESSAGES
     try:
         validate_password(password, user=user)
     except ValidationError as exc:
-        return [PASSWORD_MESSAGES.get(error.code, " ".join(error.messages)) for error in exc.error_list]
+        return [texts.get(error.code, " ".join(error.messages)) for error in exc.error_list]
     return []
 
 
@@ -185,7 +224,8 @@ def verify(token: str, password: str):
         return None, {"reason": "invalid_token"}
     candidate = User(username=request.email, email=request.email,
                      first_name=request.first_name, last_name=request.last_name)
-    errors = password_errors(password or "", candidate)
+    # The language the form was filled in.
+    errors = password_errors(password or "", candidate, request.language)
     if errors:
         return None, {"reason": "password", "errors": errors}
 

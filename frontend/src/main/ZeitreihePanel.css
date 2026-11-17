@@ -35,6 +35,18 @@
   text-decoration: line-through;
 }
 
+/* The selected sensor (the plot's first entry) in the tables. */
+.zeitreihe-selected-badge {
+  padding: 1px 7px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-orange);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
 .zeitreihe-number {
   font-variant-numeric: tabular-nums;
 }

@@ -24,10 +24,25 @@ def _clean_text(value) -> str:
     return unicodedata.normalize("NFC", _fix_mojibake(text))
 
 
+def has_position(latitude, longitude) -> bool:
+    """True for a usable position. 0/0 (in the Atlantic) is what old imports
+    wrote for "unknown" - it counts as missing, like None."""
+    if latitude is None or longitude is None:
+        return False
+    try:
+        return not (float(latitude) == 0.0 and float(longitude) == 0.0)
+    except (TypeError, ValueError):
+        return False
+
+
 class GeoHelper:
-    def __init__(self, logger=None, min_delay_seconds=1.0):
+    """Nominatim (OpenStreetMap) lookups. Its usage policy allows at most one
+    request per second (min_delay_seconds) with an identifying User-Agent."""
+
+    def __init__(self, logger=None, min_delay_seconds=1.0, timeout=30):
         self.logger = logger
         self.min_delay_seconds = min_delay_seconds
+        self.timeout = timeout
         self._cache = {}
         self._last_call = 0.0
 
@@ -66,7 +81,7 @@ class GeoHelper:
         )
 
         try:
-            with urlopen(request, timeout=30) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8", errors="replace"))
         # urlopen: URLError/HTTPError/timeout are OSErrors; bad JSON a ValueError.
         except (OSError, ValueError) as error:

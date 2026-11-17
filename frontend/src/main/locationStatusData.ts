@@ -101,6 +101,17 @@ const lowestOf = (values: Iterable<number | null | undefined>) => {
   return best;
 };
 
+/**
+ * The Verdachtsstellen of the default view and the resolved ones apart: a
+ * cluster whose state is "geloest" (no alarm of its sensor open anymore) is
+ * not shown by default - it stays reachable in the collapsed "Resolved"
+ * section. Both keep the order they came in.
+ */
+export const splitResolved = <T extends Pick<VerdachtsstelleCluster, 'state'>>(clusters: readonly T[]) => ({
+  open: clusters.filter((cluster) => cluster.state !== 'geloest'),
+  resolved: clusters.filter((cluster) => cluster.state === 'geloest'),
+});
+
 /** A copy of `set` with `value` added, or removed when it was in it. */
 export const toggledSet = <T>(set: Set<T>, value: T) => {
   const next = new Set(set);

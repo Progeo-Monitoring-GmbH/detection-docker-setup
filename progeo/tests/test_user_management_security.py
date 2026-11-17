@@ -246,14 +246,14 @@ def test_customers_cannot_change_other_users_email(client):
     colleague.refresh_from_db()
     assert colleague.email == "colleague@progeo.com"
     # Mobile numbers of colleagues stay editable for account members.
-    assert client.post(url, {"user_id": colleague.pk, "mobile": "+49151"}, format="json").status_code == 200
+    assert client.post(url, {"user_id": colleague.pk, "mobile": "+49 151 2345678"}, format="json").status_code == 200
 
     single_user = f.make_user()
     f.make_access(location, single_user)
     # Only a single location of the account: no rights over its members.
     client.force_authenticate(user=single_user)
     f.grant(single_user, "module_notifications_enabled", "module_notifications_edit")
-    assert client.post(url, {"user_id": colleague.pk, "mobile": "+49999"}, format="json").status_code == 400
+    assert client.post(url, {"user_id": colleague.pk, "mobile": "+49 999 1234567"}, format="json").status_code == 400
 
 
 def test_objektleitung_flag_is_staff_only(client):

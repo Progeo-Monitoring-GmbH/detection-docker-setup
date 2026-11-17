@@ -1,7 +1,6 @@
-import { StarFill, XLg } from 'react-bootstrap-icons';
+import { XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
-import { FAVORITE_COLOR } from './FavoriteStar';
 import { repeatedTestId } from '../testIds';
 import { useFavorites } from './favorites';
 import { switchLocationPath } from './portalNav';
@@ -10,7 +9,7 @@ import './Favorites.css';
 /**
  * The user's favorite locations as one bar at the top of every page
  * (below the TopBar): each one opens the location on the tab of the open
- * location page (/objekt stays /objekt), elsewhere its analysis; the x next
+ * location page (/objekt stays /objekt), elsewhere its status page; the x next
  * to it removes the favorite. Hidden without favorites - the stars pin them.
  */
 const FavoritesBar = ({ className }: { className?: string }) => {
@@ -29,11 +28,11 @@ const FavoritesBar = ({ className }: { className?: string }) => {
       className={className ? `favorites-bar ${className}` : 'favorites-bar'}
     >
       <span
-        className="d-inline-flex align-items-center gap-1 favorites-bar-title"
+        className="favorites-bar-title"
         data-testid="favorites-bar-title"
         title={t('favorites_count', { count: favorites.length, max })}
       >
-        <StarFill size={16} color={FAVORITE_COLOR} />
+        {/* Text only: the large star of the page is the one favorite toggle. */}
         {t('favorites_title')}
       </span>
       {favorites.map((favorite) => {

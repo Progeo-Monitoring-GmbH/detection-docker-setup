@@ -107,6 +107,16 @@ class AccountSerializer(ProgeoBaseSerializer):
         model = Account
         fields = "__all__"
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # The member list is staff business: an account can be shared by
+        # many customers, who must not learn about each other.
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)):
+            data.pop("users", None)
+        return data
+
     @staticmethod
     def get_clazz_name(_):
         return "Account"
@@ -184,8 +194,18 @@ def with_measurement_stats(locations):
         location_measurements.annotate(newest=Max("pk")).values("newest")[:1],
         output_field=IntegerField(),
     )
+    # The Objekt tab's "Anzahl Messeinheiten" - LocationSerializer.device_count
+    # is read-only and was never annotated, so it always came out empty.
+    device_count = Subquery(
+        ProgeoDevice.objects.filter(location=OuterRef("pk"))
+        .order_by()
+        .values("location")
+        .annotate(count=Count("*"))
+        .values("count")[:1],
+        output_field=IntegerField(),
+    )
     return (
-        locations.annotate(measurement_count=Coalesce(measurement_count, 0))
+        locations.annotate(measurement_count=Coalesce(measurement_count, 0), device_count=Coalesce(device_count, 0))
         # alias, not annotate: only used inside last_measurement_at, so it
         # isn't selected (and computed) a second time.
         .alias(newest_measurement_id=newest_measurement_id)
@@ -201,7 +221,7 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
     """Locations ready for LocationSerializer when their project rows live in
     different databases (PROJECT_DB_SPLIT): child locations from the
     locations' own database, lageplans and the measurement stats
-    (measurement_count, last_measurement_at - with the split off,
+    (measurement_count, device_count, last_measurement_at - with the split off,
     get_queryset annotates them in SQL instead) from each project database,
     one query each per database. Returns the locations as a list."""
     from progeo.helper.project_dbs import locations_by_db, map_databases
@@ -227,13 +247,15 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
             # stats as subqueries. A location without a mirror has no devices
             # in that database (the foreign key needs it) - nothing to count.
             stats_by_pk = {
-                pk: (count, last)
-                for pk, count, last in with_measurement_stats(
+                pk: (count, devices, last)
+                for pk, count, devices, last in with_measurement_stats(
                     ProgeoLocation.objects.using(db_name).filter(pk__in=[location.pk for location in group])
-                ).values_list("pk", "measurement_count", "last_measurement_at")
+                ).values_list("pk", "measurement_count", "device_count", "last_measurement_at")
             }
             for location in group:
-                location.measurement_count, location.last_measurement_at = stats_by_pk.get(location.pk, (0, None))
+                (
+                    location.measurement_count, location.device_count, location.last_measurement_at
+                ) = stats_by_pk.get(location.pk, (0, 0, None))
 
     # Up to ~1000 project databases per list: in parallel, never all open at once.
     map_databases(prepare, groups)
@@ -319,6 +341,16 @@ class LocationSerializer(ProgeoBaseSerializer):
         # project database - an edit must never move the location elsewhere.
         validated_data.pop("project_id", None)
         return super().update(instance, validated_data)
+
+    def validate_telefon(self, value):
+        """The object contact's phone number as E.164 (PhoneInput); an
+        unchanged legacy value stays as it is."""
+        from progeo.helper.phone_numbers import InvalidPhoneNumber, clean_phone
+
+        try:
+            return clean_phone(value, getattr(self.instance, "telefon", None))
+        except InvalidPhoneNumber as exc:
+            raise serializers.ValidationError("invalid phone number", code="phone_invalid") from exc
 
     @staticmethod
     def get_clazz_name(_):

@@ -263,6 +263,12 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
         if clashes else None
     )
 
+    if lageplan is not None:
+        # Clip the heat at the building outlines (helper/auto_heat_limits.py).
+        from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
+
+        schedule_auto_heat_limitations(db_name, lageplan.pk)
+
     stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order", "id")
     stored = ProgeoMeasurePointSerializer(
         stored_qs,

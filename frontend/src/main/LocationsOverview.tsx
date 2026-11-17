@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Alert, Button, Card, Form, Spinner } from 'react-bootstrap';
-import { Bell, Pencil } from 'react-bootstrap-icons';
+import { Alert, Button, Form, Spinner } from 'react-bootstrap';
+import { Bell, Pencil, Search, XLg } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
@@ -13,6 +15,9 @@ import { matchesLocationSearch } from '../components/location/locationSearch';
 import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
+import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
+import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
 import FavoriteStar from './FavoriteStar';
 import LocationEditModal, {
   type LocationEditRow,
@@ -27,8 +32,10 @@ import {
   type LocationFlags,
 } from '../components/location/locationFlags';
 
-type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
+import { untaggedRowClick } from './wholeRowClick';
 import './LocationsOverview.css';
+
+type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
 
 type LocationRow = LocationEditRow & {
   measurement_count?: number;
@@ -58,23 +65,32 @@ type ActiveAlarm = {
   };
 };
 
+type TFn = TFunction;
+
+/** Alarm status labels of the backend (ProgeoAlarm.Status) - translated. */
+const ALARM_STATUS_KEYS: Record<string, string> = {
+  neu: 'ui_neu',
+  quittiert: 'ui_quittiert',
+  geloest: 'ui_geloest',
+};
+
 /** Columns of the active alarms list (a row opens its location's alarms). */
-const activeAlarmColumnsFor = (flagsOf: FlagsOf): TableColumn<ActiveAlarm>[] => [
+const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlarm>[] => [
   {
-    name: 'Triggered',
+    name: t('locations_col_triggered'),
     selector: (row) => row.triggered_at ?? '',
     format: (row) => formatDate(row.triggered_at, 'dateTime'),
     sortable: true,
     width: '160px',
   },
   {
-    name: 'Project',
+    name: t('locations_col_project'),
     selector: (row) => row.location.project_id ?? '-',
     sortable: true,
     width: '110px',
   },
   {
-    name: 'Location',
+    name: t('locations_col_location'),
     selector: (row) => row.location.name || '-',
     cell: (row) => (
       <div className="small" {...repeatedTestId('locations-active-alarm', row.id)}>
@@ -89,20 +105,20 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf): TableColumn<ActiveAlarm>[] => 
     grow: 1.6,
   },
   {
-    name: 'Device',
+    name: t('locations_col_device'),
     selector: (row) => row.device.display_name,
     sortable: true,
     grow: 1.2,
   },
   {
-    name: 'Sensor',
+    name: t('locations_col_sensor'),
     selector: (row) => row.sensor_id ?? 0,
     format: (row) => (row.sensor_id != null ? `S${row.sensor_id}` : '-'),
     sortable: true,
     width: '90px',
   },
   {
-    name: 'Value',
+    name: t('locations_col_value'),
     selector: (row) => row.max_value ?? 0,
     format: (row) =>
       row.max_value != null
@@ -112,27 +128,23 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf): TableColumn<ActiveAlarm>[] => 
     width: '120px',
   },
   {
-    name: 'Status',
+    name: t('locations_col_status'),
     selector: (row) => row.status ?? '-',
+    format: (row) =>
+      row.status && ALARM_STATUS_KEYS[row.status] ? t(ALARM_STATUS_KEYS[row.status]) : (row.status ?? '-'),
     sortable: true,
     width: '110px',
   },
 ];
 
-/** Row coloring: yellow = has alarms, green = has measurements, gray = none. */
-const ROW_STYLES = {
-  alarm: {
-    backgroundColor: 'rgba(251, 188, 21, 0.18)',
-    borderLeft: '3px solid #fbbc15',
-  },
-  measurement: {
-    backgroundColor: 'rgba(141, 193, 96, 0.18)',
-    borderLeft: '3px solid #8dc160',
-  },
-  none: {
-    backgroundColor: 'rgba(108, 117, 125, 0.10)',
-    borderLeft: '3px solid #6c757d',
-  },
+/**
+ * Row colouring by state (classes in LocationsOverview.css): ProGeo orange =
+ * has alarms, green = has measurements, grey = none.
+ */
+const ROW_CLASSES = {
+  alarm: 'locations-row--alarm',
+  measurement: 'locations-row--measurement',
+  none: 'locations-row--none',
 };
 
 /** Query of /v1/location/min/: the search text, only connected locations. */
@@ -188,9 +200,9 @@ const mergeSaved = (rows: LocationRow[], updated: LocationEditRow) =>
       : row,
   );
 
-type LocationState = keyof typeof ROW_STYLES;
+type LocationState = keyof typeof ROW_CLASSES;
 
-/** Priority: alarms (yellow) > measurements (green) > none (gray). */
+/** Priority: alarms (orange) > measurements (green) > none (gray). */
 const locationState = (row: LocationRow, summary: LocationAlarmSummary | undefined): LocationState => {
   if (summary && summary.count > 0) {
     return 'alarm';
@@ -201,20 +213,16 @@ const locationState = (row: LocationRow, summary: LocationAlarmSummary | undefin
   return 'none';
 };
 
-const STATE_DOT_COLORS: Record<LocationState, string> = {
-  alarm: '#fbbc15',
-  measurement: '#8dc160',
-  none: '#6c757d',
-};
-
 /** The State column: a dot and "2/3 active" / "Measurements" / "No data";
  * a spinner until the alarm summary and the details are loaded. */
 const LocationStateCell = ({
   row,
   summary,
+  t,
 }: {
   row: LocationRow;
   summary: LocationAlarmSummary | undefined;
+  t: TFn;
 }) => {
   if (!summary || row.measurement_count === undefined) {
     return (
@@ -225,16 +233,13 @@ const LocationStateCell = ({
   }
   const state = locationState(row, summary);
   const labels: Record<LocationState, string> = {
-    alarm: `${summary.active}/${summary.count} active`,
-    measurement: 'Measurements',
-    none: 'No data',
+    alarm: t('locations_state_active', { active: summary.active, count: summary.count }),
+    measurement: t('locations_state_measurements'),
+    none: t('locations_state_no_data'),
   };
   return (
     <div className="d-flex align-items-center gap-2" {...repeatedTestId('locations-state', row.id)}>
-      <span
-        className="d-inline-block rounded-circle locations-state-dot"
-        style={{ backgroundColor: STATE_DOT_COLORS[state] }}
-      />
+      <span className={`d-inline-block rounded-circle locations-state-dot locations-state-dot--${state}`} />
       <span className="small">{labels[state]}</span>
     </div>
   );
@@ -245,19 +250,21 @@ const LocationActions = ({
   row,
   onEdit,
   canDelete,
+  t,
 }: {
   row: LocationRow;
   /** Null without the permission to edit. */
   onEdit: ((row: LocationRow) => void) | null;
   canDelete: boolean;
+  t: TFn;
 }) => (
   <div className="d-flex gap-2">
     {onEdit && (
       <Button
         size="sm"
         variant="outline-primary"
-        title="Edit location"
-        aria-label="Edit location"
+        title={t('locations_edit')}
+        aria-label={t('locations_edit')}
         {...repeatedTestId('locations-edit', row.id)}
         onClick={(event) => {
           event.stopPropagation();
@@ -269,7 +276,7 @@ const LocationActions = ({
     )}
     {canDelete && (
       <DeleteIconButton
-        label="Delete in the Django admin"
+        label={t('locations_delete_admin')}
         href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
         target="_blank"
         onClick={(event) => event.stopPropagation()}
@@ -286,6 +293,7 @@ const locationColumns = ({
   onEdit,
   canDelete,
   flagsOf,
+  t,
 }: {
   alarmSummary: Record<string, LocationAlarmSummary>;
   /** Null without the permission to edit. */
@@ -293,15 +301,16 @@ const locationColumns = ({
   canDelete: boolean;
   /** Staff: the switched-off flags (locationFlags.tsx) - null for everyone else. */
   flagsOf: FlagsOf;
+  t: TFn;
 }): TableColumn<LocationRow>[] => [
   {
-    name: 'Project',
+    name: t('locations_col_project'),
     selector: (row) => row.project_id ?? '-',
     sortable: true,
     width: '110px',
   },
   {
-    name: 'Name',
+    name: t('locations_col_name'),
     selector: (row) => row.name || '-',
     // The star pins the location as favorite.
     cell: (row) => (
@@ -317,54 +326,55 @@ const locationColumns = ({
     grow: 1.4,
   },
   {
-    name: 'City',
+    name: t('locations_col_city'),
     selector: (row) => row.city || '-',
     sortable: true,
     grow: 1.2,
   },
   {
-    name: 'Address',
+    name: t('locations_col_address'),
     selector: (row) => row.address || '-',
     grow: 1.7,
     sortable: true,
     wrap: true,
   },
   {
-    name: 'Contact',
+    name: t('locations_col_contact'),
     selector: (row) => row.manager || row.telefon || row.mail || '-',
     sortable: true,
     grow: 1.5,
     wrap: true,
   },
   {
-    name: 'State',
-    cell: (row) => <LocationStateCell row={row} summary={alarmSummary[String(row.id)]} />,
+    name: t('locations_col_state'),
+    cell: (row) => <LocationStateCell row={row} summary={alarmSummary[String(row.id)]} t={t} />,
     width: '150px',
   },
   {
-    name: 'Devices',
+    name: t('locations_col_devices'),
     selector: (row) => row.device_count || 0,
     sortable: true,
     width: '120px',
   },
   {
-    name: 'Actions',
-    width: '300px',
+    name: t('locations_col_actions'),
+    width: '120px',
     cell: (row) => (
-      <LocationActions row={row} onEdit={onEdit} canDelete={canDelete} />
+      <LocationActions row={row} onEdit={onEdit} canDelete={canDelete} t={t} />
     ),
   },
 ];
 
 /** Row colors by state (see locationState). */
 const rowStylesFor = (alarmSummary: Record<string, LocationAlarmSummary>) =>
-  (Object.keys(ROW_STYLES) as LocationState[]).map((state) => ({
+  (Object.keys(ROW_CLASSES) as LocationState[]).map((state) => ({
     when: (row: LocationRow) => locationState(row, alarmSummary[String(row.id)]) === state,
-    style: ROW_STYLES[state],
+    classNames: [ROW_CLASSES[state]],
   }));
 
 const LocationsOverview = () => {
   const auth = useAuth();
+  const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   // Backend: PATCH /v1/location/{id}/ requires module_locations_edit.
   const canEdit = hasPermission('module_locations_edit');
@@ -413,7 +423,7 @@ const LocationsOverview = () => {
         setLoadingActive(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load the active alarms', error);
+        showRequestError(enqueueSnackbar, t('locations_error_active_alarms'), error);
         setLoadingActive(false);
       },
     );
@@ -441,7 +451,7 @@ const LocationsOverview = () => {
         }
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load locations', error);
+        showRequestError(enqueueSnackbar, t('locations_error_load'), error);
         setLoading(false);
       },
     );
@@ -470,7 +480,7 @@ const LocationsOverview = () => {
         ids.forEach((id) => loadedAlarmIds.current.delete(id));
         showRequestError(
           enqueueSnackbar,
-          'Could not load alarm summary',
+          t('locations_error_alarm_summary'),
           error,
         );
       },
@@ -503,7 +513,7 @@ const LocationsOverview = () => {
         ids.forEach((id) => loadedDetailIds.current.delete(id));
         showRequestError(
           enqueueSnackbar,
-          'Could not load location details',
+          t('locations_error_details'),
           error,
         );
       },
@@ -512,6 +522,13 @@ const LocationsOverview = () => {
 
   const handleRowClick = (row: LocationRow) => {
     navigate(`/location/${row.id}/status`);
+  };
+
+  const openAlarmRow = (row: ActiveAlarm) => navigate(`/location/${row.location.id}/alarms`);
+
+  const paginationOptions = {
+    rowsPerPageText: t('locations_rows_per_page'),
+    rangeSeparatorText: t('locations_range_separator'),
   };
 
   const openEditModal = (row: LocationRow) => {
@@ -571,6 +588,7 @@ const LocationsOverview = () => {
     onEdit: canEdit ? openEditModal : null,
     canDelete,
     flagsOf,
+    t,
   });
   // The switched-off stripes first: the table keeps the style of the last
   // matching rule, so the state colour stays (locationOffRowStyle).
@@ -579,114 +597,162 @@ const LocationsOverview = () => {
     ...rowStylesFor(alarmSummary),
   ];
 
-  return (
-    <React.Fragment>
-      <div
-        className="d-flex flex-wrap mb-3 gap-3 align-items-center justify-content-between"
-        data-testid="page-location-overview"
-      >
-        <h2 className="mb-0">Locations Overview</h2>
-
-        <div className="d-flex flex-wrap gap-3 align-items-center" data-testid="locations-filters">
-          <Form.Control
-            type="text"
-            placeholder="Search by name, address, postcode, city, project id…"
-            value={searchText}
-            onChange={(event) => {
-              setSearchText(event.target.value);
+  const filters = (
+    <div className="locations-filters" data-testid="locations-filters">
+      <div className="progeo-table-search locations-search">
+        <Search aria-hidden size={13} className="progeo-table-search-icon" />
+        <input
+          type="search"
+          value={searchText}
+          placeholder={t('locations_search_placeholder')}
+          aria-label={t('locations_search_placeholder')}
+          onChange={(event) => {
+            setSearchText(event.target.value);
+            setCurrentPage(1);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setSearchText('');
+              setCurrentPage(1);
+            }
+          }}
+          className="progeo-table-search-input"
+          data-testid="locations-search"
+        />
+        {searchText && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchText('');
               setCurrentPage(1);
             }}
-            className="locations-search"
-            data-testid="locations-search"
-          />
-          <Form.Check
-            id="locations-only-connected"
-            data-testid="locations-only-connected"
-            type="checkbox"
-            label="Only locations with connected devices"
-            checked={onlyConnected}
-            onChange={(event) => setOnlyConnected(event.target.checked)}
-          />
-          {canListAlarms && (
-            <Button
-              variant="outline-warning"
-              onClick={fetchActiveAlarms}
-              disabled={loadingActive}
-              data-testid="locations-active-alarms-button"
-            >
-              {loadingActive ? (
-                <Spinner size="sm" animation="border" className="me-2" />
-              ) : (
-                <Bell className="me-2" />
-              )}
-              Active alarms
-            </Button>
-          )}
-        </div>
+            aria-label={t('locations_search_clear')}
+            title={t('locations_search_clear')}
+            className="progeo-table-search-clear"
+          >
+            <XLg size={10} />
+          </button>
+        )}
       </div>
+      <Form.Check
+        id="locations-only-connected"
+        data-testid="locations-only-connected"
+        type="switch"
+        className="locations-only-connected"
+        label={t('locations_only_connected')}
+        checked={onlyConnected}
+        onChange={(event) => setOnlyConnected(event.target.checked)}
+      />
+      {canListAlarms && (
+        <PillButton
+          label={t('locations_active_alarms')}
+          icon={loadingActive ? <Spinner size="sm" animation="border" /> : <Bell aria-hidden />}
+          onClick={fetchActiveAlarms}
+          disabled={loadingActive}
+          testId="locations-active-alarms-button"
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="locations-overview" data-testid="page-location-overview">
+      <h2 className="locations-overview-heading">{t('locations_title')}</h2>
 
       {activeAlarms && (
-        <Card className="border-0 shadow-sm mb-3" data-testid="locations-active-alarms">
-          <Card.Body>
-            <div className="d-flex justify-content-between align-items-start mb-2">
-              <h5 className="mb-0" data-testid="locations-active-alarms-count">
-                Active alarms ({activeAlarms.length}
-                {activeTruncated ? '+' : ''})
-              </h5>
-              <Button
-                variant="link"
-                size="sm"
-                className="p-0"
-                onClick={() => setActiveAlarms(null)}
-                data-testid="locations-active-alarms-close"
-              >
-                Close
-              </Button>
+        <PanelCard
+          testId="locations-active-alarms"
+          title={
+            <span data-testid="locations-active-alarms-count">
+              {t('locations_active_alarms_count', {
+                count: activeAlarms.length,
+                more: activeTruncated ? '+' : '',
+              })}
+            </span>
+          }
+          actions={
+            <PillButton
+              label={t('locations_close')}
+              variant="ghost"
+              onClick={() => setActiveAlarms(null)}
+              testId="locations-active-alarms-close"
+            />
+          }
+        >
+          {activeTruncated && (
+            <Alert variant="secondary" className="small py-2" data-testid="locations-active-alarms-truncated">
+              {t('locations_active_alarms_truncated', { count: activeAlarms.length })}
+            </Alert>
+          )}
+          {activeAlarms.length === 0 ? (
+            <div className="locations-empty" data-testid="locations-active-alarms-empty">
+              {t('locations_no_active_alarms')}
             </div>
-            {activeTruncated && (
-              <Alert variant="warning" className="small py-2" data-testid="locations-active-alarms-truncated">
-                Only the newest {activeAlarms.length} active alarms are listed.
-              </Alert>
-            )}
-            {activeAlarms.length === 0 ? (
-              <Alert variant="success" className="mb-0" data-testid="locations-active-alarms-empty">
-                No active alarms.
-              </Alert>
-            ) : (
+          ) : (
+            // Rows keep DataTable's own keyboard handling (Enter on a focused row).
+            <div onClick={untaggedRowClick(activeAlarms, openAlarmRow)}>
               <DataTable
-                columns={activeAlarmColumnsFor(flagsOf)}
+                columns={activeAlarmColumnsFor(flagsOf, t)}
                 data={activeAlarms}
+                customStyles={progeoTableStyles}
                 conditionalRowStyles={[locationOffRowStyle((row: ActiveAlarm) => isOff(row.location.id))]}
                 pagination
+                paginationComponentOptions={paginationOptions}
                 highlightOnHover
                 pointerOnHover
-                onRowClicked={(row) => navigate(`/location/${row.location.id}/alarms`)}
+                onRowClicked={openAlarmRow}
                 defaultSortFieldId={1}
                 defaultSortAsc={false}
                 dense
               />
-            )}
-          </Card.Body>
-        </Card>
+            </div>
+          )}
+        </PanelCard>
       )}
 
-      <DataTable
-        columns={columns}
-        data={filteredRows}
-        pagination
-        paginationPerPage={rowsPerPage}
-        onChangePage={(page) => setCurrentPage(page)}
-        onChangeRowsPerPage={(newPerPage, page) => {
-          setRowsPerPage(newPerPage);
-          setCurrentPage(page);
-        }}
-        progressPending={loading}
-        highlightOnHover
-        pointerOnHover
-        conditionalRowStyles={conditionalRowStyles}
-        onRowClicked={handleRowClick}
-        dense
-      />
+      <PanelCard
+        testId="locations-list"
+        title={
+          <span className="locations-list-title">
+            {t('locations_list_title')}
+            {!loading && (
+              <span className="locations-list-count" data-testid="locations-count">
+                {t('locations_count', { count: filteredRows.length, total: rows.length })}
+              </span>
+            )}
+          </span>
+        }
+        actions={filters}
+      >
+        {/* Rows keep DataTable's own keyboard handling (Enter on a focused row). */}
+        <div onClick={untaggedRowClick(filteredRows, handleRowClick)} data-testid="locations-table">
+          <DataTable
+            columns={columns}
+            data={filteredRows}
+            customStyles={progeoTableStyles}
+            pagination
+            paginationPerPage={rowsPerPage}
+            paginationComponentOptions={paginationOptions}
+            onChangePage={(page) => setCurrentPage(page)}
+            onChangeRowsPerPage={(newPerPage, page) => {
+              setRowsPerPage(newPerPage);
+              setCurrentPage(page);
+            }}
+            progressPending={loading}
+            progressComponent={
+              <div className="locations-empty">
+                <Spinner size="sm" animation="border" />
+              </div>
+            }
+            noDataComponent={<div className="locations-empty">{t('locations_empty')}</div>}
+            highlightOnHover
+            pointerOnHover
+            conditionalRowStyles={conditionalRowStyles}
+            onRowClicked={handleRowClick}
+            dense
+          />
+        </div>
+      </PanelCard>
 
       <LocationEditModal
         show={showEditModal}
@@ -694,7 +760,7 @@ const LocationsOverview = () => {
         onHide={closeEditModal}
         onSaved={handleLocationSaved}
       />
-    </React.Fragment>
+    </div>
   );
 };
 

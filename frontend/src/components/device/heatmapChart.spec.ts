@@ -7,6 +7,7 @@ import {
   heatSources,
   sensorsInRect,
   seriesPeak,
+  absoluteTick,
   chartFrame,
   chartLayout,
   COLORBAR_SPACE,
@@ -438,5 +439,14 @@ describe('sensorsInRect', () => {
     expect(sensorsInRect(layout, IDENTITY, [500, 850, 600, 950])).toEqual([2]);
     expect(sensorsInRect(layout, IDENTITY, [600, 950, 500, 850])).toEqual([2]);
     expect(sensorsInRect(layout, IDENTITY, [300, 300, 400, 400])).toEqual([]);
+  });
+});
+
+describe('absoluteTick', () => {
+  it('rounds readings of 10 and more, keeps one decimal below', () => {
+    expect(absoluteTick(1234.56)).toBe('1235');
+    expect(absoluteTick(12.4)).toBe('12');
+    expect(absoluteTick(3.14)).toBe('3.1');
+    expect(absoluteTick(0)).toBe('0.0');
   });
 });

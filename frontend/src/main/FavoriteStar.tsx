@@ -4,9 +4,6 @@ import { repeatedTestId } from '../testIds';
 import { useFavorites } from './favorites';
 import './Favorites.css';
 
-/** Gold of a favorite's star (also .favorite-star--active in Favorites.css). */
-export const FAVORITE_COLOR = '#F2B705';
-
 /**
  * The big star that pins a location as favorite of the user (or unpins it).
  * Its test id carries the location as data-test-key (one star per table row).
@@ -44,12 +41,6 @@ const FavoriteStar = ({
         toggle(locationId);
       }}
       className={`favorite-star${favorite ? ' favorite-star--active' : ''}`}
-      onMouseEnter={(event) => {
-        event.currentTarget.style.transform = 'scale(1.12)';
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.transform = 'none';
-      }}
     >
       <Icon size={size} />
     </button>

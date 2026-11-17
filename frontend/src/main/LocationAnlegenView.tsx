@@ -7,6 +7,7 @@ import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import PhoneInput from '../components/ui/PhoneInput';
 import { childTestId, repeatedTestId } from '../testIds';
 import './LocationAnlegenView.css';
 
@@ -241,7 +242,7 @@ const LocationAnlegenView = () => {
         <div className="anlegen-grid">
           <LabeledInput label={t('anlegen_field_manager')} value={form.manager} onChange={setField('manager')} testId="anlegen-manager" />
           <LabeledInput label={t('anlegen_field_mail')} value={form.mail} onChange={setField('mail')} testId="anlegen-mail" />
-          <LabeledInput label={t('anlegen_field_telefon')} value={form.telefon} onChange={setField('telefon')} testId="anlegen-telefon" />
+          <PhoneInput label={t('anlegen_field_telefon')} value={form.telefon} onChange={setField('telefon')} testId="anlegen-telefon" />
         </div>
       </PanelCard>
 

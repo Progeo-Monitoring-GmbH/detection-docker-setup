@@ -65,9 +65,9 @@ describe('switchLocationPath', () => {
   });
 
   it.each(['/alarms/', '/location/overview/', '/location/12/unknown', '/'])(
-    'opens the analysis from %s',
+    'opens the status page from %s',
     (pathname) => {
-      expect(switchLocationPath(pathname, 7)).toBe('/location/7/analyse');
+      expect(switchLocationPath(pathname, 7)).toBe('/location/7/status');
     },
   );
 

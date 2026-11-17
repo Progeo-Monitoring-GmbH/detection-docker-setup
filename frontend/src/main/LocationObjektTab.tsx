@@ -7,6 +7,7 @@ import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import PhoneInput from '../components/ui/PhoneInput';
 import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
@@ -44,6 +45,20 @@ const toForm = (location: LocationDetail | null): FormState => ({
   mail: location?.mail ?? '',
   contact_person: location?.contact_person ?? '',
 });
+
+// Figures the save answer may lack (an older backend, a cached detail):
+// keep the loaded ones instead of blanking the tab.
+const STAT_FIELDS = ['device_count', 'measurement_count', 'last_measurement_at'] as const;
+
+const mergeSaved = (current: LocationDetail, saved: Partial<LocationDetail>): LocationDetail => {
+  const merged = { ...current, ...saved };
+  for (const field of STAT_FIELDS) {
+    if (saved[field] == null) {
+      Object.assign(merged, { [field]: current[field] });
+    }
+  }
+  return merged;
+};
 
 /**
  * Objekt tab: the mockup's editable object-detail sections plus a Standort
@@ -107,11 +122,18 @@ const LocationObjektTab = () => {
       },
       (response) => {
         // The other tabs (product: lines or heatmap, header) see the saved values at once.
-        const saved = response?.data;
-        if (saved && typeof saved === 'object') {
-          setLocation((current) => (current ? { ...current, ...saved } : current));
-        }
+        // A changed address moves the map marker: the backend looks the
+        // position up again and answers with it (plus `geocode`).
+        const { geocode: geocodeStatus, ...saved } = (response?.data ?? {}) as Partial<LocationDetail> & {
+          geocode?: 'updated' | 'not_found' | 'no_address';
+        };
+        setLocation((current) => (current ? mergeSaved(current, saved) : current));
         showSuccessBar(enqueueSnackbar, t('objekt_saved'));
+        if (geocodeStatus === 'updated') {
+          showSuccessBar(enqueueSnackbar, t('objekt_geocode_updated'));
+        } else if (geocodeStatus === 'not_found') {
+          showErrorBar(enqueueSnackbar, t('objekt_geocode_not_found'));
+        }
         setSaving(false);
       },
       (error) => {
@@ -265,7 +287,7 @@ const LocationObjektTab = () => {
               onChange={set('manager')}
               readOnly={!canEditContact}
             />
-            <LabeledInput
+            <PhoneInput
               testId="objekt-phone"
               label={t('objekt_field_phone')}
               value={form.telefon}

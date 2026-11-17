@@ -15,7 +15,7 @@ class Command(BaseCommand):
         "Examples:\n"
         "  python manage.py fetch_weather\n"
         "  python manage.py fetch_weather --days 30\n"
-        "  python manage.py fetch_weather --location 42 --days 90"
+        "  python manage.py fetch_weather --location 3012 --days 90"
     )
 
     def add_arguments(self, parser):

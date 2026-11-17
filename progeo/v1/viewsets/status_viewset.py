@@ -1226,6 +1226,10 @@ class StatusViewSet(ProgeoModalViewSet):
 
         points.sort(key=lambda point: (point.sensor_order, point.pk))
         ilog(f"{len(points)} measure point(s) of location {location.id} placed on Lageplan {lageplan.pk}")
+        # Automatic heat limitations follow the placed points (helper/auto_heat_limits.py).
+        from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
+
+        schedule_auto_heat_limitations(db_name, lageplan.pk)
         return RequestSuccess({
             "location_id": location.id,
             "lageplan_id": lageplan.pk,

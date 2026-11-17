@@ -74,10 +74,11 @@ export const portalTabOf = (pathname: string): PortalNavItem | null => {
 
 /**
  * Where a switch to location `id` leads (favorites bar): the tab of the open
- * location page, so /objekt stays /objekt - anywhere else the analysis.
+ * location page, so /objekt stays /objekt - anywhere else the status page
+ * (every user may open it; the analysis is staff-only).
  * Deeper paths of a tab are dropped: they belong to the open location.
  */
 export const switchLocationPath = (pathname: string, id: string | number) => {
   const tab = portalTabOf(pathname);
-  return tab ? portalNavPath(tab, id) : `/location/${id}/analyse`;
+  return tab ? portalNavPath(tab, id) : `/location/${id}/status`;
 };

@@ -456,10 +456,10 @@ def test_profile_stores_the_messenger(api_client):
     _store("whatsapp", WHATSAPP)
     user = _login(api_client)
 
-    body = _settings(api_client, user, mobile="+49 151 1", messenger="whatsapp", messenger_id="").json()
+    body = _settings(api_client, user, mobile="+49 151 1234567", messenger="whatsapp", messenger_id="").json()
 
     assert (body["messenger"], body["messenger_id"], body["messenger_services"]) == ("whatsapp", None, ["whatsapp"])
-    assert UserProfile.objects.using(f.DB).get(user=user).messenger_address() == "+49 151 1"
+    assert UserProfile.objects.using(f.DB).get(user=user).messenger_address() == "+491511234567"
     assert api_client.get("/v1/user/profile/").json()["messenger"] == "whatsapp"
 
 

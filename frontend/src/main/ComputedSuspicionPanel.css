@@ -1,0 +1,60 @@
+/* smartex® mx-PEEL: the computed suspicion points (ComputedSuspicionPanel.tsx).
+   The rows reuse the Verdachtsstellen styles (VerdachtsstellenPanel.css). */
+
+.computed-suspicion-mode {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.computed-suspicion-hint {
+  font-size: 12.5px;
+  color: #8b8383;
+  margin-bottom: 8px;
+}
+
+/* The letter of the point - the same as its ring on the plan. */
+.computed-suspicion-letter {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #dc2626;
+}
+
+.computed-suspicion-letter--quittiert {
+  background: #eb633b;
+}
+
+.computed-suspicion-letter--geloest {
+  background: #8b8383;
+}
+
+.computed-suspicion-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12.5px;
+  color: #5f5757;
+  margin-bottom: 8px;
+}
+
+.computed-suspicion-sensors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.computed-suspicion-sensor {
+  background: var(--progeo-surface);
+  border-radius: 10px;
+  padding: 2px 9px;
+  font-size: 12px;
+}

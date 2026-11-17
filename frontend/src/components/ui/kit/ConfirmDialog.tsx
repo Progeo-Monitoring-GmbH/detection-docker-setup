@@ -12,6 +12,8 @@ type ConfirmDialogProps = {
   onCancel: () => void;
   danger?: boolean;
   confirming?: boolean;
+  /** The confirm button is disabled (e.g. a required field of the message is empty). */
+  confirmDisabled?: boolean;
   /** data-testid of the dialog; its buttons are "<testId>-confirm" / "<testId>-cancel". */
   testId?: string;
 };
@@ -31,6 +33,7 @@ const ConfirmDialog = ({
   onCancel,
   danger = true,
   confirming = false,
+  confirmDisabled = false,
   testId = 'confirm-dialog',
 }: ConfirmDialogProps) => {
   if (!show) {
@@ -62,7 +65,7 @@ const ConfirmDialog = ({
             type="button"
             className={`progeo-dialog-button progeo-dialog-button--confirm${danger ? ' progeo-dialog-button--danger' : ''}`}
             onClick={onConfirm}
-            disabled={confirming}
+            disabled={confirming || confirmDisabled}
             data-testid={childTestId(testId, 'confirm')}
           >
             {confirmLabel}

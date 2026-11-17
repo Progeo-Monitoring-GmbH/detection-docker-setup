@@ -1,0 +1,44 @@
+/* The computed suspicion points of smartex® mx-PEEL over the heatmap
+   (SuspicionMarkers.tsx): lettered rings, coloured by their state. */
+
+.suspicion-markers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.suspicion-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  box-shadow:
+    0 0 0 2px var(--suspicion-marker-color),
+    0 1px 4px rgba(0, 0, 0, 0.35);
+  background: color-mix(
+    in srgb,
+    var(--suspicion-marker-color) 35%,
+    transparent
+  );
+  --suspicion-marker-color: #dc2626;
+}
+
+.suspicion-marker--quittiert {
+  --suspicion-marker-color: #eb633b;
+}
+
+.suspicion-marker--geloest {
+  --suspicion-marker-color: #8b8383;
+}
+
+.suspicion-marker-label {
+  font:
+    700 12px system-ui,
+    sans-serif;
+  color: #ffffff;
+  text-shadow: 0 0 3px rgba(9, 75, 129, 0.9);
+}

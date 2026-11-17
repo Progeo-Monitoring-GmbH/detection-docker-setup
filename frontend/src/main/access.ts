@@ -75,7 +75,8 @@ export const APP_ROUTE_ACCESS = {
   '/schnittstelle/': permission('module_interface_enabled'),
   '/escalations/': STAFF,
   '/escalations/:id': STAFF,
-  '/backup/:account/overview/': permission('module_backup_enabled'),
+  // Staff only (as the backend's BackupViewSet), whatever a customer holds.
+  '/backup/:account/overview/': allOf(STAFF, permission('module_backup_enabled')),
   '/lageplan/wizard/': STAFF,
   '/map/': STAFF,
   // Object management - ProGeo-Admins (roleModel: superusers).
@@ -93,9 +94,20 @@ const NOBODY: AccessRule = () => false;
 export const routeRule = (path: string): AccessRule =>
   (APP_ROUTE_ACCESS as Record<string, AccessRule>)[path] ?? NOBODY;
 
-/** The per-object portal pages: "Einstellungen" is superuser-only. */
-export const portalItemRule = (item: PortalNavItem): AccessRule =>
-  item.key === 'einstell' ? SUPERUSER : permission(item.permission);
+/**
+ * The per-object portal pages: "Einstellungen" is superuser-only, the
+ * "Analyse" (with its report generator) staff-only for now - both customer
+ * roles (and "show as normal user") don't see it.
+ */
+export const portalItemRule = (item: PortalNavItem): AccessRule => {
+  if (item.key === 'einstell') {
+    return SUPERUSER;
+  }
+  if (item.key === 'analyse') {
+    return allOf(STAFF, permission(item.permission));
+  }
+  return permission(item.permission);
+};
 
 /** The staff flags of a JWT payload (auth.user). */
 export const staffFlags = (user: unknown) => {

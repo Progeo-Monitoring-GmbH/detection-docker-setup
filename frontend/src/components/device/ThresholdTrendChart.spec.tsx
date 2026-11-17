@@ -49,6 +49,9 @@ const renderChart = (
     meanOfLabel: (count: number) => string;
     highlightedId: string | null;
     onHighlight: (id: string | null) => void;
+    smooth: boolean;
+    primaryId: string | null;
+    primaryLabel: string;
   }> = {},
 ) => {
   const props = {
@@ -70,6 +73,10 @@ const renderChart = (
         thresholdLabel="Threshold (1x)"
         highlightedId={props.highlightedId}
         onHighlight={props.onHighlight}
+        smooth={overrides.smooth}
+        primaryId={overrides.primaryId}
+        primaryLabel={overrides.primaryLabel}
+        locale="de-DE"
       />,
     );
   });
@@ -266,6 +273,18 @@ describe('ThresholdTrendChart hover tooltip', () => {
     expect(container.textContent).toContain('2.00x');
   });
 
+  it('without smoothing draws every reading - no merged mean', () => {
+    renderChart([makeSeries('a', [[0, 100], [10 * 1000, 300], [90 * MIN, 100]])], { smooth: false });
+    expect(polylines()[0].getAttribute('points')!.split(' ')).toHaveLength(3);
+    hoverAt(41);
+    expect(container.textContent).not.toContain('mean of');
+  });
+
+  it('smooths by default: close readings become one point', () => {
+    renderChart([makeSeries('a', [[0, 100], [10 * 1000, 300], [90 * MIN, 100]])]);
+    expect(polylines()[0].getAttribute('points')!.split(' ')).toHaveLength(2);
+  });
+
   it('hides the tooltip outside the plot area and on mouse leave', () => {
     renderChart([makeSeries('a', [[0, 100], [90 * MIN, 250]])]);
     hoverAt(980);
@@ -336,5 +355,35 @@ describe('ThresholdTrendChart highlighting', () => {
     });
     expect(container.textContent).toContain('Sensor low');
     expect(onHighlight).toHaveBeenLastCalledWith('low');
+  });
+});
+
+describe('ThresholdTrendChart time axis', () => {
+  const axisLabels = () =>
+    Array.from(container.querySelectorAll('[data-testid="threshold-trend-axis-label"]')).map((node) => node.textContent);
+
+  it('labels intermediate times, not only start and end', () => {
+    renderChart([makeSeries('a', [[0, 100], [7 * 24 * 60 * MIN, 250]])]);
+    const labels = axisLabels();
+    expect(labels.length).toBeGreaterThan(2);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('a single point still gets one label', () => {
+    renderChart([makeSeries('a', [[0, 100]])]);
+    expect(axisLabels()).toHaveLength(1);
+  });
+});
+
+describe('ThresholdTrendChart selected series', () => {
+  it('marks the primary series in the legend and draws it bolder', () => {
+    renderChart(
+      [makeSeries('a', [[0, 50], [60 * MIN, 150]]), makeSeries('b', [[0, 80], [60 * MIN, 120]])],
+      { primaryId: 'a', primaryLabel: 'selected' },
+    );
+    expect(legendButtons()[0].textContent).toBe('Sensor aselected');
+    expect(legendButtons()[1].textContent).toBe('Sensor b');
+    expect(polylines()[0].getAttribute('stroke-width')).toBe('2.6');
+    expect(polylines()[1].getAttribute('stroke-width')).toBe('1.8');
   });
 });

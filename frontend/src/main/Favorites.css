@@ -60,7 +60,6 @@
 
 /* -- FavoriteStar ---------------------------------------------------------------- */
 
-/* The hover zoom is set from the component (mouse enter/leave). */
 .favorite-star {
   border: none;
   background: transparent;
@@ -71,7 +70,12 @@
   transition: transform 120ms ease, color 120ms ease;
 }
 
-/* FAVORITE_COLOR in FavoriteStar.tsx. */
+/* ProGeo orange (CI: no yellow). */
 .favorite-star--active {
-  color: #f2b705;
+  color: var(--progeo-orange);
+}
+
+.favorite-star:hover:not(:disabled),
+.favorite-star:focus-visible {
+  transform: scale(1.12);
 }

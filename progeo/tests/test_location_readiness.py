@@ -72,9 +72,9 @@ def test_an_empty_location_fails_nearly_everything():
 
     # Nothing to look at for these - left out of the score.
     assert {key for key, status in _status(result).items() if status == lr.NA} == {
-        "sensor_devices", "points_named", "dead_sensors_disabled"}
+        "sensor_devices", "points_named", "dead_sensors_disabled", "lageplan_resolution"}
     assert _failed(result) == set(_status(result)) - {"threshold", "sensor_devices", "points_named",
-                                                      "dead_sensors_disabled"}
+                                                      "dead_sensors_disabled", "lageplan_resolution"}
     assert result["level"] == "open"
 
 

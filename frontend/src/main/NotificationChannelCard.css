@@ -1,0 +1,101 @@
+/* NotificationChannelCard.tsx: mobile number + channel (SMS / ProGeo chat)
+   above the event history. Deliberately plain - the chat is one option. */
+
+.channel-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+}
+
+.channel-summary-icon {
+  color: #6e6868;
+  flex-shrink: 0;
+}
+
+.channel-summary-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.channel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.channel-intro {
+  margin: 0;
+  font-size: 13px;
+  color: #6e6868;
+}
+
+.channel-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.channel-step-number {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-top: 18px;
+  border-radius: 50%;
+  background: var(--progeo-track);
+  color: var(--progeo-blue);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.channel-step-body {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-step-body .progeo-pill-track {
+  align-self: flex-start;
+}
+
+.channel-hint {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.channel-actions {
+  display: flex;
+  gap: 10px;
+  padding-left: 36px;
+}
+
+.channel-button {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.channel-button--primary {
+  background: var(--progeo-orange);
+  color: #fff;
+}
+
+.channel-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

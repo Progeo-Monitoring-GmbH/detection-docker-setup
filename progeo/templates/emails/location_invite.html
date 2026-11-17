@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# Rechte tab: a new address was invited to an object (helper/location_invites.py, LINK_TEMPLATES). `action_url` is secret. #}
+{% block subject %}Einladung zum ProGeo-Portal: {{ location_name }}{% endblock %}
+{% block preheader %}Ihr persönlicher Anmeldelink, {{ valid_hours }} Stunden gültig{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Willkommen im ProGeo-Portal</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
+<p style="margin:0 0 4px;">{{ inviter_name }} hat Sie zum Objekt <strong>{{ location_name }}</strong> im ProGeo-Monitoring-Portal eingeladen. Für Sie wurde ein Zugang eingerichtet (Benutzername: <strong>{{ username }}</strong>). Mit dem folgenden Link melden Sie sich einmalig an und können danach im Profil ein Passwort festlegen; der Link ist {{ valid_hours }} Stunden gültig.</p>
+{% include "emails/_button.html" with url=action_url label="Einladung annehmen" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">Später können Sie sich jederzeit über „Anmeldelink per E-Mail erhalten" auf der Anmeldeseite einen neuen Link schicken lassen. Falls Sie diese Einladung nicht erwartet haben, können Sie die E-Mail ignorieren.</p>
+{% endblock %}

@@ -122,7 +122,8 @@ def confirm(token: str, otp, password: str, request=None):
     if link is None:
         return None, {"reason": "invalid_token"}
     user = link.user
-    errors = password_errors(password or "", user)
+    # In the user's language (UserProfile.language, set with the portal language).
+    errors = password_errors(password or "", user, getattr(getattr(user, "profile", None), "language", None))
     if errors:
         return None, {"reason": "password", "errors": errors}
     error = check_login_code(user, otp, request)

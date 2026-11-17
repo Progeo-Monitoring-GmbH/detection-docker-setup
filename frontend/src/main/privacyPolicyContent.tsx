@@ -88,13 +88,6 @@ const BROWSER_STORAGE = [
     duration: 'bis zur Löschung im Browser',
   },
   {
-    name: 'progeo:matrix-promo-dismissed',
-    code: true,
-    kind: 'Local Storage',
-    purpose: 'Merkt sich, dass Sie die Empfehlung des ProGeo Chats ausgeblendet haben',
-    duration: 'bis zur Löschung im Browser',
-  },
-  {
     name: 'demoToken',
     code: true,
     kind: 'Local Storage',

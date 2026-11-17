@@ -88,7 +88,7 @@ const AuthPage = ({ title, intro, children, testId = 'page-auth' }) => {
           © {new Date().getFullYear()} {COMPANY.name}
         </span>
         <span aria-hidden="true">·</span>
-        <Link to={PRIVACY_POLICY_URL} data-testid="auth-privacy-link">{t('consent_privacy_policy')}</Link>
+        <Link to={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" data-testid="auth-privacy-link">{t('consent_privacy_policy')}</Link>
       </footer>
     </div>
   );

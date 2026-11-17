@@ -10,7 +10,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper import login_throttle, two_factor
-from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
 
 LANGUAGE_SESSION_KEY = "django_language"
 
@@ -80,6 +80,42 @@ def _messenger_invalid(service, address):
     if service == Messenger.MATRIX and not (address.startswith("@") and ":" in address):
         return _failed("matrix_id_invalid", "a Matrix ID looks like @name:server")
     return None
+
+
+def _clean_mobile(user, raw):
+    """(error, mobile): the mobile number as E.164 (helper/phone_numbers.py),
+    None when empty; an unchanged legacy value is kept."""
+    from progeo.helper.phone_numbers import InvalidPhoneNumber, clean_phone
+
+    profile = getattr(user, "profile", None)
+    try:
+        return None, clean_phone(raw, profile.mobile if profile is not None else None)
+    except InvalidPhoneNumber:
+        return _failed("phone_invalid", "invalid phone number"), None
+
+
+# Requests for access to another object (Mein Konto) per user and hour.
+PROJECT_ACCESS_REQUESTS_PER_HOUR = 3
+PROJECT_ACCESS_FIELD_LIMITS = {"project": 200, "message": 2000}
+
+
+def _within_request_limit(user) -> bool:
+    """Counts one access request of `user`; False once the hourly limit is used up."""
+    from django.core.cache import cache
+
+    key = f"project-access-request:{user.pk}"
+    try:
+        if cache.add(key, 1, timeout=3600):
+            return True
+        return cache.incr(key) <= PROJECT_ACCESS_REQUESTS_PER_HOUR
+    except Exception:  # noqa: BLE001 - no cache: the mail limits still hold
+        return True
+
+
+def _staff_recipient():
+    from django.conf import settings
+
+    return (getattr(settings, "ACCESS_REQUEST_NOTIFY", "") or getattr(settings, "NOTIFY_STAFF_ADDRESS", "") or "").strip()
 
 
 def _archived_setting(user, hide=None) -> dict:
@@ -155,6 +191,9 @@ class UserProfileViewSet(viewsets.ViewSet):
             "email": user.email,
             **_contact_fields(user),
             "language": language,
+            # Explicitly saved (portal language switch / Mein Konto): the
+            # portal applies it on other devices, too.
+            "language_saved": bool(self._normalize_language(_stored_language(user))),
             "two_factor_enabled": two_factor.is_enabled(user),
             "has_usable_password": user.has_usable_password(),
             **_archived_setting(user),
@@ -271,7 +310,9 @@ class UserProfileViewSet(viewsets.ViewSet):
 
         contact = {}
         if "mobile" in data:
-            contact["mobile"] = (data.get("mobile") or "").strip() or None
+            invalid, contact["mobile"] = _clean_mobile(user, data.get("mobile"))
+            if invalid:
+                return invalid
         if "messenger" in data:
             from progeo.helper import matrix_accounts
             from progeo.v1.models import Messenger
@@ -351,6 +392,120 @@ class UserProfileViewSet(viewsets.ViewSet):
         user.set_password(new_password)
         user.save(update_fields=["password"])
         return RequestSuccess({"message": "Password updated", **_logout_elsewhere(request, user)})
+
+    @action(detail=False, url_path="notification-channel", methods=["POST"])
+    def notification_channel(self, request, *args, **kwargs):
+        """The notifications tab's channel choice: POST {mobile, channel}
+        with channel "sms" (default) or "matrix". Stores the mobile number
+        (E.164). "sms" needs a number and switches SMS on for every location
+        the user gets notifications of; "matrix" only stores the number - the
+        chat setup dialog then makes Matrix the primary channel
+        (matrix/primary). -> {channel, subscriptions, mobile, ...}."""
+        from progeo.v1.models import ProgeoAccess, UserProfile
+
+        user = request.user
+        data = request.data if isinstance(request.data, dict) else {}
+        channel = (data.get("channel") or "sms").strip().lower()
+        if channel not in ("sms", "matrix"):
+            return _failed("channel_invalid", "channel must be sms or matrix")
+        invalid, mobile = _clean_mobile(user, data.get("mobile"))
+        if invalid:
+            return invalid
+        if channel == "sms" and not mobile:
+            return _failed("mobile_required", "SMS needs a mobile number")
+        if channel == "matrix":
+            _user, error = _matrix_user(request)
+            if error:
+                return error
+
+        profile, _ = UserProfile.objects.get_or_create(user_id=user.pk)
+        profile.mobile = mobile
+        if profile.is_empty():
+            profile.delete()
+        else:
+            profile.save(update_fields=["mobile"])
+
+        changed = 0
+        if channel == "sms":
+            from progeo.helper.notifications import switch_on_transport
+
+            changed = switch_on_transport(user, ProgeoAccess.NotifiTrans.SMS)
+        user.refresh_from_db()
+        return RequestSuccess({"channel": channel, "subscriptions": changed, **_contact_fields(user)})
+
+    @action(detail=False, url_path="request-access", methods=["POST"])
+    def request_project_access(self, request, *args, **kwargs):
+        """Mein Konto "Zugriff auf weiteres Projekt anfragen": POST {project,
+        message?} - mailed to the ProGeo staff (ACCESS_REQUEST_NOTIFY, else
+        NOTIFY_STAFF_ADDRESS), who grant the access on the object's Rechte
+        tab. At most PROJECT_ACCESS_REQUESTS_PER_HOUR per user and hour."""
+        from progeo.helper import outbound
+        from progeo.helper.demo import is_demo_user
+        from progeo.helper.emailhelper import portal_url
+        from progeo.helper.location_access import user_accounts
+        from progeo.tasks import send_template_mail_task
+
+        user = request.user
+        if is_demo_user(user):
+            return _failed("demo_read_only", "the demo keeps nothing")
+        data = request.data if isinstance(request.data, dict) else {}
+        values = {field: str(data.get(field) or "").strip() for field in PROJECT_ACCESS_FIELD_LIMITS}
+        if not values["project"]:
+            return _failed("project_required", "project is required")
+        for field, limit in PROJECT_ACCESS_FIELD_LIMITS.items():
+            if len(values[field]) > limit:
+                return _failed("too_long", f"{field}: at most {limit} characters", field=field)
+        recipient = _staff_recipient()
+        if not recipient:
+            return _failed("no_staff_address", "no staff address configured")
+        if not _within_request_limit(user):
+            return _failed("too_many_requests", "too many requests - please try again later")
+
+        name = " ".join(part for part in (user.first_name, user.last_name) if part) or user.username
+        accounts = ", ".join(sorted({account.name for account in user_accounts(user) if account.name}))
+        outbound.dispatch(
+            send_template_mail_task, [recipient], "project_access_request",
+            {"name": name, "username": user.username, "email": user.email, "accounts": accounts,
+             "project": values["project"], "message": values["message"], "review_url": portal_url("/staff/")},
+            "access_request", "de",
+        )
+        return RequestSuccess({"sent": True})
+
+    @action(detail=False, url_path="delete-account", methods=["POST"])
+    def delete_account(self, request, *args, **kwargs):
+        """Self-service deletion of the own account: POST {confirm: true,
+        password} - or {code} (2FA) for users without a password. Every login
+        ends, the user and its data (access rules, profile, 2FA, chat
+        account) are deleted. Not for the demo user, nor for the last active
+        superuser."""
+        from django.contrib.auth.models import User
+
+        from progeo.helper.demo import is_demo_user
+        from progeo.helper.tokens import revoke_user_tokens
+
+        user = request.user
+        data = request.data if isinstance(request.data, dict) else {}
+        if is_demo_user(user):
+            return _failed("demo_read_only", "the demo keeps nothing")
+        if data.get("confirm") is not True:
+            return _failed("confirm_required", "confirm must be true")
+        if user.is_superuser and not User.objects.using("default").filter(is_superuser=True, is_active=True) \
+                .exclude(pk=user.pk).exists():
+            return _failed("last_superuser", "the last superuser cannot delete itself")
+        if user.has_usable_password():
+            if login_throttle.is_locked(user.username, request) or not user.check_password(data.get("password") or ""):
+                login_throttle.record_failure(user.username, request)
+                return _failed("wrong_password", "Current password is incorrect")
+        elif two_factor.is_enabled(user) and not self._code_ok(request, user, data.get("code")):
+            return _failed("invalid_code", "Invalid code")
+
+        username = user.username
+        revoke_user_tokens(user)
+        User.objects.using("default").filter(pk=user.pk).first().delete(using="default")
+        if hasattr(request, "session"):
+            request.session.flush()
+        ilog(f"[user] {username} deleted their own account")
+        return RequestSuccess({"deleted": True})
 
     # ------------------------------------------------------------------ 2FA
     # helper/two_factor.py. Codes that are wrong count as failed logins

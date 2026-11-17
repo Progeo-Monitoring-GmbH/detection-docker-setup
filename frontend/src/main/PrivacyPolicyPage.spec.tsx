@@ -35,7 +35,6 @@ const STORAGE_KEYS = [
   'progeo.languageChosen',
   'progeo.sidebar.collapsed',
   'progeo.canvasKeyLegend.collapsed',
-  'progeo:matrix-promo-dismissed',
   'demoToken',
   'impersonatorTokens',
   'viewAsUser',

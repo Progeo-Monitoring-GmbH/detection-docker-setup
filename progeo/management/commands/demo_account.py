@@ -275,8 +275,8 @@ LORAWAN_SENSORS = {
 # permissions - nobody can log in as them). "member": account members, they
 # see every demo location, `rule` their notification rule there. "single:<kind>":
 # access to that one location only. "partner": members of the demo partner
-# account the demo user belongs to as well - the users the Rechte tab offers
-# when granting access.
+# account the demo user belongs to as well (the Rechte tab no longer offers
+# them for picking - people are invited by email address).
 DEMO_PEOPLE_PREFIX = "demo."
 DEMO_PARTNER_HASH = "demo-partner-account"
 DEMO_PARTNER_NAME = "Demo Partner"

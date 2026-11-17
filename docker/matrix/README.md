@@ -2,7 +2,7 @@
 
 Our own Matrix server on `matrix.progeo.com`. **Every portal user can use it with their ProGeo
 login**: the chat apps sign in through the portal, and the account (`@<name>:matrix.progeo.com`) is
-created on the first login. Mein Konto shows the user's Matrix ID and a QR code that opens Element X
+created on the first login. The setup dialog (notifications tab) shows a QR code that opens Element X
 with our server preset.
 
 The backend sends Matrix notifications through a bot account. **Signal notifications go through
@@ -20,8 +20,9 @@ numbers banned).
 
 ## Setup dialog and QR code login (recommended)
 
-Mein Konto shows the chat as the **recommended** notification channel. A button opens the dialog
-"ProGeo Chat einrichten" ([MatrixSetupModal.tsx](../../frontend/src/main/MatrixSetupModal.tsx)). It
+The notifications tab of an object asks for the mobile number and the channel: SMS (default) or
+ProGeo Chat (`NotificationChannelCard`, see [docs/notifications.md](../../docs/notifications.md)).
+Choosing the chat opens the dialog "ProGeo Chat einrichten" ([MatrixSetupModal.tsx](../../frontend/src/main/MatrixSetupModal.tsx)). It
 has three animated steps:
 
 1. **Install Element X:** store buttons, and a QR code with the provisioning link without a login hint.
@@ -42,8 +43,8 @@ has three animated steps:
    the messenger channel on for every location the user gets alarm or offline notifications for. The
    mail channel stays on.
 
-The dialog notices the app login by itself (it polls `/v1/user/matrix/`). The location notification
-tab shows a dismissible banner with the same dialog until the chat is the user's primary channel.
+The dialog notices the app login by itself (it polls `/v1/user/matrix/`). Mein Konto no longer has a
+chat section; the notifications tab is the one place to set the channel up.
 
 The animations are rendered by
 [scripts/tutorial/render_matrix_tutorial.py](../../scripts/tutorial/render_matrix_tutorial.py)
@@ -57,7 +58,7 @@ already used up by the time anyone could read it there.
 
 ## How a login works (manual, other apps)
 
-1. The user scans a QR code in Mein Konto, one per app:
+1. The user scans a QR code (setup dialog), one per app:
    - **Element X:** Element's provisioning link
      (`https://mobile.element.io/element?account_provider=matrix.progeo.com&login_hint=<name>`). It
      opens the app, or its store page, with our server preset.
@@ -69,7 +70,7 @@ already used up by the time anyone could read it there.
 4. The portal returns the user to MAS. On the first login MAS creates the account; the name comes
    from `matrix_localpart()`: the username, or a cleaned-up version of it with a `=<id>` suffix.
 5. Back in the app. The portal notes the login (`UserProfile.matrix_connected_at`, set when it hands
-   MAS the token), and Mein Konto, which polls while the QR codes are shown, confirms the connection.
+   MAS the token), and the setup dialog, which polls while the QR code is shown, confirms the connection.
 
 The public demo user and users with a pending access request get no chat.
 
