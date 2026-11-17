@@ -50,7 +50,7 @@ class Facts:
     plans: list = field(default_factory=list)
     # {id, label, online, first, count}; count: sensor_count (None: not configured).
     devices: list = field(default_factory=list)
-    # {sensor_order, device_id, lageplan_id, name, disabled, has_value, threshold}
+    # {sensor_order, device_id, lageplan_id, name, disabled, threshold}
     points: list = field(default_factory=list)
     # The notification rules (ProgeoAccess): {user, objektleitung, transport, type}
     accesses: list = field(default_factory=list)
@@ -79,6 +79,15 @@ def check_address(facts):
 
 def check_geo(facts):
     return _result(facts.location.get("latitude") is not None and facts.location.get("longitude") is not None)
+
+
+def check_product(facts):
+    """The product (ProgeoLocation.project_type) decides how the location is
+    shown and evaluated (lines or heatmap, ...) - "Unknown" is not set."""
+    from progeo.v1.models import ProgeoLocation
+
+    project_type = facts.location.get("project_type")
+    return _result(project_type not in (None, ProgeoLocation.PROJECT_TYPE_CHOICES.UNKNOWN))
 
 
 def check_airtable(facts):
@@ -217,15 +226,6 @@ def check_points_named(facts):
     return _result(not unnamed, unnamed=unnamed, total=len(facts.points))
 
 
-def check_dead_sensors_disabled(facts):
-    """Pins without a value (never measured, broken) are switched off - they
-    would read as healthy on the heatmap otherwise."""
-    if not facts.points:
-        return _na(dead=0)
-    dead = sum(1 for point in facts.points if not point["disabled"] and not point["has_value"])
-    return _result(not dead, dead=dead)
-
-
 def check_threshold(facts):
     threshold = facts.location.get("alarm_threshold")
     invalid_points = sum(
@@ -276,6 +276,7 @@ class Check:
 
 
 CHECKS = (
+    Check("product", "base", 3, check_product),
     Check("address", "base", 1, check_address),
     Check("geo", "base", 1, check_geo),
     Check("airtable", "base", 1, check_airtable, optional=True),
@@ -290,7 +291,6 @@ CHECKS = (
     Check("measure_points", "points", 3, check_measure_points),
     Check("sensor_devices", "points", 2, check_sensor_devices),
     Check("points_named", "points", 1, check_points_named, optional=True),
-    Check("dead_sensors_disabled", "points", 1, check_dead_sensors_disabled, optional=True),
     Check("threshold", "alarming", 2, check_threshold),
     Check("users", "alarming", 2, check_users),
     Check("objektleitung", "alarming", 1, check_objektleitung),
@@ -298,6 +298,11 @@ CHECKS = (
     Check("notifications_enabled", "alarming", 2, check_notifications_enabled),
     Check("rain_check", "alarming", 1, check_rain_check, optional=True),
 )
+
+
+# The keys of the checks run today - stored results of older runs can
+# name checks that were dropped since.
+CHECK_KEYS = frozenset(check.key for check in CHECKS)
 
 
 def level_of(score) -> str | None:
@@ -380,13 +385,14 @@ def collect_facts(location, account=None, now=None) -> Facts:
         "address": location.address, "plz": location.plz, "city": location.city,
         "latitude": location.latitude, "longitude": location.longitude,
         "airtable_url": location.airtable_url, "alarm_threshold": location.alarm_threshold,
+        "project_type": location.project_type,
         "rain_check_enabled": location.rain_check_enabled,
         "notifications_disabled": _notifications_disabled(location),
     })
     db = location_db(location, account)
     try:
         points = list(ProgeoMeasurePoint.objects.using(db).filter(location_id=location.pk).only(
-            "sensor_order", "device_id", "lageplan_id", "name", "disabled", "last_value", "threshold",
+            "sensor_order", "device_id", "lageplan_id", "name", "disabled", "threshold",
             "nx", "ny", "nx_end", "ny_end",
         ))
         plans = list(ProgeoLageplan.objects.using(db).filter(location_id=location.pk).order_by(*ProgeoLageplan.ORDER))
@@ -407,7 +413,7 @@ def collect_facts(location, account=None, now=None) -> Facts:
             })
         facts.points = [{
             "sensor_order": point.sensor_order, "device_id": point.device_id, "lageplan_id": point.lageplan_id,
-            "name": point.name, "disabled": point.disabled, "has_value": point.last_value is not None,
+            "name": point.name, "disabled": point.disabled,
             "threshold": point.threshold,
         } for point in points]
 

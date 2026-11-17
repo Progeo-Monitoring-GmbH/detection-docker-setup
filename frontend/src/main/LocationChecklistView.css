@@ -159,3 +159,30 @@
   color: var(--bs-secondary-color);
   white-space: normal;
 }
+
+/* "Beheben" of the Airtable check: the changes to confirm, one per row. */
+.checklist-airtable-change {
+  display: grid;
+  grid-template-columns: auto minmax(90px, auto) 1fr auto 1fr;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--bs-border-color-translucent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.checklist-airtable-field {
+  font-weight: 600;
+}
+
+.checklist-airtable-old {
+  color: var(--bs-secondary-color);
+  text-decoration: line-through;
+  overflow-wrap: anywhere;
+}
+
+.checklist-airtable-new {
+  color: var(--bs-success-text-emphasis);
+  overflow-wrap: anywhere;
+}

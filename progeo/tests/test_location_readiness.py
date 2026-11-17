@@ -26,7 +26,7 @@ def ready_facts(**changes) -> lr.Facts:
     facts = lr.Facts(
         location={"address": "Hauptstraße 1", "plz": "50667", "city": "Köln", "latitude": 50.9,
                   "longitude": 6.9, "airtable_url": "https://airtable.com/rec1", "alarm_threshold": 100,
-                  "rain_check_enabled": True, "notifications_disabled": False},
+                  "rain_check_enabled": True, "notifications_disabled": False, "project_type": 1},
         plans=[{"id": 1, "has_file": True, "aligned": True, "calibrated": True, "heat_areas": 1, "span": 0.8}],
         devices=[{"id": 10, "label": "smartex dm · 7078-01", "online": True, "first": 1, "count": 2}],
         points=[{"sensor_order": order, "device_id": None, "lageplan_id": 1, "name": f"dm {order}",
@@ -71,8 +71,7 @@ def test_an_empty_location_fails_nearly_everything():
     result = lr.evaluate(lr.Facts(location={"notifications_disabled": True, "alarm_threshold": 100}))
 
     # Nothing to look at for these - left out of the score.
-    not_applicable = {"devices_online", "sensor_devices", "points_named", "dead_sensors_disabled",
-                      "lageplan_resolution"}
+    not_applicable = {"devices_online", "sensor_devices", "points_named", "lageplan_resolution"}
     assert {key for key, status in _status(result).items() if status == lr.NA} == not_applicable
     assert _failed(result) == set(_status(result)) - {"threshold", *not_applicable}
     assert result["level"] == "open"
@@ -171,12 +170,19 @@ def test_points_without_devices_fail_the_alignment():
                                                           "points": 1})
 
 
-def test_dead_sensors_must_be_switched_off():
+def test_the_product_must_be_set():
+    """An important check: "Unknown" (or nothing) is no product."""
+    for project_type in (None, 0):
+        result = lr.evaluate(ready_facts(location={**ready_facts().location, "project_type": project_type}))
+        assert _failed(result) == {"product"}
+        assert next(check for check in result["checks"] if check["key"] == "product")["optional"] is False
+
+
+def test_pins_without_a_value_are_no_check_any_more():
     dead = {**_point(2), "has_value": False}
 
-    assert _status(lr.evaluate(ready_facts(points=[_point(1), dead])))["dead_sensors_disabled"] == lr.FAIL
-    dead["disabled"] = True
-    assert _status(lr.evaluate(ready_facts(points=[_point(1), dead])))["dead_sensors_disabled"] == lr.PASS
+    assert _failed(lr.evaluate(ready_facts(points=[_point(1), dead]))) == set()
+    assert "dead_sensors_disabled" not in lr.CHECK_KEYS
 
 
 def test_unnamed_points_and_invalid_thresholds_fail():
@@ -227,6 +233,7 @@ def ready_location(account):
     location = f.make_location(
         account, name="Bereit", project_id=950001, address="Hauptstraße 1", plz="50667", city="Köln",
         latitude=50.9, longitude=6.9, airtable_url="https://airtable.com/rec1", rain_check_enabled=True,
+        project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM,
     )
     plan = ProgeoLageplan.objects.using(f.DB).create(
         location=location, lageplan="uploads/readiness-plan.png", is_active=True, offset_x=0, offset_y=0,
@@ -262,7 +269,7 @@ def test_the_facts_of_a_location(ready_location, account):
 
     result = lr.check_location(ready_location, account, save=False)
 
-    assert _failed(result) == {"points_named", "dead_sensors_disabled", "notifications_enabled"}
+    assert _failed(result) == {"points_named", "notifications_enabled"}
     ready_location.refresh_from_db(using=f.DB)
     assert ready_location.readiness_score is None
 
@@ -362,6 +369,109 @@ def test_airtable_is_only_asked_for_a_missing_address_of_a_linked_location(ready
 
     assert result["airtable_filled"] == []
     assert bool(airtable.calls) == (case == "airtable_empty")
+
+
+# -- "Beheben" of the Airtable check: load the project by its number ------------------
+
+@pytest.fixture
+def airtable_project(ready_location, airtable):
+    """Location not linked yet, Airtable knowing a new name, link and product."""
+    ProgeoLocation.objects.using(f.DB).filter(pk=ready_location.pk).update(
+        airtable_url=None, name="Alt", project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.UNKNOWN)
+    airtable.records = [{"id": "recA", "fields": {
+        "Projektnummer": "950001", "Objektname": "Halle Neu", "Projekttyp": "smartex",
+        "Link zum Projekt": "https://airtable.com/app/tbl/recA", "Baustellenadresse": "Anderswo 9, 10115 Berlin"}}]
+    return f"/v1/location/{ready_location.pk}/readiness/airtable/"
+
+
+def test_fixing_the_airtable_check_first_shows_the_changes_without_saving(api_client, ready_location,
+                                                                           airtable_project, airtable):
+    api_client.force_authenticate(user=f.make_user(perms=("module_locations_enabled",)))
+    assert api_client.post(airtable_project).json()["reason"] == "Staff access required"
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.post(airtable_project, {}, format="json").json()
+
+    assert body["airtable"]["status"] == "preview"
+    changes = {change["field"]: change for change in body["airtable"]["changes"]}
+    assert set(changes) == {"name", "airtable_url", "project_type"}
+    assert (changes["name"]["old"]["value"], changes["name"]["new"]["value"]) == ("Alt", "Halle Neu")
+    assert changes["project_type"]["new"] == {"value": 1, "label": "smartex® dm"}
+    # The address was complete - Airtable only fills empty parts.
+    assert "city" not in changes
+    assert "checks" not in body
+    ready_location.refresh_from_db(using=f.DB)
+    assert (ready_location.name, ready_location.airtable_url) == ("Alt", None)
+    assert airtable.calls == ["{Projektnummer}&''='950001'"]
+
+
+def test_fixing_the_airtable_check_saves_only_the_confirmed_changes(api_client, ready_location, airtable_project):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.post(airtable_project, {"accept": {
+        "airtable_url": "https://airtable.com/app/tbl/recA", "project_type": 1,
+    }}, format="json").json()
+
+    assert body["airtable"]["status"] == "updated"
+    assert set(body["airtable"]["fields"]) == {"airtable_url", "project_type"}
+    assert not {"airtable", "product"} & {c["key"] for c in body["checks"] if c["status"] == lr.FAIL}
+    ready_location.refresh_from_db(using=f.DB)
+    # The name was denied.
+    assert (ready_location.name, ready_location.airtable_url) == ("Alt", "https://airtable.com/app/tbl/recA")
+    assert ready_location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM
+
+
+def test_a_change_airtable_made_since_the_preview_is_not_saved(api_client, ready_location, airtable_project):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.post(airtable_project, {"accept": {"name": "Halle Alt-Neu", "street": "x"}},
+                           format="json").json()
+
+    assert body["airtable"]["status"] == "unchanged"
+    assert set(body["airtable"]["skipped"]) == {"name", "street"}
+    ready_location.refresh_from_db(using=f.DB)
+    assert ready_location.name == "Alt"
+    assert api_client.post(airtable_project, {"accept": ["name"]}, format="json").json()["reason"] == (
+        "accept must be an object {field: value}"
+    )
+
+
+def test_fixing_the_airtable_check_without_a_project_in_airtable(api_client, ready_location, airtable):
+    ProgeoLocation.objects.using(f.DB).filter(pk=ready_location.pk).update(airtable_url=None)
+    airtable.records = []
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.post(f"/v1/location/{ready_location.pk}/readiness/airtable/").json()
+
+    assert body["airtable"] == {"status": "not_found", "changes": [], "fields": [], "skipped": [],
+                                "project_id": 950001}
+
+
+def test_fixing_the_airtable_check_reports_an_unreachable_airtable(api_client, ready_location, airtable,
+                                                                    monkeypatch):
+    def broken(*args, **kwargs):
+        raise ConnectionError("airtable down")
+
+    monkeypatch.setattr(airtable, "all", broken)
+    ProgeoLocation.objects.using(f.DB).filter(pk=ready_location.pk).update(airtable_url=None)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.post(f"/v1/location/{ready_location.pk}/readiness/airtable/").json()
+
+    assert body["success"] is False
+    assert "airtable down" in body["reason"]
+
+
+def test_the_list_leaves_out_checks_that_were_dropped(api_client, ready_location):
+    ProgeoLocation.objects.using(f.DB).filter(pk=ready_location.pk).update(
+        readiness_score=90, readiness_checks=[{"key": "dead_sensors_disabled", "status": "fail"},
+                                              {"key": "rain_check", "status": "fail"}])
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    row = next(row for row in api_client.get("/v1/location/readiness/").json()["locations"]
+               if row["id"] == ready_location.pk)
+
+    assert row["failed"] == ["rain_check"]
 
 
 def test_staff_open_the_checklist_of_a_location(api_client, ready_location):

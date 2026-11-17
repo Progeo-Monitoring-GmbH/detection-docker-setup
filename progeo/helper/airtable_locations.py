@@ -250,6 +250,77 @@ def fill_address(location, db_name) -> list:
     return changed
 
 
+def _change_value(field, value):
+    """A change's value for the JSON answer - the product with its name."""
+    if field == "project_type" and value is not None:
+        try:
+            return {"value": int(value), "label": TYPES(value).label}
+        except ValueError:
+            return {"value": value, "label": str(value)}
+    return {"value": value, "label": value}
+
+
+def link_location(location, db_name, accept=None) -> dict:
+    """Checklist "Mit Airtable verknüpft" -> "Beheben": the location's
+    Airtable project - by its airtable_url, else by its project number, in
+    any status - and what merging it (merge_location: name, link, product,
+    empty address parts) would change.
+
+    Without `accept` nothing is saved: {"status": "preview" | "unchanged" |
+    "not_found", "changes": [{field, old, new}], "project_id"} - for the user
+    to confirm. With `accept` ({field: the new value confirmed}) only those
+    changes are saved in `db_name`, and only where Airtable still has the
+    confirmed value: {"status": "updated" | "unchanged", "fields": saved,
+    "skipped": fields whose value changed since, "changes", "project_id"}.
+    Raises AirtableSyncError when Airtable isn't configured or can't be reached."""
+    import copy
+
+    helper = AirtableHelper(timeout=AIRTABLE_TIMEOUT)
+    if not helper.configured:
+        raise AirtableSyncError("Airtable is not configured: AIRTABLE_API_KEY / AIRTABLE_BASE_ID are missing")
+    if location.project_id is None and not (location.airtable_url or "").strip():
+        raise AirtableSyncError("The location has no project number to look up in Airtable")
+    try:
+        records = project_records(helper, location, fields=FIELDS)
+    except Exception as exc:  # noqa: BLE001 - any Airtable client failure
+        raise AirtableSyncError(f"Could not fetch the Airtable project: {exc}") from None
+    rows = [row for row in map(project_row, records) if row]
+    # Several records: the one with the location's own number first.
+    rows.sort(key=lambda row: row["project_id"] != location.project_id)
+    if not rows:
+        return {"status": "not_found", "changes": [], "fields": [], "skipped": [], "project_id": location.project_id}
+
+    merged = copy.copy(location)
+    fields = merge_location(merged, rows[0])
+    changes = [
+        {"field": field, "old": _change_value(field, getattr(location, field)),
+         "new": _change_value(field, getattr(merged, field))}
+        for field in fields
+    ]
+    answer = {"changes": changes, "fields": [], "skipped": [], "project_id": location.project_id}
+    if not fields:
+        return {**answer, "status": "unchanged"}
+    if accept is None:
+        return {**answer, "status": "preview"}
+
+    saved, skipped = [], []
+    for field, confirmed in accept.items():
+        if field not in fields:
+            skipped.append(field)
+            continue
+        value = getattr(merged, field)
+        if str(confirmed) != str(value):
+            # Airtable changed since the user saw it: not what they confirmed.
+            skipped.append(field)
+            continue
+        setattr(location, field, value)
+        saved.append(field)
+    if saved:
+        location.save(using=db_name, update_fields=saved)
+        ilog(f"[airtable] location {location.pk}: {', '.join(saved)} taken from Airtable (checklist, confirmed)")
+    return {**answer, "status": "updated" if saved else "unchanged", "fields": saved, "skipped": skipped}
+
+
 def sign_rows(rows) -> str:
     return signing.dumps(rows, salt=SIGNING_SALT)
 

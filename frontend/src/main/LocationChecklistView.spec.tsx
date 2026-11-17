@@ -26,7 +26,7 @@ const check = (
   values,
 });
 
-const api = vi.hoisted(() => ({ get: vi.fn() }));
+const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 const hooks = vi.hoisted(() => ({
   auth: { user: { is_staff: true } },
   snackbar: { enqueueSnackbar: vi.fn() },
@@ -36,8 +36,52 @@ const hooks = vi.hoisted(() => ({
   },
 }));
 
+// Location 5: not linked to Airtable - "Beheben" loads the project.
+const airtableReadiness = (status: 'pass' | 'fail', extra = {}) => ({
+  location: { id: 5, project_id: 5005, name: 'Halle 5', purgeable: null },
+  score: status === 'pass' ? 100 : 90,
+  level: status === 'pass' ? 'ready' : 'almost',
+  at: '2026-11-17T10:00:00Z',
+  checks: [check('airtable', 'base', status, {}, true)],
+  ...extra,
+});
+
 vi.mock('../axiosConfig', () => ({
   default: {
+    perform_post: (
+      _auth: unknown,
+      url: string,
+      body: { accept?: Record<string, unknown> },
+      ok: (response: unknown) => void,
+    ) => {
+      api.post(url, body);
+      if (!body.accept) {
+        // First the changes to confirm - nothing saved.
+        ok({
+          data: {
+            airtable: {
+              status: 'preview',
+              project_id: 5005,
+              fields: [],
+              changes: [
+                { field: 'name', old: { value: 'Alt', label: 'Alt' }, new: { value: 'Halle 5', label: 'Halle 5' } },
+                {
+                  field: 'airtable_url',
+                  old: { value: null, label: null },
+                  new: { value: 'https://airtable.com/rec5', label: 'https://airtable.com/rec5' },
+                },
+              ],
+            },
+          },
+        });
+        return;
+      }
+      ok({
+        data: airtableReadiness('pass', {
+          airtable: { status: 'updated', fields: Object.keys(body.accept), skipped: [], changes: [], project_id: 5005 },
+        }),
+      });
+    },
     perform_get: (
       _auth: unknown,
       url: string,
@@ -81,6 +125,8 @@ vi.mock('../axiosConfig', () => ({
             ],
           },
         });
+      } else if (url === '/v1/location/5/readiness/') {
+        ok({ data: airtableReadiness('fail') });
       } else if (url === '/v1/location/readiness/') {
         ok({
           data: {
@@ -132,7 +178,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => hooks.translation,
 }));
 
-const { default: LocationChecklistView, checkDetail, checkPoints } =
+const { default: LocationChecklistView, checkDetail, checkPoints, fixPath } =
   await import('./LocationChecklistView');
 
 let container: HTMLDivElement;
@@ -215,7 +261,7 @@ describe('LocationChecklistView', () => {
       'readiness_detail_sensor_devices_uncovered:{"count":2}; readiness_detail_sensor_devices_count:{"counted":30,"points":28}',
     );
     expect(byKey('checklist-fix', 'sensor_devices')!.getAttribute('href')).toBe(
-      '/lageplan/wizard/?location=7',
+      '/lageplan/wizard/?location=7#wizard-devices',
     );
 
     expect(byKey('checklist-check', 'points_named')!.textContent).toContain(
@@ -346,5 +392,65 @@ describe('checkDetail', () => {
         }),
       ),
     ).toBe('readiness_detail_error:{"error":"database p_1 not readable"}');
+  });
+});
+
+describe('fixPath', () => {
+  it('opens the wizard at the step that fixes the point', () => {
+    expect(fixPath('lageplan', 3)).toBe('/lageplan/wizard/?location=3#wizard-plans');
+    expect(fixPath('lageplan_resolution', 3)).toBe('/lageplan/wizard/?location=3#wizard-plans');
+    expect(fixPath('measure_points', 3)).toBe('/lageplan/wizard/?location=3#wizard-points');
+    expect(fixPath('lageplan_aligned', 3)).toBe('/lageplan/wizard/?location=3#wizard-align');
+    expect(fixPath('lageplan_calibrated', 3)).toBe('/lageplan/wizard/?location=3#wizard-align');
+    expect(fixPath('heat_limitation', 3)).toBe('/lageplan/wizard/?location=3#wizard-heat-limits');
+  });
+
+  it('sends alarm recipients to the Rechte tab and the product to the Objekt tab', () => {
+    expect(fixPath('alarm_recipient', 3)).toBe('/location/3/rechte');
+    expect(fixPath('product', 3)).toBe('/location/3/objekt');
+  });
+
+  it('has no link for the Airtable check - it is fixed in place', () => {
+    expect(fixPath('airtable', 3)).toBeNull();
+    expect(fixPath('dead_sensors_disabled', 3)).toBeNull();
+  });
+});
+
+describe('LocationChecklistView Airtable fix', () => {
+  const inDialog = (selector: string) => document.body.querySelector<HTMLElement>(selector);
+
+  it('shows what Airtable would change and saves only the confirmed changes', () => {
+    render('/checklist/location/?location=5');
+    const fix = byKey('checklist-fix', 'airtable')!;
+    expect(fix.tagName).toBe('BUTTON');
+
+    act(() => fix.click());
+
+    expect(api.post).toHaveBeenLastCalledWith('/v1/location/5/readiness/airtable/', {});
+    // Nothing saved yet - the check is still open.
+    expect(byKey('checklist-check', 'airtable')!.getAttribute('data-status')).toBe('fail');
+    const name = inDialog('[data-testid="checklist-airtable-change"][data-test-key="name"]')!;
+    expect(name.textContent).toContain('Alt');
+    expect(name.textContent).toContain('Halle 5');
+
+    // The name stays, the link is taken over.
+    act(() => name.querySelector('input')!.click());
+    act(() => inDialog('[data-testid="checklist-airtable-confirm-confirm"]')!.click());
+
+    expect(api.post).toHaveBeenLastCalledWith('/v1/location/5/readiness/airtable/', {
+      accept: { airtable_url: 'https://airtable.com/rec5' },
+    });
+    expect(byKey('checklist-check', 'airtable')!.getAttribute('data-status')).toBe('pass');
+  });
+
+  it('saves nothing when the changes are cancelled', () => {
+    render('/checklist/location/?location=5');
+    act(() => byKey('checklist-fix', 'airtable')!.click());
+    api.post.mockClear();
+
+    act(() => inDialog('[data-testid="checklist-airtable-confirm-cancel"]')!.click());
+
+    expect(api.post).not.toHaveBeenCalled();
+    expect(byKey('checklist-check', 'airtable')!.getAttribute('data-status')).toBe('fail');
   });
 });

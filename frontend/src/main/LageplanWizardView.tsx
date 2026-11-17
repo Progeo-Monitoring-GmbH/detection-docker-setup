@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation as useRouterLocation, useSearchParams } from 'react-router';
+import { WIZARD_ANCHORS, type WizardStep } from './lageplanWizardAnchors';
 import { Badge, Button, Spinner } from 'react-bootstrap';
 import { CheckLg, ChevronLeft, ChevronRight, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
@@ -18,6 +19,7 @@ import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
 import PanelCard from '../components/ui/kit/PanelCard';
 import LageplanKlemmliste from './LageplanKlemmliste';
+import DmTransferStep from './DmTransferStep';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -232,18 +234,22 @@ const Chip = ({ children, variant }: { children: React.ReactNode; variant?: 'mai
 
 const StepCard = ({
   number,
+  step,
   title,
   done,
   actions,
   children,
 }: {
   number: number;
+  /** Its anchor (lageplanWizardAnchors.ts) - links open the wizard here. */
+  step: WizardStep;
   title: string;
   done?: boolean;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) => (
   <PanelCard
+    id={WIZARD_ANCHORS[step]}
     title={
       <span className="lageplan-step-title">
         <span className={done ? 'lageplan-step-number lageplan-step-number--done' : 'lageplan-step-number'}>
@@ -379,8 +385,35 @@ const LageplanWizardView = () => {
   // ?plan=<lageplan id> (e.g. from /analyse) preselects that plan of the
   // location - once, with the first plans loaded.
   const requestedPlan = useRef<number | null>(Number(searchParams.get('plan')) || null);
-  // Step 6 (heat limitations): staff and superusers, like the backend.
+  // Step 7 (heat limitations): staff and superusers, like the backend.
   const staff = staffFlags(auth?.user).isStaffOrSuperuser;
+
+  // Opened at a step (#wizard-..., e.g. from the checklist's "Beheben"):
+  // scroll there once the location is chosen - again while its plans and
+  // points load and push the step down, until the user scrolls themselves.
+  const { hash } = useRouterLocation();
+  useEffect(() => {
+    const target = hash.slice(1);
+    if (!target || selectedLocationId === null) {
+      return undefined;
+    }
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+    };
+    const scroll = () => {
+      if (!stopped) {
+        document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    const timers = [0, 600, 1500].map((delay) => window.setTimeout(scroll, delay));
+    const events = ['wheel', 'touchstart', 'keydown', 'mousedown'] as const;
+    events.forEach((event) => window.addEventListener(event, stop, { passive: true }));
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      events.forEach((event) => window.removeEventListener(event, stop));
+    };
+  }, [hash, selectedLocationId]);
 
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
@@ -1066,7 +1099,7 @@ const LageplanWizardView = () => {
   // -- steps ------------------------------------------------------------------
 
   const renderStepOne = () => (
-    <StepCard number={1} title="Location" done={!!selectedLocation}>
+    <StepCard number={1} step="location" title="Location" done={!!selectedLocation}>
       <div className="lageplan-picker">
         <LocationPicker
           id="lageplan-location-picker"
@@ -1247,6 +1280,7 @@ const LageplanWizardView = () => {
   const renderStepTwo = () => (
     <StepCard
       number={3}
+      step="plans"
       title="Lageplan"
       done={!!sourceMeta?.imageUrl}
       actions={
@@ -1523,6 +1557,7 @@ const LageplanWizardView = () => {
   const renderStepDevice = () => (
     <StepCard
       number={2}
+      step="devices"
       title="Device"
       done={usedRanges.length > 0 && !deviceRangesProblem}
       actions={
@@ -1544,6 +1579,7 @@ const LageplanWizardView = () => {
   const renderStepThree = () => (
     <StepCard
       number={4}
+      step="points"
       title="Measure points"
       done={measurePoints.length > 0 && !placementDirty}
       actions={
@@ -1655,7 +1691,7 @@ const LageplanWizardView = () => {
     pointSource === 'manual' && selectedLocationId !== null;
 
   const renderStepFour = () => (
-    <StepCard number={5} title="Align and inspect">
+    <StepCard number={5} step="align" title="Align and inspect">
       {!sourceMeta?.imageUrl ? (
         <Notice tone="warning" testId="lageplan-wizard-canvas-needs-plan">
           Select or add a Lageplan in step 3 before using the canvas editor.
@@ -1710,10 +1746,33 @@ const LageplanWizardView = () => {
     </StepCard>
   );
 
-  // Step 6: the areas the heatmap's heat field is limited to (staff).
-  const renderStepHeatLimits = () => (
+  // Step 6 (optional): the band ends of dm sensors read from the plan.
+  const planBands = planPoints.filter((point) => point.nx_end != null && point.ny_end != null).length;
+  const renderStepDmTransfer = () => (
     <StepCard
       number={6}
+      step="dmTransfer"
+      title="dm-Transfer (optional)"
+      done={planPoints.length > 0 && planBands === planPoints.length}
+    >
+      <DmTransferStep
+        // Fresh proposals per location and plan.
+        key={`${selectedLocationId}-${selectedPlanId}`}
+        locationId={selectedLocationId}
+        plan={selectedPlan ? { id: selectedPlan.id, url: selectedPlan.url } : null}
+        pointCount={planPoints.length}
+        pointsWithEnd={planBands}
+        canEdit={canEditDevices}
+        onStored={() => setReloadKey((key) => key + 1)}
+      />
+    </StepCard>
+  );
+
+  // Step 7: the areas the heatmap's heat field is limited to (staff).
+  const renderStepHeatLimits = () => (
+    <StepCard
+      number={7}
+      step="heatLimits"
       title="Heat limitations"
       done={Boolean(selectedPlan?.heat_limitations?.length)}
     >
@@ -1746,9 +1805,9 @@ const LageplanWizardView = () => {
     </StepCard>
   );
 
-  // Step 7: the MEA documents from Airtable and the Klemmliste's sensor names.
+  // Step 8: the MEA documents from Airtable and the Klemmliste's sensor names.
   const renderStepKlemmliste = () => (
-    <StepCard number={7} title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}>
+    <StepCard number={8} step="klemmliste" title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}>
       {selectedLocationId === null ? (
         <Notice tone="warning" testId="lageplan-wizard-klemmliste-needs-location">
           Select a location in step 1 first.
@@ -1819,6 +1878,7 @@ const LageplanWizardView = () => {
       {renderStepTwo()}
       {renderStepThree()}
       {renderStepFour()}
+      {renderStepDmTransfer()}
       {staff && renderStepHeatLimits()}
       {renderStepKlemmliste()}
 

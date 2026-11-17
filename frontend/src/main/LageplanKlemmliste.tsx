@@ -156,7 +156,7 @@ const lineKey = (line: { unit?: string | null; position: number }) =>
   line.unit ? `${line.unit}-${line.position}` : String(line.position);
 
 /**
- * Lageplan wizard, step 7: the location's MEA documents from Airtable (staff -
+ * Lageplan wizard, step 8: the location's MEA documents from Airtable (staff -
  * CAD plan, Router_Daten.txt and every PDF, a recognised Klemmliste first,
  * each downloadable; any PDF can be read as Klemmliste) and the
  * Klemmliste: read by progeo-cad_factory (uploaded or straight from Airtable),

@@ -670,13 +670,51 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             **result,
         })
 
+    @action(detail=True, url_path="readiness/airtable", methods=["POST"])
+    def readiness_airtable(self, request, pk=None, *args, **kwargs):
+        """Staff, checklist "Mit Airtable verknüpft" -> "Beheben": load the
+        location's Airtable project (by its link, else its project number)
+        and what it would change (airtable_locations.link_location).
+
+        POST {} -> {"airtable": {status: "preview" | "unchanged" |
+        "not_found", changes: [{field, old, new}], project_id}} - nothing
+        saved; the user confirms the changes.
+        POST {"accept": {field: new value, ...}} -> the confirmed changes
+        saved (where Airtable still has that value), the location checked
+        again: the readiness answer plus "airtable": {status, fields,
+        skipped, changes}."""
+        from progeo.helper.airtable_locations import AirtableSyncError, link_location
+        from progeo.helper.location_readiness import check_location
+
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        accept = request.data.get("accept") if isinstance(request.data, dict) else None
+        if accept is not None and not isinstance(accept, dict):
+            return RequestFailed({"reason": "accept must be an object {field: value}"})
+        try:
+            linked = link_location(location, account.db_name if account is not None else "default", accept=accept)
+        except AirtableSyncError as exc:
+            return RequestFailed({"reason": str(exc)})
+        if accept is None:
+            return RequestSuccess({"airtable": linked})
+        result = check_location(location, account, airtable=False)
+        return RequestSuccess({
+            "location": {"id": location.pk, "project_id": location.project_id, "name": location.name,
+                         "purgeable": location.purgeable},
+            **result,
+            "airtable": linked,
+        })
+
     @action(detail=False, url_path="readiness", methods=["GET"])
     def readiness_list(self, request, *args, **kwargs):
         """Staff: the stored scores of every location of the configured
         accounts, lowest first - {"locations": [{id, project_id, name,
         score, level, at, failed: [check keys]}]}. Locations never checked
         have score None (run the location_readiness command)."""
-        from progeo.helper.location_readiness import FAIL, level_of
+        from progeo.helper.location_readiness import CHECK_KEYS, FAIL, level_of
 
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
@@ -693,8 +731,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     "city": location.city, "purgeable": location.purgeable,
                     "score": location.readiness_score, "level": level_of(location.readiness_score),
                     "at": location.readiness_at,
+                    # Only checks still run - a stored result can name dropped ones.
                     "failed": [check.get("key") for check in checks
-                               if isinstance(check, dict) and check.get("status") == FAIL],
+                               if isinstance(check, dict) and check.get("status") == FAIL
+                               and check.get("key") in CHECK_KEYS],
                 }
         ordered = sorted(rows.values(), key=lambda row: (row["score"] is not None, row["score"] or 0, row["id"]))
         return RequestSuccess({"locations": ordered})

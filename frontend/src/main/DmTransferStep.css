@@ -1,0 +1,109 @@
+/* dm-Transfer (DmTransferStep.tsx), an optional step of the Lageplan wizard:
+   the detected bands over the plan, their status chips and the actions. */
+
+.dm-transfer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dm-transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.dm-transfer-actions .form-check {
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
+.dm-transfer-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dm-transfer-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dm-transfer-status--found {
+  color: var(--bs-success-text-emphasis);
+  background: var(--bs-success-bg-subtle);
+}
+
+.dm-transfer-status--shared {
+  color: var(--bs-warning-text-emphasis);
+  background: var(--bs-warning-bg-subtle);
+}
+
+.dm-transfer-status--unclear,
+.dm-transfer-status--no_line {
+  color: var(--bs-danger-text-emphasis);
+  background: var(--bs-danger-bg-subtle);
+}
+
+/* The plan with the proposals drawn over it (SVG in the image's frame). */
+.dm-transfer-preview {
+  position: relative;
+  max-width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.dm-transfer-preview--loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.dm-transfer-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dm-transfer-preview svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Over the plan's orange: a dark blue that stands out. */
+.dm-transfer-band line {
+  stroke: #0b3659;
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.dm-transfer-band circle {
+  fill: #0b3659;
+}
+
+.dm-transfer-band--shared line {
+  stroke: #7a3fb0;
+  stroke-dasharray: 6 4;
+}
+
+.dm-transfer-band--shared circle {
+  fill: #7a3fb0;
+}
+
+.dm-transfer-band--highlighted line {
+  stroke: #2a78d6;
+  stroke-width: 5;
+}
+
+.dm-transfer-band--highlighted circle {
+  fill: #2a78d6;
+}

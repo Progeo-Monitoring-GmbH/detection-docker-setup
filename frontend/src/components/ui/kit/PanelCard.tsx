@@ -11,6 +11,8 @@ type PanelCardProps = {
   flat?: boolean;
   /** data-testid (src/testIds.ts) - UI tests find the element by it. */
   testId?: string;
+  /** Element id - an anchor links can jump to (#id). */
+  id?: string;
 };
 
 /**
@@ -18,8 +20,8 @@ type PanelCardProps = {
  * panel in the Portal v2 mockup (KPI strip, Dachansicht, Verdachtsstellen,
  * Objekt sections, ...). Styles: kit.css (.progeo-panel).
  */
-const PanelCard = ({ title, actions, children, bodyClassName, flat = false, testId }: PanelCardProps) => (
-  <section className={flat ? 'progeo-panel progeo-panel--flat' : 'progeo-panel'} data-testid={testId}>
+const PanelCard = ({ title, actions, children, bodyClassName, flat = false, testId, id }: PanelCardProps) => (
+  <section id={id} className={flat ? 'progeo-panel progeo-panel--flat' : 'progeo-panel'} data-testid={testId}>
     {(title || actions) && (
       <div className="progeo-panel-head">
         {title && <div className="progeo-panel-title">{title}</div>}

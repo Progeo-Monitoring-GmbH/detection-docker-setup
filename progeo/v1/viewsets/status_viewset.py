@@ -29,7 +29,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper import cad_import, lageplan_edit, plan_detect
+from progeo.helper import cad_import, dm_transfer, lageplan_edit, plan_detect
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
 from progeo.helper.cacher import forget_location_answers
 from progeo.helper.creator import create_MfS_log
@@ -986,6 +986,120 @@ class StatusViewSet(ProgeoModalViewSet):
             "flip_y": result.flip_y,
             "score": result.score,
             "matched": result.matched,
+        })
+
+    def _dm_transfer_plan(self, request):
+        """(location, db_name, lageplan, image path, error) of a dm-Transfer request."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return None, None, None, None, error
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+        except (TypeError, ValueError):
+            return None, None, None, None, RequestFailed({"reason": "lageplan_id required"})
+        lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).first()
+        if lageplan is None:
+            return None, None, None, None, RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+        path = _lageplan_path(lageplan.lageplan.name if lageplan.lageplan else "")
+        if not path or not os.path.isfile(path):
+            return None, None, None, None, RequestFailed({"reason": "The Lageplan has no image"})
+        return location, db_name, lageplan, path, None
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/dm_transfer", methods=["POST"])
+    def dm_transfer(self, request, *args, **kwargs):
+        """dm-Transfer (optional step of the Lageplan wizard,
+        helper/dm_transfer.py): POST {location_id (project id), lageplan_id}
+        follows the orange band each measure point of the plan lies on, under
+        the plan's stored alignment, and proposes its start and end -
+        {lageplan_id, proposals: [{id, sensor_order, name, status (found |
+        shared | unclear | no_line), had_end, nx, ny, nx_end, ny_end, start,
+        end (image fractions), length}], counts}. Nothing is stored -
+        measure_points/dm_transfer/apply does."""
+        location, db_name, lageplan, path, error = self._dm_transfer_plan(request)
+        if error:
+            return error
+        points = list(
+            cad_import.points_on_plan(location, db_name, lageplan)
+            .only("id", "sensor_order", "name", "nx", "ny", "nx_end", "ny_end")
+            .order_by("sensor_order", "pk")
+        )
+        if not points:
+            return RequestFailed({"reason": "The Lageplan has no measure points"})
+        try:
+            plan_image = plan_detect.load_plan_image(path)
+        except plan_detect.PlanDetectError as exc:
+            return RequestFailed({"reason": str(exc)})
+        proposals = dm_transfer.transfer(lageplan, points, plan_image.orange, plan_image.size)
+        counts = {}
+        for proposal in proposals:
+            counts[proposal["status"]] = counts.get(proposal["status"], 0) + 1
+        ilog(f"dm-Transfer of Lageplan {lageplan.pk} (location {location.id}): {counts}")
+        return RequestSuccess({"lageplan_id": lageplan.pk, "proposals": proposals, "counts": counts})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/dm_transfer/apply", methods=["POST"])
+    def dm_transfer_apply(self, request, *args, **kwargs):
+        """Stores the bands of dm-Transfer: POST {location_id (project id),
+        lageplan_id, points: [{id, nx, ny, nx_end, ny_end}]} - the start and
+        end of each point's band (nx/ny and nx_end/ny_end). x/y and
+        x_end/y_end follow in the CAD frame of the plan's points
+        (dm_transfer.cad_frame) - left empty for the end where that frame
+        can't be told. The answer lists the stored points."""
+        location, db_name, lageplan, _path, error = self._dm_transfer_plan(request)
+        if error:
+            return error
+        raw_points = request.data.get("points")
+        if not isinstance(raw_points, list) or not raw_points:
+            return RequestFailed({"reason": "points must be a non-empty list"})
+        bands = {}
+        fields = ("nx", "ny", "nx_end", "ny_end")
+        for index, entry in enumerate(raw_points):
+            try:
+                if not isinstance(entry, dict) or isinstance(entry.get("id"), bool):
+                    raise TypeError
+                bands[int(entry["id"])] = {field: float(entry[field]) for field in fields}
+            except (KeyError, TypeError, ValueError):
+                return RequestFailed({"reason": f"points[{index}] needs an id and nx, ny, nx_end, ny_end"})
+            if not all(math.isfinite(value) and abs(value) <= self.PLACE_LIMIT for value in bands[int(entry["id"])].values()):
+                return RequestFailed({"reason": f"points[{index}] lies far off the plan"})
+
+        on_plan = cad_import.points_on_plan(location, db_name, lageplan)
+        frame_x, frame_y = dm_transfer.cad_frame(on_plan.only("nx", "ny", "x", "y"))
+        with transaction.atomic(using=db_name):
+            points = list(on_plan.select_for_update().filter(pk__in=bands))
+            missing = sorted(set(bands) - {point.pk for point in points})
+            if missing:
+                return RequestFailed({"reason": f"Measure point(s) {missing} are not on this Lageplan"})
+            for point in points:
+                band = bands[point.pk]
+                for field, value in band.items():
+                    setattr(point, field, round(value, 6))
+                changed = [*fields]
+                if frame_x is not None:
+                    slope, intercept = frame_x
+                    point.x = round(slope * band["nx"] + intercept, 3)
+                    point.x_end = round(slope * band["nx_end"] + intercept, 3)
+                    changed += ["x", "x_end"]
+                if frame_y is not None:
+                    slope, intercept = frame_y
+                    point.y = round(slope * band["ny"] + intercept, 3)
+                    point.y_end = round(slope * band["ny_end"] + intercept, 3)
+                    changed += ["y", "y_end"]
+                point.save(using=db_name, update_fields=changed)
+
+        points.sort(key=lambda point: (point.sensor_order, point.pk))
+        ilog(f"dm-Transfer: {len(points)} band(s) of location {location.id} stored on Lageplan {lageplan.pk}")
+        from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
+
+        schedule_auto_heat_limitations(db_name, lageplan.pk)
+        return RequestSuccess({
+            "location_id": location.id,
+            "lageplan_id": lageplan.pk,
+            "stored": len(points),
+            "points": ProgeoMeasurePointSerializer(points, many=True).data,
         })
 
     @calc_runtime
