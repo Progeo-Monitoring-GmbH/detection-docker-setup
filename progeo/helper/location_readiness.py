@@ -455,8 +455,17 @@ def refresh(location_ids=None, databases=None, progress=None) -> dict:
     / the accounts of `databases`, if given) and store the scores.
     `progress(location, result)` is called after each. Returns
     {"checked": n, "levels": {level: n}}."""
+    from django.db import connections
+
     from progeo.helper.location_access import configured_accounts
+    from progeo.helper.project_dbs import location_db
     from progeo.v1.models import ProgeoLocation
+
+    def release(alias, account):
+        # ~1000 project databases: outside a request nobody closes their
+        # connections, one open each exceeds Postgres' max_connections.
+        if alias not in (None, account.db_name, DEFAULT_DB_ALIAS):
+            connections[alias].close()
 
     now = timezone.now()
     summary = {"checked": 0, "levels": {name: 0 for _limit, name in LEVELS}}
@@ -464,16 +473,30 @@ def refresh(location_ids=None, databases=None, progress=None) -> dict:
     for account in configured_accounts():
         if databases and account.db_name not in databases:
             continue
-        if account.db_name in seen:
+        # Two aliases can point at the same physical database (the test
+        # settings map "default" and "unit_tests" to one): check it once.
+        config = connections.settings[account.db_name]
+        physical = (config.get("HOST"), config.get("PORT"), config.get("NAME"))
+        if physical in seen:
             continue
-        seen.add(account.db_name)
-        locations = ProgeoLocation.objects.using(account.db_name).order_by("id")
+        seen.add(physical)
+        # By project: the locations of one project database one after the
+        # other, its connection closed once they are done.
+        locations = ProgeoLocation.objects.using(account.db_name).order_by("project_id", "id")
         if location_ids is not None:
             locations = locations.filter(pk__in=location_ids)
-        for location in locations:
-            result = check_location(location, account, now=now)
-            summary["checked"] += 1
-            summary["levels"][result["level"]] += 1
-            if progress:
-                progress(location, result)
+        current = None
+        try:
+            for location in locations:
+                db = location_db(location, account)
+                if db != current:
+                    release(current, account)
+                    current = db
+                result = check_location(location, account, now=now)
+                summary["checked"] += 1
+                summary["levels"][result["level"]] += 1
+                if progress:
+                    progress(location, result)
+        finally:
+            release(current, account)
     return summary

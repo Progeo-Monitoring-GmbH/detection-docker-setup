@@ -7,12 +7,12 @@ import pytest
 AREA_MODULES = {
     "access": """
         access_and_login_links migration_invites access_scoping_api account_middleware admin_lists authentication_order
-        location_access module_permissions_as_user monitoring_auth oidc rechte_api
-        staff_admin_api staff_impersonation user_management_security user_profile
+        location_access location_invites module_permissions_as_user monitoring_auth oidc rechte_api
+        staff_admin_api staff_impersonation user_management_security user_profile user_profile_actions
     """,
     "alarms": """
         admin_overview_and_test_notification alarm_episodes alarm_evaluation_and_check alarm_thresholds_unit
-        alarm_overview_api alarm_report_api alarm_severity_and_clusters escalations_api
+        alarm_overview_api alarm_report_api alarm_severity_and_clusters escalations_api suspicion_clusters
     """,
     "backups": """
         backup_download backup_reload backup_transfer dbbackup_connector import_live_backup restore_backups
@@ -38,7 +38,7 @@ AREA_MODULES = {
     "locations": """
         auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api plan_meters plan_ocr
-        location_readiness rain_events status_api
+        location_readiness rain_events status_api auto_heat_limits plan_resolution objekt_tab
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video
