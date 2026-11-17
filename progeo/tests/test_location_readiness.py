@@ -514,7 +514,9 @@ def test_only_staff_see_the_score_in_the_location_picker(api_client, ready_locat
     row = next(row for row in api_client.get("/v1/location/min/").json() if row["id"] == ready_location.pk)
     assert "readiness_score" not in row
 
-    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_locations_enabled",)))
+    # Staff list the locations of their accounts (location_access.listed_locations).
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_locations_enabled",),
+                                                   accounts=(account,)))
     row = next(row for row in api_client.get("/v1/location/min/").json() if row["id"] == ready_location.pk)
     assert row["readiness_score"] == 42
 

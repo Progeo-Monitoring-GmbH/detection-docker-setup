@@ -370,6 +370,26 @@ def can_see_location(user, location) -> bool:
     return is_account_member(user, account) or location.pk in single_access_location_ids(user, account)
 
 
+def listed_locations(user) -> list[tuple[Account, Q]]:
+    """(account, filter) of every account whose locations the location lists
+    (/v1/location/min/) show `user`:
+
+    - superusers: every location of every configured account;
+    - staff and everyone else: the locations of the accounts they belong to,
+      plus those granted to them one by one (ProgeoAccess) - being staff
+      alone lists nothing (they still open any location, location_q).
+    """
+    if getattr(user, "is_superuser", False):
+        return [(account, Q(account=account)) for account in configured_accounts()]
+    listed = []
+    for account in user_accounts(user):
+        scope = Q(account=account)
+        if not is_account_member(user, account):
+            scope &= Q(id__in=single_access_location_ids(user, account))
+        listed.append((account, scope))
+    return listed
+
+
 def location_q(user, account, prefix: str = "") -> Q:
     """Filter for rows visible to `user` within `account`. `prefix` is the
     lookup path to the location, e.g. "device__location__" for measurements."""

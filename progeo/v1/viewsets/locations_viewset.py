@@ -68,6 +68,7 @@ from progeo.helper.location_access import (
     can_see_location,
     configured_accounts,
     is_account_member,
+    listed_locations,
     location_q,
     resolve_request_accounts,
     visible_location_filters,
@@ -513,7 +514,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         # This feeds the location pickers on almost every page. Only the
         # serializer's columns are read: selecting all 30 ProgeoLocation
         # columns was one of the hottest default-database statements.
-        accounts = self._resolve_request_accounts(request)
+        #
+        # Who sees what (location_access.listed_locations): superusers every
+        # location; staff and customers those of their accounts plus the ones
+        # granted to them one by one.
         data = []
         fields = (
             "id", "project_id", "name", "city", "plz", "address", "country",
@@ -521,10 +525,17 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         )
         # Staff see the readiness score next to the names (location_readiness).
         staff = _is_staff_admin(getattr(request, "user", None))
-        for account in accounts:
-            locations = list(ProgeoLocation.objects.using(account.db_name).filter(
-                location_q(request.user, account)
-            ).only(*fields, *(("readiness_score",) if staff else ())))
+        # Two aliases of one physical database (the test settings) list it once.
+        seen = set()
+        for account, scope in listed_locations(request.user):
+            config = connections.settings[account.db_name]
+            physical = (config.get("HOST"), config.get("PORT"), config.get("NAME"))
+            locations = [
+                location for location in ProgeoLocation.objects.using(account.db_name).filter(scope)
+                .only(*fields, *(("readiness_score",) if staff else ()))
+                if (physical, location.pk) not in seen
+            ]
+            seen.update((physical, location.pk) for location in locations)
             rows = ProgeoLocationMinSerializer(locations, many=True).data
             if staff:
                 for row, location in zip(rows, locations):

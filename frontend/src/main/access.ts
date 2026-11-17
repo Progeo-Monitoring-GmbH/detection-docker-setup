@@ -66,7 +66,8 @@ export const APP_ROUTE_ACCESS = {
   // "Is the location ready?" - the readiness checklist (staff, like its endpoints).
   '/checklist/location/': STAFF,
   '/admin/panel/': SUPERUSER,
-  '/staff/': STAFF,
+  // Mini admins (module_mini_admin_enabled): the users table of their account.
+  '/staff/': anyOf(STAFF, permission('module_mini_admin_enabled')),
   // Database usage and user activity (main/staff/).
   '/insights/databases/': STAFF,
   '/insights/activity/': STAFF,

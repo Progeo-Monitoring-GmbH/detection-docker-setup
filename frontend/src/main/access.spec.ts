@@ -47,6 +47,8 @@ describe('APP_ROUTE_ACCESS', () => {
         '/location/overview/',
         '/locations/:id/heatplot',
         '/schnittstelle/',
+        // module_mini_admin_enabled: the users table of their own account.
+        '/staff/',
       ].sort(),
     );
   });

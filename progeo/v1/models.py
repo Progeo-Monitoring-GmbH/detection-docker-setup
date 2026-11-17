@@ -57,7 +57,13 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_interface_modbus_edit", "Can edit modbus interface module"),
     ("module_interface_sms_edit", "Can edit sms interface module"),
     ("module_demo_enabled", "Can access demo view"),
+    ("module_mini_admin_enabled", "Can manage the users of their own account (mini admin)"),
 )
+
+# The role between staff and normal users: manages the users of their own
+# account(s) on /staff/ (users table only) and grants permissions they hold -
+# never this one, which only staff (and superusers) set.
+MINI_ADMIN_PERMISSION = "module_mini_admin_enabled"
 
 # Descriptions are defined once above; the default sets below just select codes from it.
 _PERMISSION_LABELS = dict(MODULE_PERMISSION_DEFINITIONS)

@@ -39,7 +39,7 @@ import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
 import StaffNotificationCases from './StaffNotificationCases';
-import { staffFlags } from './access';
+import { staffFlags, useAccess } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
 import {
   AccountBoxes,
@@ -79,6 +79,9 @@ type UsersResponse = {
   users: StaffUser[];
   grantable_codes: string[];
   all_permission_defs: PermissionDef[];
+  /** "staff": every user; "mini": a mini admin's - the customers of admin_accounts. */
+  scope?: 'staff' | 'mini';
+  admin_accounts?: UserAccount[];
 };
 
 const EMPTY_RESPONSE: UsersResponse = {
@@ -166,6 +169,8 @@ const UserFormModal = ({
   isNew,
   onSave,
   onGeneratePassword,
+  staffFields = true,
+  accounts = [],
   testId,
 }: {
   show: boolean;
@@ -177,6 +182,10 @@ const UserFormModal = ({
   isNew: boolean;
   onSave: (data: Record<string, unknown>) => void;
   onGeneratePassword?: (user: StaffUser) => void;
+  /** The staff switch - not for mini admins, who manage customers only. */
+  staffFields?: boolean;
+  /** A mini admin's accounts: a new user joins one (chosen when there are several). */
+  accounts?: UserAccount[];
   /** data-testid of the dialog; its fields and buttons are "<testId>-<name>". */
   testId: string;
 }) => {
@@ -188,6 +197,7 @@ const UserFormModal = ({
   const [isActive, setIsActive] = useState(true);
   const [sendInvite, setSendInvite] = useState(false);
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
+  const [accountId, setAccountId] = useState('');
 
   useEffect(() => {
     if (!show) {
@@ -199,6 +209,7 @@ const UserFormModal = ({
     setIsStaff(Boolean(user?.is_staff));
     setIsActive(user ? Boolean(user.is_active) : true);
     setSendInvite(false);
+    setAccountId(accounts.length === 1 ? String(accounts[0].id) : '');
     setSelectedPerms(
       user
         ? rowPermissions(user)
@@ -206,6 +217,8 @@ const UserFormModal = ({
             grantableCodes.includes(code),
           ),
     );
+    // Per opening - `accounts` is a new array with every load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, user, grantableCodes]);
 
   const togglePermission = (code: string) => {
@@ -219,12 +232,17 @@ const UserFormModal = ({
   const handleSubmit = () => {
     const payload: Record<string, unknown> = {
       email,
-      is_staff: isStaff,
       is_active: isActive,
       permissions: selectedPerms,
     };
+    if (staffFields) {
+      payload.is_staff = isStaff;
+    }
     if (isNew) {
       payload.username = username;
+      if (accounts.length) {
+        payload.account_id = accountId ? Number(accountId) : null;
+      }
       if (password) {
         payload.password = password;
       }
@@ -274,15 +292,35 @@ const UserFormModal = ({
             </Form.Group>
           )}
 
+          {isNew && accounts.length > 1 && (
+            <Form.Group className="mb-3">
+              <Form.Label>{t('staff_field_account')}</Form.Label>
+              <Form.Select
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+                data-testid={childTestId(testId, 'account')}
+              >
+                <option value="">{t('staff_field_account_choose')}</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+          )}
+
           <div className="d-flex gap-4 mb-3">
-            <Form.Check
-              type="switch"
-              id="staff-switch"
-              label={t('staff_field_is_staff')}
-              checked={isStaff}
-              onChange={(event) => setIsStaff(event.target.checked)}
-              data-testid={childTestId(testId, 'is-staff')}
-            />
+            {staffFields && (
+              <Form.Check
+                type="switch"
+                id="staff-switch"
+                label={t('staff_field_is_staff')}
+                checked={isStaff}
+                onChange={(event) => setIsStaff(event.target.checked)}
+                data-testid={childTestId(testId, 'is-staff')}
+              />
+            )}
             <Form.Check
               type="switch"
               id="active-switch"
@@ -360,7 +398,12 @@ const UserFormModal = ({
         <Button variant="secondary" onClick={onHide} data-testid={childTestId(testId, 'cancel')}>
           {t('staff_cancel')}
         </Button>
-        <Button variant="primary" onClick={handleSubmit} data-testid={childTestId(testId, 'save')}>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={isNew && accounts.length > 1 && !accountId}
+          data-testid={childTestId(testId, 'save')}
+        >
           {t('staff_save')}
         </Button>
       </Modal.Footer>
@@ -441,6 +484,11 @@ const StaffAdmin = () => {
   const authUser = auth?.user as { user_id?: number | string } | null;
   // Staff or superuser, like the route (access.ts) and the backend.
   const { isStaffOrSuperuser: isStaff, isSuperuser } = staffFlags(auth?.user);
+  // Mini admins (module_mini_admin_enabled, no staff): the users of their
+  // own account - only this table, only what the backend lets them do.
+  const { hasPermission } = useAccess();
+  const isMiniAdmin = !isStaff && hasPermission('module_mini_admin_enabled');
+  const canManageUsers = isStaff || isMiniAdmin;
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -459,12 +507,12 @@ const StaffAdmin = () => {
   }, [auth, enqueueSnackbar, t]);
 
   useEffect(() => {
-    if (isStaff) {
+    if (canManageUsers) {
       fetchUsers();
     } else {
       setLoading(false);
     }
-  }, [isStaff, fetchUsers]);
+  }, [canManageUsers, fetchUsers]);
 
   const handleSave =
     (user: StaffUser | null, isNew: boolean) =>
@@ -865,6 +913,7 @@ const StaffAdmin = () => {
             >
               <PencilSquare size={14} />
             </Button>
+            {isStaff && (
             <Button
               size="sm"
               variant="outline-warning"
@@ -876,6 +925,7 @@ const StaffAdmin = () => {
             >
               <Key size={14} />
             </Button>
+            )}
             <Button
               size="sm"
               variant="outline-secondary"
@@ -895,7 +945,7 @@ const StaffAdmin = () => {
             >
               <Envelope size={14} />
             </Button>
-            {row.two_factor_enabled && (
+            {isStaff && row.two_factor_enabled && (
               <Button
                 size="sm"
                 variant="outline-secondary"
@@ -921,6 +971,7 @@ const StaffAdmin = () => {
                 <Incognito size={14} />
               </Button>
             )}
+            {isStaff && (
             <Button
               size="sm"
               variant="outline-danger"
@@ -932,15 +983,16 @@ const StaffAdmin = () => {
             >
               <Trash size={14} />
             </Button>
+            )}
           </span>
         ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId, t, roleLabel, isSuperuser, accountColorOf],
+    [busyId, t, roleLabel, isSuperuser, isStaff, accountColorOf],
   );
 
-  if (!isStaff) {
+  if (!canManageUsers) {
     return (
       <Container data-testid="page-staff">
         <Card className="border-0 shadow-sm my-5" data-testid="staff-access-required">
@@ -961,7 +1013,7 @@ const StaffAdmin = () => {
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <h5 className="mb-0">
               <ShieldLock className="me-2 text-warning" />
-              {t('staff_title')}
+              {isMiniAdmin ? t('staff_title_mini') : t('staff_title')}
             </h5>
             <div className="d-flex gap-2">
               <Button
@@ -1118,11 +1170,11 @@ const StaffAdmin = () => {
         </Card.Body>
       </Card>
 
-      <StaffAccessRequests onChanged={fetchUsers} />
+      {isStaff && <StaffAccessRequests onChanged={fetchUsers} />}
 
-      <StaffMessaging />
+      {isStaff && <StaffMessaging />}
 
-      <StaffNotificationCases />
+      {isStaff && <StaffNotificationCases />}
 
       <UserFormModal
         show={showCreate}
@@ -1133,6 +1185,8 @@ const StaffAdmin = () => {
         grantableCodes={response.grantable_codes}
         permissionDefs={response.all_permission_defs}
         onSave={handleSave(null, true)}
+        staffFields={isStaff}
+        accounts={isMiniAdmin ? (response.admin_accounts ?? []) : []}
         testId="staff-user-create"
       />
 
@@ -1147,7 +1201,8 @@ const StaffAdmin = () => {
         grantableCodes={response.grantable_codes}
         permissionDefs={response.all_permission_defs}
         onSave={handleSave(editUser, false)}
-        onGeneratePassword={handleGeneratePassword}
+        onGeneratePassword={isStaff ? handleGeneratePassword : undefined}
+        staffFields={isStaff}
         testId="staff-user-edit-dialog"
       />
 

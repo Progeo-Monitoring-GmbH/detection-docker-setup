@@ -73,11 +73,16 @@ def test_list_contains_users_with_permissions_and_grantable_subset(api_client, s
     body = api_client.get(BASE).json()
 
     assert body["success"] is True
-    assert body["grantable_codes"] == ["module_devices_enabled", "module_locations_enabled"]
+    # Their own codes - and the mini admin permission, which only staff grant.
+    assert body["grantable_codes"] == [
+        "module_devices_enabled", "module_locations_enabled", "module_mini_admin_enabled",
+    ]
     row = next(user for user in body["users"] if user["id"] == other.pk)
     assert row["permissions"]["module_backup_enabled"] is True
     assert row["permissions"]["module_docker_enabled"] is False
-    assert row["grantable"] == {"module_devices_enabled": False, "module_locations_enabled": True}
+    assert row["grantable"] == {
+        "module_devices_enabled": False, "module_locations_enabled": True, "module_mini_admin_enabled": False,
+    }
     assert {d["code"] for d in body["all_permission_defs"]} >= {"module_backup_enabled", "module_interface_sms_edit"}
 
 

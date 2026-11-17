@@ -6,6 +6,14 @@
 - **Single access:** a `ProgeoAccess` row for one object. It is also the person's notification rule for that object.
 - **ProGeo staff** (`is_staff` or `is_superuser`): see every object. Customers never see staff in user lists. Staff see them, marked "ProGeo-Team".
 
+**Object lists** (`/v1/location/min/`, the location pickers and the overview, `location_access.listed_locations`) are narrower than what may be opened:
+
+- **Superusers** list every object of every account.
+- **Staff** list the objects of the accounts they are a member of, plus the objects granted to them one by one. Being staff alone lists nothing, although staff can still open any object by its link.
+- **Everyone else** lists the objects of their accounts plus their single accesses.
+
+**Mini admins** (`module_mini_admin_enabled`, no staff flag) manage the users of their own account(s) on `/staff/` (the users table only). They create users in their account, change the permissions of its customers, and grant only the permissions they hold themselves. They never grant `module_mini_admin_enabled`; only staff grant that, and permissions a mini admin can't grant stay untouched when they save a user.
+
 Code: [progeo/helper/location_access.py](../progeo/helper/location_access.py).
 
 ## Roles in the Rechte tab
