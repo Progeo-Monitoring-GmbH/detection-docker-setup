@@ -36,6 +36,8 @@ type StitchedScreenshotProps = {
   onSelectNote?: (id: number) => void;
   /** The shape drawn with the pointer; null: no drawing. */
   tool?: 'arrow' | 'area' | null;
+  /** The part the gallery's keyboard / swipe cursor is on - framed. */
+  activePart?: number | null;
   /** The shape being drawn / not saved yet - shown like a note. */
   draft?: DraftShape | null;
   /** The shape while it is drawn (done: false) and when let go (done: true; null: too short). */
@@ -72,6 +74,7 @@ const StitchedScreenshot = ({
   onSelectNote,
   tool = null,
   draft = null,
+  activePart = null,
   onDraft,
   testId = 'stitched-screenshot',
 }: StitchedScreenshotProps) => {
@@ -248,7 +251,11 @@ const StitchedScreenshot = ({
       data-testid={testId}
     >
       {slices.map((slice) => (
-        <div key={slice.index} className="stitched-part">
+        <div
+          key={slice.index}
+          className={`stitched-part${slice.index === activePart ? ' stitched-part--active' : ''}`}
+          data-part-index={slice.index}
+        >
           <div
             className="stitched-slice"
             data-slice-index={slice.index}

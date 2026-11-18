@@ -4,6 +4,8 @@ import {
   ArrowUpRight,
   BoundingBox,
   ChatLeftText,
+  CheckCircle,
+  CheckCircleFill,
   Download,
   ExclamationTriangle,
   Trash,
@@ -17,6 +19,12 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import KeyHints, { announceKey } from '../components/ui/KeyHints';
+import useIsMobile from '../components/ui/useIsMobile';
+import {
+  useKeyNavigation,
+  useSwipeNavigation,
+} from '../components/ui/useDirectionalNavigation';
 import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
 import StitchedScreenshot from './StitchedScreenshot';
@@ -24,48 +32,37 @@ import {
   ACTION_COLORS,
   NOTE_ACTIONS,
   SCREEN_REVIEW_URL,
+  ALL_SCREENS,
   defaultAction,
   sliceHeightOf,
+  slicesOf,
   filterImages,
   notesByImage,
+  stepCursor,
+  type CursorMove,
   type DraftShape,
   type NoteAction,
+  type ReviewedMark,
   type ScreenDevice,
+  type ScreenFilter,
   type ScreenImage,
+  type ScreenLanguage,
   type ScreenNote,
   type ScreenRole,
   type ScreenRun,
 } from './screenReview';
 import './ScreenReviewView.css';
 
-type RunDetail = { run: string; images: ScreenImage[]; notes: ScreenNote[] };
+type RunDetail = {
+  run: string;
+  images: ScreenImage[];
+  notes: ScreenNote[];
+  reviewed?: ReviewedMark[];
+};
 type Tool = 'arrow' | 'area' | 'note';
 
 /** Part height of the gallery's previews (px on screen). */
 const PREVIEW_PART_HEIGHT = 200;
-
-/** Shown once it scrolls into view (the gallery loads the images it shows). */
-const useInView = <T extends Element>() => {
-  const ref = useRef<T | null>(null);
-  // Without IntersectionObserver (old browsers, tests): everything at once.
-  const [seen, setSeen] = useState(
-    () => typeof IntersectionObserver === 'undefined',
-  );
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || seen) {
-      return undefined;
-    }
-    const observer = new IntersectionObserver(
-      (entries) =>
-        entries.some((entry) => entry.isIntersecting) && setSeen(true),
-      { rootMargin: '400px' },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [seen]);
-  return { ref, seen };
-};
 
 /**
  * The screenshot as an object URL (it needs the login's header) - fetched
@@ -122,6 +119,9 @@ const ImageBadges = ({
     <span className="screen-badges">
       <Badge bg="primary">{t(`screens_device_${image.device}`)}</Badge>
       <Badge bg="secondary">{t(`screens_role_${image.role}`)}</Badge>
+      <Badge bg="light" text="dark">
+        {image.language.toUpperCase()}
+      </Badge>
       {notes > 0 && (
         <Badge bg="warning" text="dark">
           {t('screens_notes_count', { count: notes })}
@@ -137,27 +137,37 @@ const ImageBadges = ({
   );
 };
 
-/** A screenshot of the gallery: its name, badges and parts (loaded when in view). */
+/**
+ * A screenshot of the gallery: its name, badges and parts - the part the
+ * cursor is on framed (`activePart`, only on the active card).
+ */
 const ScreenCard = ({
   run,
   image,
   notes,
   cache,
+  activePart,
+  reviewed,
   onOpen,
+  onSelectPart,
+  onToggleReviewed,
 }: {
   run: string;
   image: ScreenImage;
   notes: ScreenNote[];
   cache: Map<string, string>;
+  activePart: number | null;
+  reviewed: ReviewedMark | null;
   onOpen: () => void;
+  onSelectPart: (part: number) => void;
+  onToggleReviewed: () => void;
 }) => {
   const { t } = useTranslation();
-  const { ref, seen } = useInView<HTMLDivElement>();
-  const src = useScreenshotSrc(cache, run, image.file, seen);
+  // Every screenshot of the filter loads right away - moving on is instant.
+  const src = useScreenshotSrc(cache, run, image.file, true);
   return (
     <div
-      ref={ref}
-      className="screen-card"
+      className={`screen-card${activePart != null ? ' screen-card--active' : ''}${reviewed ? ' screen-card--reviewed' : ''}`}
       data-testid="screen-card"
       data-test-key={image.file}
     >
@@ -173,6 +183,22 @@ const ScreenCard = ({
         <span className="screen-card-path">{image.path}</span>
         <ImageBadges image={image} notes={notes.length} />
         <PillButton
+          label={reviewed ? t('screens_reviewed') : t('screens_mark_reviewed')}
+          title={
+            reviewed
+              ? t('screens_reviewed_by', {
+                  name: reviewed.reviewed_by_name ?? '–',
+                  date: formatDate(reviewed.created),
+                })
+              : t('screens_mark_reviewed_hint')
+          }
+          onClick={onToggleReviewed}
+          active={Boolean(reviewed)}
+          icon={reviewed ? <CheckCircleFill /> : <CheckCircle />}
+          testId="screen-card-reviewed"
+          testKey={image.file}
+        />
+        <PillButton
           label={t('screens_comment')}
           onClick={onOpen}
           icon={<ChatLeftText />}
@@ -180,13 +206,26 @@ const ScreenCard = ({
           testKey={image.file}
         />
       </div>
-      {/* A click on the parts opens the screenshot for comments. */}
-      <div className="screen-card-parts" onClick={onOpen} role="presentation">
+      {/* A click on a part puts the cursor there; a double click opens the screenshot for comments. */}
+      <div
+        className="screen-card-parts"
+        onClick={(event) => {
+          const part = (event.target as Element).closest<HTMLElement>(
+            '[data-part-index]',
+          );
+          if (part) {
+            onSelectPart(Number(part.dataset.partIndex));
+          }
+        }}
+        onDoubleClick={onOpen}
+        role="presentation"
+      >
         <StitchedScreenshot
           src={src}
           image={image}
           partHeight={PREVIEW_PART_HEIGHT}
           notes={notes}
+          activePart={activePart}
           testId="screen-card-parts"
         />
       </div>
@@ -546,9 +585,27 @@ const ScreenReviewView = () => {
   const [runs, setRuns] = useState<ScreenRun[] | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
-  const [device, setDevice] = useState<ScreenDevice | 'all'>('all');
-  const [role, setRole] = useState<ScreenRole | 'all'>('all');
+  const [filter, setFilter] = useState<ScreenFilter>(ALL_SCREENS);
+  const setFilterPart = (part: Partial<ScreenFilter>) =>
+    setFilter((current) => ({ ...current, ...part }));
   const [openFile, setOpenFile] = useState<string | null>(null);
+  // The keyboard / swipe cursor: a screenshot (by file - it stays across
+  // filter changes) and one of its parts.
+  // `index`: where it stood - a screenshot that left the list (filtered,
+  // hidden as reviewed) hands the cursor to the one now there.
+  const [cursor, setCursor] = useState<{
+    file: string | null;
+    part: number;
+    index: number;
+  }>({
+    file: null,
+    part: 0,
+    index: 0,
+  });
+  const touch = useIsMobile('(pointer: coarse)');
+  const galleryRef = useRef<HTMLDivElement | null>(null);
+  // Scrolled to after a move (keys, swipes) - not when the page just shows it.
+  const scrollToCursor = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // The object URLs of the loaded screenshots - freed when the page is left.
@@ -603,13 +660,163 @@ const ScreenReviewView = () => {
   }, [runId]);
 
   const shownDetail = detail?.run === runId ? detail : null;
-  const images = useMemo(
-    () => filterImages(shownDetail?.images ?? [], device, role),
-    [shownDetail, device, role],
-  );
   const notes = useMemo(
     () => notesByImage(shownDetail?.notes ?? []),
     [shownDetail],
+  );
+  const reviewedMarks = useMemo(
+    () =>
+      new Map((shownDetail?.reviewed ?? []).map((mark) => [mark.image, mark])),
+    [shownDetail],
+  );
+  const images = useMemo(
+    () =>
+      filterImages(
+        shownDetail?.images ?? [],
+        filter,
+        new Set(notes.keys()),
+        new Set(reviewedMarks.keys()),
+      ),
+    [shownDetail, filter, notes, reviewedMarks],
+  );
+  const reviewedCount = (shownDetail?.images ?? []).filter((image) =>
+    reviewedMarks.has(image.file),
+  ).length;
+
+  // The cursor's screenshot in the filtered list - gone from it: the one
+  // now at its place, from its first part.
+  const foundIndex = images.findIndex((image) => image.file === cursor.file);
+  const cursorIndex =
+    foundIndex >= 0
+      ? foundIndex
+      : Math.max(Math.min(cursor.index, images.length - 1), 0);
+  const partsOf = (index: number) => {
+    const image = images[index];
+    return image ? slicesOf(image.height, sliceHeightOf(image)).length : 0;
+  };
+  const cursorPart =
+    foundIndex >= 0
+      ? Math.min(cursor.part, Math.max(partsOf(cursorIndex) - 1, 0))
+      : 0;
+  const currentImage = images[cursorIndex] ?? null;
+
+  const move = (step: CursorMove, hint: string) => {
+    if (!images.length) {
+      return;
+    }
+    const next = stepCursor(
+      { index: cursorIndex, part: cursorPart },
+      step,
+      images.length,
+      partsOf,
+    );
+    scrollToCursor.current = true;
+    setCursor({
+      file: images[next.index].file,
+      part: next.part,
+      index: next.index,
+    });
+    announceKey(hint);
+  };
+
+  useEffect(() => {
+    if (!scrollToCursor.current || !currentImage) {
+      return;
+    }
+    scrollToCursor.current = false;
+    const selector = `[data-testid="screen-card"][data-test-key="${CSS.escape(currentImage.file)}"] [data-part-index="${cursorPart}"]`;
+    galleryRef.current?.querySelector(selector)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  });
+
+  const toggleReviewed = (file: string) => {
+    if (!runId) {
+      return;
+    }
+    const marking = !reviewedMarks.has(file);
+    // Hidden once reviewed: the cursor goes on to the next screenshot.
+    if (marking && filter.hideReviewed && currentImage?.file === file) {
+      const neighbour =
+        images[cursorIndex + 1] ?? images[cursorIndex - 1] ?? null;
+      setCursor({ file: neighbour?.file ?? null, part: 0, index: cursorIndex });
+    }
+    void axiosConfig.perform_post(
+      auth,
+      `${SCREEN_REVIEW_URL}${runId}/reviewed/`,
+      { image: file, reviewed: marking },
+      (response) => {
+        const mark = (response?.data?.reviewed ?? null) as ReviewedMark | null;
+        setDetail((current) =>
+          current
+            ? {
+                ...current,
+                reviewed: [
+                  ...(current.reviewed ?? []).filter(
+                    (entry) => entry.image !== file,
+                  ),
+                  ...(mark ? [mark] : []),
+                ],
+              }
+            : current,
+        );
+      },
+      (error) =>
+        showRequestError(enqueueSnackbar, t('screens_reviewed_failed'), error),
+    );
+  };
+
+  // Keys on the page: parts and screenshots, "r" reviewed, Enter comments.
+  useKeyNavigation(
+    {
+      left: () => move('previousPart', 'screens-part'),
+      right: () => move('nextPart', 'screens-part'),
+      up: () => move('previousScreen', 'screens-screen'),
+      down: () => move('nextScreen', 'screens-screen'),
+      keys: {
+        r: () => {
+          if (currentImage) {
+            announceKey('screens-reviewed');
+            toggleReviewed(currentImage.file);
+          }
+        },
+        enter: () => currentImage && setOpenFile(currentImage.file),
+      },
+    },
+    Boolean(shownDetail) && openFile === null && images.length > 0,
+  );
+
+  // Touch: a swipe across a screenshot's parts moves through them (from the
+  // screenshot swiped on); up and down is the page's own scrolling.
+  useSwipeNavigation(
+    galleryRef,
+    (direction, target) => {
+      if (direction !== 'left' && direction !== 'right') {
+        return;
+      }
+      const file = target?.closest<HTMLElement>('[data-testid="screen-card"]')
+        ?.dataset.testKey;
+      const index = images.findIndex((image) => image.file === file);
+      if (index < 0) {
+        return;
+      }
+      const from = { index, part: index === cursorIndex ? cursorPart : 0 };
+      const next = stepCursor(
+        from,
+        direction === 'right' ? 'nextPart' : 'previousPart',
+        images.length,
+        partsOf,
+      );
+      scrollToCursor.current = true;
+      setCursor({
+        file: images[next.index].file,
+        part: next.part,
+        index: next.index,
+      });
+    },
+    Boolean(shownDetail) && openFile === null,
   );
   const openImage =
     shownDetail?.images.find((image) => image.file === openFile) ?? null;
@@ -739,8 +946,10 @@ const ScreenReviewView = () => {
                 { value: 'pc', label: t('screens_device_pc') },
                 { value: 'mobile', label: t('screens_device_mobile') },
               ]}
-              value={device}
-              onChange={(value) => setDevice(value as ScreenDevice | 'all')}
+              value={filter.device}
+              onChange={(value) =>
+                setFilterPart({ device: value as ScreenDevice | 'all' })
+              }
             />
             <SegmentedControl
               testId="screens-role"
@@ -749,12 +958,81 @@ const ScreenReviewView = () => {
                 { value: 'user', label: t('screens_role_user') },
                 { value: 'staff', label: t('screens_role_staff') },
               ]}
-              value={role}
-              onChange={(value) => setRole(value as ScreenRole | 'all')}
+              value={filter.role}
+              onChange={(value) =>
+                setFilterPart({ role: value as ScreenRole | 'all' })
+              }
             />
-            <span className="small text-muted">
-              {t('screens_count', { count: images.length })}
+            <SegmentedControl
+              testId="screens-language"
+              options={[
+                { value: 'all', label: t('screens_language_all') },
+                { value: 'de', label: 'DE' },
+                { value: 'en', label: 'EN' },
+              ]}
+              value={filter.language}
+              onChange={(value) =>
+                setFilterPart({ language: value as ScreenLanguage | 'all' })
+              }
+            />
+            <Form.Check
+              type="switch"
+              id="screens-commented-only"
+              label={t('screens_commented_only')}
+              checked={filter.commentedOnly}
+              onChange={(event) =>
+                setFilterPart({ commentedOnly: event.target.checked })
+              }
+              data-testid="screens-commented-only"
+            />
+            <Form.Check
+              type="switch"
+              id="screens-hide-reviewed"
+              label={t('screens_hide_reviewed')}
+              checked={filter.hideReviewed}
+              onChange={(event) =>
+                setFilterPart({ hideReviewed: event.target.checked })
+              }
+              data-testid="screens-hide-reviewed"
+            />
+            <span className="small text-muted" data-testid="screens-count">
+              {t('screens_count', { count: images.length })} ·{' '}
+              {t('screens_reviewed_count', {
+                count: reviewedCount,
+                total: shownDetail?.images.length ?? 0,
+              })}
             </span>
+          </div>
+        )}
+        {shownDetail && images.length > 0 && (
+          <div className="screen-review-hints" data-testid="screens-hints">
+            {touch ? (
+              <span className="small text-muted">
+                {t('screens_swipe_hint')}
+              </span>
+            ) : (
+              <KeyHints
+                title={t('screens_keys_title')}
+                hints={[
+                  {
+                    id: 'screens-part',
+                    keys: ['←/→'],
+                    label: t('screens_key_parts'),
+                  },
+                  {
+                    id: 'screens-screen',
+                    keys: ['↑/↓'],
+                    label: t('screens_key_screens'),
+                  },
+                  {
+                    id: 'screens-reviewed',
+                    keys: ['R'],
+                    label: t('screens_key_reviewed'),
+                  },
+                  { keys: ['Enter'], label: t('screens_key_open') },
+                ]}
+              />
+            )}
           </div>
         )}
       </PanelCard>
@@ -770,15 +1048,25 @@ const ScreenReviewView = () => {
         </div>
       )}
       {shownDetail && (
-        <div className="screen-gallery" data-testid="screens-gallery">
-          {images.map((image) => (
+        <div
+          ref={galleryRef}
+          className="screen-gallery"
+          data-testid="screens-gallery"
+        >
+          {images.map((image, index) => (
             <ScreenCard
               key={image.file}
               run={shownDetail.run}
               image={image}
               notes={notes.get(image.file) ?? []}
               cache={cache}
+              activePart={index === cursorIndex ? cursorPart : null}
+              reviewed={reviewedMarks.get(image.file) ?? null}
               onOpen={() => setOpenFile(image.file)}
+              onSelectPart={(part) =>
+                setCursor({ file: image.file, part, index })
+              }
+              onToggleReviewed={() => toggleReviewed(image.file)}
             />
           ))}
         </div>

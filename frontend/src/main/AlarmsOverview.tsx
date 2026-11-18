@@ -127,8 +127,7 @@ const STATUS_LABELS: Record<number, { labelKey: string; variant: string }> = {
   2: { labelKey: 'alarm_status_fault', variant: 'danger' },
 };
 
-/** `testId`: the page root's test id - "page-alarms" on /alarms/, another one
- * where the overview is embedded in a page of its own (LocationAlarmDetail). */
+/** `testId`: the page root's test id - "page-alarms" on /alarms/. */
 const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();

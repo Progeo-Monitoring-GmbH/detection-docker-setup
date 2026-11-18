@@ -10,7 +10,8 @@ and a manifest.json the capture writes:
     {"run", "created", "images": [{"file", "device", "role", "action", "path",
      "viewport": [w, h], "width", "height", "errors": [...]}]}
 
-File names: {pc|mobile}-{user|staff}-{action}.png.
+File names: {pc|mobile}-{user|staff}-{de|en}-{action}.png (runs before
+the languages: without {de|en} - German, the only language then).
 
 export_zip() gives the commented screenshots (arrows and areas drawn in,
 numbered) and a PROMPT.md - what to change on which screen, for whoever (or
@@ -28,9 +29,12 @@ from django.conf import settings
 from django.utils import timezone
 
 RUN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
-IMAGE_RE = re.compile(r"^(pc|mobile)-(user|staff)-([a-z0-9][a-z0-9-]{0,120})\.png$")
+IMAGE_RE = re.compile(r"^(pc|mobile)-(user|staff)-(?:(de|en)-)?([a-z0-9][a-z0-9-]{0,120})\.png$")
 DEVICES = ("pc", "mobile")
 ROLES = ("user", "staff")
+LANGUAGES = ("de", "en")
+# Runs before the languages were captured in German.
+DEFAULT_LANGUAGE = "de"
 
 # What a comment asks for - the instruction PROMPT.md gives for it.
 ACTION_TEXT = {
@@ -129,9 +133,12 @@ def run_dir(run: str) -> Path:
 
 
 def parse_image_name(name: str):
-    """(device, role, action) of a screenshot's file name - None if it isn't one."""
+    """(device, role, language, action) of a screenshot's file name - None if it isn't one."""
     match = IMAGE_RE.match(name or "")
-    return match.groups() if match else None
+    if not match:
+        return None
+    device, role, language, action = match.groups()
+    return device, role, language or DEFAULT_LANGUAGE, action
 
 
 def image_path(run: str, name: str) -> Path:
@@ -179,7 +186,8 @@ def run_images(run: str) -> list:
             # The image's own size (its header) - the review's coordinates are its pixels.
             entry["width"], entry["height"] = _size(path)
             images.append({
-                "file": path.name, "device": parsed[0], "role": parsed[1], "action": parsed[2],
+                "file": path.name, "device": parsed[0], "role": parsed[1], "language": parsed[2],
+                "action": parsed[3],
                 "path": entry.get("path"), "viewport": entry.get("viewport"),
                 "width": entry.get("width"), "height": entry.get("height"),
                 "errors": [str(error)[:300] for error in entry.get("errors", [])][:5],
@@ -244,6 +252,15 @@ def clean_note(data, run: str) -> dict:
         if kind == "area" and (geometry["w"] <= 0 or geometry["h"] <= 0):
             raise ReviewError("An area needs a width and a height")
     return {"image": image, "kind": kind, "action": action, "comment": comment.strip(), "geometry": geometry}
+
+
+def mark_payload(mark) -> dict:
+    return {
+        "image": mark.image,
+        "reviewed_by": mark.reviewed_by_id,
+        "reviewed_by_name": (mark.reviewed_by.get_full_name() or mark.reviewed_by.username) if mark.reviewed_by else None,
+        "created": mark.created.isoformat(),
+    }
 
 
 def note_payload(note) -> dict:
@@ -360,7 +377,7 @@ def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
             f"## {image['file']}",
             "",
             f"- Route: `{image.get('path') or '?'}`",
-            f"- Device: {image['device']} ({size}) · user: {image['role']}",
+            f"- Device: {image['device']} ({size}) · user: {image['role']} · language: {image['language']}",
             f"- Image: `screens/{image['file']}` ({image.get('width')}×{image.get('height')} px)",
         ]
         if image.get("errors"):

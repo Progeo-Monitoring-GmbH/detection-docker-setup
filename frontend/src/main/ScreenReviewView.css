@@ -201,3 +201,23 @@
     flex-basis: auto;
   }
 }
+
+.screen-review-hints {
+  margin-top: 12px;
+}
+
+/* The card the cursor is on (keys, swipes). */
+.screen-card--active {
+  box-shadow: 0 0 0 2px #eb633b, var(--progeo-shadow-chrome);
+}
+
+.screen-card--reviewed .screen-card-title {
+  color: #3f7a1c;
+}
+
+/* Touch: a sideways swipe moves the cursor through the parts (no sideways
+   scrolling of the strip) - up and down stays the page's scrolling. */
+.screen-gallery,
+.screen-gallery .stitched {
+  touch-action: pan-y;
+}

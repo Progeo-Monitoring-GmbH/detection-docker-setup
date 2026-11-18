@@ -279,7 +279,7 @@ const scoreboard = () => ({
 });
 
 /** The answer to an API request: a JSON body, or undefined (unmocked - {}). */
-export const mockAnswer = (method, url, role) => {
+export const mockAnswer = (method, url, role, language = 'de') => {
   const { pathname, searchParams } = new URL(url);
   const persona = PERSONAS[role] ?? PERSONAS.user;
   const ids = (searchParams.get('ids') || '')
@@ -532,7 +532,9 @@ export const mockAnswer = (method, url, role) => {
       first_name: persona.first_name,
       last_name: persona.last_name,
       email: `${persona.username}@progeo.com`,
-      language: 'de',
+      // The profile's language wins in the top bar - the run's one.
+      language,
+      language_saved: true,
     };
   }
   if (path.endsWith('/location/project-types/')) {

@@ -278,7 +278,7 @@ def test_the_agent_runs_without_django(tmp_path):
 
 # -- the screenshot run (e2e_screenshots in the backend container) ----------------
 
-SCREENS = {"run": "2026-11-18_235532", "devices": ["pc", "mobile"], "roles": ["user", "staff"],
+SCREENS = {"run": "2026-11-18_235532", "devices": ["pc", "mobile"], "roles": ["user", "staff"], "languages": ["de", "en"],
            "only": ["location-status"], "timeout_seconds": 1800}
 
 
@@ -295,6 +295,8 @@ def test_valid_screenshot_arguments_pass():
     {"devices": ["tablet"]},
     {"devices": "pc"},
     {"roles": ["admin"]},
+    {"languages": ["fr"]},
+    {"languages": []},
     {"only": ["Location Status"]},
     {"only": ["--help"]},
     {"only": "location-status"},

@@ -602,6 +602,9 @@ const LocationChecklistView = () => {
                 classNames: [LOCATION_OFF_CLASS],
               },
             ]}
+            // Highest score first (the "Wert" column, descending).
+            defaultSortFieldId="score"
+            defaultSortAsc={false}
             testId="checklist-overview-table"
             // Phones: score and object in the row, open checks and date in the expander.
             mobileColumns={['score', 'location']}

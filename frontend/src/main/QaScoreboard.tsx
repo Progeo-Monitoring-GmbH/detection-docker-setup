@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { Spinner } from 'react-bootstrap';
-import { Trophy } from 'react-bootstrap-icons';
+import { ChevronDown, ChevronUp, Trophy } from 'react-bootstrap-icons';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
@@ -33,11 +33,32 @@ type RankedUser = QaUser & { rank: number; last: string | null };
  * locations over time and each staff member's points for the checks they
  * fixed - loaded on demand ("Load scoreboard").
  */
+// Minimized or not - this viewer's choice, kept in the browser (per device).
+const COLLAPSED_KEY = 'progeo_qa_scoreboard_collapsed';
+
+const readCollapsed = () => {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
 const QaScoreboard = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const [board, setBoard] = useState<Scoreboard | null>(null);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const toggleCollapsed = () =>
+    setCollapsed((current) => {
+      try {
+        localStorage.setItem(COLLAPSED_KEY, current ? '0' : '1');
+      } catch {
+        // No storage (private window): minimized for this visit only.
+      }
+      return !current;
+    });
   const [loading, setLoading] = useState(false);
 
   // `quiet`: a reload after a point change - the shown board stays until the new one is there.
@@ -203,14 +224,43 @@ const QaScoreboard = () => {
         </span>
       }
       actions={
-        <PillButton
-          label={board ? t('qa_scoreboard_reload') : t('qa_scoreboard_load')}
-          onClick={() => load()}
-          disabled={loading}
-          icon={loading ? <Spinner animation="border" size="sm" /> : undefined}
-          testId="qa-scoreboard-load"
-        />
+        <div className="qa-scoreboard-actions">
+          {!collapsed && (
+            <PillButton
+              label={
+                board ? t('qa_scoreboard_reload') : t('qa_scoreboard_load')
+              }
+              onClick={() => load()}
+              disabled={loading}
+              icon={
+                loading ? <Spinner animation="border" size="sm" /> : undefined
+              }
+              testId="qa-scoreboard-load"
+            />
+          )}
+          <button
+            type="button"
+            className="qa-scoreboard-toggle"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            title={
+              collapsed
+                ? t('qa_scoreboard_expand')
+                : t('qa_scoreboard_collapse')
+            }
+            aria-label={
+              collapsed
+                ? t('qa_scoreboard_expand')
+                : t('qa_scoreboard_collapse')
+            }
+            data-testid="qa-scoreboard-toggle"
+          >
+            {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+        </div>
       }
+      // Minimized: the header only (the body stays mounted, a loaded board is kept).
+      className={collapsed ? 'qa-scoreboard--collapsed' : undefined}
       testId="qa-scoreboard"
     >
       <div className="small text-muted">{t('qa_scoreboard_intro')}</div>

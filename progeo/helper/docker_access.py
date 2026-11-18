@@ -144,14 +144,15 @@ def run_cad_factory(cad_input, coord_margin=0.2, timeout_seconds=1800, on_line=N
 
 
 def run_e2e_screens(run, devices=("pc", "mobile"), roles=("user", "staff"), only=(), timeout_seconds=1800,
-                    on_line=None):
+                    on_line=None, languages=("de", "en")):
     """ops.run_e2e_screens (the e2e_screenshots command in the backend
     container) - through the agent: its output lines arrive while it runs."""
-    devices, roles, only = list(devices), list(roles), list(only)
+    devices, roles, only, languages = list(devices), list(roles), list(only), list(languages)
     if not uses_agent():
         return ops.run_e2e_screens(run, devices=devices, roles=roles, only=only,
-                                   timeout_seconds=timeout_seconds, on_line=on_line)
-    body = {"run": run, "devices": devices, "roles": roles, "only": only, "timeout_seconds": timeout_seconds}
+                                   timeout_seconds=timeout_seconds, on_line=on_line, languages=languages)
+    body = {"run": run, "devices": devices, "roles": roles, "languages": languages, "only": only,
+            "timeout_seconds": timeout_seconds}
     response = _request(
         "POST", "/e2e-screens/run", body, stream=True,
         timeout=(CONNECT_TIMEOUT, timeout_seconds + CAD_RUN_GRACE_SECONDS),

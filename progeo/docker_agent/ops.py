@@ -372,14 +372,17 @@ _E2E_RUN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
 _E2E_ACTION = re.compile(r"^[a-z0-9][a-z0-9-]{0,120}$")
 E2E_DEVICES = ("pc", "mobile")
 E2E_ROLES = ("user", "staff")
+E2E_LANGUAGES = ("de", "en")
 E2E_TIMEOUT_RANGE = (60, 3 * 3600)
 
 
-def check_e2e_screens_args(run, devices, roles, only, timeout_seconds):
+def check_e2e_screens_args(run, devices, roles, only, timeout_seconds, languages=E2E_LANGUAGES):
     """The screenshot run's arguments, checked - its only mount is the run's folder."""
     if not isinstance(run, str) or not _E2E_RUN.match(run):
         raise InvalidRequest("run must be a run folder name (YYYY-MM-DD_HHMMSS)")
-    for name, values, allowed in (("devices", devices, E2E_DEVICES), ("roles", roles, E2E_ROLES)):
+    languages = list(languages) if isinstance(languages, tuple) else languages
+    for name, values, allowed in (("devices", devices, E2E_DEVICES), ("roles", roles, E2E_ROLES),
+                                  ("languages", languages, E2E_LANGUAGES)):
         if not isinstance(values, list) or not values or any(value not in allowed for value in values):
             raise InvalidRequest(f"{name} must be a list of {', '.join(allowed)}")
     if not isinstance(only, list) or len(only) > 200 or any(
@@ -391,7 +394,7 @@ def check_e2e_screens_args(run, devices, roles, only, timeout_seconds):
 
 
 def run_e2e_screens(run: str, devices=E2E_DEVICES, roles=E2E_ROLES, only=(), timeout_seconds: int = 1800,
-                    on_line=None) -> dict:
+                    on_line=None, languages=E2E_LANGUAGES) -> dict:
     """Run progeo-e2e_screens (docker/e2e_screens/: the frontend's dev server
     and Playwright, every API request mocked) for the run folder
     media/uploads/e2e/<run>/ - its only mount, writable. No network: the dev
@@ -399,8 +402,8 @@ def run_e2e_screens(run: str, devices=E2E_DEVICES, roles=E2E_ROLES, only=(), tim
     lines go to on_line while it runs; killed after timeout_seconds.
 
     Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}."""
-    devices, roles, only = list(devices), list(roles), list(only)
-    check_e2e_screens_args(run, devices, roles, only, timeout_seconds)
+    devices, roles, only, languages = list(devices), list(roles), list(only), list(languages)
+    check_e2e_screens_args(run, devices, roles, only, timeout_seconds, languages)
     client = _client()
     backend = _get_container_or_none(client, os.getenv("DOCKER_BACKEND_CONTAINER", "progeo-backend"))
     settings = _one_off_settings(client, backend, E2E_SCREENS_SERVICE, "DOCKER_E2E_SCREENS_CONTAINER",
@@ -415,6 +418,7 @@ def run_e2e_screens(run: str, devices=E2E_DEVICES, roles=E2E_ROLES, only=(), tim
             "SCREENS_RUN": run,
             "SCREENS_DEVICES": ",".join(devices),
             "SCREENS_ROLES": ",".join(roles),
+            "SCREENS_LANGUAGES": ",".join(languages),
             "SCREENS_ONLY": ",".join(only),
         },
         timeout_seconds=timeout_seconds,

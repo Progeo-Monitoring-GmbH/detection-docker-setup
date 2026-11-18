@@ -26,7 +26,9 @@ const MagicLinkRequest = React.lazy(
   () => import('./main/MagicLinkRequest.tsx'),
 );
 const MagicLinkLogin = React.lazy(() => import('./main/MagicLinkLogin.tsx'));
-const NotificationLinkPage = React.lazy(() => import('./main/NotificationLinkPage.tsx'));
+const NotificationLinkPage = React.lazy(
+  () => import('./main/NotificationLinkPage.tsx'),
+);
 const MigrationSetup = React.lazy(() => import('./main/MigrationSetup.tsx'));
 const PasswordResetRequest = React.lazy(
   () => import('./main/PasswordResetRequest.tsx'),
@@ -61,9 +63,6 @@ const AlarmsOverview = React.lazy(() => import('./main/AlarmsOverview.tsx'));
 const AlarmReportView = React.lazy(() => import('./main/AlarmReportView.tsx'));
 const LocationHeatplotView = React.lazy(
   () => import('./main/LocationHeatplotView.tsx'),
-);
-const LocationAlarmDetail = React.lazy(
-  () => import('./main/LocationAlarmDetail.tsx'),
 );
 const LocationPortalLayout = React.lazy(
   () => import('./main/LocationPortalLayout.tsx'),
@@ -109,10 +108,16 @@ const DeviceSettingsRedirect = React.lazy(
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
-const DatabaseUsageView = React.lazy(() => import('./main/staff/DatabaseUsageView.tsx'));
-const UserActivityView = React.lazy(() => import('./main/staff/UserActivityView.tsx'));
+const DatabaseUsageView = React.lazy(
+  () => import('./main/staff/DatabaseUsageView.tsx'),
+);
+const UserActivityView = React.lazy(
+  () => import('./main/staff/UserActivityView.tsx'),
+);
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
-const ScreenReviewView = React.lazy(() => import('./main/ScreenReviewView.tsx'));
+const ScreenReviewView = React.lazy(
+  () => import('./main/ScreenReviewView.tsx'),
+);
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const LageplanWizardView = React.lazy(
   () => import('./main/LageplanWizardView.tsx'),
@@ -210,7 +215,10 @@ const CoreRoutes = () => {
               }
             />
             {/* The retired "Dev" tab (frontend diagnostics - the browser's dev tools do it better). */}
-            <Route path="dev/" element={<Navigate to="/developer/" replace />} />
+            <Route
+              path="dev/"
+              element={<Navigate to="/developer/" replace />}
+            />
           </Route>
           {/* Their former standalone paths. */}
           <Route
@@ -225,10 +233,7 @@ const CoreRoutes = () => {
             path="/ws-debug"
             element={<Navigate to="/developer/ws-debug/" replace />}
           />
-          <Route
-            path="/dev"
-            element={<Navigate to="/developer/" replace />}
-          />
+          <Route path="/dev" element={<Navigate to="/developer/" replace />} />
           <Route
             path="/device/overview"
             element={guard('/device/overview', <DeviceListView />)}
@@ -248,10 +253,6 @@ const CoreRoutes = () => {
           <Route
             path="/locations/:id/heatplot"
             element={guard('/locations/:id/heatplot', <LocationHeatplotView />)}
-          />
-          <Route
-            path="/location/:id/alarms"
-            element={guard('/location/:id/alarms', <LocationAlarmDetail />)}
           />
           {/* Retired: device config moved to /location/:id/settings. */}
           <Route

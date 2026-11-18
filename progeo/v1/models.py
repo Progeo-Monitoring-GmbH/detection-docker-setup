@@ -1808,6 +1808,22 @@ class ScreenReviewNote(models.Model):
         return f"{self.run}/{self.image}: {self.action} {self.kind}"
 
 
+class ScreenReviewMark(models.Model):
+    """A screenshot of a run marked as reviewed (/review/screens/, key "r") -
+    one per run and image, for the whole team; the gallery can hide them."""
+
+    run = models.CharField(max_length=32, db_index=True)
+    image = models.CharField(max_length=200)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["run", "image"], name="progeo_screen_review_mark_once")]
+
+    def __str__(self):
+        return f"{self.run}/{self.image} reviewed"
+
+
 class ProgeoReadinessSnapshot(models.Model):
     """The mean readiness score of all locations on one day (one row per
     day, updated during the day) - the scoreboard's "overall" line."""

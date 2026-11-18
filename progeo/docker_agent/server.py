@@ -15,7 +15,7 @@ network, with a bearer token:
                                     "mode"? ("points" | "klemmliste")}
                                    -> NDJSON: {"line": ...} per output line, last {"result": {...}}
                                       or {"error": ..., "reason": ...}
-    POST /e2e-screens/run          {"run", "devices", "roles", "only", "timeout_seconds"}
+    POST /e2e-screens/run          {"run", "devices", "roles", "languages", "only", "timeout_seconds"}
                                    -> NDJSON like the CAD factory run (the e2e_screenshots command)
 
 Errors: {"error": <type>, "reason": <text>} with the status of ops.DockerOpsError.
@@ -212,6 +212,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             "roles": data.get("roles", ["user", "staff"]),
             "only": data.get("only", []),
             "timeout_seconds": data.get("timeout_seconds", 1800),
+            "languages": data.get("languages", ["de", "en"]),
         }
         self.ops.check_e2e_screens_args(**arguments)
         self._stream_run(lambda on_line: self.ops.run_e2e_screens(on_line=on_line, **arguments))

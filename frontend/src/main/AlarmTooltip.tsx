@@ -13,7 +13,10 @@ import {
   type TimelineAlarm,
 } from './alarmUtils';
 import type { ReactNode } from 'react';
-import CursorTooltip, { formatClock, TooltipRow } from '../components/ui/CursorTooltip';
+import CursorTooltip, {
+  formatClock,
+  TooltipRow,
+} from '../components/ui/CursorTooltip';
 
 type AlarmTooltipProps = {
   alarm: TimelineAlarm;
@@ -34,14 +37,25 @@ type AlarmTooltipProps = {
 };
 
 /** A row only shown with a value. */
-const OptionalRow = ({ label, children }: { label: string; children: ReactNode }) =>
-  children == null || children === '' ? null : <TooltipRow label={label}>{children}</TooltipRow>;
+const OptionalRow = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) =>
+  children == null || children === '' ? null : (
+    <TooltipRow label={label}>{children}</TooltipRow>
+  );
 
 /** "#3 (412), #5" - the sensors over threshold with their highest value. */
 const sensorsText = (sensors: ReturnType<typeof alarmSensors>) =>
   sensors.length > 0
     ? sensors
-        .map((pair) => `#${pair.sensor_id ?? '-'}${pair.max_value != null ? ` (${pair.max_value})` : ''}`)
+        .map(
+          (pair) =>
+            `#${pair.sensor_id ?? '-'}${pair.max_value != null ? ` (${pair.max_value})` : ''}`,
+        )
         .join(', ')
     : null;
 
@@ -71,9 +85,12 @@ const AlarmTooltip = ({
   const active = isAlarmActive(alarm);
   const locationId = alarm.location?.id ?? alarm.location?.project_id ?? null;
 
+  // The location's status page at the alarm's start (?at=, statusAt.ts).
   const openDetails = () => {
     if (locationId != null) {
-      navigate(`/location/${locationId}/alarms`);
+      navigate(
+        `/location/${locationId}/status?at=${encodeURIComponent(new Date(start).toISOString())}`,
+      );
     }
   };
 
@@ -89,10 +106,15 @@ const AlarmTooltip = ({
       title={t('alarm_tooltip_title', { id: alarm.id })}
       headExtra={
         <span
-          className={['badge', active ? 'text-bg-danger' : 'text-bg-success'].join(' ')}
+          className={[
+            'badge',
+            active ? 'text-bg-danger' : 'text-bg-success',
+          ].join(' ')}
           data-testid="alarm-tooltip-state"
         >
-          {active ? t('alarm_tooltip_still_active') : t('alarm_tooltip_normalized')}
+          {active
+            ? t('alarm_tooltip_still_active')
+            : t('alarm_tooltip_normalized')}
         </span>
       }
       footer={
@@ -114,22 +136,42 @@ const AlarmTooltip = ({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <OptionalRow label={t('alarm_detail_location')}>{alarm.location?.name}</OptionalRow>
-      <OptionalRow label={t('alarm_field_device')}>{alarm.device?.display_name || alarm.device?.raw_hash}</OptionalRow>
-      <OptionalRow label={t('alarm_field_sensors')}>{sensorsText(alarmSensors(alarm))}</OptionalRow>
-      <OptionalRow label={t('alarm_field_max_value')}>{alarmPeakValue(alarm)}</OptionalRow>
-      <TooltipRow label={t('alarm_field_triggered')}>{formatClock(start)}</TooltipRow>
-      <TooltipRow label={active ? t('alarm_tooltip_running_for') : t('alarm_field_active_for')}>
+      <OptionalRow label={t('alarm_detail_location')}>
+        {alarm.location?.name}
+      </OptionalRow>
+      <OptionalRow label={t('alarm_field_device')}>
+        {alarm.device?.display_name || alarm.device?.raw_hash}
+      </OptionalRow>
+      <OptionalRow label={t('alarm_field_sensors')}>
+        {sensorsText(alarmSensors(alarm))}
+      </OptionalRow>
+      <OptionalRow label={t('alarm_field_max_value')}>
+        {alarmPeakValue(alarm)}
+      </OptionalRow>
+      <TooltipRow label={t('alarm_field_triggered')}>
+        {formatClock(start)}
+      </TooltipRow>
+      <TooltipRow
+        label={
+          active ? t('alarm_tooltip_running_for') : t('alarm_field_active_for')
+        }
+      >
         {formatDuration((end - start) / 1000)}
       </TooltipRow>
       {active ? (
         <TooltipRow label={t('alarm_tooltip_last_activity')}>
-          {t('alarm_tooltip_ago', { duration: formatDuration((now - start) / 1000) })}
+          {t('alarm_tooltip_ago', {
+            duration: formatDuration((now - start) / 1000),
+          })}
         </TooltipRow>
       ) : (
-        <TooltipRow label={t('alarm_field_normalized')}>{formatClock(end)}</TooltipRow>
+        <TooltipRow label={t('alarm_field_normalized')}>
+          {formatClock(end)}
+        </TooltipRow>
       )}
-      <OptionalRow label={t('alarm_tooltip_acknowledged')}>{acknowledgedText(alarm, t)}</OptionalRow>
+      <OptionalRow label={t('alarm_tooltip_acknowledged')}>
+        {acknowledgedText(alarm, t)}
+      </OptionalRow>
     </CursorTooltip>
   );
 };

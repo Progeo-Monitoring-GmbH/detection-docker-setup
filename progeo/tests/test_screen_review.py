@@ -31,12 +31,12 @@ def _png(path, size, color=(240, 240, 240)):
 @pytest.fixture
 def run(uploads):
     folder = uploads / "e2e" / RUN
-    _png(folder / "pc" / "pc-staff-location-overview.png", (1440, 2600))
+    _png(folder / "pc" / "pc-staff-en-location-overview.png", (1440, 2600))
     _png(folder / "mobile" / "mobile-user-login.png", (390, 900))
     # Not a screenshot of the run: left out.
     _png(folder / "pc" / "notes.png", (10, 10))
     (folder / "manifest.json").write_text(json.dumps({"run": RUN, "images": [
-        {"file": "pc-staff-location-overview.png", "path": "/location/overview/", "viewport": [1440, 900],
+        {"file": "pc-staff-en-location-overview.png", "path": "/location/overview/", "viewport": [1440, 900],
          "width": 1, "height": 1, "errors": ["TypeError: x is undefined"]},
     ]}), encoding="utf-8")
     return folder
@@ -60,18 +60,21 @@ def test_a_new_run_gets_its_dated_folder_with_pc_and_mobile(uploads):
 def test_the_images_of_a_run_come_from_its_folders_and_manifest(run):
     images = {image["file"]: image for image in review.run_images(RUN)}
 
-    assert set(images) == {"pc-staff-location-overview.png", "mobile-user-login.png"}
-    overview = images["pc-staff-location-overview.png"]
-    assert (overview["device"], overview["role"], overview["action"]) == ("pc", "staff", "location-overview")
+    assert set(images) == {"pc-staff-en-location-overview.png", "mobile-user-login.png"}
+    overview = images["pc-staff-en-location-overview.png"]
+    assert (overview["device"], overview["role"], overview["language"], overview["action"]) == (
+        "pc", "staff", "en", "location-overview")
     assert overview["path"] == "/location/overview/"
     # The size is the image's own, not the manifest's.
     assert (overview["width"], overview["height"]) == (1440, 2600)
     assert overview["errors"] == ["TypeError: x is undefined"]
     assert images["mobile-user-login.png"]["viewport"] is None
+    # A run from before the languages: German.
+    assert images["mobile-user-login.png"]["language"] == "de"
 
 
 @pytest.mark.parametrize("run_name, image", [
-    ("../2026-11-18_235532", "pc-staff-location-overview.png"),
+    ("../2026-11-18_235532", "pc-staff-en-location-overview.png"),
     (RUN, "../../secret.png"),
     (RUN, "pc-staff-missing.png"),
     (RUN, "notes.png"),
@@ -86,7 +89,7 @@ def test_staff_list_the_runs_and_see_a_run(api_client, run, staff):
     assert runs == [{"run": RUN, "created": runs[0]["created"], "images": 2, "notes": 0}]
 
     body = api_client.get(URL).json()
-    assert {image["file"] for image in body["images"]} == {"pc-staff-location-overview.png", "mobile-user-login.png"}
+    assert {image["file"] for image in body["images"]} == {"pc-staff-en-location-overview.png", "mobile-user-login.png"}
     assert body["notes"] == []
 
     image = api_client.get(f"{URL}image/mobile-user-login.png/")
@@ -103,7 +106,7 @@ def test_customers_see_no_screens(api_client, run):
 
 
 def _note(api_client, **fields):
-    data = {"image": "pc-staff-location-overview.png", "kind": "arrow", "action": "move", "comment": "Nach rechts",
+    data = {"image": "pc-staff-en-location-overview.png", "kind": "arrow", "action": "move", "comment": "Nach rechts",
             "geometry": {"x1": 100, "y1": 300, "x2": 900, "y2": 320}, **fields}
     return api_client.post(f"{URL}notes/", data, format="json")
 
@@ -146,18 +149,19 @@ def test_the_export_holds_the_commented_screens_and_the_prompt(api_client, run, 
     assert response["Content-Type"] == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.content))
     assert set(archive.namelist()) == {
-        "PROMPT.md", "notes.json", "screens/pc-staff-location-overview.png", "screens/mobile-user-login.png",
+        "PROMPT.md", "notes.json", "screens/pc-staff-en-location-overview.png", "screens/mobile-user-login.png",
     }
     prompt = archive.read("PROMPT.md").decode("utf-8")
     assert f"# Screen review – build {RUN}" in prompt
     assert "3 comment(s) on 2 screen(s): 1 × bigger, 1 × move, 1 × select." in prompt
     assert "Route: `/location/overview/`" in prompt
+    assert "language: en" in prompt
     assert "1. **MOVE** – arrow from (100, 300) to (900, 320): Nach rechts" in prompt
     assert "2. **BIGGER** – area x 40–640, y 1200–1500: Tabelle zu klein" in prompt
     assert "1. **SELECT** – the whole screen: Logo fehlt" in prompt
     assert "TypeError: x is undefined" in prompt
     # The arrow is drawn in: the plain grey screenshot has its colour now.
-    drawn = Image.open(io.BytesIO(archive.read("screens/pc-staff-location-overview.png"))).convert("RGB")
+    drawn = Image.open(io.BytesIO(archive.read("screens/pc-staff-en-location-overview.png"))).convert("RGB")
     assert drawn.size == (1440, 2600)
     assert drawn.getpixel((500, 310)) == review.ACTION_COLOR["move"]
     assert len(json.loads(archive.read("notes.json"))["notes"]) == 3
@@ -183,8 +187,8 @@ def test_without_a_local_frontend_the_command_runs_the_screenshot_container(uplo
 
     calls = []
 
-    def fake_run(run, devices, roles, only, timeout_seconds, on_line):
-        calls.append((run, devices, roles, only, timeout_seconds))
+    def fake_run(run, devices, roles, languages, only, timeout_seconds, on_line):
+        calls.append((run, devices, roles, languages, only, timeout_seconds))
         folder = uploads / "e2e" / run
         _png(folder / "pc" / "pc-user-login.png", (1440, 900))
         on_line("ok    pc-user-login.png")
@@ -196,7 +200,7 @@ def test_without_a_local_frontend_the_command_runs_the_screenshot_container(uplo
     call_command("e2e_screenshots", "--frontend-dir", str(tmp_path / "no-frontend"), "--devices", "pc",
                  "--only", "login", stdout=out)
 
-    assert calls[0][1:] == (["pc"], ["user", "staff"], ["login"], 1800)
+    assert calls[0][1:] == (["pc"], ["user", "staff"], ["de", "en"], ["login"], 1800)
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{6}", calls[0][0])
     assert "1 screenshot(s)" in out.getvalue()
 
@@ -251,3 +255,23 @@ def test_folders_made_by_the_app_keep_their_owner(uploads, monkeypatch):
     monkeypatch.setattr(os, "chown", lambda *args: pytest.fail("no chown as the app's user"), raising=False)
 
     assert review.new_run_dir().is_dir()
+
+
+def test_screenshots_are_marked_reviewed_for_the_team(api_client, run, staff):
+    url = f"{URL}reviewed/"
+
+    marked = api_client.post(url, {"image": "mobile-user-login.png", "reviewed": True}, format="json").json()
+    assert marked["reviewed"]["reviewed_by_name"] == "Jonas Weber"
+    # Twice: still one mark, the first reviewer's.
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.post(url, {"image": "mobile-user-login.png", "reviewed": True}, format="json")
+    body = api_client.get(URL).json()
+    assert [(mark["image"], mark["reviewed_by_name"]) for mark in body["reviewed"]] == [
+        ("mobile-user-login.png", "Jonas Weber")]
+
+    assert api_client.post(url, {"image": "mobile-user-login.png", "reviewed": False},
+                           format="json").json()["reviewed"] is None
+    assert api_client.get(URL).json()["reviewed"] == []
+    assert api_client.post(url, {"image": "../secret.png", "reviewed": True}, format="json").status_code == 404
+    assert api_client.post(url, {"image": "mobile-user-login.png", "reviewed": "yes"},
+                           format="json").status_code == 400

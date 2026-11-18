@@ -46,6 +46,7 @@ class Command(BaseCommand):
         parser.add_argument("--port", type=int, default=3299, help="Port of the Vite dev server started (default 3299).")
         parser.add_argument("--devices", default="pc,mobile", help="pc, mobile or both (default).")
         parser.add_argument("--roles", default="user,staff", help="user, staff or both (default).")
+        parser.add_argument("--languages", default="de,en", help="de, en or both (default).")
         parser.add_argument("--only", default="", help="Only these actions (comma-separated, e.g. location-overview).")
         parser.add_argument("--frontend-dir", default=str(Path(settings.BASE_DIR) / "frontend"))
         parser.add_argument("--timeout", type=int, default=1800, help="Seconds for the whole capture (default 1800).")
@@ -59,13 +60,14 @@ class Command(BaseCommand):
         npx = shutil.which("npx")
         devices = _choice(options["devices"], screen_review.DEVICES, "--devices")
         roles = _choice(options["roles"], screen_review.ROLES, "--roles")
+        languages = _choice(options["languages"], screen_review.LANGUAGES, "--languages")
         only = [action.strip() for action in options["only"].split(",") if action.strip()]
 
         local = script.is_file() and node is not None and npx is not None
         if options["docker"] or not local:
             if options["base_url"]:
                 raise CommandError("--base-url needs a local frontend (and Node) - not the container run")
-            return self._run_in_container(devices, roles, only, options["timeout"])
+            return self._run_in_container(devices, roles, languages, only, options["timeout"])
 
         run_dir = screen_review.new_run_dir()
         self.stdout.write(f"Run {run_dir.name} -> {run_dir}")
@@ -83,6 +85,7 @@ class Command(BaseCommand):
                 "SCREENS_MOCK_ORIGIN": MOCK_ORIGIN,
                 "SCREENS_DEVICES": ",".join(devices),
                 "SCREENS_ROLES": ",".join(roles),
+                "SCREENS_LANGUAGES": ",".join(languages),
                 "SCREENS_ONLY": options["only"],
             }
             result = subprocess.run([node, str(script)], cwd=frontend, env=env, timeout=options["timeout"],
@@ -97,7 +100,7 @@ class Command(BaseCommand):
             raise CommandError(f"The capture failed (exit {result.returncode}) - {count} screenshot(s) in {run_dir}")
         self.stdout.write(self.style.SUCCESS(f"{count} screenshot(s) in {run_dir} - review them at /review/screens/"))
 
-    def _run_in_container(self, devices, roles, only, timeout):
+    def _run_in_container(self, devices, roles, languages, only, timeout):
         """The capture in the progeo-e2e_screens container, started by the
         Docker agent with only the run's folder mounted."""
         from progeo.helper import docker_access
@@ -106,7 +109,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Run {run_dir.name} -> {run_dir} (in the progeo-e2e_screens container)")
         try:
             result = docker_access.run_e2e_screens(
-                run_dir.name, devices=devices, roles=roles, only=only, timeout_seconds=timeout,
+                run_dir.name, devices=devices, roles=roles, languages=languages, only=only, timeout_seconds=timeout,
                 on_line=lambda line: self.stdout.write(line),
             )
         except docker_access.DockerOpsError as exc:

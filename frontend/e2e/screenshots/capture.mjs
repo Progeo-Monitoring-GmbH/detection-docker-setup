@@ -30,6 +30,10 @@ const list = (raw, fallback) =>
     .filter(Boolean);
 const DEVICES = list(process.env.SCREENS_DEVICES, 'pc,mobile');
 const ROLES = list(process.env.SCREENS_ROLES, 'user,staff');
+const LANGUAGES = list(process.env.SCREENS_LANGUAGES, 'de,en');
+// The browser's locale per language (dates, numbers) - the app's language
+// itself comes from i18next's stored choice and the profile (mockApi.mjs).
+const LOCALES = { de: 'de-DE', en: 'en-GB' };
 const ONLY = new Set(list(process.env.SCREENS_ONLY, ''));
 
 const VIEWPORTS = {
@@ -101,18 +105,15 @@ const pageHeight = (page) =>
  * window. Playwright's fullPage capture resizes the window while it shoots:
  * the app reacts to that resize mid-capture (the sidebar spread over the page
  * where it is the tallest column). Grown first, the layout is final.
+ *
+ * Measured once, at the device's own window: grown again and again, every
+ * element sized by the window (min-height: 100vh) grew with it - a mobile
+ * page ended up six windows tall, the rest empty.
  */
 const growToPage = async (page, width) => {
-  let height = await pageHeight(page);
-  for (let round = 0; round < 4; round += 1) {
-    await page.setViewportSize({ width, height: Math.min(height, MAX_HEIGHT) });
-    await page.waitForTimeout(500);
-    const next = await pageHeight(page);
-    if (next === height || next >= MAX_HEIGHT) {
-      break;
-    }
-    height = next;
-  }
+  const height = Math.min(await pageHeight(page), MAX_HEIGHT);
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(500);
   return { fullPage: false };
 };
 
@@ -121,101 +122,106 @@ let failures = 0;
 try {
   for (const device of DEVICES) {
     fs.mkdirSync(path.join(OUT, device), { recursive: true });
-    for (const role of ROLES) {
-      const persona = PERSONAS[role];
-      for (const route of ROUTES) {
-        if (
-          !route.roles.includes(role) ||
-          (ONLY.size && !ONLY.has(route.action))
-        ) {
-          continue;
-        }
-        const file = `${device}-${role}-${route.action}.png`;
-        const context = await browser.newContext({
-          ...VIEWPORTS[device],
-          locale: 'de-DE',
-          timezoneId: 'Europe/Berlin',
-        });
-        await context.addInitScript(
-          ({ token }) => {
-            if (token) {
-              localStorage.setItem('authToken', token);
-              localStorage.setItem('refreshToken', token);
-            }
-            localStorage.setItem(
-              'progeo_consent',
-              JSON.stringify({
-                version: 3,
-                decidedAt: new Date().toISOString(),
-                categories: {
-                  necessary: true,
-                  externalMaps: false,
-                  statistics: false,
-                },
-              }),
-            );
-          },
-          { token: route.public ? null : tokenOf(persona) },
-        );
-        const unmocked = new Set();
-        await context.route(`${MOCK_ORIGIN}/**`, (request) => {
-          const { method, url } = {
-            method: request.request().method(),
-            url: request.request().url(),
-          };
-          const body = mockAnswer(method, url, role);
-          if (body === undefined) {
-            unmocked.add(`${method} ${new URL(url).pathname}`);
+    for (const language of LANGUAGES) {
+      for (const role of ROLES) {
+        const persona = PERSONAS[role];
+        for (const route of ROUTES) {
+          if (
+            !route.roles.includes(role) ||
+            (ONLY.size && !ONLY.has(route.action))
+          ) {
+            continue;
           }
-          return request.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(body ?? {}),
+          const file = `${device}-${role}-${language}-${route.action}.png`;
+          const context = await browser.newContext({
+            ...VIEWPORTS[device],
+            locale: LOCALES[language] ?? 'de-DE',
+            timezoneId: 'Europe/Berlin',
           });
-        });
-        const page = await context.newPage();
-        const errors = [];
-        page.on('pageerror', (error) =>
-          errors.push(error.message.slice(0, 300)),
-        );
-        try {
-          await page.goto(`${BASE}${route.path}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000,
-          });
-          await settle(page);
-          await page.screenshot({
-            path: path.join(OUT, device, file),
-            ...(await growToPage(page, VIEWPORTS[device].viewport.width)),
-          });
-          const size = await page.evaluate(() => [
-            document.documentElement.scrollWidth,
-            document.documentElement.scrollHeight,
-          ]);
-          manifest.images.push({
-            file,
-            device,
-            role,
-            action: route.action,
-            path: route.path,
-            viewport: [
-              VIEWPORTS[device].viewport.width,
-              VIEWPORTS[device].viewport.height,
-            ],
-            width: size[0],
-            height: size[1],
-            errors: errors.slice(0, 5),
-            unmocked: [...unmocked].sort(),
-          });
-          console.log(
-            `ok    ${file}${errors.length ? `  (${errors.length} page error(s))` : ''}`,
+          await context.addInitScript(
+            ({ token, language: lng }) => {
+              if (token) {
+                localStorage.setItem('authToken', token);
+                localStorage.setItem('refreshToken', token);
+              }
+              // i18next-browser-languagedetector's stored choice.
+              localStorage.setItem('i18nextLng', lng);
+              localStorage.setItem(
+                'progeo_consent',
+                JSON.stringify({
+                  version: 3,
+                  decidedAt: new Date().toISOString(),
+                  categories: {
+                    necessary: true,
+                    externalMaps: false,
+                    statistics: false,
+                  },
+                }),
+              );
+            },
+            { token: route.public ? null : tokenOf(persona), language },
           );
-        } catch (error) {
-          failures += 1;
-          console.log(`FAIL  ${file}: ${String(error).slice(0, 200)}`);
-        } finally {
-          saveManifest();
-          await context.close();
+          const unmocked = new Set();
+          await context.route(`${MOCK_ORIGIN}/**`, (request) => {
+            const { method, url } = {
+              method: request.request().method(),
+              url: request.request().url(),
+            };
+            const body = mockAnswer(method, url, role, language);
+            if (body === undefined) {
+              unmocked.add(`${method} ${new URL(url).pathname}`);
+            }
+            return request.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify(body ?? {}),
+            });
+          });
+          const page = await context.newPage();
+          const errors = [];
+          page.on('pageerror', (error) =>
+            errors.push(error.message.slice(0, 300)),
+          );
+          try {
+            await page.goto(`${BASE}${route.path}`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 30000,
+            });
+            await settle(page);
+            await page.screenshot({
+              path: path.join(OUT, device, file),
+              ...(await growToPage(page, VIEWPORTS[device].viewport.width)),
+            });
+            const size = await page.evaluate(() => [
+              document.documentElement.scrollWidth,
+              document.documentElement.scrollHeight,
+            ]);
+            manifest.images.push({
+              file,
+              device,
+              role,
+              language,
+              action: route.action,
+              path: route.path,
+              viewport: [
+                VIEWPORTS[device].viewport.width,
+                VIEWPORTS[device].viewport.height,
+              ],
+              width: size[0],
+              height: size[1],
+              errors: errors.slice(0, 5),
+              unmocked: [...unmocked].sort(),
+            });
+            console.log(
+              `ok    ${file}${errors.length ? `  (${errors.length} page error(s))` : ''}`,
+            );
+          } catch (error) {
+            failures += 1;
+            console.log(`FAIL  ${file}: ${String(error).slice(0, 200)}`);
+          } finally {
+            saveManifest();
+            await context.close();
+          }
         }
       }
     }

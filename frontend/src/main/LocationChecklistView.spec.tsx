@@ -312,7 +312,7 @@ describe('LocationChecklistView', () => {
     expect(byKey('checklist-points', 'points_named')!.textContent).toBe('–');
   });
 
-  it('lists every location lowest score first without a location', () => {
+  it('lists every location highest score first without a location', () => {
     render('/checklist/location/');
 
     expect(api.get).toHaveBeenCalledWith('/v1/location/readiness/');
@@ -337,7 +337,8 @@ describe('LocationChecklistView', () => {
     const table = container.querySelector(
       '[data-testid="checklist-overview-table"]',
     )!.textContent!;
-    expect(table.indexOf('Leer')).toBeLessThan(table.indexOf('Halle 7'));
+    // Highest score first - never checked (no score) last.
+    expect(table.indexOf('Halle 7')).toBeLessThan(table.indexOf('Leer'));
     expect(table).toContain(
       'readiness_check_devices_online · readiness_check_sensor_devices',
     );

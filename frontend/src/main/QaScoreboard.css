@@ -37,3 +37,33 @@
   justify-content: center;
   height: 440px;
 }
+
+.qa-scoreboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qa-scoreboard-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-blue);
+  cursor: pointer;
+}
+
+/* Minimized: the header alone (kit.css .progeo-panel-head/-body). */
+.qa-scoreboard--collapsed .progeo-panel-body {
+  display: none;
+}
+
+.qa-scoreboard--collapsed .progeo-panel-head {
+  padding-bottom: 18px;
+}

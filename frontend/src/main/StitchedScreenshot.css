@@ -83,3 +83,13 @@
 .stitched-shape--draft rect {
   stroke-dasharray: 6 4;
 }
+
+/* The part the gallery's cursor is on (keys, swipes). */
+.stitched-part--active .stitched-slice {
+  border-color: #eb633b;
+  box-shadow: 0 0 0 3px rgba(235, 99, 59, 0.35);
+}
+
+.stitched-part--active .stitched-part-number {
+  background: #eb633b;
+}

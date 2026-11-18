@@ -66,11 +66,6 @@ export const ROUTES = [
     path: '/location/1/settings',
     roles: ['staff'],
   },
-  {
-    action: 'location-alarms',
-    path: '/location/1/alarms',
-    roles: ['user', 'staff'],
-  },
 
   // -- staff ------------------------------------------------------------------------
   { action: 'management', path: '/management/', roles: ['staff'] },

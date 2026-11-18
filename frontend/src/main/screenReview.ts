@@ -18,10 +18,13 @@ export type ScreenRun = {
   notes: number;
 };
 
+export type ScreenLanguage = 'de' | 'en';
+
 export type ScreenImage = {
   file: string;
   device: ScreenDevice;
   role: ScreenRole;
+  language: ScreenLanguage;
   action: string;
   path: string | null;
   viewport: [number, number] | null;
@@ -129,24 +132,107 @@ export const isArea = (
   geometry: ScreenNote['geometry'],
 ): geometry is AreaGeometry => geometry != null && 'w' in geometry;
 
-/** Screenshots matching the filters, in a stable order (action, device, role). */
+/** A screenshot marked as reviewed (POST /v1/screen-review/<run>/reviewed/). */
+export type ReviewedMark = {
+  image: string;
+  reviewed_by: number | null;
+  reviewed_by_name: string | null;
+  created: string;
+};
+
+export type ScreenFilter = {
+  device: ScreenDevice | 'all';
+  role: ScreenRole | 'all';
+  language: ScreenLanguage | 'all';
+  /** Only screenshots with comments. */
+  commentedOnly: boolean;
+  /** Without the ones marked as reviewed. */
+  hideReviewed: boolean;
+};
+
+export const ALL_SCREENS: ScreenFilter = {
+  device: 'all',
+  role: 'all',
+  language: 'all',
+  commentedOnly: false,
+  hideReviewed: false,
+};
+
+/** Screenshots matching the filter, in a stable order (action, device, role, language). */
 export const filterImages = (
   images: ScreenImage[],
-  device: ScreenDevice | 'all',
-  role: ScreenRole | 'all',
+  filter: ScreenFilter,
+  commented: ReadonlySet<string> = new Set(),
+  reviewed: ReadonlySet<string> = new Set(),
 ) =>
   images
     .filter(
       (image) =>
-        (device === 'all' || image.device === device) &&
-        (role === 'all' || image.role === role),
+        (filter.device === 'all' || image.device === filter.device) &&
+        (filter.role === 'all' || image.role === filter.role) &&
+        (filter.language === 'all' || image.language === filter.language) &&
+        (!filter.commentedOnly || commented.has(image.file)) &&
+        (!filter.hideReviewed || !reviewed.has(image.file)),
     )
     .sort(
       (a, b) =>
         a.action.localeCompare(b.action) ||
         a.device.localeCompare(b.device) ||
-        a.role.localeCompare(b.role),
+        a.role.localeCompare(b.role) ||
+        a.language.localeCompare(b.language),
     );
+
+/** Where the gallery's keyboard / swipe cursor stands: a screenshot and one of its parts. */
+export type Cursor = { index: number; part: number };
+
+export type CursorMove =
+  'nextPart' | 'previousPart' | 'nextScreen' | 'previousScreen';
+
+/**
+ * The cursor after `move` - over `parts(index)` parts of each of `total`
+ * screenshots: a part on, at the last part to the next screenshot's first
+ * (back: the previous one's last); a screenshot on or back starts at its
+ * first part. At the ends it stays.
+ */
+export const stepCursor = (
+  cursor: Cursor,
+  move: CursorMove,
+  total: number,
+  parts: (index: number) => number,
+): Cursor => {
+  if (total === 0) {
+    return { index: 0, part: 0 };
+  }
+  const index = Math.min(Math.max(cursor.index, 0), total - 1);
+  const part = Math.min(
+    Math.max(cursor.part, 0),
+    Math.max(parts(index) - 1, 0),
+  );
+  switch (move) {
+    case 'nextPart':
+      if (part + 1 < parts(index)) {
+        return { index, part: part + 1 };
+      }
+      return index + 1 < total
+        ? { index: index + 1, part: 0 }
+        : { index, part };
+    case 'previousPart':
+      if (part > 0) {
+        return { index, part: part - 1 };
+      }
+      return index > 0
+        ? { index: index - 1, part: Math.max(parts(index - 1) - 1, 0) }
+        : { index, part };
+    case 'nextScreen':
+      return index + 1 < total
+        ? { index: index + 1, part: 0 }
+        : { index, part };
+    case 'previousScreen':
+      return index > 0 ? { index: index - 1, part: 0 } : { index, part };
+    default:
+      return { index, part };
+  }
+};
 
 /** The notes of each image, in their order (= their numbers on the image). */
 export const notesByImage = (notes: ScreenNote[]) => {
