@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CircleMarker, MapContainer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTranslation } from 'react-i18next';
-import { ArrowRepeat, Geo } from 'react-bootstrap-icons';
+import { ArrowRepeat, Arrows, Geo } from 'react-bootstrap-icons';
 import PanelCard from '../components/ui/kit/PanelCard';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import type { LocationDetail } from './locationTypes';
@@ -11,6 +11,7 @@ import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 import { MapBaseTiles, MapLayerSwitch } from '../components/ui/MapBaseLayer';
 import { useMapBaseLayer } from '../components/ui/mapLayers';
+import StandortPositionPicker from './StandortPositionPicker';
 import './LocationStandortPanel.css';
 
 // react-leaflet@5's shipped prop types don't resolve `center`/`zoom`/
@@ -44,12 +45,17 @@ type LocationStandortPanelProps = {
  * A typed coordinate: the number (comma or point as decimal separator),
  * null when empty, NaN when it isn't one or lies outside +-`limit`.
  */
-export const parseCoordinate = (value: string, limit: number): number | null => {
+export const parseCoordinate = (
+  value: string,
+  limit: number,
+): number | null => {
   const trimmed = value.trim().replace(',', '.');
   if (!trimmed) {
     return null;
   }
-  const number = /^[-+]?\d+(\.\d+)?$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  const number = /^[-+]?\d+(\.\d+)?$/.test(trimmed)
+    ? Number(trimmed)
+    : Number.NaN;
   return Math.abs(number) <= limit ? number : Number.NaN;
 };
 
@@ -70,18 +76,24 @@ const StaffPositionForm = ({
 }) => {
   const { t } = useTranslation();
   const [latitude, setLatitude] = useState(coordinateText(location?.latitude));
-  const [longitude, setLongitude] = useState(coordinateText(location?.longitude));
+  const [longitude, setLongitude] = useState(
+    coordinateText(location?.longitude),
+  );
 
   const lat = parseCoordinate(latitude, 90);
   const lng = parseCoordinate(longitude, 180);
-  const invalid = lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng);
+  const invalid =
+    lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng);
   const unchanged =
-    latitude === coordinateText(location?.latitude) && longitude === coordinateText(location?.longitude);
+    latitude === coordinateText(location?.latitude) &&
+    longitude === coordinateText(location?.longitude);
 
   return (
     <div className="standort-position" data-testid="standort-position">
       <div className="standort-position-head">
-        <span className="standort-position-title">{t('objekt_position_title')}</span>
+        <span className="standort-position-title">
+          {t('objekt_position_title')}
+        </span>
         <button
           type="button"
           className="standort-position-regeocode"
@@ -111,14 +123,19 @@ const StaffPositionForm = ({
           type="button"
           className="standort-position-save"
           disabled={invalid || unchanged || staffPosition.saving}
-          onClick={() => !invalid && staffPosition.onSave(lat as number, lng as number)}
+          onClick={() =>
+            !invalid && staffPosition.onSave(lat as number, lng as number)
+          }
           data-testid="standort-position-save"
         >
           {staffPosition.saving ? t('ui_loading') : t('objekt_position_save')}
         </button>
       </div>
       {!unchanged && invalid && (
-        <div className="standort-position-invalid" data-testid="standort-position-invalid">
+        <div
+          className="standort-position-invalid"
+          data-testid="standort-position-invalid"
+        >
           {t('objekt_position_invalid')}
         </div>
       )}
@@ -148,11 +165,28 @@ const LocationStandortPanel = ({
   const { allows } = useConsent();
   // Satellite by default - the building is what matters here.
   const [baseLayer, setBaseLayer] = useMapBaseLayer();
+  // Staff: the position corrected on the map - open for the position it
+  // was opened on; a saved new position closes it (an error keeps it open).
+  const positionKey = `${location?.latitude},${location?.longitude}`;
+  const [pickingFor, setPickingFor] = useState<string | null>(null);
+  const picking = Boolean(staffPosition) && pickingFor === positionKey;
+  const openPicker = () => setPickingFor(positionKey);
 
   return (
     <PanelCard title={t('objekt_standort_title')} testId="standort">
       <div className="standort-map" data-testid="standort-map">
-        {hasCoordinates(location) ? (
+        {picking && staffPosition ? (
+          <StandortPositionPicker
+            start={
+              hasCoordinates(location)
+                ? { lat: location.latitude, lng: location.longitude }
+                : null
+            }
+            saving={staffPosition.saving}
+            onSave={staffPosition.onSave}
+            onCancel={() => setPickingFor(null)}
+          />
+        ) : hasCoordinates(location) ? (
           <>
             {/* Leaflet reads `center` only once: a new position (address
                 saved, re-geocoded) remounts the map around it. */}
@@ -181,9 +215,23 @@ const LocationStandortPanel = ({
               <MapLayerSwitch value={baseLayer} onChange={setBaseLayer} />
             )}
             <MapConsentNotice />
+            {staffPosition && (
+              <button
+                type="button"
+                className="standort-pick"
+                onClick={openPicker}
+                data-testid="standort-pick"
+              >
+                <Arrows aria-hidden size={13} />
+                {t('objekt_position_pick')}
+              </button>
+            )}
           </>
         ) : (
-          <div className="standort-placeholder" data-testid="standort-placeholder">
+          <div
+            className="standort-placeholder"
+            data-testid="standort-placeholder"
+          >
             <div>
               <Geo size={26} color="#EB633B" />
               <div className="standort-placeholder-text">
@@ -202,9 +250,22 @@ const LocationStandortPanel = ({
                 </button>
               )}
               {onGeocode && geocodeBlockedReason && (
-                <div className="standort-placeholder-text" data-testid="standort-geocode-blocked">
+                <div
+                  className="standort-placeholder-text"
+                  data-testid="standort-geocode-blocked"
+                >
                   {geocodeBlockedReason}
                 </div>
+              )}
+              {staffPosition && (
+                <button
+                  type="button"
+                  className="standort-geocode"
+                  onClick={openPicker}
+                  data-testid="standort-pick-new"
+                >
+                  {t('objekt_position_pick_new')}
+                </button>
               )}
             </div>
           </div>
@@ -213,8 +274,13 @@ const LocationStandortPanel = ({
 
       <div className="standort-facts" data-testid="standort-facts">
         <div className="standort-fact">
-          <span className="standort-fact-label">{t('objekt_fact_devices')}</span>
-          <span className="standort-fact-value" data-testid="standort-device-count">
+          <span className="standort-fact-label">
+            {t('objekt_fact_devices')}
+          </span>
+          <span
+            className="standort-fact-value"
+            data-testid="standort-device-count"
+          >
             {location?.device_count ?? '–'}
           </span>
         </div>

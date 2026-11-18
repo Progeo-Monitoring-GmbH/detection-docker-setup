@@ -124,7 +124,13 @@ class AuthenticatedMediaView(View):
         # Fallback: stream through Django (dev / non-nginx deployments).
         return serve_media(request, path, document_root=settings.MEDIA_ROOT)
 
-    UPLOAD_PREFIX = os.path.relpath(settings.UPLOAD_DIR, settings.MEDIA_ROOT).replace(os.sep, "/") + "/"
+    @staticmethod
+    def _upload_prefix():
+        """uploads/ - the upload folder relative to MEDIA_ROOT, from the
+        settings of now (computed at import, it depended on what MEDIA_ROOT
+        was when the module happened to be loaded first)."""
+        return os.path.relpath(settings.UPLOAD_DIR, settings.MEDIA_ROOT).replace(os.sep, "/") + "/"
+
     VISIBLE_LAGEPLAN_CACHE_SECONDS = 300
 
     @classmethod
@@ -132,14 +138,15 @@ class AuthenticatedMediaView(View):
         """Whether `path` (normalized, relative to MEDIA_ROOT) is the file of
         a ProgeoLageplan of a location `user` sees. Cached per user and path:
         a plan view loads its images again and again."""
-        if not path.startswith(cls.UPLOAD_PREFIX):
+        prefix = cls._upload_prefix()
+        if not path.startswith(prefix):
             return False
         from django.core.cache import cache
 
         from progeo.helper.location_access import user_accounts, visible_locations_by_db
         from progeo.v1.models import ProgeoLageplan
 
-        name = path[len(cls.UPLOAD_PREFIX):]
+        name = path[len(prefix):]
         key = f"progeo:media-lageplan:{user.pk}:{name}"
         try:
             cached = cache.get(key)

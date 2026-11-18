@@ -273,6 +273,7 @@ def test_objektleitung_flag_is_staff_only(client):
 def test_media_only_serves_customers_their_lageplaene(client, tmp_path, monkeypatch):
 
     monkeypatch.setattr(django_settings, "MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr(django_settings, "MEDIA_X_ACCEL", "")
     (tmp_path / "uploads" / "lageplan").mkdir(parents=True)
     for name in ("own.png", "foreign.png"):

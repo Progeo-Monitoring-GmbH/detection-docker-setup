@@ -165,3 +165,102 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Staff: "correct on the map" - over the small map's top left corner. */
+.standort-pick {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* StandortPositionPicker.tsx: the map to drag (the pin fixed in its middle)
+   above, the bar with the position and the buttons below it. */
+.standort-picker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.standort-picker-map {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The pin's tip on the map's middle (the icon's tip is its bottom center). */
+.standort-picker-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1000;
+  color: #eb633b;
+  transform: translate(-50%, -100%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+.standort-picker-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  background: var(--progeo-surface);
+  border-top: 1px solid var(--progeo-track);
+}
+
+.standort-picker-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.standort-picker-hint {
+  color: #8b8383;
+}
+
+.standort-picker-coords {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.standort-picker-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.standort-picker-cancel {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--progeo-track);
+  border-radius: 10px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* As tall as "Cancel" beside it. */
+.standort-picker-actions .standort-position-save {
+  height: 32px;
+}

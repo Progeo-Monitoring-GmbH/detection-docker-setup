@@ -47,6 +47,53 @@ def _may_read_logs(user) -> bool:
     return has_module_permissions(user, "module_admin_enabled")
 
 
+class _ClientGone(Exception):
+    """A send to a socket the client has closed - uvicorn raises its own
+    ClientDisconnected (or an OSError) there. Ends the sending loop quietly."""
+
+
+async def _send_json(consumer, payload):
+    """`payload` to the client - _ClientGone if it is gone."""
+    text = json.dumps(payload)
+    try:
+        await consumer.send(text_data=text)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # whatever the server raises for a closed socket
+        raise _ClientGone() from exc
+
+
+def _background(coro):
+    """asyncio.create_task(coro) whose outcome is always collected: a
+    background loop (heartbeat, group refresh, log stream) that dies of an
+    unexpected error is logged once - never asyncio's "Task exception was
+    never retrieved"; a client that went away ends it silently."""
+    task = asyncio.create_task(coro)
+    task.add_done_callback(_collect)
+    return task
+
+
+def _collect(task):
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None and not isinstance(error, _ClientGone):
+        from progeo.helper.basics import elog
+
+        elog(f"websocket task {task.get_name()}: {error!r}", tag="[WEBSOCKET]")
+
+
+async def _heartbeats(consumer):
+    """A heartbeat every LOG_STREAM_HEARTBEAT_SECONDS (proxies close idle
+    sockets) - until the socket is gone or the task is cancelled."""
+    try:
+        while True:
+            await asyncio.sleep(LOG_STREAM_HEARTBEAT_SECONDS)
+            await _send_json(consumer, {"type": "heartbeat"})
+    except (asyncio.CancelledError, _ClientGone):
+        pass
+
+
 async def _stay_in_group(channel_layer, group, channel_name):
     """Joins `group` again every GROUP_REFRESH_SECONDS while the socket is open."""
     from progeo.helper.basics import elog
@@ -99,9 +146,7 @@ class CommandConsumer(AsyncWebsocketConsumer):
         )
 
         await self.accept()
-        self.group_task = asyncio.create_task(
-            _stay_in_group(self.channel_layer, self.group_name, self.channel_name)
-        )
+        self.group_task = _background(_stay_in_group(self.channel_layer, self.group_name, self.channel_name))
 
     async def disconnect(self, close_code):
         if self.group_task:
@@ -124,10 +169,17 @@ class CommandConsumer(AsyncWebsocketConsumer):
     async def command_result(self, event):
         print("command_result event", event)
         # Send message to WebSocket
-        await self.send(text_data=json.dumps(event))
+        await self._deliver(event)
 
     async def legacy_location_events(self, event):
-        await self.send(text_data=json.dumps(event))
+        await self._deliver(event)
+
+    async def _deliver(self, payload):
+        """A group message for this client - dropped if it is gone already."""
+        try:
+            await _send_json(self, payload)
+        except _ClientGone:
+            pass
 
 
 # ==============================================================================================
@@ -181,7 +233,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             except (TypeError, ValueError):
                 lines = 500
             self._cancel_stream()
-            self.stream_task = asyncio.create_task(self._stream(str(data.get("file") or "").strip(), lines))
+            self.stream_task = _background(self._stream(str(data.get("file") or "").strip(), lines))
         elif action == "stop_stream":
             self._cancel_stream()
             await self.send_json({"type": "stream_stopped"})
@@ -189,7 +241,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             await self.send_json({"type": "pong"})
 
     async def send_json(self, payload):
-        await self.send(text_data=json.dumps(payload))
+        await _send_json(self, payload)
 
     def _cancel_stream(self):
         if self.stream_task:
@@ -238,7 +290,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
                             })
                             idle_since = time.monotonic()
                     last_error = None
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, _ClientGone):
                     raise
                 except Exception as exc:  # noqa: BLE001 - reported, the stream keeps polling
                     message = f"Failed to read {file_key}: {exc}"
@@ -249,7 +301,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
                     await self.send_json({"type": "heartbeat"})
                     idle_since = time.monotonic()
                 await asyncio.sleep(LOG_STREAM_DOCKER_POLL_SECONDS if docker else LOG_STREAM_POLL_SECONDS)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, _ClientGone):
             pass
 
 
@@ -284,10 +336,8 @@ class CadImportJobConsumer(AsyncWebsocketConsumer):
         await self.accept()
         job = await asyncio.to_thread(get_job, job_id) or job
         await self.send_json({"type": "cad_snapshot", "job": public_job(job)})
-        self.heartbeat_task = asyncio.create_task(self._heartbeat())
-        self.group_task = asyncio.create_task(
-            _stay_in_group(self.channel_layer, job_group(job_id), self.channel_name)
-        )
+        self.heartbeat_task = _background(_heartbeats(self))
+        self.group_task = _background(_stay_in_group(self.channel_layer, job_group(job_id), self.channel_name))
 
     async def disconnect(self, close_code):
         for task in (self.heartbeat_task, self.group_task):
@@ -297,14 +347,10 @@ class CadImportJobConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(job_group(self.job_id), self.channel_name)
 
     async def send_json(self, payload):
-        await self.send(text_data=json.dumps(payload))
-
-    async def _heartbeat(self):
+        """To the client - a group message for a client that is gone is dropped."""
         try:
-            while True:
-                await asyncio.sleep(LOG_STREAM_HEARTBEAT_SECONDS)
-                await self.send_json({"type": "heartbeat"})
-        except asyncio.CancelledError:
+            await _send_json(self, payload)
+        except _ClientGone:
             pass
 
     async def cad_log(self, event):
@@ -341,8 +387,8 @@ class QaScoreboardConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(QA_GROUP, self.channel_name)
         self.joined = True
         await self.accept()
-        self.heartbeat_task = asyncio.create_task(self._heartbeat())
-        self.group_task = asyncio.create_task(_stay_in_group(self.channel_layer, QA_GROUP, self.channel_name))
+        self.heartbeat_task = _background(_heartbeats(self))
+        self.group_task = _background(_stay_in_group(self.channel_layer, QA_GROUP, self.channel_name))
 
     async def disconnect(self, close_code):
         from progeo.helper.readiness_qa import QA_GROUP
@@ -359,14 +405,10 @@ class QaScoreboardConsumer(AsyncWebsocketConsumer):
             await self.send_json({"type": "pong"})
 
     async def send_json(self, payload):
-        await self.send(text_data=json.dumps(payload))
-
-    async def _heartbeat(self):
+        """To the client - a group message for a client that is gone is dropped."""
         try:
-            while True:
-                await asyncio.sleep(LOG_STREAM_HEARTBEAT_SECONDS)
-                await self.send_json({"type": "heartbeat"})
-        except asyncio.CancelledError:
+            await _send_json(self, payload)
+        except _ClientGone:
             pass
 
     async def qa_update(self, event):

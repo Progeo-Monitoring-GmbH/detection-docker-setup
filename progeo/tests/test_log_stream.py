@@ -1,5 +1,7 @@
 """The Admin Panel's log stream (progeo.consumer.LogStreamConsumer): the tail
 first, then only what was appended, the tail again after a truncation."""
+import asyncio
+
 import pytest
 from asgiref.sync import async_to_sync
 from django.contrib.auth.models import User
@@ -75,3 +77,60 @@ def test_stream_rejects_unknown_files(log_file):
         await communicator.disconnect()
 
     async_to_sync(run)()
+
+
+# -- a client that went away (uvicorn: ClientDisconnected on send) ---------------------
+
+class _ClosedSocket:
+    """A consumer whose client is gone: every send raises, like uvicorn's."""
+
+    class ClientDisconnected(Exception):
+        pass
+
+    def __init__(self):
+        self.sends = 0
+
+    async def send(self, text_data=None, bytes_data=None):
+        self.sends += 1
+        raise self.ClientDisconnected()
+
+
+def test_a_heartbeat_to_a_client_that_left_ends_quietly(monkeypatch):
+    monkeypatch.setattr(consumer, "LOG_STREAM_HEARTBEAT_SECONDS", 0)
+    closed = _ClosedSocket()
+
+    async def run():
+        # Returns (no exception) after the first failed send.
+        await asyncio.wait_for(consumer._heartbeats(closed), timeout=3)
+
+    async_to_sync(run)()
+    assert closed.sends == 1
+
+
+def test_background_tasks_never_leave_an_unretrieved_exception(monkeypatch):
+    logged = []
+    monkeypatch.setattr("progeo.helper.basics.elog", lambda message, **kwargs: logged.append(message))
+
+    async def gone():
+        raise consumer._ClientGone()
+
+    async def broken():
+        raise RuntimeError("boom")
+
+    async def run():
+        tasks = [consumer._background(gone()), consumer._background(broken())]
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.sleep(0)
+
+    async_to_sync(run)()
+    # The client that left is no error; anything else is logged once.
+    assert len(logged) == 1 and "boom" in logged[0]
+
+
+def test_a_message_for_a_client_that_left_is_dropped():
+    from progeo.consumer import QaScoreboardConsumer
+
+    closed = QaScoreboardConsumer()
+    closed.send = _ClosedSocket().send
+
+    async_to_sync(closed.qa_update)({"user_ids": [1], "reason": "award"})
