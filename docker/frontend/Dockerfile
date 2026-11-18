@@ -22,7 +22,7 @@ RUN npm run build
 
 # ##########################
 
-FROM nginx:1.31.1-alpine
+FROM nginx:1.31.8-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf
 RUN mkdir /usr/share/git/
