@@ -1,7 +1,19 @@
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Spinner } from 'react-bootstrap';
-import FrameSlider, { type AlarmSpan, frameAt, focusFrameIndex } from './FrameSlider';
+import FrameSlider, {
+  type AlarmSpan,
+  frameAt,
+  focusFrameIndex,
+} from './FrameSlider';
 import { seriesRange } from './heatmapGrid';
 import { heatColorAt, heatColorTable } from './heatmapCanvas';
 import {
@@ -32,16 +44,31 @@ import { formatMeters } from './planMeters';
 import { limitPolygons } from './heatLimitations';
 import HeatmapToolbar from './HeatmapToolbar';
 import SensorTooltip from './SensorTooltip';
-import type { HeatProfile, SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
+import type {
+  HeatProfile,
+  SensorHeatmapLocation,
+  SensorHeatmapResponse,
+} from './sensorHeatmapTypes';
 import HeatmapDisplayControls from './HeatmapDisplayControls';
 import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { useHeatSigma } from './useHeatSigma';
-import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
+import {
+  type AreaRect,
+  useHeatmapViewport,
+  usePanZoomGestures,
+} from './useHeatmapViewport';
 import { useLageplanImageState } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
-import SuspicionMarkersOverlay, { placeSuspicionMarkers, type SuspicionPlanMarker } from './SuspicionMarkers';
+import SuspicionMarkersOverlay, {
+  placeSuspicionMarkers,
+  type SuspicionPlanMarker,
+} from './SuspicionMarkers';
 import { childTestId } from '../../testIds';
-import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import {
+  TWO_FINGER_TOUCH_ACTION,
+  useWheelHint,
+  WheelZoomHint,
+} from '../ui/wheelZoom';
 import { getBackendUrl } from '../../backendUrl';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { staffFlags } from '../../main/access';
@@ -184,7 +211,8 @@ type FieldScale = { range: FieldRange; unit: string; decimals: number };
 const ZOOM_STEP = 1.4;
 
 /** Field mode: the reading a grid value (0..1 of the scale) stands for. */
-const fieldReading = ({ range }: FieldScale, heat: number) => range.min + heat * (range.max - range.min);
+const fieldReading = ({ range }: FieldScale, heat: number) =>
+  range.min + heat * (range.max - range.min);
 
 /** Field mode: a reading with its unit, e.g. "54.3 %". */
 const formatReading = ({ decimals, unit }: FieldScale, value: number) =>
@@ -193,8 +221,14 @@ const formatReading = ({ decimals, unit }: FieldScale, value: number) =>
 /** The picked Lageplan of `plans`, for the plans it was picked from - new
  * plans start with the first. */
 const usePlanChoice = <T,>(plans: T[] | null) => {
-  const [choice, setChoice] = useState<{ plans: T[] | null; index: number } | null>(null);
-  const index = plans && choice?.plans === plans ? Math.min(choice.index, plans.length - 1) : 0;
+  const [choice, setChoice] = useState<{
+    plans: T[] | null;
+    index: number;
+  } | null>(null);
+  const index =
+    plans && choice?.plans === plans
+      ? Math.min(choice.index, plans.length - 1)
+      : 0;
   const choose = (next: number) => setChoice({ plans, index: next });
   return [index, choose] as const;
 };
@@ -277,7 +311,10 @@ const SensorHeatmap2D = ({
   // The frame picked on the own slider - for these timestamps only: new
   // data (another period or step) starts at the newest frame again (or the
   // one holding `focusTime`).
-  const [ownPick, setOwnPick] = useState<{ timestamps: number[]; index: number } | null>(null);
+  const [ownPick, setOwnPick] = useState<{
+    timestamps: number[];
+    index: number;
+  } | null>(null);
   const ownIndex =
     ownPick?.timestamps === timestamps
       ? ownPick.index
@@ -299,7 +336,10 @@ const SensorHeatmap2D = ({
     [onTimeChange, timestamps],
   );
   // The shown frame, within the timestamps there are.
-  const frameIndex = Math.max(0, Math.min(timestampIndex, timestamps.length - 1));
+  const frameIndex = Math.max(
+    0,
+    Math.min(timestampIndex, timestamps.length - 1),
+  );
   useEffect(() => {
     onTimestampChange?.(frameIndex);
   }, [onTimestampChange, frameIndex]);
@@ -326,7 +366,10 @@ const SensorHeatmap2D = ({
     }
   };
   const activePlan = plans?.[planIndex] ?? null;
-  const location = useMemo(() => planLocation(baseLocation, activePlan), [baseLocation, activePlan]);
+  const location = useMemo(
+    () => planLocation(baseLocation, activePlan),
+    [baseLocation, activePlan],
+  );
 
   // A plan image still loading: the plot keeps its height (no layout
   // without the image first, then with it).
@@ -334,7 +377,8 @@ const SensorHeatmap2D = ({
     location?.lageplan_url ? getBackendUrl(location.lageplan_url) : null,
   );
   const imageSize = useMemo(
-    () => (image ? { width: image.naturalWidth, height: image.naturalHeight } : null),
+    () =>
+      image ? { width: image.naturalWidth, height: image.naturalHeight } : null,
     [image],
   );
 
@@ -344,12 +388,18 @@ const SensorHeatmap2D = ({
   // σ of the plan (null: Auto σ) - staff change and store it, not in the
   // alignment wizard.
   const canEditSigma = staff && !alignment;
-  const [sigma, setSigma] = useHeatSigma({ plan: activePlan, editable: canEditSigma });
+  const [sigma, setSigma] = useHeatSigma({
+    plan: activePlan,
+    editable: canEditSigma,
+  });
 
   // ---------------------------------------------------------------- chart
 
   const flipY = Boolean(location?.flip_y);
-  const sensors = useMemo(() => plotSensors(response, flipY), [response, flipY]);
+  const sensors = useMemo(
+    () => plotSensors(response, flipY),
+    [response, flipY],
+  );
 
   // Field mode: one colour scale for every frame, so the frames compare.
   const fieldScale = useMemo<FieldScale | null>(
@@ -369,7 +419,15 @@ const SensorHeatmap2D = ({
 
   // The same for every frame - only the heat field follows the slider.
   const layout = useMemo(
-    () => chartLayout({ sensors, resolution, location, imageSize, fitPlan, fieldMode }),
+    () =>
+      chartLayout({
+        sensors,
+        resolution,
+        location,
+        imageSize,
+        fitPlan,
+        fieldMode,
+      }),
     [sensors, resolution, location, imageSize, fitPlan, fieldMode],
   );
   // WP, EP and WP + EP have no threshold to scale against: always normalized.
@@ -387,7 +445,10 @@ const SensorHeatmap2D = ({
   const absoluteScale = normalized && heatScale != null ? heatScale : null;
   const thresholdMark = useMemo(() => {
     const threshold = locationThreshold(location);
-    return absoluteScale != null && threshold != null && profile === 'diff' && !forceNormalize
+    return absoluteScale != null &&
+      threshold != null &&
+      profile === 'diff' &&
+      !forceNormalize
       ? [threshold / absoluteScale]
       : [];
   }, [absoluteScale, forceNormalize, location, profile]);
@@ -400,12 +461,30 @@ const SensorHeatmap2D = ({
             fieldRange: fieldScale?.range ?? null,
           })
         : null,
-    [layout, timestamps.length, sensors, frameIndex, fieldMode, sigma, heatScale, fieldScale],
+    [
+      layout,
+      timestamps.length,
+      sensors,
+      frameIndex,
+      fieldMode,
+      sigma,
+      heatScale,
+      fieldScale,
+    ],
   );
   const hasLines = Boolean(layout?.lines.some((line) => line != null));
   // mx-PEEL: the computed suspicion points on the plan (same alignment as the sensors).
   const placedSuspicions = useMemo(
-    () => (layout ? placeSuspicionMarkers(suspicions, location, imageSize, flipY, layout.world) : []),
+    () =>
+      layout
+        ? placeSuspicionMarkers(
+            suspicions,
+            location,
+            imageSize,
+            flipY,
+            layout.world,
+          )
+        : [],
     [suspicions, layout, location, imageSize, flipY],
   );
 
@@ -434,7 +513,9 @@ const SensorHeatmap2D = ({
             // the climate charts; otherwise the sensor number.
             sensorText: (index) => {
               const sensor = layout.sensors[index];
-              return fieldMode ? (sensor.label ?? sensor.name ?? String(sensor.pos)) : String(sensor.pos);
+              return fieldMode
+                ? (sensor.label ?? sensor.name ?? String(sensor.pos))
+                : String(sensor.pos);
             },
             scaleTitle:
               fieldScale?.unit ??
@@ -457,17 +538,36 @@ const SensorHeatmap2D = ({
             showLines: hasLines && showLines,
           }
         : null,
-    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits, profile, heatTitle, absoluteScale, thresholdMark, showDots, showLabels, hasLines, showLines],
+    [
+      layout,
+      frame,
+      image,
+      heatCanvas,
+      colorTable,
+      fieldMode,
+      fieldScale,
+      t,
+      limits,
+      profile,
+      heatTitle,
+      absoluteScale,
+      thresholdMark,
+      showDots,
+      showLabels,
+      hasLines,
+      showLines,
+    ],
   );
 
   // ---------------------------------------------------------------- viewport
 
-  const { wrapRef, width, canvasHeight, view, isZoomed, setView, zoomBy } = useHeatmapViewport({
-    bounds: scene?.layout.bounds ?? null,
-    height,
-    fitPlan,
-    compact,
-  });
+  const { wrapRef, width, canvasHeight, view, isZoomed, setView, zoomBy } =
+    useHeatmapViewport({
+      bounds: scene?.layout.bounds ?? null,
+      height,
+      fitPlan,
+      compact,
+    });
 
   // The device last reported to onHoverDevice - pointer moves report changes only.
   const reportedDevice = useRef<number | null>(null);
@@ -482,11 +582,26 @@ const SensorHeatmap2D = ({
     if (!scene || !view) {
       return;
     }
-    const target = hoverTarget(scene.layout, scene.frame, view, location, imageSize, sx, sy);
+    const target = hoverTarget(
+      scene.layout,
+      scene.frame,
+      view,
+      location,
+      imageSize,
+      sx,
+      sy,
+    );
     if (target?.kind === 'sensor') {
       const sensor = scene.layout.sensors[target.index];
       reportHoveredDevice(sensor.device);
-      const under = cursorTarget(scene.layout, scene.frame, view, location, sx, sy);
+      const under = cursorTarget(
+        scene.layout,
+        scene.frame,
+        view,
+        location,
+        sx,
+        sy,
+      );
       setHover({
         kind: 'sensor',
         pos: sensor.pos,
@@ -526,12 +641,23 @@ const SensorHeatmap2D = ({
       if (!scene || !view || !onSensorClick) {
         return;
       }
-      const target = hoverTarget(scene.layout, scene.frame, view, location, imageSize, sx, sy);
+      const target = hoverTarget(
+        scene.layout,
+        scene.frame,
+        view,
+        location,
+        imageSize,
+        sx,
+        sy,
+      );
       if (target?.kind === 'sensor') {
         onSensorClick(scene.layout.sensors[target.index].pos);
       }
     },
-    wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
+    wheelZoomsAt: (sx, sy) =>
+      Boolean(
+        scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy),
+      ),
     onPlainWheel: showWheelHint,
     // Selecting an area: one finger is the tool.
     // Otherwise one finger scrolls the page, two move the plan.
@@ -543,7 +669,11 @@ const SensorHeatmap2D = ({
           onChange: setAreaRect,
           onSelect: (rect) => {
             if (scene && view) {
-              onAreaSelect(sensorsInRect(scene.layout, view, rect).map((index) => scene.layout.sensors[index].pos));
+              onAreaSelect(
+                sensorsInRect(scene.layout, view, rect).map(
+                  (index) => scene.layout.sensors[index].pos,
+                ),
+              );
             }
           },
         }
@@ -552,21 +682,33 @@ const SensorHeatmap2D = ({
 
   // ---------------------------------------------------------------- drawing
 
-  const sensorIndex = (match: (sensor: Scene['layout']['sensors'][number]) => boolean) => {
+  const sensorIndex = (
+    match: (sensor: Scene['layout']['sensors'][number]) => boolean,
+  ) => {
     const index = scene?.layout.sensors.findIndex(match) ?? -1;
     return index >= 0 ? index : null;
   };
-  const hoveredIndex = hover?.kind === 'sensor' ? sensorIndex((sensor) => sensor.pos === hover.pos) : null;
+  const hoveredIndex =
+    hover?.kind === 'sensor'
+      ? sensorIndex((sensor) => sensor.pos === hover.pos)
+      : null;
   const highlightedIndex =
-    highlightedDevice != null ? sensorIndex((sensor) => sensor.device === highlightedDevice) : null;
+    highlightedDevice != null
+      ? sensorIndex((sensor) => sensor.device === highlightedDevice)
+      : null;
   const sceneSensors = scene?.layout.sensors;
   const selectedIndices = useMemo(() => {
     const positions = new Set(selectedPositions ?? []);
     return new Set(
-      (sceneSensors ?? []).flatMap((sensor, index) => (positions.has(sensor.pos) ? [index] : [])),
+      (sceneSensors ?? []).flatMap((sensor, index) =>
+        positions.has(sensor.pos) ? [index] : [],
+      ),
     );
   }, [sceneSensors, selectedPositions]);
-  const focusedIndex = focusedPosition != null ? sensorIndex((sensor) => sensor.pos === focusedPosition) : null;
+  const focusedIndex =
+    focusedPosition != null
+      ? sensorIndex((sensor) => sensor.pos === focusedPosition)
+      : null;
   // The plan under the cursor - also while it is over a sensor.
   const underCursor = hover?.kind === 'sensor' ? hover.under : hover;
   // The guides only lead to a position in meters.
@@ -595,7 +737,18 @@ const SensorHeatmap2D = ({
         null,
       );
     }
-  }, [canvasRef, scene, view, width, canvasHeight, hoveredIndex, highlightedIndex, selectedIndices, focusedIndex, guideCursor]);
+  }, [
+    canvasRef,
+    scene,
+    view,
+    width,
+    canvasHeight,
+    hoveredIndex,
+    highlightedIndex,
+    selectedIndices,
+    focusedIndex,
+    guideCursor,
+  ]);
 
   // ---------------------------------------------------------------- export
 
@@ -606,7 +759,8 @@ const SensorHeatmap2D = ({
     afterDraw: (() => void) | null;
   }>({ renderFrame: () => null, afterDraw: null });
   const captureFrame = useCallback(
-    (frameWidth: number, frameHeight: number) => exportRef.current.renderFrame(frameWidth, frameHeight),
+    (frameWidth: number, frameHeight: number) =>
+      exportRef.current.renderFrame(frameWidth, frameHeight),
     [],
   );
   const frameSize = useCallback(
@@ -627,7 +781,13 @@ const SensorHeatmap2D = ({
     exportRef.current = {
       renderFrame: (frameWidth, frameHeight) =>
         scene && view && width > 0
-          ? renderSceneFrame(scene, view, { width, height: canvasHeight }, frameWidth, frameHeight)
+          ? renderSceneFrame(
+              scene,
+              view,
+              { width, height: canvasHeight },
+              frameWidth,
+              frameHeight,
+            )
           : null,
       afterDraw: videoExport.handleAfterPlot,
     };
@@ -639,31 +799,43 @@ const SensorHeatmap2D = ({
 
   // ---------------------------------------------------------------- render
 
+  // The Lageplan switcher is hidden in the alignment wizard mode (alignment
+  // prop takes precedence) and when the parent shows its own (onPlanChange).
+  const toolbarPlans = alignment || onPlanChange ? null : plans;
+  const toolbarRow =
+    hideFrameSlider ||
+    Boolean(toolbarStart) ||
+    canEditSigma ||
+    (toolbarPlans != null && toolbarPlans.length > 1);
+  const toolbar = (
+    <HeatmapToolbar
+      start={toolbarStart}
+      plans={toolbarPlans}
+      planIndex={planIndex}
+      onPlanChange={choosePlan}
+      sigma={canEditSigma ? { value: sigma, onChange: setSigma } : undefined}
+      testId={childTestId(testId, 'toolbar')}
+      video={{
+        exporting: videoExport.videoExporting,
+        stage: videoExport.videoStage,
+        progress: videoExport.videoProgress,
+        resultUrl: videoExport.videoResultUrl,
+        download: videoExport.downloadVideoResult,
+        start: videoExport.exportFrames,
+        enabled: timestamps.length >= 2,
+      }}
+    />
+  );
+
   const body = scene ? (
     <>
       <div className="px-2 pt-2">
-        {/* The Lageplan switcher is hidden in the alignment wizard mode
-            (alignment prop takes precedence) and when the parent shows its own
-            (onPlanChange). */}
-        <HeatmapToolbar
-          start={toolbarStart}
-          plans={alignment || onPlanChange ? null : plans}
-          planIndex={planIndex}
-          onPlanChange={choosePlan}
-          sigma={canEditSigma ? { value: sigma, onChange: setSigma } : undefined}
-          testId={childTestId(testId, 'toolbar')}
-          video={{
-            exporting: videoExport.videoExporting,
-            stage: videoExport.videoStage,
-            progress: videoExport.videoProgress,
-            resultUrl: videoExport.videoResultUrl,
-            download: videoExport.downloadVideoResult,
-            start: videoExport.exportFrames,
-            enabled: timestamps.length >= 2,
-          }}
-        />
+        {/* The toolbar has its own row only with more than the video export
+            (page controls, the Lageplan switcher, σ) - else the export sits at
+            the right end of the slider's row instead of alone in a row. */}
+        {toolbarRow && toolbar}
         {!hideFrameSlider && (
-          <div className="mt-1 pb-1">
+          <div className="pb-1">
             <FrameSlider
               id="heatmap2d-timestamp"
               timestamps={timestamps}
@@ -672,6 +844,7 @@ const SensorHeatmap2D = ({
               disabled={videoExport.videoExporting}
               alarms={alarms}
               toolbar={frameToolbar}
+              end={toolbarRow ? null : toolbar}
               testId={childTestId(testId, 'frame-slider')}
             />
           </div>
@@ -679,7 +852,10 @@ const SensorHeatmap2D = ({
       </div>
 
       {videoExport.videoError && (
-        <div className="text-danger small mb-2 px-2" data-testid={childTestId(testId, 'video-error')}>
+        <div
+          className="text-danger small mb-2 px-2"
+          data-testid={childTestId(testId, 'video-error')}
+        >
           {videoExport.videoError}
         </div>
       )}
@@ -687,117 +863,155 @@ const SensorHeatmap2D = ({
       {/* The outer box measures the width available; the plot is as wide as
           the canvas (narrower when compact, left-aligned - useHeatmapViewport). */}
       <div ref={wrapRef} className="heatmap2d-plot-area">
-      {imagePending ? (
-        // The plan image loads: its place keeps the last plot's height.
-        <div
-          className="heatmap2d-plot-placeholder text-muted"
-          style={{ height: heldHeight ?? canvasHeight }}
-          data-testid={childTestId(testId, 'plot-loading')}
-        >
-          <Spinner animation="border" size="sm" className="me-2" />
-          {t('ui_loading')}
-        </div>
-      ) : (
-      <div
-        className="heatmap2d-plot-wrap"
-        data-testid={childTestId(testId, 'plot')}
-        aria-busy={busy || undefined}
-        style={{ height: canvasHeight, width: width > 0 ? width : undefined }}
-      >
-        <canvas
-          ref={canvasRef}
-          role="img"
-          aria-label={t('heatmap_canvas_hint')}
-          data-testid={childTestId(testId, 'canvas')}
-          className={`heatmap2d-canvas heatmap2d-canvas--${
-            areaMode ? 'crosshair' : hoveredIndex != null ? 'pointer' : grabbing ? 'grabbing' : 'grab'
-          }`}
-          style={{
-            height: canvasHeight,
-            touchAction: oneFingerTool ? 'none' : TWO_FINGER_TOUCH_ACTION,
-          }}
-          {...handlers}
-          onDoubleClick={() => setView(null)}
-        />
-
-        <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
-        {areaRect && (
+        {imagePending ? (
+          // The plan image loads: its place keeps the last plot's height.
           <div
-            data-testid={ownId ? 'heatmap-area-rect' : childTestId(testId, 'area-rect')}
-            className="heatmap2d-area-rect"
-            style={{
-              left: Math.min(areaRect[0], areaRect[2]),
-              top: Math.min(areaRect[1], areaRect[3]),
-              width: Math.abs(areaRect[2] - areaRect[0]),
-              height: Math.abs(areaRect[3] - areaRect[1]),
-            }}
-          />
-        )}
-        {view && placedSuspicions.length > 0 && (
-          <SuspicionMarkersOverlay markers={placedSuspicions} view={view} width={width} height={canvasHeight} />
-        )}
-        <HeatmapDisplayControls
-          dots={{ value: showDots, onChange: setShowDots }}
-          labels={{ value: showLabels, onChange: setShowLabels }}
-          area={onAreaSelect ? { value: areaMode, onChange: setAreaMode } : null}
-          lines={hasLines ? { value: showLines, onChange: setShowLines } : null}
-          normalize={
-            staff && !fieldMode
-              ? { value: normalize, onChange: setNormalize, forced: normalizeForced }
-              : null
-          }
-          profile={
-            staff && !fieldMode && onProfileChange
-              ? { value: profile, onChange: onProfileChange, loading: profileLoading }
-              : null
-          }
-          testId={ownId ? undefined : childTestId(testId, 'display')}
-        />
-        <ZoomControls
-          onZoomIn={() => zoomBy(ZOOM_STEP)}
-          onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
-          onReset={() => setView(null)}
-          resetDisabled={!isZoomed}
-          testId={childTestId(testId, 'zoom')}
-        />
-
-        {hover?.kind === 'sensor' && hoveredIndex != null && (
-          <HoveredSensorTooltip
-            sensor={scene.layout.sensors[hoveredIndex]}
-            value={scene.frame.values[hoveredIndex]}
-            meters={hover.meters}
-            screen={hover.screen}
-            fieldScale={fieldScale}
-            colorTable={colorTable}
-            containerWidth={width}
-            containerHeight={canvasHeight}
-            testId={childTestId(testId, 'sensor-tooltip')}
-          />
-        )}
-
-        {underCursor && (
-          <CursorReadout
-            meters={underCursor.meters}
-            heat={underCursor.heat}
-            fieldScale={fieldScale}
-            absoluteScale={absoluteScale}
-            testId={childTestId(testId, 'readout')}
-          />
-        )}
-
-        {busy && (
-          // Over everything of the plot: it takes no input until the new data is there.
-          <div className="heatmap2d-busy" data-testid={childTestId(testId, 'busy')}>
-            <Spinner animation="border" className="me-2" />
+            className="heatmap2d-plot-placeholder text-muted"
+            style={{ height: heldHeight ?? canvasHeight }}
+            data-testid={childTestId(testId, 'plot-loading')}
+          >
+            <Spinner animation="border" size="sm" className="me-2" />
             {t('ui_loading')}
+          </div>
+        ) : (
+          <div
+            className="heatmap2d-plot-wrap"
+            data-testid={childTestId(testId, 'plot')}
+            aria-busy={busy || undefined}
+            style={{
+              height: canvasHeight,
+              width: width > 0 ? width : undefined,
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              role="img"
+              aria-label={t('heatmap_canvas_hint')}
+              data-testid={childTestId(testId, 'canvas')}
+              className={`heatmap2d-canvas heatmap2d-canvas--${
+                areaMode
+                  ? 'crosshair'
+                  : hoveredIndex != null
+                    ? 'pointer'
+                    : grabbing
+                      ? 'grabbing'
+                      : 'grab'
+              }`}
+              style={{
+                height: canvasHeight,
+                touchAction: oneFingerTool ? 'none' : TWO_FINGER_TOUCH_ACTION,
+              }}
+              {...handlers}
+              onDoubleClick={() => setView(null)}
+            />
+
+            <WheelZoomHint
+              visible={wheelHint}
+              radius={0}
+              testId={childTestId(testId, 'wheel-hint')}
+            />
+            {areaRect && (
+              <div
+                data-testid={
+                  ownId ? 'heatmap-area-rect' : childTestId(testId, 'area-rect')
+                }
+                className="heatmap2d-area-rect"
+                style={{
+                  left: Math.min(areaRect[0], areaRect[2]),
+                  top: Math.min(areaRect[1], areaRect[3]),
+                  width: Math.abs(areaRect[2] - areaRect[0]),
+                  height: Math.abs(areaRect[3] - areaRect[1]),
+                }}
+              />
+            )}
+            {view && placedSuspicions.length > 0 && (
+              <SuspicionMarkersOverlay
+                markers={placedSuspicions}
+                view={view}
+                width={width}
+                height={canvasHeight}
+              />
+            )}
+            <HeatmapDisplayControls
+              dots={{ value: showDots, onChange: setShowDots }}
+              labels={{ value: showLabels, onChange: setShowLabels }}
+              area={
+                onAreaSelect ? { value: areaMode, onChange: setAreaMode } : null
+              }
+              lines={
+                hasLines ? { value: showLines, onChange: setShowLines } : null
+              }
+              normalize={
+                staff && !fieldMode
+                  ? {
+                      value: normalize,
+                      onChange: setNormalize,
+                      forced: normalizeForced,
+                    }
+                  : null
+              }
+              profile={
+                staff && !fieldMode && onProfileChange
+                  ? {
+                      value: profile,
+                      onChange: onProfileChange,
+                      loading: profileLoading,
+                    }
+                  : null
+              }
+              testId={ownId ? undefined : childTestId(testId, 'display')}
+            />
+            <ZoomControls
+              onZoomIn={() => zoomBy(ZOOM_STEP)}
+              onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
+              onReset={() => setView(null)}
+              resetDisabled={!isZoomed}
+              testId={childTestId(testId, 'zoom')}
+            />
+
+            {hover?.kind === 'sensor' && hoveredIndex != null && (
+              <HoveredSensorTooltip
+                sensor={scene.layout.sensors[hoveredIndex]}
+                value={scene.frame.values[hoveredIndex]}
+                meters={hover.meters}
+                screen={hover.screen}
+                fieldScale={fieldScale}
+                colorTable={colorTable}
+                containerWidth={width}
+                containerHeight={canvasHeight}
+                testId={childTestId(testId, 'sensor-tooltip')}
+              />
+            )}
+
+            {underCursor && (
+              <CursorReadout
+                meters={underCursor.meters}
+                heat={underCursor.heat}
+                fieldScale={fieldScale}
+                absoluteScale={absoluteScale}
+                testId={childTestId(testId, 'readout')}
+              />
+            )}
+
+            {busy && (
+              // Over everything of the plot: it takes no input until the new data is there.
+              <div
+                className="heatmap2d-busy"
+                data-testid={childTestId(testId, 'busy')}
+              >
+                <Spinner animation="border" className="me-2" />
+                {t('ui_loading')}
+              </div>
+            )}
           </div>
         )}
       </div>
-      )}
-      </div>
     </>
   ) : (
-    <div className="text-muted py-5 text-center" data-testid={childTestId(testId, 'empty')}>
+    <div
+      className="text-muted py-5 text-center"
+      data-testid={childTestId(testId, 'empty')}
+    >
       {t('heatmap_no_data')}
     </div>
   );
@@ -847,7 +1061,10 @@ const HoveredSensorTooltip = ({
       decimals={fieldScale?.decimals}
       dotColor={
         range && range.max > range.min
-          ? heatColorAt(colorTable, (value - range.min) / (range.max - range.min))
+          ? heatColorAt(
+              colorTable,
+              (value - range.min) / (range.max - range.min),
+            )
           : undefined
       }
       threshold={sensor.threshold}
@@ -889,7 +1106,10 @@ const CursorReadout = ({
   };
   return (
     <div className="heatmap2d-readout small" data-testid={testId}>
-      {[meters ? formatMeters(meters) : null, heat == null ? null : heatText(heat)]
+      {[
+        meters ? formatMeters(meters) : null,
+        heat == null ? null : heatText(heat),
+      ]
         .filter(Boolean)
         .join(' · ')}
     </div>

@@ -69,7 +69,10 @@ const notify = (access: string, refresh: string) => {
 };
 
 /** Whether an access token is close enough to expiry to renew it early. */
-export const shouldRefreshAccessToken = (token: string, marginMs = 5 * 60 * 1000) => {
+export const shouldRefreshAccessToken = (
+  token: string,
+  marginMs = 5 * 60 * 1000,
+) => {
   if (!token) {
     return false;
   }
@@ -104,7 +107,7 @@ export const refreshAccessToken = async (
       let response;
       try {
         response = await axios.post(refreshUrl(), { refresh });
-      } catch (error) {
+      } catch {
         // Another tab may have rotated the refresh token a moment ago (the
         // old one is blacklisted then). Try the newly stored one once; this
         // keeps an active multi-tab session from being logged out.
@@ -120,7 +123,9 @@ export const refreshAccessToken = async (
       }
       // SimpleJWT returns a rotated refresh token; keep the old one only when
       // the backend did not rotate (e.g. ROTATE_REFRESH_TOKENS disabled).
-      const nextRefresh = String(response?.data?.refresh || readStoredTokens().refresh);
+      const nextRefresh = String(
+        response?.data?.refresh || readStoredTokens().refresh,
+      );
       storeTokens(access, nextRefresh);
       notify(access, nextRefresh);
       return access;

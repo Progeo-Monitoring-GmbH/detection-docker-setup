@@ -26,6 +26,32 @@
   font-size: 1.1rem;
 }
 
+/* Phones: one row - the play button as its icon, the time smaller with the
+   date under the clock. */
+@media (max-width: 640px) {
+  .btn.frame-slider__play {
+    padding-inline: 8px;
+  }
+
+  .frame-slider__play-label {
+    display: none;
+  }
+
+  .frame-slider__time {
+    flex-direction: column;
+    align-items: flex-end !important;
+    gap: 0 !important;
+  }
+
+  .frame-slider__time-clock {
+    font-size: 1.35rem;
+  }
+
+  .frame-slider__time-date {
+    font-size: 0.75rem;
+  }
+}
+
 /* The time axis under the track, inset like the thumb's travel. */
 .frame-slider__axis {
   margin: -4px 0.5rem 0;
@@ -129,7 +155,9 @@
   border-left: 1px solid rgba(220, 38, 38, 0.25);
   border-right: 1px solid rgba(220, 38, 38, 0.25);
   border-radius: 3px;
-  transition: background 120ms, border-color 120ms;
+  transition:
+    background 120ms,
+    border-color 120ms;
 }
 
 .frame-slider__alarm--hovered {

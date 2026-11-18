@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
@@ -13,7 +20,15 @@ import {
   useWheelHint,
   WheelZoomHint,
 } from '../ui/wheelZoom';
-import { fittedPlanHeight, fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
+import {
+  fittedPlanHeight,
+  fullBox,
+  isFull,
+  panBox,
+  type ViewBox,
+  viewBoxAttribute,
+  zoomBox,
+} from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
 import { DISABLED_SENSOR_FILL } from './disabledSensors';
@@ -101,9 +116,14 @@ export const alignedFraction = (
   const scaleX = alignment?.scale_x || 1;
   const scaleY = alignment?.scale_y || 1;
   const base = imageSize ? alignmentBaseScale(imageSize[0], imageSize[1]) : 0;
-  const offsetX = imageSize && base ? (alignment?.offset_x ?? 0) / (imageSize[0] * base) : 0;
-  const offsetY = imageSize && base ? (alignment?.offset_y ?? 0) / (imageSize[1] * base) : 0;
-  return [offsetX + x * scaleX, offsetY + (alignment?.flip_y ? 1 - y : y) * scaleY];
+  const offsetX =
+    imageSize && base ? (alignment?.offset_x ?? 0) / (imageSize[0] * base) : 0;
+  const offsetY =
+    imageSize && base ? (alignment?.offset_y ?? 0) / (imageSize[1] * base) : 0;
+  return [
+    offsetX + x * scaleX,
+    offsetY + (alignment?.flip_y ? 1 - y : y) * scaleY,
+  ];
 };
 
 /** A group drawn as one sensor's band line. */
@@ -124,7 +144,10 @@ type Hover = {
   cursorY: number;
   width: number;
   height: number;
-} & ({ kind: 'point'; point: LageplanZonePoint } | { kind: 'zone'; group: ZoneGroup });
+} & (
+  | { kind: 'point'; point: LageplanZonePoint }
+  | { kind: 'zone'; group: ZoneGroup }
+);
 
 /** Marker outline of a sensor (or segment) reading above its threshold - as on the heatmap. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
@@ -163,7 +186,8 @@ const LageplanZoneOverlay = ({
 }: LageplanZoneOverlayProps) => {
   const { t } = useTranslation();
   // The sensors keep their own ids while the overlay has the default id.
-  const zoneId = (part: string) => (testId === DEFAULT_TEST_ID ? `zone-${part}` : childTestId(testId, part));
+  const zoneId = (part: string) =>
+    testId === DEFAULT_TEST_ID ? `zone-${part}` : childTestId(testId, part);
   const groups = groupPoints(points, mode);
 
   const resolvedUrl = imageUrl ? getBackendUrl(imageUrl) : null;
@@ -171,7 +195,9 @@ const LageplanZoneOverlay = ({
   // Media files need the Authorization header, which a plain <img> can't send.
   const auth = useAuth();
   const authRef = useRef(auth);
-  authRef.current = auth;
+  useLayoutEffect(() => {
+    authRef.current = auth;
+  });
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   // Natural size of the plan image - the overlay's coordinate system.
   const [imageSize, setImageSize] = useState<[number, number] | null>(null);
@@ -196,9 +222,17 @@ const LageplanZoneOverlay = ({
         }
       : {};
 
-  useEffect(() => {
+  // Another plan: no image until it is loaded, shown whole - reset while
+  // rendering, not in an effect (no render with the old plan's image).
+  const [planUrl, setPlanUrl] = useState(resolvedUrl);
+  if (planUrl !== resolvedUrl) {
+    setPlanUrl(resolvedUrl);
     setImageSrc(null);
     setImageSize(null);
+    setUserBox(null);
+  }
+
+  useEffect(() => {
     if (!resolvedUrl) {
       return undefined;
     }
@@ -225,10 +259,6 @@ const LageplanZoneOverlay = ({
     };
   }, [resolvedUrl]);
 
-  useEffect(() => {
-    setUserBox(null);
-  }, [imageSize]);
-
   // fitWidth: the card's width, for the height that fills it.
   const [containerWidth, setContainerWidth] = useState(0);
   useEffect(() => {
@@ -246,17 +276,25 @@ const LageplanZoneOverlay = ({
   // Without the image (yet) the points span a square, as before.
   const [viewWidth, viewHeight] = imageSize ?? [1, 1];
   const full = fullBox(viewWidth, viewHeight);
-  const height = fitWidth && imageSize ? fittedPlanHeight(containerWidth, full, maxHeight) : maxHeight;
+  const height =
+    fitWidth && imageSize
+      ? fittedPlanHeight(containerWidth, full, maxHeight)
+      : maxHeight;
   const box = userBox ?? full;
   // Plan geometry relative to the image's shorter side ...
   const planUnit = Math.min(viewWidth, viewHeight);
   // ... markers, lines and labels to the shown part's: same size on screen at any zoom.
   const unit = Math.min(box.w, box.h);
-  const fractionToView = ([fx, fy]: [number, number]): [number, number] => [fx * viewWidth, fy * viewHeight];
+  const fractionToView = ([fx, fy]: [number, number]): [number, number] => [
+    fx * viewWidth,
+    fy * viewHeight,
+  ];
   const toView = (point: LageplanZonePoint): [number, number] =>
     fractionToView(alignedFraction([point.x, point.y], alignment, imageSize));
   const endToView = (point: LageplanZonePoint): [number, number] | null =>
-    point.end ? fractionToView(alignedFraction(point.end, alignment, imageSize)) : null;
+    point.end
+      ? fractionToView(alignedFraction(point.end, alignment, imageSize))
+      : null;
 
   // Screen -> plan coordinates (null where the browser can't tell, e.g. jsdom).
   const toPlan = (clientX: number, clientY: number) => {
@@ -271,22 +309,33 @@ const LageplanZoneOverlay = ({
       pixelsPerUnit: matrix.a,
     };
   };
-  const onPlan = (x: number, y: number) => x >= 0 && y >= 0 && x <= viewWidth && y <= viewHeight;
+  const onPlan = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x <= viewWidth && y <= viewHeight;
 
   const zoomBy = (factor: number, clientX?: number, clientY?: number) => {
-    const at = clientX != null && clientY != null ? toPlan(clientX, clientY) : null;
+    const at =
+      clientX != null && clientY != null ? toPlan(clientX, clientY) : null;
     setUserBox((current) => {
       const shown = current ?? full;
-      const next = zoomBox(shown, factor, at?.x ?? shown.x + shown.w / 2, at?.y ?? shown.y + shown.h / 2, full);
+      const next = zoomBox(
+        shown,
+        factor,
+        at?.x ?? shown.x + shown.w / 2,
+        at?.y ?? shown.y + shown.h / 2,
+        full,
+      );
       return isFull(next, full) ? null : next;
     });
   };
+  // The latest handlers for the native listeners below (registered once).
   const zoomByRef = useRef(zoomBy);
-  zoomByRef.current = zoomBy;
   const toPlanRef = useRef(toPlan);
-  toPlanRef.current = toPlan;
   const onPlanRef = useRef(onPlan);
-  onPlanRef.current = onPlan;
+  useLayoutEffect(() => {
+    zoomByRef.current = zoomBy;
+    toPlanRef.current = toPlan;
+    onPlanRef.current = onPlan;
+  });
 
   // Ctrl (or ⌘) + wheel zooms over the plan image (isZoomWheel) - the plain
   // wheel scrolls the page and shows how to zoom, elsewhere it just scrolls.
@@ -307,7 +356,11 @@ const LageplanZoneOverlay = ({
       }
       event.preventDefault();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-      zoomByRef.current(Math.exp(-delta * 0.0015), event.clientX, event.clientY);
+      zoomByRef.current(
+        Math.exp(-delta * 0.0015),
+        event.clientX,
+        event.clientY,
+      );
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
@@ -320,7 +373,10 @@ const LageplanZoneOverlay = ({
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
     }
-    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    pointers.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
     dragged.current = false;
   };
 
@@ -329,7 +385,9 @@ const LageplanZoneOverlay = ({
     if (!previous) {
       return;
     }
-    const others = [...pointers.current.entries()].filter(([id]) => id !== event.pointerId);
+    const others = [...pointers.current.entries()].filter(
+      ([id]) => id !== event.pointerId,
+    );
     if (event.pointerType === 'touch' && others.length === 0) {
       // One finger scrolls the page (touch-action); two move and zoom the plan.
       return;
@@ -337,7 +395,8 @@ const LageplanZoneOverlay = ({
     if (
       !dragging &&
       others.length === 0 &&
-      Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < DRAG_THRESHOLD
+      Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <
+        DRAG_THRESHOLD
     ) {
       return; // still a click - hovering keeps working
     }
@@ -348,13 +407,18 @@ const LageplanZoneOverlay = ({
       setHover(null);
     }
     dragged.current = true;
-    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    pointers.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
     if (others.length === 0) {
       const scale = toPlan(event.clientX, event.clientY)?.pixelsPerUnit;
       if (scale) {
         const dx = (event.clientX - previous.x) / scale;
         const dy = (event.clientY - previous.y) / scale;
-        setUserBox((current) => (current ? panBox(current, dx, dy, full) : current));
+        setUserBox((current) =>
+          current ? panBox(current, dx, dy, full) : current,
+        );
       }
       return;
     }
@@ -365,12 +429,18 @@ const LageplanZoneOverlay = ({
     if (scale) {
       const dx = (event.clientX - previous.x) / 2 / scale;
       const dy = (event.clientY - previous.y) / 2 / scale;
-      setUserBox((current) => (current ? panBox(current, dx, dy, full) : current));
+      setUserBox((current) =>
+        current ? panBox(current, dx, dy, full) : current,
+      );
     }
     const before = Math.hypot(previous.x - other.x, previous.y - other.y);
     const after = Math.hypot(event.clientX - other.x, event.clientY - other.y);
     if (before > 0 && after > 0) {
-      zoomBy(after / before, (event.clientX + other.x) / 2, (event.clientY + other.y) / 2);
+      zoomBy(
+        after / before,
+        (event.clientX + other.x) / 2,
+        (event.clientY + other.y) / 2,
+      );
     }
   };
 
@@ -384,7 +454,10 @@ const LageplanZoneOverlay = ({
     }
   };
 
-  const hoverAt = (event: MouseEvent, target: { point: LageplanZonePoint } | { group: ZoneGroup }) => {
+  const hoverAt = (
+    event: MouseEvent,
+    target: { point: LageplanZonePoint } | { group: ZoneGroup },
+  ) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || dragging) {
       return;
@@ -395,9 +468,11 @@ const LageplanZoneOverlay = ({
       width: rect.width,
       height: rect.height,
     };
-    setHover('point' in target
-      ? { ...position, kind: 'point', point: target.point }
-      : { ...position, kind: 'zone', group: target.group });
+    setHover(
+      'point' in target
+        ? { ...position, kind: 'point', point: target.point }
+        : { ...position, kind: 'zone', group: target.group },
+    );
   };
 
   const groupHover = (group: ZoneGroup) => ({
@@ -408,7 +483,8 @@ const LageplanZoneOverlay = ({
 
   // Half the typical sensor spacing: how far a segment reaches beyond its
   // outermost sensors, so neighbouring sensors' areas meet.
-  const segmentPad = mode === 'segments' ? segmentPadding(points.map(toView), planUnit) : 0;
+  const segmentPad =
+    mode === 'segments' ? segmentPadding(points.map(toView), planUnit) : 0;
 
   const markerRadius = (mode === 'points' ? 0.016 : 0.01) * unit;
 
@@ -428,12 +504,22 @@ const LageplanZoneOverlay = ({
           alt=""
           onLoad={(event) => {
             const { naturalWidth, naturalHeight } = event.currentTarget;
-            setImageSize(naturalWidth && naturalHeight ? [naturalWidth, naturalHeight] : null);
+            setImageSize(
+              naturalWidth && naturalHeight
+                ? [naturalWidth, naturalHeight]
+                : null,
+            );
+            // A newly loaded image is shown whole.
+            setUserBox(null);
           }}
           className="lageplan-zone-measure"
         />
       ) : (
-        <div className="lageplan-zone-empty" style={{ height }} data-testid={childTestId(testId, 'empty')}>
+        <div
+          className="lageplan-zone-empty"
+          style={{ height }}
+          data-testid={childTestId(testId, 'empty')}
+        >
           {'–'}
         </div>
       )}
@@ -459,7 +545,14 @@ const LageplanZoneOverlay = ({
         data-testid={childTestId(testId, 'plan')}
       >
         {imageSrc && imageSize && (
-          <image href={imageSrc} x={0} y={0} width={viewWidth} height={viewHeight} preserveAspectRatio="none" />
+          <image
+            href={imageSrc}
+            x={0}
+            y={0}
+            width={viewWidth}
+            height={viewHeight}
+            preserveAspectRatio="none"
+          />
         )}
         {mode === 'segments' &&
           groups.map((group) => {
@@ -469,7 +562,13 @@ const LageplanZoneOverlay = ({
             return (
               // The hull, stroked as wide as the padding with round joins: the
               // group's area grown evenly around its outermost sensors.
-              <g key={group.key} opacity={SEGMENT_OPACITY} data-testid={zoneId('segment')} data-test-key={group.key} {...groupHover(group)}>
+              <g
+                key={group.key}
+                opacity={SEGMENT_OPACITY}
+                data-testid={zoneId('segment')}
+                data-test-key={group.key}
+                {...groupHover(group)}
+              >
                 {group.isOver && (
                   <path
                     d={path}
@@ -493,7 +592,9 @@ const LageplanZoneOverlay = ({
           })}
 
         {groups.map((group) => {
-          const coords = group.points.map((point) => toView(point).join(',')).join(' ');
+          const coords = group.points
+            .map((point) => toView(point).join(','))
+            .join(' ');
           const color = group.color;
           if (isBand(group, mode)) {
             // A smartex® dm sensor: its band line, coloured by its value, red-rimmed above the threshold.
@@ -514,7 +615,15 @@ const LageplanZoneOverlay = ({
                     strokeLinecap="round"
                   />
                 )}
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={0.007 * unit} strokeLinecap="round" />
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke={color}
+                  strokeWidth={0.007 * unit}
+                  strokeLinecap="round"
+                />
                 {/* Wider invisible hit area for hovering the band. */}
                 <line
                   data-testid={zoneId('band')}
@@ -596,7 +705,9 @@ const LageplanZoneOverlay = ({
                       r={Math.max(0.022 * unit, markerRadius * 1.5)}
                       fill="transparent"
                       className="lageplan-zone-point"
-                      onMouseMove={(event) => hoverAt(event, asLine ? { group } : { point })}
+                      onMouseMove={(event) =>
+                        hoverAt(event, asLine ? { group } : { point })
+                      }
                       onMouseLeave={() => setHover(null)}
                       {...clickProps(point)}
                     />
@@ -604,14 +715,23 @@ const LageplanZoneOverlay = ({
                 );
               })}
               {mode !== 'points' && group.label && (
-                <GroupLabel group={group} mode={mode} toView={toView} unit={unit} />
+                <GroupLabel
+                  group={group}
+                  mode={mode}
+                  toView={toView}
+                  unit={unit}
+                />
               )}
             </g>
           );
         })}
       </svg>
 
-      <WheelZoomHint visible={wheelHint} radius={14} testId={childTestId(testId, 'wheel-hint')} />
+      <WheelZoomHint
+        visible={wheelHint}
+        radius={14}
+        testId={childTestId(testId, 'wheel-hint')}
+      />
       <ZoomControls
         onZoomIn={() => zoomBy(ZOOM_STEP)}
         onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
@@ -644,7 +764,11 @@ const LageplanZoneOverlay = ({
         />
       )}
       {hover?.kind === 'zone' && (
-        <ZoneTooltip hover={hover} group={hover.group} testId={childTestId(testId, 'zone-tooltip')} />
+        <ZoneTooltip
+          hover={hover}
+          group={hover.group}
+          testId={childTestId(testId, 'zone-tooltip')}
+        />
       )}
     </div>
   );
@@ -663,12 +787,14 @@ const GroupLabel = ({
   unit: number;
 }) => {
   const positions = group.points.map(toView);
-  const [x, y] = mode === 'segments'
-    ? [
-      positions.reduce((sum, [px]) => sum + px, 0) / positions.length,
-      positions.reduce((sum, [, py]) => sum + py, 0) / positions.length - 0.025 * unit,
-    ]
-    : [positions[0][0], positions[0][1] - 0.02 * unit];
+  const [x, y] =
+    mode === 'segments'
+      ? [
+          positions.reduce((sum, [px]) => sum + px, 0) / positions.length,
+          positions.reduce((sum, [, py]) => sum + py, 0) / positions.length -
+            0.025 * unit,
+        ]
+      : [positions[0][0], positions[0][1] - 0.02 * unit];
   return (
     <text
       x={x}
@@ -685,7 +811,15 @@ const GroupLabel = ({
 };
 
 /** The zone of a hovered line or segment: its sensors and the highest current value. */
-const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup; testId?: string }) => {
+const ZoneTooltip = ({
+  hover,
+  group,
+  testId,
+}: {
+  hover: Hover;
+  group: ZoneGroup;
+  testId?: string;
+}) => {
   // Judged by its enabled sensors; a zone of disabled ones only is gray.
   const enabled = group.points.filter((point) => !point.disabled);
   const highest = highestPoint(enabled);
@@ -695,7 +829,11 @@ const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup;
       width={210}
       dotColor={
         enabled.length
-          ? alarmHeatColor({ threshold, max_value: highest?.value ?? 0, max_values: [] })
+          ? alarmHeatColor({
+              threshold,
+              max_value: highest?.value ?? 0,
+              max_values: [],
+            })
           : DISABLED_SENSOR_FILL
       }
       title={group.label ?? `Sensor #${group.points[0].pos}`}
@@ -705,13 +843,17 @@ const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup;
       containerHeight={hover.height}
       testId={testId}
     >
-      <TooltipRow label="Sensors">{group.points.map((point) => `#${point.pos}`).join(', ')}</TooltipRow>
+      <TooltipRow label="Sensors">
+        {group.points.map((point) => `#${point.pos}`).join(', ')}
+      </TooltipRow>
       {highest && (
         <TooltipRow label="Highest">
           {Math.round((highest.value as number) * 100) / 100} (#{highest.pos})
         </TooltipRow>
       )}
-      {threshold != null && <TooltipRow label="Threshold">{threshold}</TooltipRow>}
+      {threshold != null && (
+        <TooltipRow label="Threshold">{threshold}</TooltipRow>
+      )}
     </CursorTooltip>
   );
 };
@@ -721,11 +863,18 @@ const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup;
  * sensor order; points without one stand alone (drawn first). The points
  * view keeps every sensor on its own.
  */
-const groupPoints = (points: LageplanZonePoint[], mode: LageplanOverlayMode): ZoneGroup[] => {
+const groupPoints = (
+  points: LageplanZonePoint[],
+  mode: LageplanOverlayMode,
+): ZoneGroup[] => {
   const groups: ZoneGroup[] = [];
   const byKey = new Map<string, LageplanZonePoint[]>();
   const single = (point: LageplanZonePoint) =>
-    groups.push(makeGroup(`single-${point.pos}`, mode === 'points' ? null : point.name, [point]));
+    groups.push(
+      makeGroup(`single-${point.pos}`, mode === 'points' ? null : point.name, [
+        point,
+      ]),
+    );
 
   points.forEach((point) => {
     const key = point.group !== undefined ? point.group : point.name;
@@ -740,14 +889,21 @@ const groupPoints = (points: LageplanZonePoint[], mode: LageplanOverlayMode): Zo
 
   byKey.forEach((list, key) => {
     const sorted = [...list].sort((a, b) => a.pos - b.pos);
-    const label = sorted[0].groupLabel !== undefined ? sorted[0].groupLabel : sorted[0].name;
+    const label =
+      sorted[0].groupLabel !== undefined
+        ? sorted[0].groupLabel
+        : sorted[0].name;
     groups.push(makeGroup(key, label ?? null, sorted));
   });
   return groups;
 };
 
 /** A group's colour comes from its highest enabled point - gray only when all are disabled. */
-const makeGroup = (key: string, label: string | null, points: LageplanZonePoint[]): ZoneGroup => {
+const makeGroup = (
+  key: string,
+  label: string | null,
+  points: LageplanZonePoint[],
+): ZoneGroup => {
   const enabled = points.filter((point) => !point.disabled);
   const highest = highestPoint(enabled);
   return {
@@ -761,7 +917,10 @@ const makeGroup = (key: string, label: string | null, points: LageplanZonePoint[
 
 const highestPoint = (points: LageplanZonePoint[]) =>
   points.reduce<LageplanZonePoint | null>(
-    (best, point) => (point.value != null && (best?.value == null || point.value > best.value) ? point : best),
+    (best, point) =>
+      point.value != null && (best?.value == null || point.value > best.value)
+        ? point
+        : best,
     null,
   );
 
@@ -769,39 +928,62 @@ const highestPoint = (points: LageplanZonePoint[]) =>
 const pointColor = (point: LageplanZonePoint) =>
   point.disabled
     ? DISABLED_SENSOR_FILL
-    : alarmHeatColor({ threshold: point.threshold, max_value: point.value ?? 0, max_values: [] });
+    : alarmHeatColor({
+        threshold: point.threshold,
+        max_value: point.value ?? 0,
+        max_values: [],
+      });
 
 /** Above its threshold - a disabled sensor never is (it raises no alarm). */
 const isOverThreshold = (point: LageplanZonePoint) =>
-  !point.disabled && point.value != null && point.threshold != null && point.value > point.threshold;
+  !point.disabled &&
+  point.value != null &&
+  point.threshold != null &&
+  point.value > point.threshold;
 
 /** Half the median nearest-neighbour distance (view units), within sane bounds. */
-export const segmentPadding = (positions: Array<[number, number]>, unit: number) => {
+export const segmentPadding = (
+  positions: Array<[number, number]>,
+  unit: number,
+) => {
   const nearest = positions
     .map(([x, y], index) =>
       positions.reduce(
-        (best, [ox, oy], otherIndex) => (otherIndex === index ? best : Math.min(best, Math.hypot(x - ox, y - oy))),
+        (best, [ox, oy], otherIndex) =>
+          otherIndex === index
+            ? best
+            : Math.min(best, Math.hypot(x - ox, y - oy)),
         Number.POSITIVE_INFINITY,
       ),
     )
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
-  const median = nearest.length ? nearest[Math.floor(nearest.length / 2)] : 0.08 * unit;
+  const median = nearest.length
+    ? nearest[Math.floor(nearest.length / 2)]
+    : 0.08 * unit;
   return Math.min(Math.max(median / 2, 0.02 * unit), 0.12 * unit);
 };
 
 /** Convex hull (Andrew's monotone chain), counter-clockwise; fewer than 3 points come back as they are. */
-export const convexHull = (positions: Array<[number, number]>): Array<[number, number]> => {
+export const convexHull = (
+  positions: Array<[number, number]>,
+): Array<[number, number]> => {
   const sorted = [...positions].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   if (sorted.length < 3) {
     return sorted;
   }
-  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
-    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const cross = (
+    o: [number, number],
+    a: [number, number],
+    b: [number, number],
+  ) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const half = (list: Array<[number, number]>) => {
     const hull: Array<[number, number]> = [];
     list.forEach((point) => {
-      while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) {
+      while (
+        hull.length >= 2 &&
+        cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0
+      ) {
         hull.pop();
       }
       hull.push(point);

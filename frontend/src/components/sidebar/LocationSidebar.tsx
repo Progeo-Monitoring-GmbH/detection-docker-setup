@@ -1,4 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
@@ -47,7 +53,10 @@ type ModuleItem = {
  * The selected location to carry along: ?location=<pk> of the current URL
  * (device overview, Lageplan wizard, ...), else the open portal location.
  */
-export const selectedLocationParam = (search: string, locationId: number | null) => {
+export const selectedLocationParam = (
+  search: string,
+  locationId: number | null,
+) => {
   const param = new URLSearchParams(search).get('location');
   if (param && /^\d+$/.test(param)) {
     return param;
@@ -60,8 +69,10 @@ export const selectedLocationParam = (search: string, locationId: number | null)
  * everyone else only with more than one location - a list of one is no
  * overview. Hidden until the count is known, so it never flashes in.
  */
-export const showsVerwaltungLink = (canCreateLocation: boolean, locationCount: number | null) =>
-  canCreateLocation || (locationCount ?? 0) > 1;
+export const showsVerwaltungLink = (
+  canCreateLocation: boolean,
+  locationCount: number | null,
+) => canCreateLocation || (locationCount ?? 0) > 1;
 
 /**
  * The app's sidebar, ported from the "Portal v2" mockup's <aside> (ProGeo
@@ -82,16 +93,25 @@ const LocationSidebar = ({
   const role = useProgeoRole();
   const routerLocation = useRouterLocation();
 
-  const [openClusterCount, setOpenClusterCount] = useState<number | null>(null);
+  // The open alarm clusters of the location they were counted for.
+  const [clusterCount, setClusterCount] = useState<{
+    locationId: number;
+    count: number | null;
+  } | null>(null);
 
   // Once per location: hasPermission is a new function on every render, and
   // `auth` changes with the path - neither is a reason to ask again.
   const canSeeMeasurements = hasPermission('module_measurements_enabled');
   const authRef = useRef(auth);
-  authRef.current = auth;
+  useLayoutEffect(() => {
+    authRef.current = auth;
+  });
+  const openClusterCount =
+    locationId && canSeeMeasurements && clusterCount?.locationId === locationId
+      ? clusterCount.count
+      : null;
   useEffect(() => {
     if (!locationId || !canSeeMeasurements) {
-      setOpenClusterCount(null);
       return;
     }
     void axiosConfig.perform_get(
@@ -101,11 +121,13 @@ const LocationSidebar = ({
         const clusters = (response?.data?.clusters || []) as {
           state: string;
         }[];
-        setOpenClusterCount(
-          clusters.filter((cluster) => cluster.state !== 'geloest').length,
-        );
+        setClusterCount({
+          locationId,
+          count: clusters.filter((cluster) => cluster.state !== 'geloest')
+            .length,
+        });
       },
-      () => setOpenClusterCount(null),
+      () => setClusterCount({ locationId, count: null }),
     );
   }, [canSeeMeasurements, locationId]);
 
@@ -121,14 +143,16 @@ const LocationSidebar = ({
     ? '/management/'
     : '/location/overview/';
 
-  const [locationCount, setLocationCount] = useState<number | null>(null);
+  const [fetchedLocationCount, setLocationCount] = useState<number | null>(
+    null,
+  );
 
   // Everyone's location count: the "Objektverwaltung" list is pointless for
   // a single location. Once per login - not on every path change.
   const canListLocations = hasPermission('module_locations_enabled');
+  const locationCount = canListLocations ? fetchedLocationCount : null;
   useEffect(() => {
     if (!canListLocations) {
-      setLocationCount(null);
       return;
     }
     void axiosConfig.perform_get(
@@ -279,7 +303,10 @@ const LocationSidebar = ({
     },
   ];
 
-  const carriedLocation = selectedLocationParam(routerLocation.search, locationId);
+  const carriedLocation = selectedLocationParam(
+    routerLocation.search,
+    locationId,
+  );
 
   const isActivePrefix = (to: string) => {
     const prefix = to.endsWith('/') ? to : `${to}/`;
@@ -343,20 +370,25 @@ const LocationSidebar = ({
       <span className="progeo-sidebar-item-main">
         <span className="progeo-sidebar-item-icon">{icon}</span>
         {!collapsed && (
-          <span className="progeo-sidebar-item-label">
-            {label}
-          </span>
+          <span className="progeo-sidebar-item-label">{label}</span>
         )}
       </span>
-      {badge != null && badge > 0 && (
-        collapsed ? (
-          <span aria-hidden="true" className="progeo-sidebar-badge-dot" {...repeatedTestId('sidebar-link-badge', key)} />
+      {badge != null &&
+        badge > 0 &&
+        (collapsed ? (
+          <span
+            aria-hidden="true"
+            className="progeo-sidebar-badge-dot"
+            {...repeatedTestId('sidebar-link-badge', key)}
+          />
         ) : (
-          <span className="progeo-sidebar-badge" {...repeatedTestId('sidebar-link-badge', key)}>
+          <span
+            className="progeo-sidebar-badge"
+            {...repeatedTestId('sidebar-link-badge', key)}
+          >
             {badge}
           </span>
-        )
-      )}
+        ))}
     </Link>
   );
 
@@ -380,9 +412,15 @@ const LocationSidebar = ({
   };
 
   /** A group caption - folded a plain divider. */
-  const renderGroupLabel = (label: string, separated: boolean, collapsed: boolean) =>
+  const renderGroupLabel = (
+    label: string,
+    separated: boolean,
+    collapsed: boolean,
+  ) =>
     collapsed ? (
-      separated && <div aria-hidden="true" className="progeo-sidebar-group-divider" />
+      separated && (
+        <div aria-hidden="true" className="progeo-sidebar-group-divider" />
+      )
     ) : (
       <div
         className={
@@ -395,7 +433,11 @@ const LocationSidebar = ({
       </div>
     );
 
-  const renderModuleGroup = (label: string, items: ModuleItem[], collapsed: boolean) =>
+  const renderModuleGroup = (
+    label: string,
+    items: ModuleItem[],
+    collapsed: boolean,
+  ) =>
     items.some((item) => item.visible) && (
       <>
         {renderGroupLabel(label, true, collapsed)}
@@ -424,7 +466,9 @@ const LocationSidebar = ({
         </>
       )}
 
-      {(showVerwaltung || canCreateLocation || objectItems.some((item) => item.visible)) &&
+      {(showVerwaltung ||
+        canCreateLocation ||
+        objectItems.some((item) => item.visible)) &&
         renderGroupLabel(t('nav_alle_objekte'), true, collapsed)}
       {showVerwaltung &&
         renderLink({

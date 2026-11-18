@@ -34,6 +34,8 @@ type FrameSliderProps = {
   visibleRange?: { from: number; to: number } | null;
   /** Controls shown in the slider's top row, e.g. the period it covers. */
   toolbar?: ReactNode;
+  /** Controls at the right end of the top row, after the time - e.g. the video export. */
+  end?: ReactNode;
   /**
    * A selected time span (ms) - a band in a strip below the track: dragged
    * it moves, its edges resize it, dragging on the empty strip makes a new
@@ -50,7 +52,12 @@ type FrameSliderProps = {
 type TimeSpan = { from: number; to: number };
 
 /** An alarm's period (ms); `to` is now while it is still active. */
-export type AlarmSpan = { key: string; from: number; to: number; label: string };
+export type AlarmSpan = {
+  key: string;
+  from: number;
+  to: number;
+  label: string;
+};
 
 /** Where an alarm sits on a slider over `timestamps` ({left, right}, 0..1),
  * cut to the frames; null when it lies outside of them. */
@@ -64,7 +71,8 @@ export const alarmPosition = (timestamps: number[], span: AlarmSpan) => {
   if (span.to < first || span.from > last) {
     return null;
   }
-  const at = (ms: number) => framePosition(timestamps, Math.min(Math.max(ms, first), last));
+  const at = (ms: number) =>
+    framePosition(timestamps, Math.min(Math.max(ms, first), last));
   return { left: at(span.from), right: at(span.to) };
 };
 
@@ -82,7 +90,8 @@ export const frameAt = (timestamps: number[], ms: number) => {
     return 0;
   }
   const step = timestamps.reduce(
-    (smallest, start, index) => (index > 0 ? Math.min(smallest, start - timestamps[index - 1]) : smallest),
+    (smallest, start, index) =>
+      index > 0 ? Math.min(smallest, start - timestamps[index - 1]) : smallest,
     Number.POSITIVE_INFINITY,
   );
   return seconds - timestamps[previous] < step || next < 0 ? previous : next;
@@ -92,8 +101,16 @@ export const frameAt = (timestamps: number[], ms: number) => {
  * event): the one holding it (frameAt) - null without a time, without frames
  * or when the frames don't reach back to it. A time after the newest frame
  * gets the newest. */
-export const focusFrameIndex = (timestamps: number[], ms: number | null | undefined) => {
-  if (ms == null || !Number.isFinite(ms) || timestamps.length === 0 || ms < timestamps[0] * 1000) {
+export const focusFrameIndex = (
+  timestamps: number[],
+  ms: number | null | undefined,
+) => {
+  if (
+    ms == null ||
+    !Number.isFinite(ms) ||
+    timestamps.length === 0 ||
+    ms < timestamps[0] * 1000
+  ) {
     return null;
   }
   return frameAt(timestamps, ms);
@@ -105,7 +122,12 @@ const MIN_ALARM_WIDTH = 4;
 /** The alarm tooltip above its mark's centre (0..1 of the track) - kept inside the slider at the edges. */
 const tooltipPlace = (center: number): CSSProperties => ({
   left: `calc(0.5rem + (100% - 1rem) * ${center})`,
-  transform: center < 0.15 ? 'translateX(-8px)' : center > 0.85 ? 'translateX(calc(-100% + 8px))' : 'translateX(-50%)',
+  transform:
+    center < 0.15
+      ? 'translateX(-8px)'
+      : center > 0.85
+        ? 'translateX(calc(-100% + 8px))'
+        : 'translateX(-50%)',
 });
 
 /** Time per frame while the animation runs. */
@@ -138,7 +160,8 @@ export const framePosition = (timestamps: number[], ms: number) => {
       high = middle;
     }
   }
-  const part = (seconds - timestamps[low]) / (timestamps[high] - timestamps[low]);
+  const part =
+    (seconds - timestamps[low]) / (timestamps[high] - timestamps[low]);
   return (low + part) / (count - 1);
 };
 
@@ -147,10 +170,18 @@ const typesText = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
-  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+  if (
+    target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
     return true;
   }
-  return target instanceof HTMLInputElement && target.type !== 'range' && target.type !== 'checkbox';
+  return (
+    target instanceof HTMLInputElement &&
+    target.type !== 'range' &&
+    target.type !== 'checkbox'
+  );
 };
 
 /** The space bar toggles the animation - unless the user is typing, or a
@@ -163,7 +194,10 @@ const isPlayToggleKey = (event: KeyboardEvent) =>
   !event.altKey &&
   !event.metaKey &&
   !typesText(event.target) &&
-  !(event.target instanceof HTMLButtonElement || event.target instanceof HTMLAnchorElement);
+  !(
+    event.target instanceof HTMLButtonElement ||
+    event.target instanceof HTMLAnchorElement
+  );
 
 /**
  * Animation over `count` frames: `toggle` starts it - from the start again
@@ -184,6 +218,11 @@ const useFramePlayback = ({
   playKey: boolean;
 }) => {
   const [playing, setPlaying] = useState(false);
+  // Stops with the export (disabled) or when there's nothing to play - while
+  // rendering, so it doesn't play on after the export.
+  if (playing && !canPlay) {
+    setPlaying(false);
+  }
   // The interval and the key handler read the latest values.
   const latest = useRef({ playing, index, onChange });
   useLayoutEffect(() => {
@@ -219,13 +258,6 @@ const useFramePlayback = ({
     }, ANIMATION_FRAME_MS);
     return () => window.clearInterval(timer);
   }, [playing, count]);
-
-  // Stops with the export (disabled) or when there's nothing to play.
-  useEffect(() => {
-    if (!canPlay) {
-      setPlaying(false);
-    }
-  }, [canPlay]);
 
   useEffect(() => {
     if (!canPlay || !playKey) {
@@ -270,10 +302,16 @@ export const draggedSelection = (
     return { left: drag.left + shift, right: drag.right + shift };
   }
   if (drag.mode === 'start') {
-    return { left: Math.min(clamp(drag.left + delta), drag.right - minWidth), right: drag.right };
+    return {
+      left: Math.min(clamp(drag.left + delta), drag.right - minWidth),
+      right: drag.right,
+    };
   }
   if (drag.mode === 'end') {
-    return { left: drag.left, right: Math.max(clamp(drag.right + delta), drag.left + minWidth) };
+    return {
+      left: drag.left,
+      right: Math.max(clamp(drag.right + delta), drag.left + minWidth),
+    };
   }
   const end = clamp(drag.left + delta);
   return { left: Math.min(drag.left, end), right: Math.max(drag.left, end) };
@@ -295,6 +333,7 @@ const FrameSlider = ({
   playKey = true,
   visibleRange = null,
   toolbar = null,
+  end = null,
   selection = null,
   onSelectionChange,
   selectionLabel,
@@ -302,27 +341,52 @@ const FrameSlider = ({
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
-  const timeAt = useCallback((fraction: number) => frameTimeAt(timestamps, fraction), [timestamps]);
+  const timeAt = useCallback(
+    (fraction: number) => frameTimeAt(timestamps, fraction),
+    [timestamps],
+  );
   const canPlay = count > 1 && !disabled;
-  const { playing, toggle } = useFramePlayback({ count, index, onChange, canPlay, playKey });
+  const { playing, toggle } = useFramePlayback({
+    count,
+    index,
+    onChange,
+    canPlay,
+    playKey,
+  });
 
-  const label = playing ? t('heatmap_animation_stop') : t('heatmap_animation_start');
+  const label = playing
+    ? t('heatmap_animation_stop')
+    : t('heatmap_animation_start');
   const marks = alarms
     .map((alarm) => ({ alarm, at: alarmPosition(timestamps, alarm) }))
-    .filter((mark): mark is { alarm: AlarmSpan; at: { left: number; right: number } } => mark.at != null);
+    .filter(
+      (
+        mark,
+      ): mark is { alarm: AlarmSpan; at: { left: number; right: number } } =>
+        mark.at != null,
+    );
   const visibleAt = visibleRange
     ? alarmPosition(timestamps, { key: 'visible', label: '', ...visibleRange })
     : null;
   // The selection while it is dragged (0..1) - reported when it is let go.
   const stripRef = useRef<HTMLDivElement | null>(null);
-  const [selectionDrag, setSelectionDrag] = useState<SelectionDrag | null>(null);
-  const [draggedAt, setDraggedAt] = useState<{ left: number; right: number } | null>(null);
+  const [selectionDrag, setSelectionDrag] = useState<SelectionDrag | null>(
+    null,
+  );
+  const [draggedAt, setDraggedAt] = useState<{
+    left: number;
+    right: number;
+  } | null>(null);
   const selectionAt =
-    draggedAt ?? (selection ? alarmPosition(timestamps, { key: 'selection', label: '', ...selection }) : null);
+    draggedAt ??
+    (selection
+      ? alarmPosition(timestamps, { key: 'selection', label: '', ...selection })
+      : null);
   // The alarm under the pointer (or the focused jump) - its tooltip.
   const alarmLayerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredAlarm, setHoveredAlarm] = useState<string | null>(null);
-  const hoveredMark = marks.find(({ alarm }) => alarm.key === hoveredAlarm) ?? null;
+  const hoveredMark =
+    marks.find(({ alarm }) => alarm.key === hoveredAlarm) ?? null;
   const onBodyMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const layer = alarmLayerRef.current?.getBoundingClientRect();
     if (!layer || layer.width <= 0) {
@@ -331,16 +395,28 @@ const FrameSlider = ({
     const fraction = (event.clientX - layer.left) / layer.width;
     // A narrow mark is drawn MIN_ALARM_WIDTH wide - it is hovered as wide.
     const slack = MIN_ALARM_WIDTH / 2 / layer.width;
-    const hit = [...marks].reverse().find(({ at }) => fraction >= at.left - slack && fraction <= at.right + slack);
+    const hit = [...marks]
+      .reverse()
+      .find(
+        ({ at }) => fraction >= at.left - slack && fraction <= at.right + slack,
+      );
     setHoveredAlarm(hit?.alarm.key ?? null);
   };
   const minSelection = count > 1 ? 1 / (count - 1) : 1;
-  const spanOf = (at: { left: number; right: number }): TimeSpan => ({ from: timeAt(at.left), to: timeAt(at.right) });
+  const spanOf = (at: { left: number; right: number }): TimeSpan => ({
+    from: timeAt(at.left),
+    to: timeAt(at.right),
+  });
   const stripFraction = (clientX: number) => {
     const rect = stripRef.current?.getBoundingClientRect();
-    return rect && rect.width > 0 ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) : 0;
+    return rect && rect.width > 0
+      ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
+      : 0;
   };
-  const startSelectionDrag = (event: ReactPointerEvent<HTMLElement>, mode: SelectionDrag['mode']) => {
+  const startSelectionDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    mode: SelectionDrag['mode'],
+  ) => {
     if (!onSelectionChange || count < 2 || disabled) {
       return;
     }
@@ -348,7 +424,12 @@ const FrameSlider = ({
     event.stopPropagation();
     const at = mode === 'create' ? null : selectionAt;
     const start = stripFraction(event.clientX);
-    setSelectionDrag({ mode: at ? mode : 'create', startX: event.clientX, left: at?.left ?? start, right: at?.right ?? start });
+    setSelectionDrag({
+      mode: at ? mode : 'create',
+      startX: event.clientX,
+      left: at?.left ?? start,
+      right: at?.right ?? start,
+    });
     setDraggedAt(at ?? { left: start, right: start });
     try {
       stripRef.current?.setPointerCapture(event.pointerId);
@@ -361,11 +442,21 @@ const FrameSlider = ({
       return;
     }
     const width = stripRef.current?.getBoundingClientRect().width || 1;
-    setDraggedAt(draggedSelection(selectionDrag, (event.clientX - selectionDrag.startX) / width, minSelection));
+    setDraggedAt(
+      draggedSelection(
+        selectionDrag,
+        (event.clientX - selectionDrag.startX) / width,
+        minSelection,
+      ),
+    );
   };
   const endSelectionDrag = () => {
     // A mere click on the empty strip draws nothing.
-    if (selectionDrag && draggedAt && draggedAt.right - draggedAt.left >= minSelection / 2) {
+    if (
+      selectionDrag &&
+      draggedAt &&
+      draggedAt.right - draggedAt.left >= minSelection / 2
+    ) {
       onSelectionChange?.(spanOf(draggedAt));
     }
     setSelectionDrag(null);
@@ -373,13 +464,22 @@ const FrameSlider = ({
   };
   // ←/→ move the focused band by a frame, Shift + ←/→ its end.
   const onSelectionKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!selectionAt || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) {
+    if (
+      !selectionAt ||
+      (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+    ) {
       return;
     }
     event.preventDefault();
     const delta = (event.key === 'ArrowLeft' ? -1 : 1) * minSelection;
     onSelectionChange?.(
-      spanOf(draggedSelection({ mode: event.shiftKey ? 'end' : 'move', ...selectionAt }, delta, minSelection)),
+      spanOf(
+        draggedSelection(
+          { mode: event.shiftKey ? 'end' : 'move', ...selectionAt },
+          delta,
+          minSelection,
+        ),
+      ),
     );
   };
   const markStyle = (at: { left: number; right: number }) => ({
@@ -388,7 +488,7 @@ const FrameSlider = ({
   });
 
   return (
-    <div className="frame-slider pb-2 pt-3" data-testid={testId}>
+    <div className="frame-slider pb-2 pt-2" data-testid={testId}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         <Button
           size="sm"
@@ -396,14 +496,20 @@ const FrameSlider = ({
           onClick={toggle}
           disabled={!canPlay}
           aria-pressed={playing}
+          aria-label={label}
           title={playKey ? `${label} (${t('heatmap_animation_key')})` : label}
           className="frame-slider__play d-inline-flex align-items-center gap-1 py-0"
           data-testid={childTestId(testId, 'play')}
         >
           {playing ? <PauseFill /> : <PlayFill />}
-          {label}
+          {/* Phones: the icon only (FrameSlider.css). */}
+          <span className="frame-slider__play-label">{label}</span>
         </Button>
-        <label htmlFor={id} className="form-label small text-muted mb-0" data-testid={childTestId(testId, 'position')}>
+        <label
+          htmlFor={id}
+          className="form-label small text-muted mb-0"
+          data-testid={childTestId(testId, 'position')}
+        >
           {count ? `${index + 1}/${count}` : 'Timestamp'}
         </label>
         {toolbar}
@@ -421,6 +527,7 @@ const FrameSlider = ({
             </span>
           </div>
         )}
+        {end}
       </div>
       {/* The slider's body: the alarms as a transparent layer behind
           everything (track, selection, time labels stay readable over them);
@@ -431,7 +538,11 @@ const FrameSlider = ({
         onPointerLeave={() => setHoveredAlarm(null)}
       >
         {marks.length > 0 && (
-          <div ref={alarmLayerRef} className="frame-slider__alarm-layer" aria-hidden="true">
+          <div
+            ref={alarmLayerRef}
+            className="frame-slider__alarm-layer"
+            aria-hidden="true"
+          >
             {marks.map(({ alarm, at }) => (
               <span
                 key={alarm.key}
@@ -443,132 +554,146 @@ const FrameSlider = ({
             ))}
           </div>
         )}
-      <div className="frame-slider__layer">
-        <input
-          id={id}
-          type="range"
-          className="form-range d-block frame-slider__input"
-          min={0}
-          max={Math.max(count - 1, 0)}
-          step={1}
-          value={index}
-          // The played part of the track (FrameSlider.css).
-          style={{ '--fill-ratio': count > 1 ? index / (count - 1) : 0 } as CSSProperties}
-          onChange={(event) => onChange(Number(event.target.value))}
-          disabled={disabled}
-          data-testid={childTestId(testId, 'input')}
-        />
-        {visibleAt && (
-          <div className="frame-slider__visible-layer" aria-hidden="true">
-            <span
-              className="frame-slider__visible"
-              data-testid={childTestId(testId, 'visible-range')}
-              style={{
-                left: `${visibleAt.left * 100}%`,
-                width: `${(visibleAt.right - visibleAt.left) * 100}%`,
-              }}
-            />
-          </div>
-        )}
-        {selectionAt && (
-          <div className="frame-slider__visible-layer" aria-hidden="true">
-            <span
-              className="frame-slider__selection-shade"
-              style={{
-                left: `${selectionAt.left * 100}%`,
-                width: `${(selectionAt.right - selectionAt.left) * 100}%`,
-              }}
-            />
-          </div>
-        )}
-      </div>
-      {onSelectionChange && count > 1 && (
-        // The selection: a band to drag (move) with grips at its edges
-        // (resize); on the empty strip a drag draws a new one.
-        <div
-          ref={stripRef}
-          className="frame-slider__selection-strip"
-          data-testid={childTestId(testId, 'selection-strip')}
-          title={selectionAt ? undefined : selectionLabel}
-          onPointerDown={(event) => startSelectionDrag(event, 'create')}
-          onPointerMove={moveSelectionDrag}
-          onPointerUp={endSelectionDrag}
-          onPointerCancel={endSelectionDrag}
-        >
-          {selectionAt && (
-            <div
-              role="slider"
-              tabIndex={0}
-              aria-label={selectionLabel}
-              aria-valuetext={
-                selection ? `${formatDate(selection.from, 'dateTime')} - ${formatDate(selection.to, 'dateTime')}` : undefined
-              }
-              className={`frame-slider__selection${selectionDrag ? ' frame-slider__selection--dragging' : ''}`}
-              data-testid={childTestId(testId, 'selection')}
-              title={selectionLabel}
-              style={{ left: `${selectionAt.left * 100}%`, width: `${(selectionAt.right - selectionAt.left) * 100}%` }}
-              onPointerDown={(event) => startSelectionDrag(event, 'move')}
-              onKeyDown={onSelectionKey}
-            >
-              <span
-                className="frame-slider__selection-grip frame-slider__selection-grip--start"
-                data-testid={childTestId(testId, 'selection-start')}
-                onPointerDown={(event) => startSelectionDrag(event, 'start')}
-              />
-              <span
-                className="frame-slider__selection-grip frame-slider__selection-grip--end"
-                data-testid={childTestId(testId, 'selection-end')}
-                onPointerDown={(event) => startSelectionDrag(event, 'end')}
-              />
-            </div>
-          )}
-        </div>
-      )}
-      {count > 1 && (
-        // The thumb's centre travels half a thumb (1 rem) inside the input.
-        <div className="frame-slider__layer frame-slider__axis">
-          <TimeAxis
-            from={timestamps[0] * 1000}
-            to={timestamps[count - 1] * 1000}
-            timeAt={timeAt}
-            testId={childTestId(testId, 'time-axis')}
+        <div className="frame-slider__layer">
+          <input
+            id={id}
+            type="range"
+            className="form-range d-block frame-slider__input"
+            min={0}
+            max={Math.max(count - 1, 0)}
+            step={1}
+            value={index}
+            // The played part of the track (FrameSlider.css).
+            style={
+              {
+                '--fill-ratio': count > 1 ? index / (count - 1) : 0,
+              } as CSSProperties
+            }
+            onChange={(event) => onChange(Number(event.target.value))}
+            disabled={disabled}
+            data-testid={childTestId(testId, 'input')}
           />
-          {marks.length > 0 && (
-            // Under the track the alarms are buttons: a click jumps to their
-            // start. Transparent - the time labels show through.
-            <div className="frame-slider__alarm-jumps">
-              {marks.map(({ alarm, at }) => (
-                <button
-                  key={alarm.key}
-                  type="button"
-                  className="frame-slider__alarm-jump"
-                  style={markStyle(at)}
-                  aria-label={alarm.label}
-                  data-testid={childTestId(testId, 'alarm-jump')}
-                  data-test-key={alarm.key}
-                  onClick={() => onChange(frameAt(timestamps, alarm.from))}
-                  onFocus={() => setHoveredAlarm(alarm.key)}
-                  onBlur={() => setHoveredAlarm(null)}
-                />
-              ))}
+          {visibleAt && (
+            <div className="frame-slider__visible-layer" aria-hidden="true">
+              <span
+                className="frame-slider__visible"
+                data-testid={childTestId(testId, 'visible-range')}
+                style={{
+                  left: `${visibleAt.left * 100}%`,
+                  width: `${(visibleAt.right - visibleAt.left) * 100}%`,
+                }}
+              />
+            </div>
+          )}
+          {selectionAt && (
+            <div className="frame-slider__visible-layer" aria-hidden="true">
+              <span
+                className="frame-slider__selection-shade"
+                style={{
+                  left: `${selectionAt.left * 100}%`,
+                  width: `${(selectionAt.right - selectionAt.left) * 100}%`,
+                }}
+              />
             </div>
           )}
         </div>
-      )}
-      {hoveredMark && (
-        <div
-          className="frame-slider__alarm-tooltip"
-          role="tooltip"
-          data-testid={childTestId(testId, 'alarm-tooltip')}
-          style={tooltipPlace((hoveredMark.at.left + hoveredMark.at.right) / 2)}
-        >
-          <div className="fw-semibold">{hoveredMark.alarm.label}</div>
-          <div className="frame-slider__alarm-tooltip-time">
-            {formatDate(hoveredMark.alarm.from, 'dateTime')} – {formatDate(hoveredMark.alarm.to, 'dateTime')}
+        {onSelectionChange && count > 1 && (
+          // The selection: a band to drag (move) with grips at its edges
+          // (resize); on the empty strip a drag draws a new one.
+          <div
+            ref={stripRef}
+            className="frame-slider__selection-strip"
+            data-testid={childTestId(testId, 'selection-strip')}
+            title={selectionAt ? undefined : selectionLabel}
+            onPointerDown={(event) => startSelectionDrag(event, 'create')}
+            onPointerMove={moveSelectionDrag}
+            onPointerUp={endSelectionDrag}
+            onPointerCancel={endSelectionDrag}
+          >
+            {selectionAt && (
+              <div
+                role="slider"
+                tabIndex={0}
+                aria-label={selectionLabel}
+                aria-valuetext={
+                  selection
+                    ? `${formatDate(selection.from, 'dateTime')} - ${formatDate(selection.to, 'dateTime')}`
+                    : undefined
+                }
+                className={`frame-slider__selection${selectionDrag ? ' frame-slider__selection--dragging' : ''}`}
+                data-testid={childTestId(testId, 'selection')}
+                title={selectionLabel}
+                style={{
+                  left: `${selectionAt.left * 100}%`,
+                  width: `${(selectionAt.right - selectionAt.left) * 100}%`,
+                }}
+                onPointerDown={(event) => startSelectionDrag(event, 'move')}
+                onKeyDown={onSelectionKey}
+              >
+                <span
+                  className="frame-slider__selection-grip frame-slider__selection-grip--start"
+                  data-testid={childTestId(testId, 'selection-start')}
+                  onPointerDown={(event) => startSelectionDrag(event, 'start')}
+                />
+                <span
+                  className="frame-slider__selection-grip frame-slider__selection-grip--end"
+                  data-testid={childTestId(testId, 'selection-end')}
+                  onPointerDown={(event) => startSelectionDrag(event, 'end')}
+                />
+              </div>
+            )}
           </div>
-          <div className="frame-slider__alarm-tooltip-hint">{t('frame_slider_alarm_jump')}</div>
-        </div>
-      )}
+        )}
+        {count > 1 && (
+          // The thumb's centre travels half a thumb (1 rem) inside the input.
+          <div className="frame-slider__layer frame-slider__axis">
+            <TimeAxis
+              from={timestamps[0] * 1000}
+              to={timestamps[count - 1] * 1000}
+              timeAt={timeAt}
+              testId={childTestId(testId, 'time-axis')}
+            />
+            {marks.length > 0 && (
+              // Under the track the alarms are buttons: a click jumps to their
+              // start. Transparent - the time labels show through.
+              <div className="frame-slider__alarm-jumps">
+                {marks.map(({ alarm, at }) => (
+                  <button
+                    key={alarm.key}
+                    type="button"
+                    className="frame-slider__alarm-jump"
+                    style={markStyle(at)}
+                    aria-label={alarm.label}
+                    data-testid={childTestId(testId, 'alarm-jump')}
+                    data-test-key={alarm.key}
+                    onClick={() => onChange(frameAt(timestamps, alarm.from))}
+                    onFocus={() => setHoveredAlarm(alarm.key)}
+                    onBlur={() => setHoveredAlarm(null)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {hoveredMark && (
+          <div
+            className="frame-slider__alarm-tooltip"
+            role="tooltip"
+            data-testid={childTestId(testId, 'alarm-tooltip')}
+            style={tooltipPlace(
+              (hoveredMark.at.left + hoveredMark.at.right) / 2,
+            )}
+          >
+            <div className="fw-semibold">{hoveredMark.alarm.label}</div>
+            <div className="frame-slider__alarm-tooltip-time">
+              {formatDate(hoveredMark.alarm.from, 'dateTime')} –{' '}
+              {formatDate(hoveredMark.alarm.to, 'dateTime')}
+            </div>
+            <div className="frame-slider__alarm-tooltip-hint">
+              {t('frame_slider_alarm_jump')}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

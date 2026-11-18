@@ -26,15 +26,29 @@ export type LegacyConfig = {
   role: 'main' | 'second';
   project_id: number;
   second_project_id: number | null;
-  editable: Record<'interval' | 'pull_resistance' | 'sensor_count' | 'pe', boolean>;
+  editable: Record<
+    'interval' | 'pull_resistance' | 'sensor_count' | 'pe',
+    boolean
+  >;
   values: LegacyValues;
   reply: string;
-  fields: { pd: string; interval: number | null; reset: string; sensors: number | null; earth: number | null } | null;
+  fields: {
+    pd: string;
+    interval: number | null;
+    reset: string;
+    sensors: number | null;
+    earth: number | null;
+  } | null;
   answered: boolean;
   missing: Record<string, string[]>;
 };
 
-type Form = { interval: number; pull_resistance: number; sensor_count: string; pe: boolean };
+type Form = {
+  interval: number;
+  pull_resistance: number;
+  sensor_count: string;
+  pe: boolean;
+};
 
 const toForm = (values: LegacyValues): Form => ({
   interval: values.interval ?? 1800,
@@ -45,7 +59,9 @@ const toForm = (values: LegacyValues): Form => ({
 
 /** The interval choices that fit into the answer, plus the current value. */
 export const legacyIntervalOptions = (current: number) => {
-  const options = INTERVAL_OPTIONS.filter((option) => option.value <= LEGACY_MAX_INTERVAL);
+  const options = INTERVAL_OPTIONS.filter(
+    (option) => option.value <= LEGACY_MAX_INTERVAL,
+  );
   return options.some((option) => option.value === current)
     ? options
     : [{ value: current, label: `${current} s` }, ...options];
@@ -58,11 +74,18 @@ export const changedValues = (config: LegacyConfig, form: Form) => {
   if (editable.interval && form.interval !== values.interval) {
     changes.interval = form.interval;
   }
-  if (editable.pull_resistance && form.pull_resistance !== values.pull_resistance) {
+  if (
+    editable.pull_resistance &&
+    form.pull_resistance !== values.pull_resistance
+  ) {
     changes.pull_resistance = form.pull_resistance;
   }
   const sensors = Number(form.sensor_count);
-  if (editable.sensor_count && form.sensor_count !== '' && sensors !== values.sensor_count) {
+  if (
+    editable.sensor_count &&
+    form.sensor_count !== '' &&
+    sensors !== values.sensor_count
+  ) {
     changes.sensor_count = sensors;
   }
   if (editable.pe && form.pe !== Boolean(values.pe)) {
@@ -104,23 +127,46 @@ const LegacyGprsConfigPanel = ({
     setForm(toForm(data.values));
   };
 
-  const load = useCallback(async () => {
+  const fetchConfig = useCallback(() => {
+    axiosConfig.updateToken();
+    return axiosConfig.holder.get(url, { params: { location: locationId } });
+  }, [url, locationId]);
+
+  // The reload button.
+  const load = async () => {
     try {
-      axiosConfig.updateToken();
-      const response = await axiosConfig.holder.get(url, { params: { location: locationId } });
-      apply(response.data as LegacyConfig);
+      apply((await fetchConfig()).data as LegacyConfig);
     } catch (error: any) {
       showRequestError(enqueueSnackbar, t('legacycfg_load_failed'), error);
     }
-  }, [url, locationId, enqueueSnackbar, t]);
+  };
 
+  // On open, and for another device - an answer for the previous one is dropped.
   useEffect(() => {
-    void load();
-  }, [load]);
+    let current = true;
+    fetchConfig().then(
+      (response) => {
+        if (current) {
+          const data = response.data as LegacyConfig;
+          setConfig(data);
+          setForm(toForm(data.values));
+        }
+      },
+      (error) =>
+        current &&
+        showRequestError(enqueueSnackbar, t('legacycfg_load_failed'), error),
+    );
+    return () => {
+      current = false;
+    };
+  }, [fetchConfig, enqueueSnackbar, t]);
 
   if (!config || !form) {
     return (
-      <div className="legacy-config legacy-config--loading" data-testid={testId}>
+      <div
+        className="legacy-config legacy-config--loading"
+        data-testid={testId}
+      >
         {t('legacycfg_loading')}
       </div>
     );
@@ -135,7 +181,10 @@ const LegacyGprsConfigPanel = ({
       setSaving(true);
       axiosConfig.updateToken();
       // Refused values come back as 400 with a reason (shown by the catch).
-      const response = await axiosConfig.holder.post(`${url}?location=${locationId}`, changes);
+      const response = await axiosConfig.holder.post(
+        `${url}?location=${locationId}`,
+        changes,
+      );
       apply(response.data as LegacyConfig);
       showSuccessBar(enqueueSnackbar, t('legacycfg_saved'));
     } catch (error: any) {
@@ -146,20 +195,35 @@ const LegacyGprsConfigPanel = ({
   };
 
   const setField = <K extends keyof Form>(name: K, value: Form[K]) =>
-    setForm((previous) => (previous ? { ...previous, [name]: value } : previous));
+    setForm((previous) =>
+      previous ? { ...previous, [name]: value } : previous,
+    );
 
   const missing = Object.entries(config.missing)
-    .map(([project, fields]) => `${project}: ${fields.map((field) => t(`legacycfg_field_${field}`)).join(', ')}`)
+    .map(
+      ([project, fields]) =>
+        `${project}: ${fields.map((field) => t(`legacycfg_field_${field}`)).join(', ')}`,
+    )
     .join('; ');
 
   return (
-    <div className="legacy-config" data-testid={testId} data-test-key={deviceId}>
+    <div
+      className="legacy-config"
+      data-testid={testId}
+      data-test-key={deviceId}
+    >
       <div className="legacy-config-head">
-        <span className="legacy-config-script" data-testid={childTestId(testId, 'script')}>
+        <span
+          className="legacy-config-script"
+          data-testid={childTestId(testId, 'script')}
+        >
           {config.script}
         </span>
         {config.role === 'second' && (
-          <span className="legacy-config-note" data-testid={childTestId(testId, 'second')}>
+          <span
+            className="legacy-config-note"
+            data-testid={childTestId(testId, 'second')}
+          >
             {t('legacycfg_second_of', {
               project: config.project_id,
               interval: config.values.main_interval ?? '?',
@@ -171,11 +235,15 @@ const LegacyGprsConfigPanel = ({
       <div className="legacy-config-grid">
         {config.editable.interval && (
           <label className="legacy-config-field">
-            <span className="progeo-field-label">{t('legacycfg_interval')}</span>
+            <span className="progeo-field-label">
+              {t('legacycfg_interval')}
+            </span>
             <select
               value={form.interval}
               disabled={busy}
-              onChange={(event) => setField('interval', Number(event.target.value))}
+              onChange={(event) =>
+                setField('interval', Number(event.target.value))
+              }
               className="legacy-config-select"
               data-testid={childTestId(testId, 'interval')}
             >
@@ -192,7 +260,9 @@ const LegacyGprsConfigPanel = ({
           <select
             value={form.pull_resistance}
             disabled={busy}
-            onChange={(event) => setField('pull_resistance', Number(event.target.value))}
+            onChange={(event) =>
+              setField('pull_resistance', Number(event.target.value))
+            }
             className="legacy-config-select"
             data-testid={childTestId(testId, 'resistance')}
           >
@@ -208,14 +278,18 @@ const LegacyGprsConfigPanel = ({
           label={t('legacycfg_sensors')}
           value={form.sensor_count}
           readOnly={busy}
-          onChange={(value) => setField('sensor_count', value.replace(/\D/g, '').slice(0, 3))}
+          onChange={(value) =>
+            setField('sensor_count', value.replace(/\D/g, '').slice(0, 3))
+          }
           testId={childTestId(testId, 'sensors')}
         />
       </div>
 
       {config.editable.pe && (
         <div className="legacy-config-switch">
-          <div className="legacy-config-switch-title">{t('einstell_pe_geschaltet')}</div>
+          <div className="legacy-config-switch-title">
+            {t('einstell_pe_geschaltet')}
+          </div>
           <SegmentedControl
             options={[
               { value: 'ja', label: t('einstell_yes') },
@@ -233,11 +307,17 @@ const LegacyGprsConfigPanel = ({
         <span className="progeo-field-label">{t('legacycfg_reply')}</span>
         {config.answered ? (
           <>
-            <code className="legacy-config-reply-text" data-testid={childTestId(testId, 'reply')}>
+            <code
+              className="legacy-config-reply-text"
+              data-testid={childTestId(testId, 'reply')}
+            >
               {config.reply.trim()}
             </code>
             {config.fields && (
-              <span className="legacy-config-note" data-testid={childTestId(testId, 'fields')}>
+              <span
+                className="legacy-config-note"
+                data-testid={childTestId(testId, 'fields')}
+              >
                 {t('legacycfg_fields', {
                   pd: config.fields.pd,
                   interval: config.fields.interval ?? '-',
@@ -248,7 +328,10 @@ const LegacyGprsConfigPanel = ({
             )}
           </>
         ) : (
-          <span className="legacy-config-warning" data-testid={childTestId(testId, 'not-answered')}>
+          <span
+            className="legacy-config-warning"
+            data-testid={childTestId(testId, 'not-answered')}
+          >
             {t('legacycfg_not_answered', { fields: missing })}
           </span>
         )}
