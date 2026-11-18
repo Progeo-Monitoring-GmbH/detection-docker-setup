@@ -378,3 +378,37 @@ def test_taking_back_ones_own_mark_gives_the_points_back(api_client, ready_locat
     # Marked again: the points come back - in total once.
     assert _purgeable(api_client, ready_location, True)["awarded"]["points"] == qa.PURGEABLE_POINTS
     assert _purgeable_rows(ready_location) == [(staff.pk, qa.PURGEABLE_POINTS)]
+
+
+# -- dates with USE_TZ off (the servers' settings: naive datetimes) -------------------
+
+def test_dates_work_with_and_without_time_zones():
+    from datetime import UTC, datetime
+
+    naive = datetime(2026, 11, 18, 23, 30)
+    aware = datetime(2026, 11, 18, 23, 30, tzinfo=UTC)
+
+    # Naive = already local time (USE_TZ off): its own date, no localtime() needed.
+    assert qa.local_day(naive) == naive.date()
+    assert qa.local_day(aware) == timezone.localdate(aware)
+    assert qa._iso(aware) == "2026-11-18T23:30:00+00:00"
+    # Naive: taken as local time, given in UTC.
+    assert qa._iso(naive) == timezone.make_aware(naive).astimezone(UTC).isoformat()
+
+
+def test_the_scoreboard_loads_with_time_zones_off(api_client, ready_location, account, staff, settings):
+    """The servers run with USE_TZ = False: naive datetimes (the crash
+    "localtime() cannot be applied to a naive datetime")."""
+    _baseline_without_limitations(ready_location, account)
+    qa.touch(ready_location.pk, staff)
+    _limitations(ready_location, [AREA])
+    _check(ready_location, account)
+    settings.USE_TZ = False
+    api_client.force_authenticate(user=staff)
+
+    response = api_client.get("/v1/qa/scoreboard/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mean"][-1]["day"] == timezone.now().date().isoformat()
+    assert body["users"][0]["count"] == 1

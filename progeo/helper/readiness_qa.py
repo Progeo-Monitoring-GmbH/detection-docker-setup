@@ -311,7 +311,7 @@ def award_payload(qa) -> dict:
     return {
         "id": qa.pk, "location_id": qa.location_id, "project_id": qa.project_id,
         "location_name": qa.location_name, "check_key": qa.check_key, "points": qa.points,
-        "user_id": qa.user_id, "created": qa.created.isoformat(),
+        "user_id": qa.user_id, "created": _iso(qa.created),
     }
 
 
@@ -353,7 +353,7 @@ def record_snapshot(now=None):
     if mean is None:
         return None
     snapshot, _created = ProgeoReadinessSnapshot.objects.update_or_create(
-        day=timezone.localdate(now),
+        day=local_day(now),
         defaults={"mean_score": round(mean, 2), "locations": count, "updated": now},
     )
     return snapshot
@@ -361,7 +361,16 @@ def record_snapshot(now=None):
 
 # -- the scoreboard -----------------------------------------------------------------
 
+def local_day(value: datetime):
+    """The local date of `value` - aware (USE_TZ on) or naive (USE_TZ off:
+    already local time; timezone.localdate() refuses it)."""
+    return timezone.localdate(value) if timezone.is_aware(value) else value.date()
+
+
 def _iso(value: datetime) -> str:
+    """ISO-8601 in UTC - a naive value (USE_TZ off) is local time."""
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value)
     return value.astimezone(UTC).isoformat()
 
 
