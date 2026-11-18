@@ -319,3 +319,34 @@ def test_demo_role_users_need_the_demo_account():
 
     with pytest.raises(CommandError):
         call_command("demo_role_users", stdout=StringIO())
+
+
+# -- the product (project_type) ---------------------------------------------------------
+
+DM = ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM
+
+
+def test_staff_change_the_product(api_client, editor_world):
+    _account, location, _editor = editor_world
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.patch(f"/v1/location/{location.pk}/", {"project_type": DM}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert _reload(location).project_type == DM
+
+
+def test_customers_keep_the_product_but_save_the_rest(api_client, editor_world):
+    _account, location, editor = editor_world
+    before = _reload(location).project_type
+    api_client.force_authenticate(user=editor)
+
+    refused = api_client.patch(f"/v1/location/{location.pk}/", {"project_type": DM, "manager": "X"}, format="json")
+    # The Objekt tab sends the product along unchanged - that's no change.
+    saved = api_client.patch(f"/v1/location/{location.pk}/", {"project_type": before, "manager": "Frau Muster"},
+                             format="json")
+
+    assert refused.status_code == 403
+    assert saved.status_code == 200, saved.content
+    location = _reload(location)
+    assert (location.project_type, location.manager) == (before, "Frau Muster")

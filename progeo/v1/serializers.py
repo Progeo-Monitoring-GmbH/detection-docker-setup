@@ -367,6 +367,18 @@ class LocationSerializer(ProgeoBaseSerializer):
         # The project id is set when the location is created and names its
         # project database - an edit must never move the location elsewhere.
         validated_data.pop("project_id", None)
+        # The product (smartex dm, mx-PEEL, ...) decides how the location is
+        # shown and checked: staff and superusers change it. The Objekt tab
+        # sends the current one along with every save - unchanged, it's no change.
+        if "project_type" in validated_data and validated_data["project_type"] == instance.project_type:
+            validated_data.pop("project_type")
+        if "project_type" in validated_data:
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            if not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)):
+                from rest_framework.exceptions import PermissionDenied
+
+                raise PermissionDenied("Only ProGeo staff change the product")
         return super().update(instance, validated_data)
 
     def validate_telefon(self, value):

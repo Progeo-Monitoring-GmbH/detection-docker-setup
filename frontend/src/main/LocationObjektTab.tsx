@@ -114,6 +114,8 @@ const LocationObjektTab = () => {
 
   const canEditContact = role !== 'nutzer';
   const canEditIdentity = role === 'progeo-admin';
+  // The product: staff and superusers (the backend refuses anyone else's change).
+  const canEditProduct = isStaffOrSuperuser;
 
   const set = (field: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -246,7 +248,7 @@ const LocationObjektTab = () => {
 
         <PanelCard title={t('objekt_section_product')} testId="objekt-product">
           <div className="objekt-grid">
-            {canEditIdentity && projectTypeOptions.length > 0 ? (
+            {canEditProduct && projectTypeOptions.length > 0 ? (
               <label className="objekt-field">
                 <span className="objekt-field-label">
                   {t('objekt_field_project_type')}
