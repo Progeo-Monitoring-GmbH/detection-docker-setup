@@ -147,3 +147,34 @@ def test_customers_see_no_escalations(api_client, world):
 
     assert api_client.get(URL).status_code == 403
     assert ProgeoEscalation.objects.using(f.DB).count() >= 1
+
+
+def test_an_escalation_keeps_the_status_view_it_was_created_from(api_client, world):
+    view = {"view": "roof", "range": "7d", "step": 3600, "at": "2026-11-17T08:00:00Z", "sensor": 3,
+            "sensors": ["sensor-3", "4:0", "sensor-3"], "profile": "wp", "unknown": "dropped"}
+
+    escalation = _open(api_client, world["location"], view_state=view)
+
+    expected = {"view": "roof", "range": "7d", "step": 3600, "at": "2026-11-17T08:00:00Z", "sensor": 3,
+                "sensors": ["sensor-3", "4:0"], "profile": "wp"}
+    assert escalation["view_state"] == expected
+    assert ProgeoEscalation.objects.using(f.DB).get(pk=escalation["id"]).view_state == expected
+    listed = api_client.get(URL).json()["escalations"]
+    assert listed[0]["view_state"] == expected
+
+
+def test_an_escalation_without_a_view(api_client, world):
+    assert _open(api_client, world["location"])["view_state"] is None
+
+
+@pytest.mark.parametrize("view_state", [
+    "roof", {"view": "map"}, {"range": "5d"}, {"step": -1}, {"step": True}, {"at": "yesterday"},
+    {"sensor": "3"}, {"sensors": ["sensor-3; drop table"]}, {"sensors": "sensor-3"}, {"profile": "max"},
+])
+def test_an_invalid_view_is_refused(api_client, world, view_state):
+    response = api_client.post(URL, {"location": world["location"].pk, "title": "Leckage",
+                                      "view_state": view_state}, format="json")
+
+    assert response.status_code == 400
+    assert "view_state" in response.json()["reason"]
+    assert not ProgeoEscalation.objects.using(f.DB).exists()

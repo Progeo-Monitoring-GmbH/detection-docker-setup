@@ -74,6 +74,8 @@ MIGRATION_INVITE_DAYS = 21
 MIGRATION_INVITES_PER_HOUR = 40
 # helper/auto_heat_limits.py - no celery queueing from the tests; their tests switch it on.
 AUTO_HEAT_LIMITATIONS = False
+# helper/readiness_qa.py - no celery queueing of readiness checks from the tests.
+READINESS_AUTO_RECHECK = False
 AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = "Lageplan Auflösung"
 ACCESS_REQUEST_VERIFY_HOURS = 48
 MAGIC_LINK_ALLOW_STAFF = False
@@ -184,6 +186,7 @@ MIDDLEWARE = [
     "progeo.middlewares.PendingAccessMiddleware",
     "progeo.middlewares.ImpersonationMiddleware",
     "progeo.middlewares.TwoFactorRequiredMiddleware",
+    "progeo.middlewares.ReadinessTouchMiddleware",
 ]
 
 

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import ThresholdTrendChart, { TREND_COLORS } from '../components/device/ThresholdTrendChart';
+import ThresholdTrendChart, {
+  TREND_COLORS,
+} from '../components/device/ThresholdTrendChart';
 import { PercentCell } from '../components/device/SensorChangesPanel';
 import { DISABLED_SENSOR_STROKE } from '../components/device/disabledSensors';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -32,10 +34,24 @@ const NO_HIDDEN = new Set<string>();
 type TableKind = 'triggered' | 'active' | 'silent';
 
 /** Which sensors each table lists - and in which order. */
-const TABLES: { kind: TableKind; rows: (sensors: ZeitreiheSensor[]) => ZeitreiheSensor[] }[] = [
-  { kind: 'triggered', rows: (sensors) => sensors.filter((sensor) => sensor.triggered).sort(byPeak) },
-  { kind: 'active', rows: (sensors) => sensors.filter((sensor) => sensor.active).sort(byRange) },
-  { kind: 'silent', rows: (sensors) => sensors.filter((sensor) => sensor.silent).sort((a, b) => byRange(b, a)) },
+const TABLES: {
+  kind: TableKind;
+  rows: (sensors: ZeitreiheSensor[]) => ZeitreiheSensor[];
+}[] = [
+  {
+    kind: 'triggered',
+    rows: (sensors) =>
+      sensors.filter((sensor) => sensor.triggered).sort(byPeak),
+  },
+  {
+    kind: 'active',
+    rows: (sensors) => sensors.filter((sensor) => sensor.active).sort(byRange),
+  },
+  {
+    kind: 'silent',
+    rows: (sensors) =>
+      sensors.filter((sensor) => sensor.silent).sort((a, b) => byRange(b, a)),
+  },
 ];
 
 const formatValue = (value: number) => String(Math.round(value));
@@ -67,11 +83,19 @@ const ZeitreihePanel = ({
   loading,
   sensors,
   selectedSensorId = null,
+  requestedIds = null,
+  onShownChange,
 }: {
   loading: boolean;
   sensors: ZeitreiheSensor[];
   /** The sensor picked on the plan: added to the plot as its first entry. */
   selectedSensorId?: number | null;
+  /** The entries to show (an escalation's quick link) - taken over whenever
+   * they change, as if picked; unknown ones are left out. */
+  requestedIds?: string[] | null;
+  /** The entries shown, whenever they change - the page keeps them for an
+   * escalation (statusViewState.ts). */
+  onShownChange?: (ids: string[]) => void;
 }) => {
   const { t, i18n } = useTranslation();
   const auth = useAuth();
@@ -86,36 +110,75 @@ const ZeitreihePanel = ({
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [smooth, setSmooth] = useState(true);
 
-  const byId = useMemo(() => new Map(sensors.map((sensor) => [sensor.id, sensor])), [sensors]);
+  const byId = useMemo(
+    () => new Map(sensors.map((sensor) => [sensor.id, sensor])),
+    [sensors],
+  );
   const triggeredIds = useMemo(
-    () => sensors.filter((sensor) => sensor.triggered).sort(byPeak).map((sensor) => sensor.id),
+    () =>
+      sensors
+        .filter((sensor) => sensor.triggered)
+        .sort(byPeak)
+        .map((sensor) => sensor.id),
     [sensors],
   );
   const defaultIds = useMemo(() => defaultZeitreiheIds(sensors), [sensors]);
 
+  // The requested entries (once per request, once the sensors are there).
+  const requestedKey = requestedIds?.join(',') ?? '';
+  const [appliedRequest, setAppliedRequest] = useState('');
+  if (requestedKey !== appliedRequest && byId.size > 0) {
+    setAppliedRequest(requestedKey);
+    const known = (requestedIds ?? []).filter((id) => byId.has(id));
+    if (known.length) {
+      setPicked(known);
+      setOnlyTriggered(false);
+    }
+  }
+
   // A new period can drop sensors - keep the choice of the others (none
-  // left: the default again - the plot never goes empty).
+  // left: the default again - the plot never goes empty). Not before the
+  // sensors are there: a requested choice would be lost.
   useEffect(() => {
+    if (byId.size === 0) {
+      return;
+    }
     setPicked((current) => {
       const kept = current?.filter((id) => byId.has(id)) ?? null;
       return kept && kept.length > 0 ? kept : null;
     });
-    setHighlighted((current) => (current && byId.has(current) ? current : null));
+    setHighlighted((current) =>
+      current && byId.has(current) ? current : null,
+    );
   }, [byId]);
 
   // A sensor picked on the plan joins the plot (once per pick - it can be
   // taken out again like any other).
-  const selectedId = selectedSensorId != null ? `sensor-${selectedSensorId}` : null;
+  const selectedId =
+    selectedSensorId != null ? `sensor-${selectedSensorId}` : null;
   const [appliedSelection, setAppliedSelection] = useState<string | null>(null);
   if (selectedId !== appliedSelection && byId.size > 0) {
     setAppliedSelection(selectedId);
     if (selectedId && byId.has(selectedId)) {
       const current = onlyTriggered ? triggeredIds : (picked ?? defaultIds);
-      setPicked(current.includes(selectedId) ? current : [selectedId, ...current]);
+      setPicked(
+        current.includes(selectedId) ? current : [selectedId, ...current],
+      );
       setOnlyTriggered(false);
     }
   }
-  const shownIds = selectedFirst(onlyTriggered ? triggeredIds : (picked ?? defaultIds), selectedId);
+  const shownIds = selectedFirst(
+    onlyTriggered ? triggeredIds : (picked ?? defaultIds),
+    selectedId,
+  );
+  const shownKey = shownIds.join(',');
+  const onShownRef = useRef(onShownChange);
+  useLayoutEffect(() => {
+    onShownRef.current = onShownChange;
+  });
+  useEffect(() => {
+    onShownRef.current?.(shownKey ? shownKey.split(',') : []);
+  }, [shownKey]);
   // The first entry is the selected sensor.
   const primaryId = shownIds[0] ?? null;
   // A plotted disabled sensor is gray - the others keep their slot's colour.
@@ -124,7 +187,9 @@ const ZeitreihePanel = ({
     if (index < 0) {
       return null;
     }
-    return byId.get(id)?.disabled ? DISABLED_SENSOR_STROKE : TREND_COLORS[index % TREND_COLORS.length];
+    return byId.get(id)?.disabled
+      ? DISABLED_SENSOR_STROKE
+      : TREND_COLORS[index % TREND_COLORS.length];
   };
   const customized = onlyTriggered || picked != null;
 
@@ -138,7 +203,8 @@ const ZeitreihePanel = ({
   };
 
   // A hovered table row of a sensor that isn't plotted: drawn as a preview.
-  const previewId = highlighted && !shownIds.includes(highlighted) ? highlighted : null;
+  const previewId =
+    highlighted && !shownIds.includes(highlighted) ? highlighted : null;
   const series = [
     ...shownIds.flatMap((id) => {
       const sensor = byId.get(id);
@@ -162,13 +228,25 @@ const ZeitreihePanel = ({
             <SensorSwatch color={colorOf(sensor.id)} />
             <span
               data-tag="allowRowEvents"
-              className={sensor.disabled ? 'zeitreihe-sensor-label zeitreihe-sensor-label--disabled' : 'zeitreihe-sensor-label'}
-              title={sensor.disabled ? t('status_sensor_table_disabled_hint') : undefined}
+              className={
+                sensor.disabled
+                  ? 'zeitreihe-sensor-label zeitreihe-sensor-label--disabled'
+                  : 'zeitreihe-sensor-label'
+              }
+              title={
+                sensor.disabled
+                  ? t('status_sensor_table_disabled_hint')
+                  : undefined
+              }
             >
               {sensor.label}
             </span>
             {sensor.id === primaryId && (
-              <span data-tag="allowRowEvents" className="zeitreihe-selected-badge" data-testid="zeitreihe-selected-badge">
+              <span
+                data-tag="allowRowEvents"
+                className="zeitreihe-selected-badge"
+                data-testid="zeitreihe-selected-badge"
+              >
                 {t('status_zeitreihe_selected')}
               </span>
             )}
@@ -184,7 +262,13 @@ const ZeitreihePanel = ({
         cell: (sensor) => (
           <span
             data-tag="allowRowEvents"
-            title={sensor.threshold != null ? t('status_zeitreihe_threshold_of', { value: sensor.threshold }) : undefined}
+            title={
+              sensor.threshold != null
+                ? t('status_zeitreihe_threshold_of', {
+                    value: sensor.threshold,
+                  })
+                : undefined
+            }
             className={`zeitreihe-number${sensor.triggered ? ' zeitreihe-number--over' : ''}`}
           >
             {formatValue(sensor.max)}
@@ -209,7 +293,12 @@ const ZeitreihePanel = ({
         selector: (sensor) => sensor.trend ?? 0,
         sortable: true,
         right: true,
-        cell: (sensor) => <PercentCell percent={sensor.trend} change={sensor.max - sensor.min} />,
+        cell: (sensor) => (
+          <PercentCell
+            percent={sensor.trend}
+            change={sensor.max - sensor.min}
+          />
+        ),
       },
     ],
     // colorOf and primaryId follow shownIds.
@@ -232,17 +321,29 @@ const ZeitreihePanel = ({
           {!loading && sensors.length > 0 && (
             <>
               <span className="zeitreihe-muted" data-testid="zeitreihe-shown">
-                {t('status_zeitreihe_shown', { shown: shownIds.length, total: sensors.length })}
+                {t('status_zeitreihe_shown', {
+                  shown: shownIds.length,
+                  total: sensors.length,
+                })}
               </span>
               <PillButton
                 testId="zeitreihe-only-triggered"
                 variant={onlyTriggered ? 'accent' : 'ghost'}
-                label={t('status_zeitreihe_only_triggered', { count: triggeredIds.length })}
+                label={t('status_zeitreihe_only_triggered', {
+                  count: triggeredIds.length,
+                })}
                 disabled={triggeredIds.length === 0}
-                onClick={() => (onlyTriggered ? reset() : setOnlyTriggered(true))}
+                onClick={() =>
+                  onlyTriggered ? reset() : setOnlyTriggered(true)
+                }
               />
               {customized && (
-                <PillButton testId="zeitreihe-reset" variant="ghost" label={t('status_zeitreihe_reset')} onClick={reset} />
+                <PillButton
+                  testId="zeitreihe-reset"
+                  variant="ghost"
+                  label={t('status_zeitreihe_reset')}
+                  onClick={reset}
+                />
               )}
               <PillButton
                 testId="zeitreihe-smooth"
@@ -258,17 +359,25 @@ const ZeitreihePanel = ({
       }
     >
       {loading ? (
-        <div className="d-flex justify-content-center py-5 text-muted" data-testid="zeitreihe-loading">
+        <div
+          className="d-flex justify-content-center py-5 text-muted"
+          data-testid="zeitreihe-loading"
+        >
           <Spinner animation="border" className="me-2" /> {t('ui_loading')}
         </div>
       ) : (
-        <div className="d-flex flex-column gap-3" data-testid="zeitreihe-content">
+        <div
+          className="d-flex flex-column gap-3"
+          data-testid="zeitreihe-content"
+        >
           <ThresholdTrendChart
             series={series}
             hiddenSeries={NO_HIDDEN}
             onToggleSeries={toggleSensor}
             emptyLabel={
-              sensors.length ? t('status_zeitreihe_nothing_shown') : t('status_zeitreihe_empty')
+              sensors.length
+                ? t('status_zeitreihe_nothing_shown')
+                : t('status_zeitreihe_empty')
             }
             meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
             thresholdLabel={t('status_zeitreihe_threshold_legend')}
@@ -289,18 +398,30 @@ const ZeitreihePanel = ({
               {tables.map(({ kind, rows }) => {
                 const data = rows(sensors);
                 return (
-                  <div key={kind} data-testid={`zeitreihe-${kind}`} className="zeitreihe-table">
+                  <div
+                    key={kind}
+                    data-testid={`zeitreihe-${kind}`}
+                    className="zeitreihe-table"
+                  >
                     <div className="d-flex align-items-baseline gap-2">
                       <span className="zeitreihe-table-title">
                         {t(`status_zeitreihe_${kind}_title`)}
                       </span>
-                      <span className="zeitreihe-muted" data-testid={`zeitreihe-${kind}-count`}>
+                      <span
+                        className="zeitreihe-muted"
+                        data-testid={`zeitreihe-${kind}-count`}
+                      >
                         {data.length}
                       </span>
                     </div>
-                    <div className="zeitreihe-hint zeitreihe-hint--table">{tableHint[kind]}</div>
+                    <div className="zeitreihe-hint zeitreihe-hint--table">
+                      {tableHint[kind]}
+                    </div>
                     {data.length === 0 ? (
-                      <div className="zeitreihe-table-empty" data-testid={`zeitreihe-${kind}-empty`}>
+                      <div
+                        className="zeitreihe-table-empty"
+                        data-testid={`zeitreihe-${kind}-empty`}
+                      >
                         {t('status_zeitreihe_table_empty')}
                       </div>
                     ) : (
@@ -332,7 +453,9 @@ const ZeitreihePanel = ({
             </div>
           )}
           {sensors.length > 0 && (
-            <div className="zeitreihe-hint">{t('status_zeitreihe_table_click')}</div>
+            <div className="zeitreihe-hint">
+              {t('status_zeitreihe_table_click')}
+            </div>
           )}
         </div>
       )}

@@ -868,6 +868,7 @@ class ProgeoEscalationSerializer(serializers.ModelSerializer):
             "closed_by",
             "closed_by_name",
             "entry_count",
+            "view_state",
         ]
 
     def __init__(self, *args, **kwargs):

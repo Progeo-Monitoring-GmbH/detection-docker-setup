@@ -369,3 +369,22 @@ class TwoFactorRequiredMiddleware:
                         status=403,
                     )
         return self.get_response(request)
+
+
+class ReadinessTouchMiddleware:
+    """Keeps the request at hand for the save signals of helper/readiness_qa.py:
+    a staff member's change of a location (by the time the view saves, DRF has
+    put the JWT's user on it) is credited when the location's next check
+    finds a fix - the readiness scoreboard."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from progeo.helper.readiness_qa import bind_request, release_request
+
+        token = bind_request(request)
+        try:
+            return self.get_response(request)
+        finally:
+            release_request(token)

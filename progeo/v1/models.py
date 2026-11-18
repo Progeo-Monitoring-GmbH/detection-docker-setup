@@ -1707,6 +1707,10 @@ class ProgeoEscalation(models.Model):
     updated = models.DateTimeField(default=timezone.now)
     closed_at = models.DateTimeField(null=True, blank=True)
     closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # The status page as the creator saw it (escalation_viewset.clean_view_state):
+    # {view, range, step, at, sensor, sensors, profile} - the escalation's quick
+    # link opens it like that. None: created without one.
+    view_state = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created"]
@@ -1727,6 +1731,97 @@ class ProgeoEscalation(models.Model):
 
     def __str__(self):
         return f"🚨 {self.project_id or 'XXXX'} - {self.title} ({self.status})"
+
+
+class ProgeoQA(models.Model):
+    """Quality assurance: a readiness check of a location that went from
+    failed to passed (helper/readiness_qa.py) - the scoreboard's score gains.
+    At most one per location and check, ever: fixing the same check again
+    (after breaking it) gains nothing. `user` is the staff member credited -
+    the last one who changed the location before the check noticed the fix;
+    None when no staff member did (the row still uses up the check).
+
+    No foreign key to the location: the points stay when it is deleted - its
+    project and name are kept as they were."""
+
+    location_id = models.IntegerField()
+    account_id = models.IntegerField(null=True, blank=True)
+    project_id = models.IntegerField(null=True, blank=True)
+    location_name = models.CharField(max_length=255, blank=True, default="")
+    # location_readiness.CHECKS key.
+    check_key = models.CharField(max_length=64)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="qa_awards")
+    # What the check is worth in the location's score (0-100) when it passed.
+    points = models.FloatField()
+    score_before = models.IntegerField(null=True, blank=True)
+    # None: the location was never checked (a purgeable mark, PURGEABLE_KEY).
+    score_after = models.IntegerField(null=True, blank=True)
+    created = models.DateTimeField(default=timezone.now, db_index=True)
+    # When the credited user was told (toast) - None: not yet.
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created"]
+        constraints = [
+            models.UniqueConstraint(fields=["location_id", "check_key"], name="progeo_qa_once_per_location_check"),
+        ]
+        indexes = [models.Index(fields=["user", "notified_at"], name="progeo_qa_user_notified")]
+
+    def __str__(self):
+        return f"QA {self.project_id or self.location_id} {self.check_key} +{self.points:.1f} ({self.user_id or '-'})"
+
+
+class ScreenReviewNote(models.Model):
+    """A review comment on a screenshot of the app (helper/screen_review.py,
+    the e2e_screenshots command, /review/screens/): what to do (`action`)
+    with what - an arrow from A to B, an area, or the whole screen (note).
+    `geometry` is in the screenshot's pixels (= CSS pixels of the page):
+    arrow {x1, y1, x2, y2}, area {x, y, w, h}, note None."""
+
+    class Kind(models.TextChoices):
+        ARROW = "arrow", "Arrow"
+        AREA = "area", "Area"
+        NOTE = "note", "Note"
+
+    class Action(models.TextChoices):
+        MOVE = "move", "Move"
+        SELECT = "select", "Select"
+        REMOVE = "remove", "Remove"
+        BIGGER = "bigger", "Bigger"
+        SMALLER = "smaller", "Smaller"
+
+    # The run's folder (media/uploads/e2e/<run>/) and the image's file name.
+    run = models.CharField(max_length=32, db_index=True)
+    image = models.CharField(max_length=200)
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+    action = models.CharField(max_length=8, choices=Action.choices)
+    comment = models.TextField(blank=True, default="")
+    geometry = models.JSONField(null=True, blank=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created = models.DateTimeField(default=timezone.now)
+    updated = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["run", "image", "created", "pk"]
+
+    def __str__(self):
+        return f"{self.run}/{self.image}: {self.action} {self.kind}"
+
+
+class ProgeoReadinessSnapshot(models.Model):
+    """The mean readiness score of all locations on one day (one row per
+    day, updated during the day) - the scoreboard's "overall" line."""
+
+    day = models.DateField(unique=True)
+    mean_score = models.FloatField()
+    locations = models.IntegerField()
+    updated = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["day"]
+
+    def __str__(self):
+        return f"{self.day}: {self.mean_score:.1f} ({self.locations})"
 
 
 class ProgeoEscalationEntry(models.Model):
@@ -2128,5 +2223,6 @@ def _forget_cached_lageplans(sender, using, **kwargs):
 
 
 # Signal receivers: mirroring users/accounts/locations/devices into the
-# project databases, remembering chat logins (UserProfile.matrix_connected_at).
-from progeo.helper import matrix_accounts, project_db_signals  # noqa: F401
+# project databases, remembering chat logins (UserProfile.matrix_connected_at),
+# staff changes of locations for the readiness scoreboard (readiness_qa).
+from progeo.helper import matrix_accounts, project_db_signals, readiness_qa  # noqa: F401

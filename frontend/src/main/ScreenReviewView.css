@@ -1,0 +1,203 @@
+/* ScreenReviewView.tsx: the screenshots of a build and their comments. */
+
+.screen-review {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.screen-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+/* Raised over Bootstrap's .form-select (width: 100%). */
+.form-select.screen-review-run {
+  width: auto;
+  max-width: 100%;
+}
+
+.screen-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.screen-card {
+  padding: 14px 16px 10px;
+  border-radius: var(--progeo-radius-panel);
+  background: var(--progeo-panel-bg);
+  box-shadow: var(--progeo-shadow-chrome);
+}
+
+.screen-card-head,
+.screen-editor-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.screen-card-title {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--progeo-blue);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.screen-card-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.screen-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.screen-card-parts {
+  cursor: zoom-in;
+}
+
+/* -- the editor (fullscreen modal) ---------------------------------------------------- */
+
+.screen-editor-title {
+  margin-bottom: 0;
+  font-size: 17px;
+}
+
+.screen-editor {
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+}
+
+.screen-editor-image {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.screen-editor-loading {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+
+.screen-editor-side {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.screen-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.screen-note-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--progeo-radius-panel);
+  background: var(--progeo-surface);
+}
+
+.screen-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.screen-note-action {
+  padding: 3px 10px;
+  border: 2px solid;
+  border-radius: var(--progeo-radius-pill);
+  background: transparent;
+  font-size: 13px;
+}
+
+.screen-note-action--active {
+  color: #fff;
+}
+
+.screen-notes-title {
+  font-weight: 600;
+}
+
+.screen-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.screen-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 8px;
+}
+
+.screen-note--selected {
+  background: var(--progeo-surface);
+}
+
+.screen-note-body {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 10px;
+  padding: 6px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+}
+
+.screen-note-number {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+
+.screen-note-delete {
+  padding: 6px;
+  border: none;
+  background: none;
+  color: #8b8383;
+}
+
+.screen-note-delete:hover {
+  color: #e34948;
+}
+
+/* Phones and narrow windows: the tools below the image. */
+@media (max-width: 900px) {
+  .screen-editor {
+    flex-direction: column;
+  }
+
+  .screen-editor-side {
+    flex-basis: auto;
+  }
+}

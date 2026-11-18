@@ -21,6 +21,8 @@ from progeo.v1.viewsets.notification_viewset import (
     NotificationCaseViewSet,
     NotificationLocationViewSet,
 )
+from progeo.v1.viewsets.qa_viewset import QAViewSet
+from progeo.v1.viewsets.screen_review_viewset import ScreenReviewViewSet
 from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
@@ -75,6 +77,12 @@ notification_location_router.register(r'', NotificationLocationViewSet, basename
 database_usage_router = CustomRouter()
 database_usage_router.register(r'', DatabaseUsageViewSet, basename='database-usage')
 
+qa_router = CustomRouter()
+qa_router.register(r'', QAViewSet, basename='qa')
+
+screen_review_router = CustomRouter()
+screen_review_router.register(r'', ScreenReviewViewSet, basename='screen-review')
+
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
@@ -89,6 +97,8 @@ urlpatterns = [
     re_path(r'^escalation/', include(escalation_router.urls)),
     re_path(r'^favorite/', include(favorite_router.urls)),
     re_path(r'^activity/', include(activity_router.urls)),
+    re_path(r'^qa/', include(qa_router.urls)),
+    re_path(r'^screen-review/', include(screen_review_router.urls)),
     re_path(r'^database-usage/', include(database_usage_router.urls)),
     re_path(r'^notification-case/', include(notification_case_router.urls)),
     re_path(r'^notification-location/', include(notification_location_router.urls)),

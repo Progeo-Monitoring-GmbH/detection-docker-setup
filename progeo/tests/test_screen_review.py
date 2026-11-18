@@ -1,0 +1,174 @@
+"""Screen review (helper/screen_review.py, /v1/screen-review/): the runs of
+the e2e_screenshots command, their images, the review notes and the ZIP
+export with the commented screenshots and PROMPT.md."""
+import io
+import json
+import re
+import zipfile
+
+import pytest
+from PIL import Image
+
+from progeo.helper import screen_review as review
+from progeo.tests import factories as f
+from progeo.v1.models import ScreenReviewNote
+
+RUN = "2026-11-18_235532"
+URL = f"/v1/screen-review/{RUN}/"
+
+
+@pytest.fixture
+def uploads(settings, tmp_path):
+    settings.UPLOAD_DIR = str(tmp_path / "uploads")
+    return tmp_path / "uploads"
+
+
+def _png(path, size, color=(240, 240, 240)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color).save(path)
+
+
+@pytest.fixture
+def run(uploads):
+    folder = uploads / "e2e" / RUN
+    _png(folder / "pc" / "pc-staff-location-overview.png", (1440, 2600))
+    _png(folder / "mobile" / "mobile-user-login.png", (390, 900))
+    # Not a screenshot of the run: left out.
+    _png(folder / "pc" / "notes.png", (10, 10))
+    (folder / "manifest.json").write_text(json.dumps({"run": RUN, "images": [
+        {"file": "pc-staff-location-overview.png", "path": "/location/overview/", "viewport": [1440, 900],
+         "width": 1, "height": 1, "errors": ["TypeError: x is undefined"]},
+    ]}), encoding="utf-8")
+    return folder
+
+
+@pytest.fixture
+def staff(api_client):
+    user = f.make_user(staff=True, first_name="Jonas", last_name="Weber")
+    api_client.force_authenticate(user=user)
+    return user
+
+
+def test_a_new_run_gets_its_dated_folder_with_pc_and_mobile(uploads):
+    folder = review.new_run_dir()
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{6}", folder.name)
+    assert folder.parent == (uploads / "e2e").resolve()
+    assert {child.name for child in folder.iterdir()} == {"pc", "mobile"}
+
+
+def test_the_images_of_a_run_come_from_its_folders_and_manifest(run):
+    images = {image["file"]: image for image in review.run_images(RUN)}
+
+    assert set(images) == {"pc-staff-location-overview.png", "mobile-user-login.png"}
+    overview = images["pc-staff-location-overview.png"]
+    assert (overview["device"], overview["role"], overview["action"]) == ("pc", "staff", "location-overview")
+    assert overview["path"] == "/location/overview/"
+    # The size is the image's own, not the manifest's.
+    assert (overview["width"], overview["height"]) == (1440, 2600)
+    assert overview["errors"] == ["TypeError: x is undefined"]
+    assert images["mobile-user-login.png"]["viewport"] is None
+
+
+@pytest.mark.parametrize("run_name, image", [
+    ("../2026-11-18_235532", "pc-staff-location-overview.png"),
+    (RUN, "../../secret.png"),
+    (RUN, "pc-staff-missing.png"),
+    (RUN, "notes.png"),
+])
+def test_only_screenshots_of_a_run_are_served(run, run_name, image):
+    with pytest.raises(review.ReviewError):
+        review.image_path(run_name, image)
+
+
+def test_staff_list_the_runs_and_see_a_run(api_client, run, staff):
+    runs = api_client.get("/v1/screen-review/").json()["runs"]
+    assert runs == [{"run": RUN, "created": runs[0]["created"], "images": 2, "notes": 0}]
+
+    body = api_client.get(URL).json()
+    assert {image["file"] for image in body["images"]} == {"pc-staff-location-overview.png", "mobile-user-login.png"}
+    assert body["notes"] == []
+
+    image = api_client.get(f"{URL}image/mobile-user-login.png/")
+    assert image.status_code == 200
+    assert image["Content-Type"] == "image/png"
+    assert api_client.get(f"{URL}image/pc-staff-nothing.png/").status_code == 404
+
+
+def test_customers_see_no_screens(api_client, run):
+    api_client.force_authenticate(user=f.make_user(perms=("module_locations_enabled",)))
+
+    assert api_client.get("/v1/screen-review/").status_code == 403
+    assert api_client.get(f"{URL}image/mobile-user-login.png/").status_code == 403
+
+
+def _note(api_client, **fields):
+    data = {"image": "pc-staff-location-overview.png", "kind": "arrow", "action": "move", "comment": "Nach rechts",
+            "geometry": {"x1": 100, "y1": 300, "x2": 900, "y2": 320}, **fields}
+    return api_client.post(f"{URL}notes/", data, format="json")
+
+
+def test_notes_are_made_changed_and_deleted(api_client, run, staff):
+    created = _note(api_client).json()["note"]
+    assert (created["kind"], created["action"], created["author_name"]) == ("arrow", "move", "Jonas Weber")
+    assert created["geometry"] == {"x1": 100.0, "y1": 300.0, "x2": 900.0, "y2": 320.0}
+
+    changed = api_client.patch(f"{URL}notes/{created['id']}/", {"action": "remove", "comment": "Weg damit"},
+                               format="json").json()["note"]
+    assert (changed["action"], changed["comment"], changed["geometry"]) == ("remove", "Weg damit", created["geometry"])
+
+    assert api_client.delete(f"{URL}notes/{created['id']}/").status_code == 200
+    assert not ScreenReviewNote.objects.exists()
+
+
+@pytest.mark.parametrize("fields", [
+    {"image": "pc-staff-missing.png"},
+    {"kind": "circle"},
+    {"action": "paint"},
+    {"geometry": {"x1": 1, "y1": 2, "x2": "3", "y2": 4}},
+    {"kind": "area", "geometry": {"x": 1, "y": 2, "w": 0, "h": 4}},
+    {"comment": "x" * 5001},
+])
+def test_invalid_notes_are_refused(api_client, run, staff, fields):
+    assert _note(api_client, **fields).status_code == 400
+    assert not ScreenReviewNote.objects.exists()
+
+
+def test_the_export_holds_the_commented_screens_and_the_prompt(api_client, run, staff):
+    _note(api_client)
+    _note(api_client, kind="area", action="bigger", comment="Tabelle zu klein",
+          geometry={"x": 40, "y": 1200, "w": 600, "h": 300})
+    _note(api_client, image="mobile-user-login.png", kind="note", action="select", comment="Logo fehlt", geometry=None)
+
+    response = api_client.get(f"{URL}export/")
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    assert set(archive.namelist()) == {
+        "PROMPT.md", "notes.json", "screens/pc-staff-location-overview.png", "screens/mobile-user-login.png",
+    }
+    prompt = archive.read("PROMPT.md").decode("utf-8")
+    assert f"# Screen review – build {RUN}" in prompt
+    assert "3 comment(s) on 2 screen(s): 1 × bigger, 1 × move, 1 × select." in prompt
+    assert "Route: `/location/overview/`" in prompt
+    assert "1. **MOVE** – arrow from (100, 300) to (900, 320): Nach rechts" in prompt
+    assert "2. **BIGGER** – area x 40–640, y 1200–1500: Tabelle zu klein" in prompt
+    assert "1. **SELECT** – the whole screen: Logo fehlt" in prompt
+    assert "TypeError: x is undefined" in prompt
+    # The arrow is drawn in: the plain grey screenshot has its colour now.
+    drawn = Image.open(io.BytesIO(archive.read("screens/pc-staff-location-overview.png"))).convert("RGB")
+    assert drawn.size == (1440, 2600)
+    assert drawn.getpixel((500, 310)) == review.ACTION_COLOR["move"]
+    assert len(json.loads(archive.read("notes.json"))["notes"]) == 3
+
+
+def test_superusers_delete_a_run_with_its_notes(api_client, run, staff):
+    _note(api_client)
+    assert api_client.delete(URL).status_code == 403
+
+    api_client.force_authenticate(user=f.make_user(is_superuser=True))
+    assert api_client.delete(URL).status_code == 200
+
+    assert not run.exists()
+    assert not ScreenReviewNote.objects.exists()

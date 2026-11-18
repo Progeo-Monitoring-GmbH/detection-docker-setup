@@ -1,4 +1,11 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import DataTable, { type TableColumn } from 'react-data-table-component';
@@ -7,11 +14,16 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
-import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
+import SeverityBadge, {
+  type Severity,
+} from '../components/ui/kit/SeverityBadge';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { repeatedTestId } from '../testIds';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
@@ -32,6 +44,7 @@ import { getProjectTypeLabel } from './projectType';
 import { untaggedRowClick } from './wholeRowClick';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationVerwaltungView.css';
+import { announcePurgeableQa, type PurgeableQa } from './qaScoreboardData';
 
 type VerwaltungRow = {
   /** verwaltungRowKey - DataTable's keyField. */
@@ -53,7 +66,9 @@ type VerwaltungRow = {
 };
 
 /** Location ids are only unique within one account database. */
-export const verwaltungRowKey = (row: Pick<VerwaltungRow, 'account_id' | 'id'>) => `${row.account_id}-${row.id}`;
+export const verwaltungRowKey = (
+  row: Pick<VerwaltungRow, 'account_id' | 'id'>,
+) => `${row.account_id}-${row.id}`;
 
 type Kpis = { ok: number; beobachten: number; alarm: number; kritisch: number };
 
@@ -61,7 +76,9 @@ type Kpis = { ok: number; beobachten: number; alarm: number; kritisch: number };
 export const VERWALTUNG_CHUNK_SIZE = 200;
 
 /** The KPI tiles over the rows loaded so far. */
-export const verwaltungKpis = (rows: ReadonlyArray<Pick<VerwaltungRow, 'status'>>): Kpis => {
+export const verwaltungKpis = (
+  rows: ReadonlyArray<Pick<VerwaltungRow, 'status'>>,
+): Kpis => {
   const kpis: Kpis = { ok: 0, beobachten: 0, alarm: 0, kritisch: 0 };
   rows.forEach((row) => {
     kpis[row.status] += 1;
@@ -70,7 +87,12 @@ export const verwaltungKpis = (rows: ReadonlyArray<Pick<VerwaltungRow, 'status'>
 };
 
 /** Sort order of the status column: worst first when descending. */
-const STATUS_RANK: Record<VerwaltungRow['status'], number> = { ok: 0, beobachten: 1, alarm: 2, kritisch: 3 };
+const STATUS_RANK: Record<VerwaltungRow['status'], number> = {
+  ok: 0,
+  beobachten: 1,
+  alarm: 2,
+  kritisch: 3,
+};
 
 type AccessRule = {
   id: number;
@@ -103,7 +125,9 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** "First Last (mail)" - the username when the name is empty. */
 export const accessUserLabel = (user: AccessUser): string => {
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.username;
+  const name =
+    [user.first_name, user.last_name].filter(Boolean).join(' ').trim() ||
+    user.username;
   return user.email && user.email !== name ? `${name} (${user.email})` : name;
 };
 
@@ -118,8 +142,8 @@ export const pickableUsers = (
     (user) =>
       !rules.some((rule) => rule.user === user.id) &&
       (!needle ||
-        [user.username, user.first_name, user.last_name, user.email].some((value) =>
-          (value || '').toLowerCase().includes(needle),
+        [user.username, user.first_name, user.last_name, user.email].some(
+          (value) => (value || '').toLowerCase().includes(needle),
         )),
   );
 };
@@ -181,14 +205,22 @@ const LocationVerwaltungView = () => {
           if (cancelled) {
             return;
           }
-          const objects = ((response?.data?.objects || []) as VerwaltungRow[]).map((row) => ({
+          const objects = (
+            (response?.data?.objects || []) as VerwaltungRow[]
+          ).map((row) => ({
             ...row,
             key: verwaltungRowKey(row),
           }));
           // The flags came with the rows - no /v1/location/flags/ round trips.
           seedLocationFlags(objects.filter((row) => 'purgeable' in row));
-          setRows((previous) => (offset === 0 ? objects : [...previous, ...objects]));
-          setTotal(typeof response?.data?.count === 'number' ? response.data.count : null);
+          setRows((previous) =>
+            offset === 0 ? objects : [...previous, ...objects],
+          );
+          setTotal(
+            typeof response?.data?.count === 'number'
+              ? response.data.count
+              : null,
+          );
           setLoading(false);
           const next = response?.data?.next_offset;
           setLoadingMore(typeof next === 'number');
@@ -200,7 +232,10 @@ const LocationVerwaltungView = () => {
           if (cancelled) {
             return;
           }
-          if (error?.response?.status === 400 || error?.response?.status === 403) {
+          if (
+            error?.response?.status === 400 ||
+            error?.response?.status === 403
+          ) {
             setDenied(true);
           } else {
             showRequestError(enqueueSnackbar, 'Could not load objects', error);
@@ -225,7 +260,14 @@ const LocationVerwaltungView = () => {
         return false;
       }
       return matchesLocationSearch(
-        { name: row.name, project_id: row.nr, city: row.city, plz: row.plz, address: row.address, owner: row.owner },
+        {
+          name: row.name,
+          project_id: row.nr,
+          city: row.city,
+          plz: row.plz,
+          address: row.address,
+          owner: row.owner,
+        },
         deferredSearch,
       );
     });
@@ -238,12 +280,27 @@ const LocationVerwaltungView = () => {
 
   const kpiTiles = [
     { label: t('verwaltung_kpi_total'), value: String(total ?? rows.length) },
-    { label: t('ui_severity_kritisch'), value: String(kpis.kritisch), valueColor: '#C44D26' },
-    { label: t('ui_severity_alarm'), value: String(kpis.alarm), valueColor: '#EB633B' },
-    { label: t('ui_severity_beobachten'), value: String(kpis.beobachten), valueColor: '#9A7208' },
+    {
+      label: t('ui_severity_kritisch'),
+      value: String(kpis.kritisch),
+      valueColor: '#C44D26',
+    },
+    {
+      label: t('ui_severity_alarm'),
+      value: String(kpis.alarm),
+      valueColor: '#EB633B',
+    },
+    {
+      label: t('ui_severity_beobachten'),
+      value: String(kpis.beobachten),
+      valueColor: '#9A7208',
+    },
   ];
 
-  const openRow = useCallback((row: VerwaltungRow) => navigate(`/location/${row.id}/status`), [navigate]);
+  const openRow = useCallback(
+    (row: VerwaltungRow) => navigate(`/location/${row.id}/status`),
+    [navigate],
+  );
 
   /** Mark / unmark as purgeable (unmark = reviewed, kept: false) - like the /map/ list. */
   const togglePurgeable = useCallback(
@@ -256,19 +313,32 @@ const LocationVerwaltungView = () => {
         `/v1/location/${row.id}/purgeable/`,
         { purgeable },
         (response) => {
-          const saved = (response?.data?.location?.purgeable ?? purgeable) as boolean | null;
+          const saved = (response?.data?.location?.purgeable ?? purgeable) as
+            boolean | null;
           setLocationFlags(row.id, { purgeable: saved });
           setRows((current) =>
             current.map((candidate) =>
-              verwaltungRowKey(candidate) === key ? { ...candidate, purgeable: saved } : candidate,
+              verwaltungRowKey(candidate) === key
+                ? { ...candidate, purgeable: saved }
+                : candidate,
             ),
           );
           setPurgeBusy((current) => ({ ...current, [key]: false }));
           showSuccessBar(
             enqueueSnackbar,
-            t(saved ? 'locmap_purgeable_marked_toast' : 'locmap_purgeable_unmarked_toast', {
-              name: row.name || row.nr || row.id,
-            }),
+            t(
+              saved
+                ? 'locmap_purgeable_marked_toast'
+                : 'locmap_purgeable_unmarked_toast',
+              {
+                name: row.name || row.nr || row.id,
+              },
+            ),
+          );
+          announcePurgeableQa(
+            response?.data?.qa as PurgeableQa,
+            (text) => enqueueSnackbar(text, { variant: 'info' }),
+            t,
           );
         },
         (error) => {
@@ -358,16 +428,30 @@ const LocationVerwaltungView = () => {
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${row.id}/access/invite/`,
-      { email, scope: 'single', first_name: inviteFirstName.trim(), last_name: inviteLastName.trim() },
+      {
+        email,
+        scope: 'single',
+        first_name: inviteFirstName.trim(),
+        last_name: inviteLastName.trim(),
+      },
       (response) => {
         const status = response?.data?.status as InviteStatus | undefined;
-        showSuccessBar(enqueueSnackbar, t((status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added', { email }));
+        showSuccessBar(
+          enqueueSnackbar,
+          t((status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added', {
+            email,
+          }),
+        );
         setInviting(false);
         // Reload: the new rule (and a newly created user for the picker).
         loadPerms(row);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not send the invitation', error);
+        showRequestError(
+          enqueueSnackbar,
+          'Could not send the invitation',
+          error,
+        );
         setInviting(false);
       },
     );
@@ -386,7 +470,9 @@ const LocationVerwaltungView = () => {
         selector: (row) => row.nr ?? -1,
         sortable: true,
         width: '80px',
-        cell: (row) => <span className="location-list-num">{row.nr ?? '–'}</span>,
+        cell: (row) => (
+          <span className="location-list-num">{row.nr ?? '–'}</span>
+        ),
       },
       {
         id: 'object',
@@ -420,11 +506,14 @@ const LocationVerwaltungView = () => {
       {
         id: 'product',
         name: t('verwaltung_col_product'),
-        selector: (row) => (row.project_type ? getProjectTypeLabel(t, row.project_type) : ''),
+        selector: (row) =>
+          row.project_type ? getProjectTypeLabel(t, row.project_type) : '',
         sortable: true,
         cell: (row) =>
           row.project_type ? (
-            <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
+            <span className="location-list-product">
+              {getProjectTypeLabel(t, row.project_type)}
+            </span>
           ) : (
             <span className="location-list-muted">–</span>
           ),
@@ -434,7 +523,13 @@ const LocationVerwaltungView = () => {
         name: t('verwaltung_col_owner'),
         selector: (row) => (row.owner || '').toLowerCase(),
         sortable: true,
-        cell: (row) => <TwoLineCell plain primary={row.owner || '–'} title={row.owner || undefined} />,
+        cell: (row) => (
+          <TwoLineCell
+            plain
+            primary={row.owner || '–'}
+            title={row.owner || undefined}
+          />
+        ),
       },
       {
         id: 'status',
@@ -443,11 +538,18 @@ const LocationVerwaltungView = () => {
         sortable: true,
         width: '120px',
         cell: (row) => (
-          <span {...repeatedTestId('verwaltung-row-status', verwaltungRowKey(row))}>
+          <span
+            {...repeatedTestId('verwaltung-row-status', verwaltungRowKey(row))}
+          >
             {row.status === 'ok' ? (
-              <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
+              <span className="location-verwaltung-ok">
+                {t('status_kpi_ok')}
+              </span>
             ) : (
-              <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
+              <SeverityBadge
+                severity={row.status}
+                label={t(`ui_severity_${row.status}`)}
+              />
             )}
           </span>
         ),
@@ -455,17 +557,25 @@ const LocationVerwaltungView = () => {
       {
         id: 'score',
         name: t('verwaltung_col_score'),
-        selector: (row) => flagsOf(row.id)?.readiness_score ?? row.readiness_score ?? -1,
+        selector: (row) =>
+          flagsOf(row.id)?.readiness_score ?? row.readiness_score ?? -1,
         sortable: true,
         width: '90px',
         cell: (row) => {
           const score = flagsOf(row.id)?.readiness_score ?? row.readiness_score;
           return score == null ? (
-            <span className="location-list-muted" title={t('verwaltung_score_none')}>
+            <span
+              className="location-list-muted"
+              title={t('verwaltung_score_none')}
+            >
               –
             </span>
           ) : (
-            <ReadinessBadge score={score} locationId={row.id} testKey={`verwaltung-${verwaltungRowKey(row)}`} />
+            <ReadinessBadge
+              score={score}
+              locationId={row.id}
+              testKey={`verwaltung-${verwaltungRowKey(row)}`}
+            />
           );
         },
       },
@@ -484,11 +594,21 @@ const LocationVerwaltungView = () => {
               className={`location-verwaltung-purge${purgeable ? ' location-verwaltung-purge--on' : ''}`}
               onClick={() => togglePurgeable(row)}
               disabled={Boolean(purgeBusy[key])}
-              title={t(purgeable ? 'locmap_purgeable_unmark_title' : 'locmap_purgeable_mark_title')}
+              title={t(
+                purgeable
+                  ? 'locmap_purgeable_unmark_title'
+                  : 'locmap_purgeable_mark_title',
+              )}
               {...repeatedTestId('verwaltung-row-purgeable', key)}
             >
-              {purgeable ? <ArrowCounterclockwise size={12} /> : <Trash3 size={12} />}
-              {t(purgeable ? 'locmap_purgeable_unmark' : 'locmap_purgeable_mark')}
+              {purgeable ? (
+                <ArrowCounterclockwise size={12} />
+              ) : (
+                <Trash3 size={12} />
+              )}
+              {t(
+                purgeable ? 'locmap_purgeable_unmark' : 'locmap_purgeable_mark',
+              )}
             </button>
           );
         },
@@ -513,8 +633,14 @@ const LocationVerwaltungView = () => {
     [flagsOf, loadPerms, purgeBusy, t, togglePurgeable],
   );
   // Phones: object and status in the row, the rest (purge, permissions too) in its expander.
-  const { columns, expandable } = useMobileColumns(allColumns, ['object', 'status']);
-  const rowStyles = useMemo(() => locationFlagRowStyles((row: VerwaltungRow) => flagsOf(row.id)), [flagsOf]);
+  const { columns, expandable } = useMobileColumns(allColumns, [
+    'object',
+    'status',
+  ]);
+  const rowStyles = useMemo(
+    () => locationFlagRowStyles((row: VerwaltungRow) => flagsOf(row.id)),
+    [flagsOf],
+  );
   const paginationOptions = {
     rowsPerPageText: t('locations_rows_per_page'),
     rangeSeparatorText: t('locations_range_separator'),
@@ -523,7 +649,12 @@ const LocationVerwaltungView = () => {
   if (denied) {
     return (
       <PanelCard title={t('verwaltung_title')} testId="page-verwaltung">
-        <div className="location-verwaltung-muted" data-testid="verwaltung-denied">{t('verwaltung_denied')}</div>
+        <div
+          className="location-verwaltung-muted"
+          data-testid="verwaltung-denied"
+        >
+          {t('verwaltung_denied')}
+        </div>
       </PanelCard>
     );
   }
@@ -531,7 +662,10 @@ const LocationVerwaltungView = () => {
   return (
     <div className="location-verwaltung" data-testid="page-verwaltung">
       {loading ? (
-        <div className="d-flex justify-content-center py-5 text-muted" data-testid="verwaltung-loading">
+        <div
+          className="d-flex justify-content-center py-5 text-muted"
+          data-testid="verwaltung-loading"
+        >
           <Spinner animation="border" />
         </div>
       ) : (
@@ -543,19 +677,34 @@ const LocationVerwaltungView = () => {
             title={
               <span className="location-verwaltung-title">
                 {t('verwaltung_objects_title')}
-                <span className="location-verwaltung-count" data-testid="verwaltung-count">
-                  {t('verwaltung_object_count', { count: filtered.length, total: rows.length })}
+                <span
+                  className="location-verwaltung-count"
+                  data-testid="verwaltung-count"
+                >
+                  {t('verwaltung_object_count', {
+                    count: filtered.length,
+                    total: rows.length,
+                  })}
                 </span>
                 {loadingMore && (
-                  <span className="location-verwaltung-loading-more" data-testid="verwaltung-loading-more">
+                  <span
+                    className="location-verwaltung-loading-more"
+                    data-testid="verwaltung-loading-more"
+                  >
                     <Spinner animation="border" size="sm" />
-                    {t('verwaltung_loading_more', { loaded: rows.length, total: total ?? rows.length })}
+                    {t('verwaltung_loading_more', {
+                      loaded: rows.length,
+                      total: total ?? rows.length,
+                    })}
                   </span>
                 )}
               </span>
             }
             actions={
-              <div className="location-verwaltung-actions" data-testid="verwaltung-filters">
+              <div
+                className="location-verwaltung-actions"
+                data-testid="verwaltung-filters"
+              >
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -563,7 +712,10 @@ const LocationVerwaltungView = () => {
                   className="location-verwaltung-search"
                   data-testid="verwaltung-search"
                 />
-                <div className="progeo-pill-track" data-testid="verwaltung-status-filter">
+                <div
+                  className="progeo-pill-track"
+                  data-testid="verwaltung-status-filter"
+                >
                   {STATUS_FILTERS.map((filter) => (
                     <PillButton
                       key={filter.value}
@@ -579,7 +731,10 @@ const LocationVerwaltungView = () => {
             }
           >
             {filtered.length === 0 ? (
-              <div className="location-verwaltung-muted location-verwaltung-empty" data-testid="verwaltung-empty">
+              <div
+                className="location-verwaltung-muted location-verwaltung-empty"
+                data-testid="verwaltung-empty"
+              >
                 {t('verwaltung_no_objects')}
               </div>
             ) : (
@@ -629,7 +784,9 @@ const LocationVerwaltungView = () => {
                 <div className="location-verwaltung-eyebrow">
                   {t('verwaltung_permissions')} · {permsFor.nr ?? permsFor.id}
                 </div>
-                <div className="location-verwaltung-dialog-title">{permsFor.name}</div>
+                <div className="location-verwaltung-dialog-title">
+                  {permsFor.name}
+                </div>
               </div>
               <div className="location-verwaltung-spacer" />
               <button
@@ -644,13 +801,19 @@ const LocationVerwaltungView = () => {
             </div>
 
             {permsLoading ? (
-              <div className="d-flex justify-content-center py-4 text-muted" data-testid="verwaltung-permissions-loading">
+              <div
+                className="d-flex justify-content-center py-4 text-muted"
+                data-testid="verwaltung-permissions-loading"
+              >
                 <Spinner animation="border" size="sm" />
               </div>
             ) : (
               <>
                 {rules.length === 0 && (
-                  <div className="location-verwaltung-rules-empty" data-testid="verwaltung-permissions-empty">
+                  <div
+                    className="location-verwaltung-rules-empty"
+                    data-testid="verwaltung-permissions-empty"
+                  >
                     {t('rechte_empty')}
                   </div>
                 )}
@@ -661,21 +824,30 @@ const LocationVerwaltungView = () => {
                     {...repeatedTestId('verwaltung-permissions-rule', rule.id)}
                   >
                     <div className="location-verwaltung-rule-user">
-                      <div className="location-verwaltung-rule-name">{rule.user_name || `#${rule.user}`}</div>
-                      <div className="location-verwaltung-rule-email">{rule.user_email || '–'}</div>
+                      <div className="location-verwaltung-rule-name">
+                        {rule.user_name || `#${rule.user}`}
+                      </div>
+                      <div className="location-verwaltung-rule-email">
+                        {rule.user_email || '–'}
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => removeRule(rule)}
                       className="location-verwaltung-revoke"
-                      {...repeatedTestId('verwaltung-permissions-revoke', rule.id)}
+                      {...repeatedTestId(
+                        'verwaltung-permissions-revoke',
+                        rule.id,
+                      )}
                     >
                       {t('rechte_revoke')}
                     </button>
                   </div>
                 ))}
 
-                <div className="location-verwaltung-section-title">{t('verwaltung_existing_user')}</div>
+                <div className="location-verwaltung-section-title">
+                  {t('verwaltung_existing_user')}
+                </div>
                 <div className="location-verwaltung-add">
                   <input
                     value={userFilter}
@@ -691,7 +863,9 @@ const LocationVerwaltungView = () => {
                     data-testid="verwaltung-permissions-user"
                   >
                     <option value="">
-                      {t('verwaltung_select_user_count', { count: availableUsers.length })}
+                      {t('verwaltung_select_user_count', {
+                        count: availableUsers.length,
+                      })}
                     </option>
                     {availableUsers.map((user) => (
                       <option key={user.id} value={user.id}>
@@ -699,11 +873,20 @@ const LocationVerwaltungView = () => {
                       </option>
                     ))}
                   </select>
-                  <PillButton label={t('rechte_add_confirm')} onClick={addUser} testId="verwaltung-permissions-add" />
+                  <PillButton
+                    label={t('rechte_add_confirm')}
+                    onClick={addUser}
+                    testId="verwaltung-permissions-add"
+                  />
                 </div>
 
-                <div className="location-verwaltung-section-title">{t('verwaltung_invite_title')}</div>
-                <div className="location-verwaltung-invite" data-testid="verwaltung-permissions-invite">
+                <div className="location-verwaltung-section-title">
+                  {t('verwaltung_invite_title')}
+                </div>
+                <div
+                  className="location-verwaltung-invite"
+                  data-testid="verwaltung-permissions-invite"
+                >
                   <input
                     type="email"
                     value={inviteEmail}
@@ -731,7 +914,9 @@ const LocationVerwaltungView = () => {
                     testId="verwaltung-invite-send"
                   />
                 </div>
-                <div className="location-verwaltung-invite-hint">{t('rechte_invite_hint')}</div>
+                <div className="location-verwaltung-invite-hint">
+                  {t('rechte_invite_hint')}
+                </div>
               </>
             )}
           </div>

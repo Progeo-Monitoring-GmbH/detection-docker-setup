@@ -24,3 +24,46 @@
   padding: 3px 10px;
   white-space: nowrap;
 }
+
+/* The status view an escalation keeps (create dialog, detail) - its
+   settings as label / value rows (StatusViewSummary.tsx). */
+.escalation-view-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--progeo-radius-panel);
+  background: var(--progeo-surface);
+}
+
+.escalation-view-title {
+  font-weight: 600;
+}
+
+.escalation-view-off {
+  opacity: 0.45;
+}
+
+.status-view-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.status-view-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.status-view-summary-row dt {
+  font-weight: 500;
+  color: #8b8383;
+}
+
+.status-view-summary-row dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}

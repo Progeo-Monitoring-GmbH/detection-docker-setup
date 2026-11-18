@@ -1,15 +1,33 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
-import FrameSlider, { focusFrameIndex, type AlarmSpan } from '../components/device/FrameSlider';
+import FrameSlider, {
+  focusFrameIndex,
+  type AlarmSpan,
+} from '../components/device/FrameSlider';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
 import SensorStatusTiles from '../components/device/SensorStatusTiles';
 import type { SuspicionPlanMarker } from '../components/device/SuspicionMarkers';
 import { suspicionsOnPlan } from './computedSuspicion';
-import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import type {
+  HeatProfile,
+  SensorHeatmapResponse,
+} from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
-import { FullscreenButton, FullscreenFrame, useFullscreen } from '../components/ui/kit/Fullscreen';
+import {
+  FullscreenButton,
+  FullscreenFrame,
+  useFullscreen,
+} from '../components/ui/kit/Fullscreen';
 import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
@@ -54,6 +72,9 @@ type LocationPlanPanelProps = {
   /** smartex® mx-PEEL: the computed suspicion points - over the heat of the
    * view (Lageplan) they lie on. */
   suspicions?: SuspicionPlanMarker[];
+  /** The time (ms) of the frame shown, whenever it changes (null: none) -
+   * the page keeps it for an escalation (statusViewState.ts). */
+  onFrameTimeChange?: (ms: number | null) => void;
   /** data-testid of the panel (default "plan-panel"); its parts derive from it. */
   testId?: string;
 };
@@ -67,7 +88,9 @@ export const planMaxHeight = (windowHeight: number) =>
   Math.round(Math.min(900, Math.max(420, windowHeight * 0.75)));
 
 const usePlanMaxHeight = () => {
-  const [maxHeight, setMaxHeight] = useState(() => planMaxHeight(window.innerHeight));
+  const [maxHeight, setMaxHeight] = useState(() =>
+    planMaxHeight(window.innerHeight),
+  );
   useEffect(() => {
     const onResize = () => setMaxHeight(planMaxHeight(window.innerHeight));
     window.addEventListener('resize', onResize);
@@ -76,8 +99,16 @@ const usePlanMaxHeight = () => {
   return maxHeight;
 };
 
-const PlanHint = ({ children, testId }: { children: ReactNode; testId?: string }) => (
-  <div className="plan-panel-hint" data-testid={testId}>{children}</div>
+const PlanHint = ({
+  children,
+  testId,
+}: {
+  children: ReactNode;
+  testId?: string;
+}) => (
+  <div className="plan-panel-hint" data-testid={testId}>
+    {children}
+  </div>
 );
 
 /**
@@ -103,6 +134,7 @@ const LocationPlanPanel = ({
   selectedSensor = null,
   onSensorSelect,
   suspicions,
+  onFrameTimeChange,
   testId = 'plan-panel',
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
@@ -120,19 +152,39 @@ const LocationPlanPanel = ({
   const frameTotal = heatmap?.timestamps.length ?? 0;
   // Until a frame is picked: the one of the time of interest, else the newest.
   const startFrame =
-    (heatmap ? focusFrameIndex(heatmap.timestamps, focusTime) : null) ?? (frameTotal > 0 ? frameTotal - 1 : null);
-  const frameIndex = withHeat || picked.heatmap === heatmap ? picked.index : startFrame;
+    (heatmap ? focusFrameIndex(heatmap.timestamps, focusTime) : null) ??
+    (frameTotal > 0 ? frameTotal - 1 : null);
+  const frameIndex =
+    withHeat || picked.heatmap === heatmap ? picked.index : startFrame;
   // Stable per heatmap: SensorHeatmap2D reports its frame from an effect on it.
   const setFrameIndex = useCallback(
     (index: number | null) =>
       setPicked((prev) =>
-        prev.heatmap === heatmap && prev.index === index ? prev : { heatmap, index },
+        prev.heatmap === heatmap && prev.index === index
+          ? prev
+          : { heatmap, index },
       ),
     [heatmap],
   );
 
+  // The frame's time, told to the page (its timestamps are seconds).
+  const frameTime =
+    heatmap && frameIndex != null
+      ? (heatmap.timestamps[frameIndex] ?? null)
+      : null;
+  const onFrameTimeRef = useRef(onFrameTimeChange);
+  useLayoutEffect(() => {
+    onFrameTimeRef.current = onFrameTimeChange;
+  });
+  useEffect(() => {
+    onFrameTimeRef.current?.(frameTime != null ? frameTime * 1000 : null);
+  }, [frameTime]);
+
   const planViews = useMemo(() => planViewsOf(heatmap), [heatmap]);
-  const shownPlan = planViews.find((plan) => plan.id === selectedPlanId) ?? planViews[0] ?? null;
+  const shownPlan =
+    planViews.find((plan) => plan.id === selectedPlanId) ??
+    planViews[0] ??
+    null;
   const shownSuspicions = useMemo(
     () => suspicionsOnPlan(suspicions, shownPlan?.id ?? null),
     [suspicions, shownPlan],
@@ -144,13 +196,21 @@ const LocationPlanPanel = ({
   );
   // The heat: the picked profile's frames, else the plan's.
   const viewHeatmap = useMemo(
-    () => viewHeatmapOf(profileHeatmap ?? heatmap, planViews, shownPlan, viewPoints),
+    () =>
+      viewHeatmapOf(
+        profileHeatmap ?? heatmap,
+        planViews,
+        shownPlan,
+        viewPoints,
+      ),
     [heatmap, profileHeatmap, planViews, shownPlan, viewPoints],
   );
   const sensorLines = useMemo(
     () =>
       visualization === 'lines'
-        ? sensorLinesOf(viewPoints, (row) => t('status_line_label', { line: row + 1 }))
+        ? sensorLinesOf(viewPoints, (row) =>
+            t('status_line_label', { line: row + 1 }),
+          )
         : [],
     [t, viewPoints, visualization],
   );
@@ -178,18 +238,29 @@ const LocationPlanPanel = ({
         lines: sensorLines,
         threshold,
       }),
-    [frameIndex, heatmap, sensorLines, sensorPoints.length, sensorStats, threshold, viewPoints],
+    [
+      frameIndex,
+      heatmap,
+      sensorLines,
+      sensorPoints.length,
+      sensorStats,
+      threshold,
+      viewPoints,
+    ],
   );
 
   // "Sensoransicht": smartex® is, and every product while the location has
   // no Lageplan - a status tile per sensor (each once, every view's).
-  const asTiles = !denied && (visualization === 'tiles' || (heatmap != null && !shownPlan));
+  const asTiles =
+    !denied && (visualization === 'tiles' || (heatmap != null && !shownPlan));
   const tileRows = useMemo(() => {
     if (!asTiles) {
       return [];
     }
     const seen = new Set<number>();
-    const points = sensorPoints.filter((point) => !seen.has(point.pos) && Boolean(seen.add(point.pos)));
+    const points = sensorPoints.filter(
+      (point) => !seen.has(point.pos) && Boolean(seen.add(point.pos)),
+    );
     return sensorRowsOf({
       heatmap,
       frameIndex: null, // the newest reading of each sensor
@@ -202,20 +273,36 @@ const LocationPlanPanel = ({
   }, [asTiles, heatmap, sensorPoints, sensorStats, threshold]);
 
   const sensorTable = withSensorTable && (
-    <div className="plan-panel-sensor-table" data-testid={childTestId(testId, 'sensor-table')}>
+    <div
+      className="plan-panel-sensor-table"
+      data-testid={childTestId(testId, 'sensor-table')}
+    >
       <SensorListTable rows={sensorRows} />
     </div>
   );
 
   const content = () => {
     if (denied) {
-      return <PlanHint testId={childTestId(testId, 'denied')}>{t('status_no_measurement_access')}</PlanHint>;
+      return (
+        <PlanHint testId={childTestId(testId, 'denied')}>
+          {t('status_no_measurement_access')}
+        </PlanHint>
+      );
     }
     if (asTiles) {
-      return <SensorStatusTiles rows={tileRows} testId={childTestId(testId, 'tiles')} />;
+      return (
+        <SensorStatusTiles
+          rows={tileRows}
+          testId={childTestId(testId, 'tiles')}
+        />
+      );
     }
     if (!shownPlan) {
-      return <PlanHint testId={childTestId(testId, 'no-plan')}>{t('status_no_lageplan')}</PlanHint>;
+      return (
+        <PlanHint testId={childTestId(testId, 'no-plan')}>
+          {t('status_no_lageplan')}
+        </PlanHint>
+      );
     }
     if (sensorPoints.length === 0) {
       return <SensorListTable rows={sensorRows} />;
@@ -223,7 +310,10 @@ const LocationPlanPanel = ({
     if (withHeat) {
       return (
         <>
-          <div className="plan-panel-heatmap" data-testid={childTestId(testId, 'heatmap')}>
+          <div
+            className="plan-panel-heatmap"
+            data-testid={childTestId(testId, 'heatmap')}
+          >
             <SensorHeatmap2D
               response={viewHeatmap}
               // Full card width; as tall as the shown area needs, up to maxHeight.
@@ -249,7 +339,10 @@ const LocationPlanPanel = ({
     return (
       <>
         {heatmap && frameTotal > 0 && frameIndex != null && (
-          <div className="px-2 py-2" data-testid={childTestId(testId, 'frame-slider')}>
+          <div
+            className="px-2 py-2"
+            data-testid={childTestId(testId, 'frame-slider')}
+          >
             <FrameSlider
               id="plan-frame"
               timestamps={heatmap.timestamps}
@@ -277,29 +370,42 @@ const LocationPlanPanel = ({
   return (
     // The plan on the whole screen - on a phone the only way to read it.
     <FullscreenFrame state={fullscreen}>
-    <PanelCard
-      testId={testId}
-      title={asTiles ? t('status_sensoransicht_title') : t('status_dachansicht_title')}
-      actions={
-        <>
-          {!asTiles && planViews.length > 1 && (
-            <SegmentedControl
-              testId={childTestId(testId, 'plans')}
-              options={planViews.map((plan, index) => ({
-                value: String(plan.id),
-                label: plan.name || t('status_plan_view', { index: index + 1 }),
-              }))}
-              value={String(shownPlan?.id)}
-              onChange={(value) => setSelectedPlanId(Number(value))}
+      <PanelCard
+        testId={testId}
+        title={
+          asTiles
+            ? t('status_sensoransicht_title')
+            : t('status_dachansicht_title')
+        }
+        actions={
+          <>
+            {!asTiles && planViews.length > 1 && (
+              <SegmentedControl
+                testId={childTestId(testId, 'plans')}
+                options={planViews.map((plan, index) => ({
+                  value: String(plan.id),
+                  label:
+                    plan.name || t('status_plan_view', { index: index + 1 }),
+                }))}
+                value={String(shownPlan?.id)}
+                onChange={(value) => setSelectedPlanId(Number(value))}
+              />
+            )}
+            {!asTiles && (
+              <FullscreenButton
+                state={fullscreen}
+                testId={childTestId(testId, 'fullscreen')}
+              />
+            )}
+            <PlotHelp
+              topic="status_plan"
+              testId={childTestId(testId, 'help')}
             />
-          )}
-          {!asTiles && <FullscreenButton state={fullscreen} testId={childTestId(testId, 'fullscreen')} />}
-          <PlotHelp topic="status_plan" testId={childTestId(testId, 'help')} />
-        </>
-      }
-    >
-      {content()}
-    </PanelCard>
+          </>
+        }
+      >
+        {content()}
+      </PanelCard>
     </FullscreenFrame>
   );
 };

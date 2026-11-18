@@ -28,8 +28,7 @@ export type AccessRule = (access: AccessContext) => boolean;
 const ANY_USER: AccessRule = () => true;
 const SUPERUSER: AccessRule = ({ isSuperuser }) => isSuperuser;
 /** Staff or superuser - the backend's is_staff_admin. */
-const STAFF: AccessRule = ({ isStaff, isSuperuser }) =>
-  isStaff || isSuperuser;
+const STAFF: AccessRule = ({ isStaff, isSuperuser }) => isStaff || isSuperuser;
 const permission =
   (code: string): AccessRule =>
   ({ hasPermission }) =>
@@ -74,9 +73,14 @@ export const APP_ROUTE_ACCESS = {
   // System-wide interface config; the cards check module_interface_* themselves.
   '/interface/': permission('module_interface_enabled'),
   '/escalations/': STAFF,
+  // The screenshots of a build and their review comments (e2e_screenshots).
+  '/review/screens/': STAFF,
   '/escalations/:id': STAFF,
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
-  '/backup/:account/overview/': allOf(STAFF, permission('module_backup_enabled')),
+  '/backup/:account/overview/': allOf(
+    STAFF,
+    permission('module_backup_enabled'),
+  ),
   '/site-plan/wizard/': STAFF,
   '/map/': STAFF,
   // Object management - ProGeo-Admins (roleModel: superusers).
@@ -127,7 +131,8 @@ const useStaffFlags = () => staffFlags(useAuth()?.user);
 /** Staff flags, module permissions and `can(rule)` for the current user. */
 export const useAccess = () => {
   const flags = useStaffFlags();
-  const { hasPermission, isLoading, error, refreshPermissions } = usePermissions();
+  const { hasPermission, isLoading, error, refreshPermissions } =
+    usePermissions();
   const context: AccessContext = {
     isStaff: flags.isStaff,
     isSuperuser: flags.isSuperuser,

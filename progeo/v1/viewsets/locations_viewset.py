@@ -779,6 +779,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         the marked locations. Saved in the account database (mirrored into
         the project database), patched into the cached device statistics."""
         from progeo.helper.device_inventory import mark_location_in_snapshot
+        from progeo.helper.readiness_qa import purgeable_changed
         from progeo.v1.viewsets.status_viewset import _request_accounts
 
         if not _is_staff_admin(getattr(request, "user", None)):
@@ -795,13 +796,16 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        qa = None
         if location.purgeable != value:
             location.purgeable = value
             location.save(using=account.db_name, update_fields=["purgeable"])
             ilog(f"[locations] location {location.pk} ({location.name}) purgeable={value} "
                  f"by {request.user.username}")
+            # The readiness scoreboard: marking gains points, taking back one's own mark returns them.
+            qa = purgeable_changed(location, request.user, value)
         mark_location_in_snapshot([a for a in _request_accounts(request) if a], location.pk, purgeable=value)
-        return RequestSuccess({"location": {"id": location.pk, "purgeable": location.purgeable}})
+        return RequestSuccess({"location": {"id": location.pk, "purgeable": location.purgeable}, "qa": qa})
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="details", methods=["GET"])

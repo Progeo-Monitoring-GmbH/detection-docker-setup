@@ -552,6 +552,16 @@ def refresh_location_readiness():
     return refresh()
 
 
+@shared_task(ignore_result=True)
+def recheck_location_readiness(location_id):
+    """One location checked again after a staff member changed it
+    (helper/readiness_qa.py) - its fixes go onto the scoreboard."""
+    from progeo.helper.readiness_qa import recheck
+
+    result = recheck(location_id)
+    return None if result is None else {"score": result["score"], "qa": len(result["qa"])}
+
+
 @shared_task
 def ensure_measurement_partitions():
     """Measurement partitions of the current and next year in the template

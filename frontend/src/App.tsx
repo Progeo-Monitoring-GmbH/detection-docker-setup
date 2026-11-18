@@ -8,10 +8,14 @@ import { ModalProvider } from './components/modal/coreModalContext';
 import CookieBanner from './components/privacy/CookieBanner';
 import Toast from './components/ui/Toast';
 import MaintenanceGate from './components/ui/MaintenanceScreen';
-import { ConsentProvider, useConsent } from './components/privacy/ConsentProvider';
+import {
+  ConsentProvider,
+  useConsent,
+} from './components/privacy/ConsentProvider';
 
 import CoreRoutes from './CoreRoutes';
 import { ActivityTracking } from './activity/useActivityTracking';
+import QaAwardToasts from './main/QaAwardToasts';
 
 import './i18n';
 import './App.css';
@@ -45,7 +49,11 @@ function StagingOverlay() {
   return (
     <>
       <div aria-hidden="true" className="app-staging-frame" />
-      <div role="status" className="app-staging-banner" data-testid="app-staging-banner">
+      <div
+        role="status"
+        className="app-staging-banner"
+        data-testid="app-staging-banner"
+      >
         {t('staging_banner', { defaultValue: STAGING_BANNER_TEXT })}
       </div>
     </>
@@ -61,7 +69,11 @@ function GatedMain() {
   const { consent } = useConsent();
   const locked = consent === null;
   return (
-    <div aria-hidden={locked} className={`app-gated${locked ? ' app-gated--locked' : ''}`} data-testid="app-gated">
+    <div
+      aria-hidden={locked}
+      className={`app-gated${locked ? ' app-gated--locked' : ''}`}
+      data-testid="app-gated"
+    >
       <CoreRoutes />
     </div>
   );
@@ -79,7 +91,11 @@ function PortalFrame({ children }: { children: React.ReactNode }) {
   // Side padding grows with the window up to 32 px - empty grid columns
   // took 1/12 per side (160 px on a 1920 px screen).
   return (
-    <Container fluid={true} className="app-portal-frame" data-testid="app-portal-frame">
+    <Container
+      fluid={true}
+      className="app-portal-frame"
+      data-testid="app-portal-frame"
+    >
       {children}
     </Container>
   );
@@ -99,7 +115,13 @@ function App() {
           preventDuplicate
           autoHideDuration={null}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          Components={{ default: Toast, success: Toast, error: Toast, warning: Toast, info: Toast }}
+          Components={{
+            default: Toast,
+            success: Toast,
+            error: Toast,
+            warning: Toast,
+            info: Toast,
+          }}
         >
           <ConsentProvider>
             <ModalProvider>
@@ -107,6 +129,8 @@ function App() {
                 <CoreAuthProvider>
                   {/* Usage analysis - only with the backend's flag and consent. */}
                   <ActivityTracking />
+                  {/* Staff: toasts for the readiness scoreboard points just earned. */}
+                  <QaAwardToasts />
                   <PortalFrame>
                     <GatedMain />
                     <CookieBanner />

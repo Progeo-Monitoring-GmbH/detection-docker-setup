@@ -20,7 +20,11 @@ import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
 import type { LocationDetail } from './locationTypes';
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
-import { isLorawanProject, planVisualization, showsSensorTable } from './projectType';
+import {
+  isLorawanProject,
+  planVisualization,
+  showsSensorTable,
+} from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationBatteryVoltagePanel from './LocationBatteryVoltagePanel';
 import LocationPlanPanel from './LocationPlanPanel';
@@ -49,7 +53,9 @@ import {
 import { zeitreiheSensorsOf } from './zeitreiheSensors';
 import ZeitreihePanel from './ZeitreihePanel';
 import { useAlarmClusters } from './useAlarmClusters';
-import ComputedSuspicionPanel, { SuspicionModeSwitch } from './ComputedSuspicionPanel';
+import ComputedSuspicionPanel, {
+  SuspicionModeSwitch,
+} from './ComputedSuspicionPanel';
 import {
   effectiveSuspicionMode,
   suspicionMarkersOf,
@@ -63,6 +69,13 @@ import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { staffFlags } from './access';
 import { parseStatusAt, rangeContaining } from './statusAt';
+import {
+  clearStatusView,
+  parseStatusView,
+  rangeReaches,
+  statusViewKey,
+  updateStatusView,
+} from './statusViewState';
 import './LocationStatusView.css';
 
 type LocationStatusViewProps = {
@@ -82,7 +95,10 @@ const formatSpanTime = (ms: number) => formatDate(ms, 'dayMonthTime');
 const Loading = () => {
   const { t } = useTranslation();
   return (
-    <div className="d-flex justify-content-center py-5 text-muted" data-testid="status-loading">
+    <div
+      className="d-flex justify-content-center py-5 text-muted"
+      data-testid="status-loading"
+    >
       <Spinner animation="border" className="me-2" /> {t('ui_loading')}
     </div>
   );
@@ -135,7 +151,9 @@ const LocationStatusHeader = ({
         }
         // A measurement can only be requested from a device that identifies
         // itself (chip_id) and that has an address to reach (device_ip).
-        const list = ((response?.data?.devices ?? []) as RequestableDevice[]).filter(
+        const list = (
+          (response?.data?.devices ?? []) as RequestableDevice[]
+        ).filter(
           (device) => Boolean(device.chip_id) && Boolean(device.device_ip),
         );
         setDevices(list);
@@ -199,13 +217,18 @@ const LocationStatusHeader = ({
               aria-label={t('status_request_measurement_device')}
               title={t('status_request_measurement_device')}
               value={selectedDeviceId ?? ''}
-              onChange={(event) => setSelectedDeviceId(Number(event.target.value))}
+              onChange={(event) =>
+                setSelectedDeviceId(Number(event.target.value))
+              }
               disabled={requesting}
               className="status-request-device"
             >
               {devices.map((device) => (
                 <option key={device.id} value={device.id}>
-                  {device.label || device.display_name || device.chip_id || `#${device.id}`}
+                  {device.label ||
+                    device.display_name ||
+                    device.chip_id ||
+                    `#${device.id}`}
                 </option>
               ))}
             </Form.Select>
@@ -253,21 +276,32 @@ const StatusKpis = ({
     return () => window.clearInterval(timer);
   }, [ticking]);
   const tileNow = Math.max(now, clock);
-  const upcoming = anlage.state === 'online' ? nextMeasurementOf(anlage.next, tileNow) : null;
+  const upcoming =
+    anlage.state === 'online' ? nextMeasurementOf(anlage.next, tileNow) : null;
   const anlageNote = [
     anlage.last != null
-      ? t('status_kpi_anlage_last', { time: formatRelativeTime(anlage.last, tileNow) })
+      ? t('status_kpi_anlage_last', {
+          time: formatRelativeTime(anlage.last, tileNow),
+        })
       : t('status_kpi_anlage_last_unknown'),
     upcoming &&
       (upcoming.overdue
-        ? t('status_kpi_anlage_next_overdue', { time: formatMinutes(upcoming.minutes) })
-        : t('status_kpi_anlage_next', { time: formatMinutes(upcoming.minutes) })),
+        ? t('status_kpi_anlage_next_overdue', {
+            time: formatMinutes(upcoming.minutes),
+          })
+        : t('status_kpi_anlage_next', {
+            time: formatMinutes(upcoming.minutes),
+          })),
   ]
     .filter(Boolean)
     .join(' · ');
-  const openClusters = clusters.filter((cluster) => cluster.state !== 'geloest');
+  const openClusters = clusters.filter(
+    (cluster) => cluster.state !== 'geloest',
+  );
   const worstSeverity = worstSeverityOf(openClusters);
-  const highestReading = highestOf(clusters.map((cluster) => cluster.max_value));
+  const highestReading = highestOf(
+    clusters.map((cluster) => cluster.max_value),
+  );
 
   return (
     <KpiStrip
@@ -310,13 +344,16 @@ const StatusKpis = ({
               : t(`status_kpi_anlage_${anlage.state}` as const),
           note: anlage.state === 'loading' ? undefined : anlageNote,
           valueColor:
-            anlage.state === 'online' ? '#3F7A1C' : anlage.state === 'offline' ? '#C44D26' : '#8B8383',
+            anlage.state === 'online'
+              ? '#3F7A1C'
+              : anlage.state === 'offline'
+                ? '#C44D26'
+                : '#8B8383',
         },
       ]}
     />
   );
 };
-
 
 const LocationStatusView = ({
   location,
@@ -340,23 +377,64 @@ const LocationStatusView = ({
   const [openedAt] = useState(() => Date.now());
   // The sensor picked on the plan - the Zeitreihe's first entry.
   const [selectedSensor, setSelectedSensor] = useState<number | null>(null);
+  // Staff: the plan's heat as another value per sensor (WP, EP, WP + EP) -
+  // its own history, only for the heatmap; the Zeitreihe, the KPIs and the
+  // sensor table keep |WP - EP| (the alarm value).
+  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
 
-  // ?at=<ISO-8601> (e.g. an event of the notification history): the plan at
-  // that moment - a range that contains it, its frame shown first.
+  // The settings of the URL, applied when the page opens and whenever they
+  // change: an escalation's quick link (view, range, step, sensor, sensors,
+  // profile - statusViewState.ts) and ?at=<ISO-8601> (e.g. an event of the
+  // notification history): the plan at that moment - a range that contains
+  // it, its frame shown first.
   const [searchParams] = useSearchParams();
+  const requested = useMemo(
+    () => parseStatusView(searchParams),
+    [searchParams],
+  );
+  const requestedKey = statusViewKey(requested);
   const atParam = searchParams.get('at');
   const focusAt = useMemo(() => parseStatusAt(atParam), [atParam]);
-  const [appliedAt, setAppliedAt] = useState<number | null>(null);
-  if (focusAt !== appliedAt) {
-    setAppliedAt(focusAt);
-    const focusRange =
-      focusAt != null
-        ? rangeContaining(focusAt, openedAt, timeRangeCandidates({ long: true, staff: isStaff }))
-        : null;
+  const [applied, setApplied] = useState<{
+    at: number | null;
+    key: string;
+  } | null>(null);
+  if (
+    applied === null ||
+    applied.at !== focusAt ||
+    applied.key !== requestedKey
+  ) {
+    setApplied({ at: focusAt, key: requestedKey });
+    if (requested.view) {
+      setStatusView(requested.view);
+    }
+    if (requested.sensor != null) {
+      setSelectedSensor(requested.sensor);
+    }
+    if (requested.profile && isStaff) {
+      setHeatProfile(requested.profile);
+    }
+    let focusRange = requested.range ?? null;
+    let focusStep = requested.step ?? null;
+    // The requested range must still reach back to the moment - else the
+    // shortest that does (its default step).
+    if (
+      focusAt != null &&
+      !(focusRange && rangeReaches(focusRange, focusAt, openedAt))
+    ) {
+      focusRange = rangeContaining(
+        focusAt,
+        openedAt,
+        timeRangeCandidates({ long: true, staff: isStaff }),
+      );
+      focusStep = null;
+      if (!requested.view) {
+        setStatusView('roof');
+      }
+    }
     if (focusRange) {
-      setStatusView('roof');
       setSelectedRange(focusRange);
-      setPickedStep(null);
+      setPickedStep(focusStep);
     }
   }
 
@@ -366,20 +444,48 @@ const LocationStatusView = ({
 
   // The history to load, and the long Zeitreihe ranges once the data
   // reaches that far back (LoRaWAN: LocationClimatePanels does its own).
-  const { range: measurementRange, failed: measurementRangeFailed } = useMeasurementRangeState(
-    locationId,
-    demo,
-    !isLorawan,
-  );
+  const { range: measurementRange, failed: measurementRangeFailed } =
+    useMeasurementRangeState(locationId, demo, !isLorawan);
   const rangeOptions = useMemo(
-    () => availableTimeRanges(measurementRange, timeRangeCandidates({ long: true, staff: isStaff })),
+    () =>
+      availableTimeRanges(
+        measurementRange,
+        timeRangeCandidates({ long: true, staff: isStaff }),
+      ),
     [isStaff, measurementRange],
   );
   const range = effectiveTimeRange(selectedRange, rangeOptions);
   const rangeDays = TIME_RANGE_DAYS[range];
 
+  // What the page shows - an escalation created now keeps it (statusViewState.ts).
+  useEffect(() => {
+    updateStatusView(locationId, {
+      view: statusView,
+      range,
+      step: pickedStep ?? undefined,
+      sensor: selectedSensor ?? undefined,
+      profile: heatProfile === 'diff' ? undefined : heatProfile,
+    });
+  }, [locationId, statusView, range, pickedStep, selectedSensor, heatProfile]);
+  useEffect(() => () => clearStatusView(locationId), [locationId]);
+  const onFrameTimeChange = useCallback(
+    (ms: number | null) =>
+      updateStatusView(locationId, {
+        at: ms != null ? new Date(ms).toISOString() : undefined,
+      }),
+    [locationId],
+  );
+  const onZeitreiheShown = useCallback(
+    (ids: string[]) =>
+      updateStatusView(locationId, { sensors: ids.length ? ids : undefined }),
+    [locationId],
+  );
+
   const historySpec = useMemo(
-    () => (isLorawan ? null : historySpecFor(measurementRange, measurementRangeFailed, openedAt)),
+    () =>
+      isLorawan
+        ? null
+        : historySpecFor(measurementRange, measurementRangeFailed, openedAt),
     [isLorawan, measurementRange, measurementRangeFailed, openedAt],
   );
   const {
@@ -388,10 +494,6 @@ const LocationStatusView = ({
     loading: historyLoading,
     denied: historyDenied,
   } = useLocationHistory(locationId, demo, historySpec);
-  // Staff: the plan's heat as another value per sensor (WP, EP, WP + EP) -
-  // its own history, only for the heatmap; the Zeitreihe, the KPIs and the
-  // sensor table keep |WP - EP| (the alarm value).
-  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
   const profileHistory = useLocationHistory(
     locationId,
     demo,
@@ -408,23 +510,36 @@ const LocationStatusView = ({
   } = useAlarmClusters(locationId, demo, !isLorawan);
   // smartex® mx-PEEL: computed suspicion points of the range instead of one
   // Verdachtsstelle per sensor - staff can switch (computedSuspicion.ts).
-  const [pickedSuspicionMode, setSuspicionMode] = useState<SuspicionMode>('computed');
+  const [pickedSuspicionMode, setSuspicionMode] =
+    useState<SuspicionMode>('computed');
   const suspicionMode = effectiveSuspicionMode(
     usesComputedSuspicion(location?.project_type),
     isStaff,
     pickedSuspicionMode,
   );
-  const computed = useComputedSuspicion(locationId, rangeDays, demo, suspicionMode === 'computed');
+  const computed = useComputedSuspicion(
+    locationId,
+    rangeDays,
+    demo,
+    suspicionMode === 'computed',
+  );
   const suspicionMarkers = useMemo(
-    () => (suspicionMode === 'computed' ? suspicionMarkersOf(computed.points) : undefined),
+    () =>
+      suspicionMode === 'computed'
+        ? suspicionMarkersOf(computed.points)
+        : undefined,
     [suspicionMode, computed.points],
   );
 
   // The step of the loaded history: the plan's steps must be multiples.
   const baseStep = history?.step ?? historySpec?.step ?? null;
-  const stepOptions = useMemo(() => stepsForRange(rangeDays, baseStep), [rangeDays, baseStep]);
+  const stepOptions = useMemo(
+    () => stepsForRange(rangeDays, baseStep),
+    [rangeDays, baseStep],
+  );
   const heatmapStep =
-    pickedStep != null && stepOptions.some((step) => step.seconds === pickedStep)
+    pickedStep != null &&
+    stepOptions.some((step) => step.seconds === pickedStep)
       ? pickedStep
       : defaultStepForRange(rangeDays, baseStep);
 
@@ -432,20 +547,39 @@ const LocationStatusView = ({
   // plan's frames and the Zeitreihe - cut out of the history, no request.
   const now = historyLoadedAt ?? openedAt;
   const heatmap = useMemo(
-    () => framesOf(history, { from: now - rangeDays * DAY_MS, to: now, step: heatmapStep }),
+    () =>
+      framesOf(history, {
+        from: now - rangeDays * DAY_MS,
+        to: now,
+        step: heatmapStep,
+      }),
     [history, now, rangeDays, heatmapStep],
   );
   // While the picked profile loads, the heat keeps |WP - EP|.
-  const profileHistoryShown = heatProfile !== 'diff' && profileHistory.history ? profileHistory.history : null;
+  const profileHistoryShown =
+    heatProfile !== 'diff' && profileHistory.history
+      ? profileHistory.history
+      : null;
   const profileHeatmap = useMemo(
     () =>
       profileHistoryShown
-        ? framesOf(profileHistoryShown, { from: now - rangeDays * DAY_MS, to: now, step: heatmapStep })
+        ? framesOf(profileHistoryShown, {
+            from: now - rangeDays * DAY_MS,
+            to: now,
+            step: heatmapStep,
+          })
         : null,
     [profileHistoryShown, now, rangeDays, heatmapStep],
   );
   const zeitreihe = useMemo(
-    () => seriesOf(history, now - rangeDays * DAY_MS, now, ZEITREIHE_LIMIT, baseStep ?? 30 * 60),
+    () =>
+      seriesOf(
+        history,
+        now - rangeDays * DAY_MS,
+        now,
+        ZEITREIHE_LIMIT,
+        baseStep ?? 30 * 60,
+      ),
     [baseStep, history, now, rangeDays],
   );
 
@@ -484,17 +618,20 @@ const LocationStatusView = ({
 
   const alarmSpans = useMemo(
     () =>
-      alarmSpansOf(clusters, clustersLoadedAt ?? openedAt, (cluster, from, to) =>
-        to == null
-          ? t('status_alarm_span_active', {
-              sensor: sensorLabel(cluster.sensor_id),
-              from: formatSpanTime(from),
-            })
-          : t('status_alarm_span', {
-              sensor: sensorLabel(cluster.sensor_id),
-              from: formatSpanTime(from),
-              to: formatSpanTime(to),
-            }),
+      alarmSpansOf(
+        clusters,
+        clustersLoadedAt ?? openedAt,
+        (cluster, from, to) =>
+          to == null
+            ? t('status_alarm_span_active', {
+                sensor: sensorLabel(cluster.sensor_id),
+                from: formatSpanTime(from),
+              })
+            : t('status_alarm_span', {
+                sensor: sensorLabel(cluster.sensor_id),
+                from: formatSpanTime(from),
+                to: formatSpanTime(to),
+              }),
       ),
     [clusters, clustersLoadedAt, openedAt, sensorLabel, t],
   );
@@ -507,7 +644,11 @@ const LocationStatusView = ({
       />
 
       {isLorawan ? (
-        <LocationClimatePanels locationId={locationId} demo={demo} showBattery={isStaff} />
+        <LocationClimatePanels
+          locationId={locationId}
+          demo={demo}
+          showBattery={isStaff}
+        />
       ) : (
         <>
           {clustersLoading || historyLoading ? (
@@ -517,7 +658,11 @@ const LocationStatusView = ({
               <StatusKpis
                 clusters={clusters}
                 threshold={thresholdValue}
-                anlage={anlageStatusOf(measurementRange, measurementRangeFailed, now)}
+                anlage={anlageStatusOf(
+                  measurementRange,
+                  measurementRangeFailed,
+                  now,
+                )}
                 now={now}
               />
             )
@@ -553,6 +698,8 @@ const LocationStatusView = ({
                 loading={historyLoading}
                 sensors={zeitreiheSensors}
                 selectedSensorId={selectedSensor}
+                requestedIds={requested.sensors ?? null}
+                onShownChange={onZeitreiheShown}
               />
               {isStaff && (
                 <LocationBatteryVoltagePanel
@@ -575,7 +722,9 @@ const LocationStatusView = ({
                   profileHeatmap={profileHeatmap}
                   profile={heatProfile}
                   onProfileChange={setHeatProfile}
-                  profileLoading={heatProfile !== 'diff' && profileHistory.loading}
+                  profileLoading={
+                    heatProfile !== 'diff' && profileHistory.loading
+                  }
                   focusTime={focusAt}
                   // The step only matters for the animation: beside its start.
                   frameToolbar={
@@ -594,13 +743,21 @@ const LocationStatusView = ({
                     )
                   }
                   selectedSensor={selectedSensor}
-                  onSensorSelect={(pos) => setSelectedSensor((current) => (current === pos ? null : pos))}
+                  onSensorSelect={(pos) =>
+                    setSelectedSensor((current) =>
+                      current === pos ? null : pos,
+                    )
+                  }
                   suspicions={suspicionMarkers}
+                  onFrameTimeChange={onFrameTimeChange}
                 />
               </div>
               <div className="status-column-side">
                 {suspicionMode != null && isStaff && (
-                  <SuspicionModeSwitch mode={suspicionMode} onChange={setSuspicionMode} />
+                  <SuspicionModeSwitch
+                    mode={suspicionMode}
+                    onChange={setSuspicionMode}
+                  />
                 )}
                 {suspicionMode === 'computed' ? (
                   <ComputedSuspicionPanel
@@ -618,7 +775,9 @@ const LocationStatusView = ({
                     denied={clustersDenied}
                     sensorLabel={sensorLabel}
                     metersOf={metersOf}
-                    disabledOf={(sensorId) => Boolean(measurePointOf(sensorId)?.disabled)}
+                    disabledOf={(sensorId) =>
+                      Boolean(measurePointOf(sensorId)?.disabled)
+                    }
                     acknowledging={acknowledging}
                     onAcknowledge={acknowledge}
                     readOnly={demo}

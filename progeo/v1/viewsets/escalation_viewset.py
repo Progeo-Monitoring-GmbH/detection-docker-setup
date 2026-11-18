@@ -1,7 +1,10 @@
+import re
+
 from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -51,6 +54,63 @@ def _text(request, field="text"):
     return value, None
 
 
+# The status page's settings an escalation keeps (frontend statusViewState.ts).
+VIEW_KINDS = {"roof", "zeitreihe"}
+VIEW_RANGES = {"24h", "7d", "30d", "90d", "180d", "1y", "3y"}
+VIEW_PROFILES = {"diff", "wp", "ep", "sum"}
+VIEW_SENSORS_MAX = 100
+VIEW_SENSOR_ID = re.compile(r"^(sensor-\d{1,6}|\d{1,6}:\d{1,4})$")
+
+
+def clean_view_state(raw):
+    """(state, error) - the status view of `raw` with only the known settings
+    (view, range, step, at, sensor, sensors, profile), each checked; None
+    for no view. Unknown keys are dropped, a wrong value is an error."""
+    if raw in (None, "", {}):
+        return None, None
+    if not isinstance(raw, dict):
+        return None, "view_state must be an object"
+    state = {}
+    view = raw.get("view")
+    if view is not None:
+        if view not in VIEW_KINDS:
+            return None, "view_state.view must be roof or zeitreihe"
+        state["view"] = view
+    time_range = raw.get("range")
+    if time_range is not None:
+        if time_range not in VIEW_RANGES:
+            return None, "view_state.range is unknown"
+        state["range"] = time_range
+    step = raw.get("step")
+    if step is not None:
+        if isinstance(step, bool) or not isinstance(step, int) or not 0 < step <= 31 * 24 * 3600:
+            return None, "view_state.step must be seconds"
+        state["step"] = step
+    at = raw.get("at")
+    if at is not None:
+        parsed = parse_datetime(at) if isinstance(at, str) else None
+        if parsed is None:
+            return None, "view_state.at must be an ISO date and time"
+        state["at"] = at
+    sensor = raw.get("sensor")
+    if sensor is not None:
+        if isinstance(sensor, bool) or not isinstance(sensor, int) or sensor < 0:
+            return None, "view_state.sensor must be a sensor number"
+        state["sensor"] = sensor
+    sensors = raw.get("sensors")
+    if sensors is not None:
+        if (not isinstance(sensors, list) or len(sensors) > VIEW_SENSORS_MAX
+                or not all(isinstance(entry, str) and VIEW_SENSOR_ID.match(entry) for entry in sensors)):
+            return None, "view_state.sensors must be a list of sensor ids"
+        state["sensors"] = list(dict.fromkeys(sensors))
+    profile = raw.get("profile")
+    if profile is not None:
+        if profile not in VIEW_PROFILES:
+            return None, "view_state.profile is unknown"
+        state["profile"] = profile
+    return state or None, None
+
+
 class EscalationViewSet(viewsets.ViewSet):
     """Escalations of projects (ProgeoEscalation) and their protocol.
 
@@ -60,7 +120,7 @@ class EscalationViewSet(viewsets.ViewSet):
     the message given along with it.
 
         GET  /v1/escalation/?state=open|closed|all&location=<id>
-        POST /v1/escalation/                {location, title, text?, assigned_to?}
+        POST /v1/escalation/                {location, title, text?, assigned_to?, view_state?}
         GET  /v1/escalation/<pk>/           with its protocol (entries)
         POST /v1/escalation/<pk>/comment/   {text}
         POST /v1/escalation/<pk>/status/    {status, text?}
@@ -167,6 +227,9 @@ class EscalationViewSet(viewsets.ViewSet):
         text, error = _text(request)
         if error:
             return error
+        view_state, view_error = clean_view_state(data.get("view_state"))
+        if view_error:
+            return RequestFailed({"reason": view_error})
 
         assignee = None
         if data.get("assigned_to") not in (None, ""):
@@ -193,6 +256,7 @@ class EscalationViewSet(viewsets.ViewSet):
                     title=title,
                     assigned_to_id=assignee.pk if assignee else None,
                     created_by_id=request.user.pk,
+                    view_state=view_state,
                 )
                 self._protocol(escalation, request, Kind.CREATED, text, {"title": title})
                 if assignee:

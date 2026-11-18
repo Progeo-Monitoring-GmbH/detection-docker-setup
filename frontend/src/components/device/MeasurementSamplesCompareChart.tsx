@@ -497,10 +497,13 @@ const MeasurementSamplesCompareChart = (
     setSlotState({ selected: selectedSensors, slots: sensorSlots });
   }
   // A disabled sensor keeps its slot's marker, but its line is gray.
-  const styleOf = (sensor: number) => {
-    const style = sensorStyle(sensorSlots.get(sensor) ?? 0);
-    return disabledSensors?.has(sensor) ? { ...style, color: DISABLED_SENSOR_STROKE } : style;
-  };
+  const styleOf = React.useCallback(
+    (sensor: number) => {
+      const style = sensorStyle(sensorSlots.get(sensor) ?? 0);
+      return disabledSensors?.has(sensor) ? { ...style, color: DISABLED_SENSOR_STROKE } : style;
+    },
+    [sensorSlots, disabledSensors],
+  );
   const updateSensors = (next: number[]) =>
     (onSensorsChange ?? setOwnSensors)(next);
   const toggleSensor = (sensor: number) =>
@@ -598,7 +601,7 @@ const MeasurementSamplesCompareChart = (
         hoverinfo: 'none' as const,
       };
     });
-  }, [selectedSensors, sensorSeries, sensorSlots, disabledSensors, t]);
+  }, [selectedSensors, sensorSeries, styleOf, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
   // shows them. Kept here, not by Plotly: they widen the locked y-axis or

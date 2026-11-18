@@ -40,7 +40,9 @@ from progeo.v1.models import (
     ProgeoMeasurement,
     ProgeoMeasurePoint,
     ProgeoNoiseProfile,
+    ProgeoQA,
     ProgeoRainEvent,
+    ProgeoReadinessSnapshot,
     UserModulePermissions,
 )
 
@@ -472,6 +474,24 @@ class NotificationOptOutAdmin(admin.ModelAdmin):
     list_filter = ("kind", "via")
     search_fields = ("address", "=location_id")
 
+class ProgeoQAAdmin(admin.ModelAdmin):
+    """The readiness scoreboard's fixed checks (helper/readiness_qa.py) - one
+    per location and check. Deleting a row frees the check to score again."""
+    list_display = ("created", "user", "check_key", "points", "project_id", "location_name", "notified_at")
+    list_display_links = ("created", "check_key")
+    list_filter = (("user", admin.RelatedOnlyFieldListFilter), "check_key", ("created", admin.DateFieldListFilter))
+    search_fields = ("location_name", "=project_id", "=location_id", "user__username", "check_key")
+    list_select_related = ("user",)
+    raw_id_fields = ("user",)
+    ordering = ("-created", "-pk")
+
+
+class ProgeoReadinessSnapshotAdmin(admin.ModelAdmin):
+    """The daily mean readiness score of all locations (the scoreboard's overall line)."""
+    list_display = ("day", "mean_score", "locations", "updated")
+    ordering = ("-day",)
+
+
 class ProgeoFavoriteLocationAdmin(admin.ModelAdmin):
     """Favorites bar of the staff users (kept in default with the locations)."""
     list_display = ("created", "user", "location_name", "project_id")
@@ -640,6 +660,8 @@ register_models = [
     {"model": MigrationInvite, "admin": MigrationInviteAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
+    {"model": ProgeoQA, "admin": ProgeoQAAdmin, "custom": True},
+    {"model": ProgeoReadinessSnapshot, "admin": ProgeoReadinessSnapshotAdmin, "custom": True},
     
 ]
 

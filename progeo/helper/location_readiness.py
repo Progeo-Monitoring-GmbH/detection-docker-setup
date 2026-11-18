@@ -18,7 +18,8 @@ Lageplan to align) fails.
 refresh(...) stores score, checks and time on the location
 (ProgeoLocation.readiness_*) - the location_readiness command and the
 nightly refresh_location_readiness task do it for every location, the
-checklist page for the one it shows.
+checklist page for the one it shows. A check that failed in the stored
+result and passes now is a fix: readiness_qa records it for the scoreboard.
 """
 from dataclasses import dataclass, field
 
@@ -304,6 +305,61 @@ CHECKS = (
 # name checks that were dropped since.
 CHECK_KEYS = frozenset(check.key for check in CHECKS)
 
+# The parts of the facts each check reads (collect_facts). A change of one
+# part (readiness_qa: the touched model) only needs the checks reading it -
+# a partial check (check_location(parts=...)) collects and runs just those
+# and keeps the stored results of the others.
+FACT_PARTS = ("location", "plans", "devices", "points", "accesses")
+CHECK_NEEDS = {
+    "product": {"location"},
+    "address": {"location"},
+    "geo": {"location"},
+    "airtable": {"location"},
+    "lageplan": {"plans"},
+    # The plans in use and the points' spread come from the measure points.
+    "lageplan_aligned": {"plans", "points"},
+    "lageplan_calibrated": {"plans", "points"},
+    "lageplan_cropped": {"plans", "points"},
+    "heat_limitation": {"plans"},
+    "lageplan_resolution": {"plans", "points"},
+    "devices": {"devices"},
+    "devices_online": {"devices"},
+    "measure_points": {"points"},
+    "sensor_devices": {"points", "devices"},
+    "points_named": {"points"},
+    "threshold": {"location", "points"},
+    "users": {"accesses"},
+    "objektleitung": {"accesses"},
+    "alarm_recipient": {"accesses"},
+    "notifications_enabled": {"location"},
+    "rain_check": {"location"},
+}
+
+
+def checks_reading(parts) -> set:
+    """The keys of the checks that read any of the fact `parts`."""
+    parts = set(parts)
+    return {key for key, needs in CHECK_NEEDS.items() if needs & parts}
+
+
+def parts_needed(keys) -> set:
+    """The fact parts the checks `keys` read."""
+    return set().union(*(CHECK_NEEDS[key] for key in keys)) if keys else set()
+
+
+def reusable_checks(stored) -> dict | None:
+    """{key: stored result} when a partial check can build on `stored` (a
+    location's readiness_checks): every check of today there, none of them
+    failed on an unreadable database - else None (a full check is due)."""
+    if not isinstance(stored, list):
+        return None
+    by_key = {check.get("key"): check for check in stored if isinstance(check, dict)}
+    if not CHECK_KEYS <= set(by_key):
+        return None
+    if any(isinstance(check.get("values"), dict) and check["values"].get("error") for check in by_key.values()):
+        return None
+    return by_key
+
 
 def level_of(score) -> str | None:
     if score is None:
@@ -311,13 +367,20 @@ def level_of(score) -> str | None:
     return next(name for limit, name in LEVELS if score >= limit)
 
 
-def evaluate(facts: Facts) -> dict:
+def evaluate(facts: Facts, only=None, stored=None) -> dict:
     """{"score", "level", "checks": [{key, group, weight, optional, status,
     values}]} - the score is the passed share of the weights of the checks
-    that apply, rounded down: 100 only when every one passed."""
+    that apply, rounded down: 100 only when every one passed.
+
+    Partial (`only`: check keys, `stored`: reusable_checks of the location):
+    only those checks run, the others keep their stored status and values;
+    the score is taken over all of them as usual."""
     checks = []
     for check in CHECKS:
-        if facts.error:
+        if only is not None and check.key not in only:
+            kept = stored[check.key]
+            outcome = {"status": kept.get("status"), "values": kept.get("values") or {}}
+        elif facts.error:
             outcome = {"status": FAIL, "values": {"error": facts.error}}
         else:
             outcome = check.run(facts)
@@ -367,7 +430,9 @@ def _notifications_disabled(location) -> bool:
     return location.notifications_disabled if value is None else value
 
 
-def collect_facts(location, account=None, now=None) -> Facts:
+def collect_facts(location, account=None, now=None, parts=None) -> Facts:
+    """The facts of the location - only the `parts` (FACT_PARTS) given, all
+    without; the location's own fields are always there (no query)."""
     from progeo.helper.device_overview import device_label, is_online
     from progeo.helper.plan_meters import image_size, is_calibrated
     from progeo.helper.plan_resolution import plan_resolution
@@ -389,13 +454,17 @@ def collect_facts(location, account=None, now=None) -> Facts:
         "rain_check_enabled": location.rain_check_enabled,
         "notifications_disabled": _notifications_disabled(location),
     })
+    parts = set(FACT_PARTS if parts is None else parts)
     db = location_db(location, account)
     try:
+        # The plans need the points too (their spread on a plan, its resolution).
         points = list(ProgeoMeasurePoint.objects.using(db).filter(location_id=location.pk).only(
             "sensor_order", "device_id", "lageplan_id", "name", "disabled", "threshold",
             "nx", "ny", "nx_end", "ny_end",
-        ))
-        plans = list(ProgeoLageplan.objects.using(db).filter(location_id=location.pk).order_by(*ProgeoLageplan.ORDER))
+        )) if parts & {"points", "plans"} else []
+        plans = list(
+            ProgeoLageplan.objects.using(db).filter(location_id=location.pk).order_by(*ProgeoLageplan.ORDER)
+        ) if "plans" in parts else []
         main_id = next((plan.pk for plan in plans if plan.lageplan), None)
         for plan in plans:
             on_plan = [point for point in points
@@ -422,7 +491,7 @@ def collect_facts(location, account=None, now=None) -> Facts:
             ProgeoDevice.objects.using(db).filter(location_id=location.pk)
             .annotate(last_measurement_at=Subquery(latest.values("last_fetched")[:1]))
             .order_by("first_sensor_order", "id")
-        )
+        ) if "devices" in parts else []
         for device in devices:
             last_seen = max(filter(None, (device.last_measurement_at, device.last_command_poll)), default=None)
             facts.devices.append({
@@ -433,7 +502,7 @@ def collect_facts(location, account=None, now=None) -> Facts:
         facts.accesses = list(
             ProgeoAccess.objects.using(db).filter(location_id=location.pk)
             .values("user", "objektleitung", "transport", "type")
-        )
+        ) if "accesses" in parts else []
     except Exception as exc:  # noqa: BLE001 - an unreachable database is a failed checklist, not a crash
         elog(f"readiness of location {location.pk}: {exc!r}", tag="[READINESS]")
         facts.error = f"{type(exc).__name__}: database {db} not readable"
@@ -442,26 +511,48 @@ def collect_facts(location, account=None, now=None) -> Facts:
 
 # -- stored -----------------------------------------------------------------------
 
-def check_location(location, account=None, save=True, now=None, airtable=True) -> dict:
+def check_location(location, account=None, save=True, now=None, airtable=True, parts=None) -> dict:
     """evaluate() of the location - stored on it (save) in the account's
     database. update(), no save(): that would mirror the location again.
+
+    `parts` (FACT_PARTS that changed, e.g. {"devices"}): a partial check -
+    only the checks reading them run, on only the facts they need; the others
+    keep their stored result (result["partial"]: the checks run). A location
+    without a reusable stored result is checked in full.
 
     With `airtable` (and `save`), an address missing on a location linked to
     Airtable is fetched from there first (airtable_locations.fill_address);
     result["airtable_filled"]: the fields it filled."""
     from progeo.helper.airtable_locations import fill_address
+    from progeo.helper.readiness_qa import award
     from progeo.v1.models import ProgeoLocation
 
     now = now or timezone.now()
     db = account.db_name if account is not None else DEFAULT_DB_ALIAS
+    # The stored result - what the new one is compared with (readiness_qa).
+    previous = (location.readiness_checks, location.readiness_score, location.readiness_at)
+    only = checks_reading(parts) if parts else None
+    stored = reusable_checks(location.readiness_checks) if only is not None else None
+    if stored is None:
+        only = None
     filled = fill_address(location, db) if airtable and save else []
-    result = evaluate(collect_facts(location, account, now))
+    if only is not None:
+        result = evaluate(collect_facts(location, account, now, parts=parts_needed(only)), only=only, stored=stored)
+    else:
+        result = evaluate(collect_facts(location, account, now))
+    result["partial"] = sorted(only) if only is not None else None
     result["at"] = now
     result["airtable_filled"] = filled
+    result["qa"] = []
     if save:
         ProgeoLocation.objects.using(db).filter(pk=location.pk).update(
             readiness_score=result["score"], readiness_checks=result["checks"], readiness_at=now,
         )
+        location.readiness_checks, location.readiness_score, location.readiness_at = (
+            result["checks"], result["score"], now,
+        )
+        # Checks fixed since the previous check: the scoreboard's points.
+        result["qa"] = award(location, *previous, result, now)
     return result
 
 
@@ -514,4 +605,9 @@ def refresh(location_ids=None, databases=None, progress=None) -> dict:
                     progress(location, result)
         finally:
             release(current, account)
+    if location_ids is None and databases is None:
+        # Every location checked: the day's mean score for the scoreboard.
+        from progeo.helper.readiness_qa import record_snapshot
+
+        record_snapshot(now)
     return summary

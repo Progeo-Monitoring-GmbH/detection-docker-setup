@@ -6,7 +6,12 @@ import {
   type ReactNode,
 } from 'react';
 import { Alert, Badge, Button, ProgressBar, Spinner } from 'react-bootstrap';
-import { ArrowCounterclockwise, ArrowRepeat, PencilSquare, Trash3 } from 'react-bootstrap-icons';
+import {
+  ArrowCounterclockwise,
+  ArrowRepeat,
+  PencilSquare,
+  Trash3,
+} from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -39,6 +44,7 @@ import {
 } from '../components/location/locationFlags';
 import { repeatedTestId } from '../testIds';
 import './DeviceStatisticsView.css';
+import { announcePurgeableQa, type PurgeableQa } from './qaScoreboardData';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -232,9 +238,7 @@ const ListSection = ({
   testKey: string;
 }) => (
   <div className="mb-3" {...repeatedTestId('device-stats-list', testKey)}>
-    <div className="device-stats-section-title">
-      {title}
-    </div>
+    <div className="device-stats-section-title">{title}</div>
     {children}
   </div>
 );
@@ -284,11 +288,16 @@ const DeviceList = ({
   const { t } = useTranslation();
   const now = useNow();
   // The device's location switched off: the striped row (locationFlags.tsx).
-  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.location_id));
+  const { flagsOf, isOff } = useLocationFlags(
+    rows.map((row) => row.location_id),
+  );
 
   if (!rows.length) {
     return (
-      <div className="small text-muted py-2" {...repeatedTestId('device-stats-list-empty', testKey)}>
+      <div
+        className="small text-muted py-2"
+        {...repeatedTestId('device-stats-list-empty', testKey)}
+      >
         {t('device_stats_empty')}
       </div>
     );
@@ -304,7 +313,10 @@ const DeviceList = ({
           <Link
             to={deviceDetailUrl(row)}
             title={t('device_stats_open_device')}
-            {...repeatedTestId('device-stats-device-link', `${row.database}-${row.id}`)}
+            {...repeatedTestId(
+              'device-stats-device-link',
+              `${row.database}-${row.id}`,
+            )}
           >
             {row.display_name || row.raw_hash}
           </Link>
@@ -347,12 +359,18 @@ const DeviceList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
-          <LocationFlagIcons flags={flagsOf(row.location_id)} testKey={`device-${row.database}-${row.id}`} />
+          <LocationFlagIcons
+            flags={flagsOf(row.location_id)}
+            testKey={`device-${row.database}-${row.id}`}
+          />
           {row.location_id != null ? (
             <Link
               to={locationDetailUrl({ id: row.location_id })}
               title={t('device_stats_open_location')}
-              {...repeatedTestId('device-stats-device-location-link', `${row.database}-${row.id}`)}
+              {...repeatedTestId(
+                'device-stats-device-location-link',
+                `${row.database}-${row.id}`,
+              )}
             >
               {row.location_name || '–'}
             </Link>
@@ -394,7 +412,10 @@ const DeviceList = ({
                 rel="noreferrer"
                 title={t('device_stats_admin_edit')}
                 aria-label={t('device_stats_admin_edit')}
-                {...repeatedTestId('device-stats-device-admin-edit', `${row.database}-${row.id}`)}
+                {...repeatedTestId(
+                  'device-stats-device-admin-edit',
+                  `${row.database}-${row.id}`,
+                )}
               >
                 <PencilSquare size={14} />
               </a>
@@ -414,7 +435,9 @@ const DeviceList = ({
       customStyles={COMPACT_TABLE_STYLES}
       selectableRows={selectable}
       selectableRowsHighlight
-      conditionalRowStyles={[locationOffRowStyle((row: StatisticsDevice) => isOff(row.location_id))]}
+      conditionalRowStyles={[
+        locationOffRowStyle((row: StatisticsDevice) => isOff(row.location_id)),
+      ]}
       onSelectedRowsChange={(state: { selectedRows: StatisticsDevice[] }) =>
         onSelectionChange?.(state.selectedRows)
       }
@@ -453,12 +476,19 @@ const LocationList = ({
   const { flagsOf } = useLocationFlags(rows.map((row) => row.id));
   // The store (toggles of this visit included) - until it answers, the snapshot's mark.
   const flagsFor = (row: StatisticsLocation): LocationFlags =>
-    flagsOf(row.id) ?? { notifications_disabled: null, purgeable: row.purgeable ?? null };
-  const purgeableOf = (row: StatisticsLocation) => flagsFor(row).purgeable === true;
+    flagsOf(row.id) ?? {
+      notifications_disabled: null,
+      purgeable: row.purgeable ?? null,
+    };
+  const purgeableOf = (row: StatisticsLocation) =>
+    flagsFor(row).purgeable === true;
 
   if (!rows.length) {
     return (
-      <div className="small text-muted py-2" {...repeatedTestId('device-stats-list-empty', testKey)}>
+      <div
+        className="small text-muted py-2"
+        {...repeatedTestId('device-stats-list-empty', testKey)}
+      >
         {t('device_stats_empty')}
       </div>
     );
@@ -471,11 +501,17 @@ const LocationList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
-          <LocationFlagIcons flags={flagsFor(row)} testKey={`${row.database}-${row.id}`} />
+          <LocationFlagIcons
+            flags={flagsFor(row)}
+            testKey={`${row.database}-${row.id}`}
+          />
           <Link
             to={locationDetailUrl(row)}
             title={t('device_stats_open_location')}
-            {...repeatedTestId('device-stats-location-link', `${row.database}-${row.id}`)}
+            {...repeatedTestId(
+              'device-stats-location-link',
+              `${row.database}-${row.id}`,
+            )}
           >
             {row.name || '–'}
           </Link>
@@ -535,7 +571,8 @@ const LocationList = ({
     },
     {
       name: t('device_stats_col_status'),
-      selector: (row) => `${row.unused ? 'unused' : ''} ${row.dead ? 'dead' : ''}`,
+      selector: (row) =>
+        `${row.unused ? 'unused' : ''} ${row.dead ? 'dead' : ''}`,
       sortable: true,
       cell: (row) => (
         <div className="d-flex flex-wrap gap-1">
@@ -544,7 +581,9 @@ const LocationList = ({
               {t('device_stats_unused')}
             </Badge>
           ) : null}
-          {row.dead ? <Badge bg="danger">{t('device_stats_dead')}</Badge> : null}
+          {row.dead ? (
+            <Badge bg="danger">{t('device_stats_dead')}</Badge>
+          ) : null}
           {!row.unused && !row.dead ? (
             <span className="device-stats-muted">–</span>
           ) : null}
@@ -561,7 +600,9 @@ const LocationList = ({
             cell: (row: StatisticsLocation) => (
               <Button
                 size="sm"
-                variant={purgeableOf(row) ? 'outline-secondary' : 'outline-danger'}
+                variant={
+                  purgeableOf(row) ? 'outline-secondary' : 'outline-danger'
+                }
                 className="device-stats-purge-button"
                 disabled={Boolean(purgeBusy[row.id])}
                 title={
@@ -569,15 +610,22 @@ const LocationList = ({
                     ? t('device_stats_purgeable_unmark_title')
                     : t('device_stats_purgeable_mark_title')
                 }
-                onClick={() => onTogglePurgeable({ ...row, purgeable: purgeableOf(row) })}
-                {...repeatedTestId('device-stats-purge-toggle', `${row.database}-${row.id}`)}
+                onClick={() =>
+                  onTogglePurgeable({ ...row, purgeable: purgeableOf(row) })
+                }
+                {...repeatedTestId(
+                  'device-stats-purge-toggle',
+                  `${row.database}-${row.id}`,
+                )}
               >
                 {purgeableOf(row) ? (
                   <ArrowCounterclockwise size={12} className="me-1" />
                 ) : (
                   <Trash3 size={12} className="me-1" />
                 )}
-                {purgeableOf(row) ? t('device_stats_purgeable_unmark') : t('device_stats_purgeable_mark')}
+                {purgeableOf(row)
+                  ? t('device_stats_purgeable_unmark')
+                  : t('device_stats_purgeable_mark')}
               </Button>
             ),
             width: '150px',
@@ -597,7 +645,10 @@ const LocationList = ({
                 rel="noreferrer"
                 title={t('device_stats_admin_edit')}
                 aria-label={t('device_stats_admin_edit')}
-                {...repeatedTestId('device-stats-location-admin-edit', `${row.database}-${row.id}`)}
+                {...repeatedTestId(
+                  'device-stats-location-admin-edit',
+                  `${row.database}-${row.id}`,
+                )}
               >
                 <PencilSquare size={14} />
               </a>
@@ -617,10 +668,14 @@ const LocationList = ({
       customStyles={COMPACT_TABLE_STYLES}
       selectableRows={selectable}
       selectableRowsHighlight
-      conditionalRowStyles={[locationOffRowStyle((row: StatisticsLocation) => {
-        const flags = flagsFor(row);
-        return flags.notifications_disabled === true || flags.purgeable === true;
-      })]}
+      conditionalRowStyles={[
+        locationOffRowStyle((row: StatisticsLocation) => {
+          const flags = flagsFor(row);
+          return (
+            flags.notifications_disabled === true || flags.purgeable === true
+          );
+        }),
+      ]}
       onSelectedRowsChange={(state: { selectedRows: StatisticsLocation[] }) =>
         onSelectionChange?.(state.selectedRows)
       }
@@ -664,7 +719,9 @@ const DeviceStatisticsView = () => {
   const [scrollToType, setScrollToType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selections, setSelections] = useState<Record<string, SelectedRow[]>>({});
+  const [selections, setSelections] = useState<Record<string, SelectedRow[]>>(
+    {},
+  );
   // Remounts the tables after a tab switch/delete, clearing their own checkboxes.
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -684,7 +741,8 @@ const DeviceStatisticsView = () => {
         void axiosConfig.perform_get(
           authRef.current,
           `${STATISTICS_URL}?${query}`,
-          (response) => resolve((response?.data ?? {}) as Record<string, unknown>),
+          (response) =>
+            resolve((response?.data ?? {}) as Record<string, unknown>),
           reject,
         );
       }),
@@ -739,9 +797,16 @@ const DeviceStatisticsView = () => {
                 current && {
                   ...current,
                   chunksDone: current.chunksDone + 1,
-                  databasesDone: current.databasesDone + (Number(chunk.databases) || 0),
-                  totals: addCounts(current.totals, (chunk.totals ?? {}) as Partial<StatisticsTotals>),
-                  byType: mergeTypeCounts(current.byType, (chunk.by_type ?? []) as StatisticsTypeRow[]),
+                  databasesDone:
+                    current.databasesDone + (Number(chunk.databases) || 0),
+                  totals: addCounts(
+                    current.totals,
+                    (chunk.totals ?? {}) as Partial<StatisticsTotals>,
+                  ),
+                  byType: mergeTypeCounts(
+                    current.byType,
+                    (chunk.by_type ?? []) as StatisticsTypeRow[],
+                  ),
                 },
             );
           },
@@ -788,7 +853,10 @@ const DeviceStatisticsView = () => {
         if (data.missing) {
           expired = true;
         } else {
-          setSections((current) => ({ ...current, [key]: normalizeSection(data) }));
+          setSections((current) => ({
+            ...current,
+            [key]: normalizeSection(data),
+          }));
         }
       } catch (requestError) {
         if (request === requestRef.current) {
@@ -835,7 +903,12 @@ const DeviceStatisticsView = () => {
   }, [isStaff, sections.overview, hasCurrent, requestKey, loadSection]);
 
   useEffect(() => {
-    if (!isStaff || !scrollToType || section !== 'by_type' || !sections.by_type) {
+    if (
+      !isStaff ||
+      !scrollToType ||
+      section !== 'by_type' ||
+      !sections.by_type
+    ) {
       return;
     }
     document
@@ -848,7 +921,10 @@ const DeviceStatisticsView = () => {
 
   if (!isStaff) {
     return (
-      <div className="text-muted py-5 text-center" data-testid="page-device-statistics">
+      <div
+        className="text-muted py-5 text-center"
+        data-testid="page-device-statistics"
+      >
         {t('device_stats_staff_only')}
       </div>
     );
@@ -923,7 +999,10 @@ const DeviceStatisticsView = () => {
       '/v1/status/device_statistics/delete/',
       {
         devices: selectedDevices.map(({ id, database }) => ({ id, database })),
-        locations: selectedLocations.map(({ id, database }) => ({ id, database })),
+        locations: selectedLocations.map(({ id, database }) => ({
+          id,
+          database,
+        })),
       },
       (response) => {
         const data = response?.data || {};
@@ -970,20 +1049,35 @@ const DeviceStatisticsView = () => {
       `/v1/location/${row.id}/purgeable/`,
       { purgeable },
       (response) => {
-        const saved = (response?.data?.location?.purgeable ?? purgeable) as boolean | null;
+        const saved = (response?.data?.location?.purgeable ?? purgeable) as
+          boolean | null;
         // Every table of the visit follows (locationFlags store).
         setLocationFlags(row.id, { purgeable: saved });
         setPurgeBusy((busy) => ({ ...busy, [row.id]: false }));
         showSuccessBar(
           enqueueSnackbar,
-          t(saved ? 'device_stats_purgeable_marked_toast' : 'device_stats_purgeable_unmarked_toast', {
-            name: row.name || row.project_id || row.id,
-          }),
+          t(
+            saved
+              ? 'device_stats_purgeable_marked_toast'
+              : 'device_stats_purgeable_unmarked_toast',
+            {
+              name: row.name || row.project_id || row.id,
+            },
+          ),
+        );
+        announcePurgeableQa(
+          response?.data?.qa as PurgeableQa,
+          (text) => enqueueSnackbar(text, { variant: 'info' }),
+          t,
         );
       },
       (requestError) => {
         setPurgeBusy((busy) => ({ ...busy, [row.id]: false }));
-        showRequestError(enqueueSnackbar, t('device_stats_purgeable_error'), requestError);
+        showRequestError(
+          enqueueSnackbar,
+          t('device_stats_purgeable_error'),
+          requestError,
+        );
       },
     );
   };
@@ -992,7 +1086,8 @@ const DeviceStatisticsView = () => {
   const overview = sections.overview ?? null;
   // While a build runs: the counts of the chunks scanned so far.
   const live = progress && progress.chunksDone > 0 ? progress : null;
-  const totals = current?.totals ?? overview?.totals ?? live?.totals ?? EMPTY_TOTALS;
+  const totals =
+    current?.totals ?? overview?.totals ?? live?.totals ?? EMPTY_TOTALS;
   const hasTotals = current != null || overview != null || live != null;
   const generatedAt = current?.generated_at ?? overview?.generated_at ?? null;
   const typeRows = overview?.by_type ?? live?.byType ?? [];
@@ -1005,7 +1100,10 @@ const DeviceStatisticsView = () => {
       actions={
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {generatedAt && (
-            <span className="small text-muted" data-testid="device-stats-generated-at">
+            <span
+              className="small text-muted"
+              data-testid="device-stats-generated-at"
+            >
               {t('device_stats_generated_at', {
                 date: formatDate(generatedAt, 'dateTime'),
               })}
@@ -1039,11 +1137,13 @@ const DeviceStatisticsView = () => {
         </div>
       }
     >
-      <div className="small device-stats-muted">
-        {t('device_stats_hint')}
-      </div>
+      <div className="small device-stats-muted">{t('device_stats_hint')}</div>
       {progress && (
-        <div className="mt-2" aria-live="polite" data-testid="device-stats-progress">
+        <div
+          className="mt-2"
+          aria-live="polite"
+          data-testid="device-stats-progress"
+        >
           <div className="d-flex justify-content-between small mb-1 device-stats-muted">
             <span>
               {t('device_stats_scanning', {
@@ -1052,7 +1152,12 @@ const DeviceStatisticsView = () => {
               })}
             </span>
             <span>
-              {progress.databases ? Math.round((progress.databasesDone / progress.databases) * 100) : 0} %
+              {progress.databases
+                ? Math.round(
+                    (progress.databasesDone / progress.databases) * 100,
+                  )
+                : 0}{' '}
+              %
             </span>
           </div>
           <ProgressBar
@@ -1069,7 +1174,11 @@ const DeviceStatisticsView = () => {
         </div>
       )}
       {error && (
-        <Alert variant="danger" className="mt-2 mb-0" data-testid="device-stats-error">
+        <Alert
+          variant="danger"
+          className="mt-2 mb-0"
+          data-testid="device-stats-error"
+        >
           {t('device_stats_load_failed')}: {error}
         </Alert>
       )}
@@ -1088,7 +1197,10 @@ const DeviceStatisticsView = () => {
       label: t('device_stats_locations_missing_points'),
     },
     { value: 'dead_locations', label: t('device_stats_dead_locations') },
-    { value: 'locations_without_gps', label: t('device_stats_locations_without_gps') },
+    {
+      value: 'locations_without_gps',
+      label: t('device_stats_locations_without_gps'),
+    },
   ];
 
   // by_type is keyed by the locations' project type (PROJECT_TYPE_CHOICES
@@ -1118,14 +1230,24 @@ const DeviceStatisticsView = () => {
   // Every device is exactly one of these: measured within 24 h, measured
   // within 30 days (offline), or dead (older or never - device_inventory).
   const statusSlices = [
-    { key: 'online', label: t('device_stats_status_online'), count: totals.measured_24h, color: plotTheme.contrastGreen },
+    {
+      key: 'online',
+      label: t('device_stats_status_online'),
+      count: totals.measured_24h,
+      color: plotTheme.contrastGreen,
+    },
     {
       key: 'offline',
       label: t('device_stats_status_offline'),
       count: Math.max(0, totals.devices - totals.measured_24h - totals.dead),
       color: plotTheme.contrastYellow,
     },
-    { key: 'dead', label: t('device_stats_status_dead'), count: totals.dead, color: RED },
+    {
+      key: 'dead',
+      label: t('device_stats_status_dead'),
+      count: totals.dead,
+      color: RED,
+    },
   ];
 
   const waiting = (
@@ -1141,7 +1263,10 @@ const DeviceStatisticsView = () => {
       // the build is through.
       if (progress) {
         return (
-          <div className="d-flex align-items-center gap-2 text-muted py-3" data-testid="device-stats-lists-pending">
+          <div
+            className="d-flex align-items-center gap-2 text-muted py-3"
+            data-testid="device-stats-lists-pending"
+          >
             <Spinner animation="border" size="sm" />
             {t('device_stats_lists_after_scan')}
           </div>
@@ -1152,7 +1277,14 @@ const DeviceStatisticsView = () => {
       if (loading || (!error && sections.overview)) {
         return waiting;
       }
-      return <div className="small text-muted py-2" data-testid="device-stats-lists-empty">{t('device_stats_empty')}</div>;
+      return (
+        <div
+          className="small text-muted py-2"
+          data-testid="device-stats-lists-empty"
+        >
+          {t('device_stats_empty')}
+        </div>
+      );
     }
     switch (section) {
       case 'by_type':
@@ -1174,19 +1306,30 @@ const DeviceStatisticsView = () => {
                   selectable
                   showAdminEdit={isSuperuser}
                   selectionKey={`by_type-${group.type}-${selectionEpoch}`}
-                  onSelectionChange={selectionHandler(`by_type-${group.type}`, 'device')}
+                  onSelectionChange={selectionHandler(
+                    `by_type-${group.type}`,
+                    'device',
+                  )}
                   testKey={`by-type-${group.type}`}
                 />
               </div>
             ))}
           </div>
         ) : (
-          <div className="small text-muted py-2" data-testid="device-stats-lists-empty">{t('device_stats_empty')}</div>
+          <div
+            className="small text-muted py-2"
+            data-testid="device-stats-lists-empty"
+          >
+            {t('device_stats_empty')}
+          </div>
         );
       case 'chip_id':
         return (
           <>
-            <ListSection title={t('device_stats_with_chip_id')} testKey="chip-with">
+            <ListSection
+              title={t('device_stats_with_chip_id')}
+              testKey="chip-with"
+            >
               <DeviceList
                 rows={current.devices.with_chip_id}
                 selectable
@@ -1196,7 +1339,10 @@ const DeviceStatisticsView = () => {
                 onSelectionChange={selectionHandler('chip-with', 'device')}
               />
             </ListSection>
-            <ListSection title={t('device_stats_without_chip_id')} testKey="chip-without">
+            <ListSection
+              title={t('device_stats_without_chip_id')}
+              testKey="chip-without"
+            >
               <DeviceList
                 rows={current.devices.without_chip_id}
                 selectable
@@ -1211,7 +1357,10 @@ const DeviceStatisticsView = () => {
       case 'measured':
         return (
           <>
-            <ListSection title={t('device_stats_measured_24h')} testKey="measured-yes">
+            <ListSection
+              title={t('device_stats_measured_24h')}
+              testKey="measured-yes"
+            >
               <DeviceList
                 rows={current.devices.measured_24h}
                 selectable
@@ -1221,7 +1370,10 @@ const DeviceStatisticsView = () => {
                 onSelectionChange={selectionHandler('measured-yes', 'device')}
               />
             </ListSection>
-            <ListSection title={t('device_stats_not_measured_24h')} testKey="measured-no">
+            <ListSection
+              title={t('device_stats_not_measured_24h')}
+              testKey="measured-no"
+            >
               <DeviceList
                 rows={current.devices.not_measured_24h}
                 selectable
@@ -1235,7 +1387,10 @@ const DeviceStatisticsView = () => {
         );
       case 'points':
         return (
-          <ListSection title={t('device_stats_missing_points')} testKey="points">
+          <ListSection
+            title={t('device_stats_missing_points')}
+            testKey="points"
+          >
             <DeviceList
               rows={current.devices.missing_points}
               selectable
@@ -1261,7 +1416,10 @@ const DeviceStatisticsView = () => {
         );
       case 'unused_locations':
         return (
-          <ListSection title={t('device_stats_unused_locations')} testKey="unused">
+          <ListSection
+            title={t('device_stats_unused_locations')}
+            testKey="unused"
+          >
             <LocationList
               rows={current.locations.unused_locations ?? []}
               selectable
@@ -1276,7 +1434,10 @@ const DeviceStatisticsView = () => {
         );
       case 'locations_missing_points':
         return (
-          <ListSection title={t('device_stats_locations_missing_points')} testKey="missing-points">
+          <ListSection
+            title={t('device_stats_locations_missing_points')}
+            testKey="missing-points"
+          >
             <LocationList
               rows={current.locations.locations_missing_points ?? []}
               selectable
@@ -1291,7 +1452,10 @@ const DeviceStatisticsView = () => {
         );
       case 'dead_locations':
         return (
-          <ListSection title={t('device_stats_dead_locations')} testKey="dead-locations">
+          <ListSection
+            title={t('device_stats_dead_locations')}
+            testKey="dead-locations"
+          >
             <LocationList
               rows={current.locations.dead_locations ?? []}
               selectable
@@ -1306,7 +1470,10 @@ const DeviceStatisticsView = () => {
         );
       case 'locations_without_gps':
         return (
-          <ListSection title={t('device_stats_locations_without_gps')} testKey="without-gps">
+          <ListSection
+            title={t('device_stats_locations_without_gps')}
+            testKey="without-gps"
+          >
             <LocationList
               rows={current.locations.locations_without_gps ?? []}
               selectable
@@ -1382,9 +1549,21 @@ const DeviceStatisticsView = () => {
       <KpiStrip tiles={kpiTiles} testId="device-stats-kpis" />
 
       <div className="device-stats-grid">
-        <PanelCard title={t('device_stats_by_type_title')} testId="device-stats-by-type">
+        <PanelCard
+          title={t('device_stats_by_type_title')}
+          testId="device-stats-by-type"
+        >
           {!hasCounts ? (
-            loading ? waiting : <div className="small text-muted py-2" data-testid="device-stats-type-chart-empty">{t('device_stats_empty')}</div>
+            loading ? (
+              waiting
+            ) : (
+              <div
+                className="small text-muted py-2"
+                data-testid="device-stats-type-chart-empty"
+              >
+                {t('device_stats_empty')}
+              </div>
+            )
           ) : (
             <DonutChart
               emptyLabel={t('device_stats_empty')}
@@ -1397,9 +1576,21 @@ const DeviceStatisticsView = () => {
             />
           )}
         </PanelCard>
-        <PanelCard title={t('device_stats_status_title')} testId="device-stats-status">
+        <PanelCard
+          title={t('device_stats_status_title')}
+          testId="device-stats-status"
+        >
           {!hasCounts ? (
-            loading ? waiting : <div className="small text-muted py-2" data-testid="device-stats-status-chart-empty">{t('device_stats_empty')}</div>
+            loading ? (
+              waiting
+            ) : (
+              <div
+                className="small text-muted py-2"
+                data-testid="device-stats-status-chart-empty"
+              >
+                {t('device_stats_empty')}
+              </div>
+            )
           ) : (
             <DonutChart
               emptyLabel={t('device_stats_empty')}
@@ -1407,7 +1598,9 @@ const DeviceStatisticsView = () => {
               centerLabel={t('device_stats_kpi_devices')}
               ariaLabel={t('device_stats_status_title')}
               // Online/offline: the 24 h lists, dead: the dead devices.
-              onSelect={(key) => chooseSection(key === 'dead' ? 'dead' : 'measured')}
+              onSelect={(key) =>
+                chooseSection(key === 'dead' ? 'dead' : 'measured')
+              }
               selectTitle={t('device_stats_status_open')}
               testId="device-stats-status-chart"
             />

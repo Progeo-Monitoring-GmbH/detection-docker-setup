@@ -5,9 +5,12 @@
  * escalation's protocol.
  */
 
+import type { StatusViewState } from './statusViewState';
+
 export type EscalationStatus = 'open' | 'in_progress' | 'waiting' | 'closed';
 
-type EscalationEntryKind = 'created' | 'comment' | 'status' | 'assigned' | 'closed';
+type EscalationEntryKind =
+  'created' | 'comment' | 'status' | 'assigned' | 'closed';
 
 export type EscalationEntry = {
   id: number;
@@ -37,6 +40,8 @@ export type Escalation = {
   closed_by: number | null;
   closed_by_name: string | null;
   entry_count: number;
+  /** The status page as its creator saw it - the quick link opens it so. */
+  view_state: StatusViewState | null;
   /** Only in the detail (GET /v1/escalation/<id>/ and every change). */
   entries?: EscalationEntry[];
 };
@@ -46,9 +51,16 @@ export type StaffUser = { id: number; name: string };
 export const ESCALATION_URL = '/v1/escalation/';
 
 /** The statuses staff can set - closing is its own action. */
-export const SETTABLE_STATUSES: EscalationStatus[] = ['open', 'in_progress', 'waiting'];
+export const SETTABLE_STATUSES: EscalationStatus[] = [
+  'open',
+  'in_progress',
+  'waiting',
+];
 
-export const STATUS_STYLE: Record<EscalationStatus, { color: string; bg: string }> = {
+export const STATUS_STYLE: Record<
+  EscalationStatus,
+  { color: string; bg: string }
+> = {
   open: { color: '#B23A12', bg: '#FCE9E2' },
   in_progress: { color: '#9A7208', bg: '#FBF3DE' },
   waiting: { color: '#2F5F8A', bg: '#E4EEF7' },
@@ -56,7 +68,8 @@ export const STATUS_STYLE: Record<EscalationStatus, { color: string; bg: string 
 };
 
 /** i18n key of a status. */
-export const statusKey = (status: EscalationStatus) => `escalation_status_${status}`;
+export const statusKey = (status: EscalationStatus) =>
+  `escalation_status_${status}`;
 
 /** Path of an escalation in the Escalations page. */
 export const escalationPath = (id: number) => `/escalations/${id}`;

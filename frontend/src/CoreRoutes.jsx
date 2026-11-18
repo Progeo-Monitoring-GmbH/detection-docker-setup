@@ -112,6 +112,7 @@ const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
 const DatabaseUsageView = React.lazy(() => import('./main/staff/DatabaseUsageView.tsx'));
 const UserActivityView = React.lazy(() => import('./main/staff/UserActivityView.tsx'));
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
+const ScreenReviewView = React.lazy(() => import('./main/ScreenReviewView.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const LageplanWizardView = React.lazy(
   () => import('./main/LageplanWizardView.tsx'),
@@ -297,6 +298,10 @@ const CoreRoutes = () => {
           <Route
             path="/escalations/:id"
             element={guard('/escalations/:id', <EscalationsView />)}
+          />
+          <Route
+            path="/review/screens/"
+            element={guard('/review/screens/', <ScreenReviewView />)}
           />
           <Route
             path="/backup/:account/overview/"

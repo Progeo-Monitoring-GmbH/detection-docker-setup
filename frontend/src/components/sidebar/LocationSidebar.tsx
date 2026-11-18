@@ -13,6 +13,7 @@ import {
   Calendar3,
   Database,
   DatabaseCheck,
+  Images,
   ExclamationTriangle,
   Gear,
   Geo,
@@ -236,6 +237,14 @@ const LocationSidebar = ({
       icon: People,
       to: '/staff/',
       visible: can(routeRule('/staff/')),
+    },
+    {
+      // The screenshots of a build (e2e_screenshots) and their review comments.
+      key: 'screen-review',
+      label: t('sidebar_screen_review'),
+      icon: Images,
+      to: '/review/screens/',
+      visible: can(routeRule('/review/screens/')),
     },
     {
       // How the project databases are used - which are dead.

@@ -217,6 +217,9 @@ AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = (
 # after an upload, a CAD import, a placement or an alignment
 # (helper/auto_heat_limits.py) - celery task, hand-made areas are kept.
 AUTO_HEAT_LIMITATIONS = parse_boolean(os.getenv("AUTO_HEAT_LIMITATIONS", "1"))
+# helper/readiness_qa.py: a location a staff member changed is checked again
+# a few seconds later (celery) - fixes reach the scoreboard right away.
+READINESS_AUTO_RECHECK = parse_boolean(os.getenv("READINESS_AUTO_RECHECK", "1"))
 
 # Origin the provisioned controllers send their samples to (control.url of the
 # config, helper/device_provisioning.py) - on a local dev system e.g. the LAN
@@ -280,6 +283,7 @@ MIDDLEWARE = [
     "progeo.middlewares.PendingAccessMiddleware",
     "progeo.middlewares.ImpersonationMiddleware",
     "progeo.middlewares.TwoFactorRequiredMiddleware",
+    "progeo.middlewares.ReadinessTouchMiddleware",
 ]
 if not DEBUG:
     MIDDLEWARE.remove("debug_toolbar.middleware.DebugToolbarMiddleware")

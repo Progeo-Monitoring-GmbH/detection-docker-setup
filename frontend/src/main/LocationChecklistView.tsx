@@ -22,7 +22,11 @@ import {
   readinessLevel,
   setLocationFlags,
 } from '../components/location/locationFlags';
-import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -33,6 +37,8 @@ import SearchableDataTable, {
 } from '../components/ui/kit/SearchableDataTable';
 import { formatDate } from './dateFormat';
 import { wizardPath } from './lageplanWizardAnchors';
+import QaScoreboard from './QaScoreboard';
+import { QA_CHECKED_EVENT } from './qaScoreboardData';
 import { repeatedTestId } from '../testIds';
 import './LocationChecklistView.css';
 
@@ -88,9 +94,14 @@ type AirtableLink = {
 };
 
 /** The confirmed changes as the backend takes them: {field: Airtable's value}. */
-export const acceptedChanges = (changes: AirtableChange[], denied: Set<string>) =>
+export const acceptedChanges = (
+  changes: AirtableChange[],
+  denied: Set<string>,
+) =>
   Object.fromEntries(
-    changes.filter((change) => !denied.has(change.field)).map((change) => [change.field, change.new.value]),
+    changes
+      .filter((change) => !denied.has(change.field))
+      .map((change) => [change.field, change.new.value]),
   );
 
 type OverviewRow = {
@@ -207,7 +218,7 @@ export const checkDetail = (t: TFunction, check: ReadinessCheck): string => {
 /** How a check is shown: a failed optional check is a warning, not an error. */
 type Severity = 'pass' | 'fail' | 'warn' | 'na';
 
-const severityOf =(check: ReadinessCheck): Severity =>
+const severityOf = (check: ReadinessCheck): Severity =>
   check.status === 'fail' && check.optional ? 'warn' : check.status;
 
 /**
@@ -265,7 +276,10 @@ const LocationChecklistView = () => {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [linkingAirtable, setLinkingAirtable] = useState(false);
   // The changes Airtable would make, to confirm - and the ones denied.
-  const [airtablePreview, setAirtablePreview] = useState<{ id: number; changes: AirtableChange[] } | null>(null);
+  const [airtablePreview, setAirtablePreview] = useState<{
+    id: number;
+    changes: AirtableChange[];
+  } | null>(null);
   const [deniedFields, setDeniedFields] = useState<Set<string>>(new Set());
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
@@ -313,11 +327,18 @@ const LocationChecklistView = () => {
   // Applies a fresh readiness answer (checked now) to the page.
   const applyReadiness = (id: number, data: Readiness) => {
     setReadiness(data);
+    // Fixes this check found: the scoreboard's toasts look right away.
+    window.dispatchEvent(new Event(QA_CHECKED_EVENT));
     setLocationFlags(id, { readiness_score: data.score });
-    setLocations((rows) => rows.map((row) => (row.id === id ? { ...row, readiness_score: data.score } : row)));
+    setLocations((rows) =>
+      rows.map((row) =>
+        row.id === id ? { ...row, readiness_score: data.score } : row,
+      ),
+    );
   };
 
-  const fieldLabel = (field: string) => t(`readiness_airtable_field_${field}`, { defaultValue: field });
+  const fieldLabel = (field: string) =>
+    t(`readiness_airtable_field_${field}`, { defaultValue: field });
 
   // "Beheben" of the Airtable check, 1: the project by the location's
   // number and what it would change - nothing saved before it is confirmed.
@@ -331,7 +352,12 @@ const LocationChecklistView = () => {
         setLinkingAirtable(false);
         const linked = response?.data?.airtable as AirtableLink | undefined;
         if (linked?.status === 'not_found') {
-          showErrorBar(enqueueSnackbar, t('readiness_airtable_not_found', { project: linked.project_id ?? '–' }));
+          showErrorBar(
+            enqueueSnackbar,
+            t('readiness_airtable_not_found', {
+              project: linked.project_id ?? '–',
+            }),
+          );
         } else if (linked?.status === 'preview' && linked.changes.length) {
           setDeniedFields(new Set());
           setAirtablePreview({ id, changes: linked.changes });
@@ -341,7 +367,11 @@ const LocationChecklistView = () => {
       },
       (error) => {
         setLinkingAirtable(false);
-        showRequestError(enqueueSnackbar, t('readiness_airtable_failed'), error);
+        showRequestError(
+          enqueueSnackbar,
+          t('readiness_airtable_failed'),
+          error,
+        );
       },
     );
   };
@@ -366,19 +396,27 @@ const LocationChecklistView = () => {
         if (linked?.fields.length) {
           showSuccessBar(
             enqueueSnackbar,
-            t('readiness_airtable_updated', { fields: linked.fields.map(fieldLabel).join(', ') }),
+            t('readiness_airtable_updated', {
+              fields: linked.fields.map(fieldLabel).join(', '),
+            }),
           );
         }
         if (linked?.skipped?.length) {
           showErrorBar(
             enqueueSnackbar,
-            t('readiness_airtable_skipped', { fields: linked.skipped.map(fieldLabel).join(', ') }),
+            t('readiness_airtable_skipped', {
+              fields: linked.skipped.map(fieldLabel).join(', '),
+            }),
           );
         }
       },
       (error) => {
         setLinkingAirtable(false);
-        showRequestError(enqueueSnackbar, t('readiness_airtable_failed'), error);
+        showRequestError(
+          enqueueSnackbar,
+          t('readiness_airtable_failed'),
+          error,
+        );
       },
     );
   };
@@ -704,7 +742,9 @@ const LocationChecklistView = () => {
                               ? '–'
                               : t('readiness_points', {
                                   points:
-                                    check.status === 'pass' ? `+${worth}` : worth,
+                                    check.status === 'pass'
+                                      ? `+${worth}`
+                                      : worth,
                                 })}
                           </span>
                         </div>
@@ -720,10 +760,14 @@ const LocationChecklistView = () => {
                                 className="btn btn-link btn-sm p-0 ms-2 align-baseline"
                                 disabled={linkingAirtable}
                                 title={t('readiness_airtable_fix_hint')}
-                                onClick={() => previewAirtable(data.location.id)}
+                                onClick={() =>
+                                  previewAirtable(data.location.id)
+                                }
                                 {...repeatedTestId('checklist-fix', check.key)}
                               >
-                                {linkingAirtable ? t('ui_loading') : t('readiness_fix')}
+                                {linkingAirtable
+                                  ? t('ui_loading')
+                                  : t('readiness_fix')}
                               </button>
                             )}
                             {path && (
@@ -791,6 +835,7 @@ const LocationChecklistView = () => {
       </PanelCard>
 
       {locationId === null && renderOverview()}
+      {locationId === null && <QaScoreboard />}
       {locationId !== null && loading && !readiness && (
         <div className="text-center py-4" data-testid="checklist-loading">
           <Spinner animation="border" size="sm" />
@@ -804,7 +849,9 @@ const LocationChecklistView = () => {
         title={t('readiness_airtable_confirm_title')}
         message={
           <div className="checklist-airtable-changes">
-            <div className="small text-muted mb-2">{t('readiness_airtable_confirm_intro')}</div>
+            <div className="small text-muted mb-2">
+              {t('readiness_airtable_confirm_intro')}
+            </div>
             {(airtablePreview?.changes ?? []).map((change) => (
               <label
                 key={change.field}
@@ -817,10 +864,16 @@ const LocationChecklistView = () => {
                   checked={!deniedFields.has(change.field)}
                   onChange={() => toggleDenied(change.field)}
                 />
-                <span className="checklist-airtable-field">{fieldLabel(change.field)}</span>
-                <span className="checklist-airtable-old">{change.old.label ?? '–'}</span>
+                <span className="checklist-airtable-field">
+                  {fieldLabel(change.field)}
+                </span>
+                <span className="checklist-airtable-old">
+                  {change.old.label ?? '–'}
+                </span>
                 <span aria-hidden="true">→</span>
-                <span className="checklist-airtable-new">{change.new.label ?? '–'}</span>
+                <span className="checklist-airtable-new">
+                  {change.new.label ?? '–'}
+                </span>
               </label>
             ))}
           </div>
@@ -831,7 +884,9 @@ const LocationChecklistView = () => {
         cancelLabel={t('readiness_airtable_cancel')}
         danger={false}
         confirming={linkingAirtable}
-        confirmDisabled={(airtablePreview?.changes.length ?? 0) - deniedFields.size <= 0}
+        confirmDisabled={
+          (airtablePreview?.changes.length ?? 0) - deniedFields.size <= 0
+        }
         onCancel={() => setAirtablePreview(null)}
         onConfirm={confirmAirtable}
       />

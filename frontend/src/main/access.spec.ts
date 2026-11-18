@@ -64,6 +64,7 @@ describe('APP_ROUTE_ACCESS', () => {
         '/escalations/:id',
         '/insights/activity/',
         '/insights/databases/',
+        '/review/screens/',
         '/site-plan/wizard/',
         '/map/',
         '/staff/',
@@ -93,25 +94,29 @@ describe('portalItemRule', () => {
     expect(portalItemRule(analyse)(PLAIN_WITH_ALL_PERMISSIONS)).toBe(false);
     expect(portalItemRule(analyse)(STAFF_WITHOUT_PERMISSIONS)).toBe(false);
     expect(
-      portalItemRule(analyse)({ isStaff: true, isSuperuser: false, hasPermission: ALL }),
+      portalItemRule(analyse)({
+        isStaff: true,
+        isSuperuser: false,
+        hasPermission: ALL,
+      }),
     ).toBe(true);
     expect(portalItemRule(analyse)(SUPERUSER)).toBe(true);
   });
 
   it('gates the other items by their module permission', () => {
-    PORTAL_NAV_ITEMS.filter((item) => !['einstell', 'analyse'].includes(item.key)).forEach(
-      (item) => {
-        const only = (code: string) => code === item.permission;
-        expect(
-          portalItemRule(item)({
-            isStaff: false,
-            isSuperuser: false,
-            hasPermission: only,
-          }),
-        ).toBe(true);
-        expect(portalItemRule(item)(STAFF_WITHOUT_PERMISSIONS)).toBe(false);
-      },
-    );
+    PORTAL_NAV_ITEMS.filter(
+      (item) => !['einstell', 'analyse'].includes(item.key),
+    ).forEach((item) => {
+      const only = (code: string) => code === item.permission;
+      expect(
+        portalItemRule(item)({
+          isStaff: false,
+          isSuperuser: false,
+          hasPermission: only,
+        }),
+      ).toBe(true);
+      expect(portalItemRule(item)(STAFF_WITHOUT_PERMISSIONS)).toBe(false);
+    });
   });
 });
 
