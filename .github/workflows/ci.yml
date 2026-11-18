@@ -1,4 +1,7 @@
-# Lint, type checks, tests and dependency audits on pushes to staging.
+# Lint, type checks, tests and dependency audits on pushes to staging - and
+# on Dependabot's pull requests (.github/dependabot.yml), so its updates are
+# tested before they are merged. Every job carries the same condition; other
+# pushes and pull requests skip the run.
 #
 # Every check is its own job, so one failing check never hides or skips the
 # others - each job reports on its own.
@@ -55,7 +58,7 @@ jobs:
   # ---------------------------------------------------------------- backend
 
   backend-lint:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Never fails the run - not even if installing ruff breaks.
@@ -89,7 +92,7 @@ jobs:
           if [ "$count" -gt 0 ]; then echo "::warning title=ruff::${count} finding(s) - see the job summary"; fi
 
   backend-migrations:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -124,7 +127,7 @@ jobs:
         run: python manage.py makemigrations --check --dry-run --settings=progeo.tests.settings
 
   backend-tests:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
@@ -189,7 +192,7 @@ jobs:
   # and a type error no longer hides the test results (or vice versa).
 
   frontend-typecheck:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -210,7 +213,7 @@ jobs:
         run: npx tsc --noEmit -p .
 
   frontend-tests:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -235,7 +238,7 @@ jobs:
   # To make oxlint blocking once they are fixed: replace the step with
   # `npm run lint` and drop continue-on-error.
   frontend-lint:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     continue-on-error: true
@@ -266,7 +269,7 @@ jobs:
   # drop continue-on-error once the current findings are dealt with.
 
   audit-python:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -283,7 +286,7 @@ jobs:
           pip-audit -r requirements.txt || echo "::warning title=pip-audit::vulnerable Python dependencies - see the log"
 
   audit-npm:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     continue-on-error: true

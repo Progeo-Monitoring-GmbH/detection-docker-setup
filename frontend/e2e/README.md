@@ -63,3 +63,24 @@ them up: it only runs `*.spec.ts(x)`.
 Where an element has a clear role and name, a test may also use
 `getByRole('button', { name: ... })`. Test ids are the stable way for
 everything else.
+
+## Screenshots of every screen (screen review)
+
+`python manage.py e2e_screenshots` takes full-page screenshots of every route
+(`e2e/screenshots/routes.mjs`) - pc (1440×900) and mobile (390×844), as a
+normal user and as staff - against the dev server with mocked API answers
+(`e2e/screenshots/mockApi.mjs`, no backend or database). They land in
+`media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/{pc,mobile}/{pc|mobile}-{user|staff}-{action}.png`
+with a `manifest.json`, and are reviewed at `/review/screens/` (staff):
+comments with arrows or areas, exported as a ZIP with a `PROMPT.md`.
+
+```bash
+python manage.py e2e_screenshots                                   # everything (~4 min)
+python manage.py e2e_screenshots --devices mobile --only location-status,staff-admin
+python manage.py e2e_screenshots --base-url http://127.0.0.1:3000  # a dev server started
+                                                                   # with VITE_BACKEND_URL=http://127.0.0.1:59999
+```
+
+A new page: add it to `routes.mjs`. A screen showing empty data or a page
+error: the run's `manifest.json` lists per screenshot the requests without a
+mock (`unmocked`) and the page errors - add those answers to `mockApi.mjs`.
