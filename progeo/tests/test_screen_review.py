@@ -215,3 +215,39 @@ def test_a_screenshot_container_that_cannot_run_leaves_no_empty_run(uploads, tmp
     with pytest.raises(CommandError, match="--profile e2e_screens build"):
         call_command("e2e_screenshots", "--docker", stdout=io.StringIO())
     assert list((uploads / "e2e").iterdir()) == []
+
+
+def test_folders_made_as_root_belong_to_the_app(uploads, monkeypatch):
+    """`docker exec progeo-backend python manage.py e2e_screenshots` runs as
+    root: the run's folders go to the app's user (the owner of
+    media/uploads/) - the screenshot container writes there as that user."""
+    import os
+
+    uploads.mkdir(parents=True, exist_ok=True)
+    owned = []
+    real_stat = os.stat
+
+    def fake_stat(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if str(path) == str(uploads):
+            return os.stat_result((result.st_mode, 0, 0, 0, 1000, 1000, 0, 0, 0, 0))
+        return result
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(os, "stat", fake_stat)
+    monkeypatch.setattr(os, "chown", lambda path, uid, gid: owned.append((str(path), uid, gid)), raising=False)
+
+    folder = review.new_run_dir()
+
+    owners = {path: (uid, gid) for path, uid, gid in owned}
+    for path in (uploads / "e2e", folder, folder / "pc", folder / "mobile"):
+        assert owners[str(path)] == (1000, 1000), path
+
+
+def test_folders_made_by_the_app_keep_their_owner(uploads, monkeypatch):
+    import os
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(os, "chown", lambda *args: pytest.fail("no chown as the app's user"), raising=False)
+
+    assert review.new_run_dir().is_dir()

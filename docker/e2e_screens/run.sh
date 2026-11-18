@@ -13,7 +13,9 @@ PORT=3299
 MOCK_ORIGIN=http://127.0.0.1:59999
 
 if [ ! -d /workspace/out ] || [ ! -w /workspace/out ]; then
-    echo "/workspace/out (the run's folder) is missing or not writable" >&2
+    # What to look at: who runs here and who owns the mounted folder.
+    echo "/workspace/out (the run's folder) is missing or not writable for $(id -u):$(id -g)" >&2
+    ls -ldn /workspace/out >&2 || true
     exit 2
 fi
 mkdir -p /workspace/out/pc /workspace/out/mobile

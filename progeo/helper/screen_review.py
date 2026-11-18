@@ -18,6 +18,7 @@ whatever) works on it next.
 """
 import io
 import json
+import os
 import re
 import zipfile
 from datetime import datetime
@@ -53,10 +54,51 @@ class ReviewError(ValueError):
     """An invalid run, image or note - the message is the API's reason."""
 
 
+# The app's user in the backend image (docker/backend/Dockerfile).
+APP_USER = "progeo"
+
+
+def _app_owner():
+    """(uid, gid) of the app's user when this process runs as root - else
+    None. `docker exec progeo-backend python manage.py ...` runs as root (the
+    image has no USER); folders it creates must still belong to the app: the
+    screenshot container writes into them as DOCKER_UID, the web app deletes
+    runs. The owner of media/uploads/ (the app's), else the progeo user."""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        info = os.stat(settings.UPLOAD_DIR)
+        if info.st_uid != 0:
+            return info.st_uid, info.st_gid
+    except OSError:
+        pass
+    try:
+        import pwd
+
+        user = pwd.getpwnam(APP_USER)
+        return user.pw_uid, user.pw_gid
+    except (ImportError, KeyError):
+        return None
+
+
+def _own(*paths):
+    """`paths` belong to the app's user (_app_owner), writable for its group."""
+    owner = _app_owner()
+    for path in paths:
+        try:
+            if owner is not None:
+                os.chown(path, *owner)
+            os.chmod(path, 0o2775)
+        except OSError:
+            pass
+
+
 def root() -> Path:
-    """media/uploads/e2e/ - created when missing."""
+    """media/uploads/e2e/ - created when missing (and given to the app's user)."""
     path = Path(settings.UPLOAD_DIR) / "e2e"
     path.mkdir(parents=True, exist_ok=True)
+    if _app_owner() is not None:
+        _own(path)
     return path
 
 
@@ -72,6 +114,8 @@ def new_run_dir(now=None) -> Path:
         raise ReviewError("Run folder outside media/uploads/e2e")
     for device in DEVICES:
         (path / device).mkdir(parents=True, exist_ok=True)
+    # The screenshot container (DOCKER_UID) writes into it, the web app deletes it.
+    _own(path, *(path / device for device in DEVICES))
     return path
 
 

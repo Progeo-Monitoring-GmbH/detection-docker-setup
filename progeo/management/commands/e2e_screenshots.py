@@ -116,6 +116,8 @@ class Command(BaseCommand):
                 "docker compose --profile e2e_screens build progeo-e2e_screens"
             ) from exc
         count = _count(run_dir)
+        if count == 0:
+            _remove_if_empty(run_dir)
         if result.get("timed_out"):
             raise CommandError(f"The capture took longer than {timeout} s - {count} screenshot(s) in {run_dir}")
         if result.get("exit_code") != 0:
