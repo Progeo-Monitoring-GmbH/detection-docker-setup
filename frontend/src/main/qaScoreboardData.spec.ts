@@ -7,6 +7,7 @@ import {
   cumulativeLine,
   formatScore,
   meanRange,
+  parseQaUpdate,
   scoreboardStart,
   userColors,
   type QaAward,
@@ -153,5 +154,25 @@ describe('meanRange', () => {
     expect(meanRange([60, 64])).toEqual([58, 66]);
     expect(meanRange([1, 99])).toEqual([0, 100]);
     expect(meanRange([])).toEqual([0, 100]);
+  });
+});
+
+describe('parseQaUpdate', () => {
+  it('reads the point changes of the socket and ignores everything else', () => {
+    expect(
+      parseQaUpdate(
+        JSON.stringify({
+          type: 'qa_update',
+          user_ids: [4, 'x'],
+          reason: 'revoke',
+        }),
+      ),
+    ).toEqual({
+      user_ids: [4],
+      reason: 'revoke',
+    });
+    expect(parseQaUpdate(JSON.stringify({ type: 'heartbeat' }))).toBeNull();
+    expect(parseQaUpdate('not json')).toBeNull();
+    expect(parseQaUpdate(undefined)).toBeNull();
   });
 });

@@ -3,38 +3,54 @@ import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import { getWsBaseUrl } from '../backendUrl';
 import {
   QA_CHECKED_EVENT,
+  QA_SOCKET_PATH,
+  QA_UPDATED_EVENT,
   awardToastText,
+  parseQaUpdate,
   type QaNotification,
+  type QaUpdate,
 } from './qaScoreboardData';
 
-/** How often a staff member's new fixes are looked for. */
+/** How often new points are looked for while the live socket is down. */
 export const QA_POLL_MS = 60_000;
+/** The socket's heartbeat comes every 20 s (backend) - silence this long: reconnect. */
+const SOCKET_WATCHDOG_MS = 60_000;
+const RECONNECT_MIN_MS = 5_000;
+const RECONNECT_MAX_MS = 120_000;
 
 /**
- * Tells a staff member about the points just earned on the readiness
- * scoreboard (POST /v1/qa/notifications/ - each fix once, then marked as
- * shown): every minute while the tab is visible, when it becomes visible
- * again and right after a checklist check (QA_CHECKED_EVENT). Staff only -
- * also in "show as normal user"; not while logged in as a customer.
- * Mounted once in App, renders nothing.
+ * The live side of the readiness scoreboard for staff - mounted once in App,
+ * renders nothing:
+ *
+ * - the websocket /ws/qa/ (backend QaScoreboardConsumer): every change of
+ *   the points is passed on as QA_UPDATED_EVENT (the scoreboard reloads);
+ * - the toast of points just earned (POST /v1/qa/notifications/ - each
+ *   once): right away when the socket names the user, after a checklist
+ *   check (QA_CHECKED_EVENT), when the tab becomes visible again - and every
+ *   minute while the socket is down.
+ *
+ * Staff only - also in "show as normal user"; not while logged in as a customer.
  */
 export const QaAwardToasts = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const active = Boolean(auth.token) && auth.canViewAsUser;
+  const userId = (auth.user as { user_id?: number } | null)?.user_id ?? null;
   // The latest auth / t for the timer and listeners (registered once per activation).
-  const latest = useRef({ auth, t, enqueueSnackbar });
+  const latest = useRef({ auth, t, enqueueSnackbar, userId });
   useEffect(() => {
-    latest.current = { auth, t, enqueueSnackbar };
+    latest.current = { auth, t, enqueueSnackbar, userId };
   });
 
   useEffect(() => {
     if (!active) {
       return undefined;
     }
+    let disposed = false;
     let busy = false;
     const poll = () => {
       if (busy || document.visibilityState === 'hidden') {
@@ -62,22 +78,72 @@ export const QaAwardToasts = () => {
           busy = false;
         });
     };
-    poll();
-    const timer = window.setInterval(poll, QA_POLL_MS);
-    const onVisible = () => document.visibilityState === 'visible' && poll();
-    // The queued check of a change runs ~20 s later (backend RECHECK_DELAY):
-    // looked for now and once more then.
-    let followUp: number | undefined;
-    const onChecked = () => {
-      poll();
-      window.clearTimeout(followUp);
-      followUp = window.setTimeout(poll, 25_000);
+
+    // -- the live socket -----------------------------------------------------------
+    let socket: WebSocket | null = null;
+    let socketOpen = false;
+    let watchdog: number | undefined;
+    let reconnectTimer: number | undefined;
+    let reconnectDelay = RECONNECT_MIN_MS;
+    const armWatchdog = () => {
+      window.clearTimeout(watchdog);
+      watchdog = window.setTimeout(() => socket?.close(), SOCKET_WATCHDOG_MS);
     };
+    const onUpdate = (update: QaUpdate) => {
+      window.dispatchEvent(
+        new CustomEvent<QaUpdate>(QA_UPDATED_EVENT, { detail: update }),
+      );
+      const me = latest.current.userId;
+      if (me != null && update.user_ids.includes(me)) {
+        poll();
+      }
+    };
+    const connect = () => {
+      if (disposed || typeof WebSocket === 'undefined') {
+        return;
+      }
+      const ws = new WebSocket(`${getWsBaseUrl()}${QA_SOCKET_PATH}`);
+      socket = ws;
+      ws.onopen = () => {
+        socketOpen = true;
+        reconnectDelay = RECONNECT_MIN_MS;
+        armWatchdog();
+        // Changes while the socket was down: looked for once.
+        poll();
+      };
+      ws.onmessage = (event) => {
+        armWatchdog();
+        const update = parseQaUpdate(event.data);
+        if (update) {
+          onUpdate(update);
+        }
+      };
+      ws.onclose = () => {
+        socketOpen = false;
+        window.clearTimeout(watchdog);
+        if (!disposed) {
+          reconnectTimer = window.setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+        }
+      };
+    };
+    connect();
+
+    poll();
+    // The fallback while the socket is down (no channel layer, proxy, ...).
+    const timer = window.setInterval(() => !socketOpen && poll(), QA_POLL_MS);
+    const onVisible = () => document.visibilityState === 'visible' && poll();
+    // A checklist check: points found by it come right away (the socket
+    // tells too, but the toast must not wait for a reconnect).
+    const onChecked = () => poll();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener(QA_CHECKED_EVENT, onChecked);
     return () => {
+      disposed = true;
       window.clearInterval(timer);
-      window.clearTimeout(followUp);
+      window.clearTimeout(watchdog);
+      window.clearTimeout(reconnectTimer);
+      socket?.close();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener(QA_CHECKED_EVENT, onChecked);
     };

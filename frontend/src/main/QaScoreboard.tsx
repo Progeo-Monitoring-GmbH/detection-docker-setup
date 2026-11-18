@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { Spinner } from 'react-bootstrap';
@@ -14,6 +14,7 @@ import SearchableDataTable, {
 } from '../components/ui/kit/SearchableDataTable';
 import { formatDate } from './dateFormat';
 import {
+  QA_UPDATED_EVENT,
   formatPoints,
   formatScore,
   userColors,
@@ -39,8 +40,11 @@ const QaScoreboard = () => {
   const [board, setBoard] = useState<Scoreboard | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = () => {
-    setLoading(true);
+  // `quiet`: a reload after a point change - the shown board stays until the new one is there.
+  const load = (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+    }
     void axiosConfig.perform_get(
       auth,
       '/v1/qa/scoreboard/',
@@ -49,11 +53,36 @@ const QaScoreboard = () => {
         setLoading(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, t('qa_scoreboard_failed'), error);
         setLoading(false);
+        if (!quiet) {
+          showRequestError(enqueueSnackbar, t('qa_scoreboard_failed'), error);
+        }
       },
     );
   };
+
+  // Once loaded, it follows the points live (QaAwardToasts passes the
+  // socket's changes on) - a burst of changes reloads it once.
+  const loaded = board !== null;
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
+  useEffect(() => {
+    if (!loaded) {
+      return undefined;
+    }
+    let timer: number | undefined;
+    const onUpdate = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => loadRef.current(true), 800);
+    };
+    window.addEventListener(QA_UPDATED_EVENT, onUpdate);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(QA_UPDATED_EVENT, onUpdate);
+    };
+  }, [loaded]);
 
   const colors = useMemo(() => userColors(board?.users ?? []), [board]);
 
@@ -176,7 +205,7 @@ const QaScoreboard = () => {
       actions={
         <PillButton
           label={board ? t('qa_scoreboard_reload') : t('qa_scoreboard_load')}
-          onClick={load}
+          onClick={() => load()}
           disabled={loading}
           icon={loading ? <Spinner animation="border" size="sm" /> : undefined}
           testId="qa-scoreboard-load"

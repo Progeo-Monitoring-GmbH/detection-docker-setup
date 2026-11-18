@@ -412,3 +412,58 @@ def test_the_scoreboard_loads_with_time_zones_off(api_client, ready_location, ac
     body = response.json()
     assert body["mean"][-1]["day"] == timezone.now().date().isoformat()
     assert body["users"][0]["count"] == 1
+
+
+# -- live updates (/ws/qa/) -----------------------------------------------------------
+
+IN_MEMORY_LAYER = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+
+def _scoreboard_socket(user):
+    from channels.testing import WebsocketCommunicator
+
+    from progeo.consumer import QaScoreboardConsumer
+
+    communicator = WebsocketCommunicator(QaScoreboardConsumer.as_asgi(), "/ws/qa/")
+    communicator.scope["user"] = user
+    return communicator
+
+
+def test_only_staff_follow_the_scoreboard(settings):
+    from asgiref.sync import async_to_sync
+    from django.contrib.auth.models import AnonymousUser, User
+
+    settings.CHANNEL_LAYERS = IN_MEMORY_LAYER
+
+    async def run():
+        for user in (AnonymousUser(), User(username="kunde", is_staff=False)):
+            connected, code = await _scoreboard_socket(user).connect()
+            assert (connected, code) == (False, 4403)
+
+    async_to_sync(run)()
+
+
+def test_a_point_change_reaches_the_open_scoreboards(settings, ready_location, staff,
+                                                     django_capture_on_commit_callbacks):
+    from asgiref.sync import async_to_sync, sync_to_async
+
+    settings.CHANNEL_LAYERS = IN_MEMORY_LAYER
+
+    def mark():
+        with django_capture_on_commit_callbacks(execute=True):
+            qa.purgeable_changed(ready_location, staff, True)
+        with django_capture_on_commit_callbacks(execute=True):
+            qa.purgeable_changed(ready_location, staff, None)
+
+    async def run():
+        communicator = _scoreboard_socket(staff)
+        connected, _code = await communicator.connect()
+        assert connected
+        await sync_to_async(mark)()
+        first = await communicator.receive_json_from(timeout=3)
+        second = await communicator.receive_json_from(timeout=3)
+        assert first == {"type": "qa_update", "user_ids": [staff.pk], "reason": "award"}
+        assert second == {"type": "qa_update", "user_ids": [staff.pk], "reason": "revoke"}
+        await communicator.disconnect()
+
+    async_to_sync(run)()

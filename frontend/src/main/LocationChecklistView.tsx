@@ -803,6 +803,8 @@ const LocationChecklistView = () => {
 
   return (
     <div className="location-checklist" data-testid="location-checklist">
+      {/* Above the checklist, with or without a location - loaded on demand. */}
+      <QaScoreboard />
       <PanelCard
         title={t('readiness_title')}
         testId="checklist-header"
@@ -835,7 +837,6 @@ const LocationChecklistView = () => {
       </PanelCard>
 
       {locationId === null && renderOverview()}
-      {locationId === null && <QaScoreboard />}
       {locationId !== null && loading && !readiness && (
         <div className="text-center py-4" data-testid="checklist-loading">
           <Spinner animation="border" size="sm" />

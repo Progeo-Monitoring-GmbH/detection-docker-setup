@@ -312,3 +312,63 @@ class CadImportJobConsumer(AsyncWebsocketConsumer):
 
     async def cad_done(self, event):
         await self.send_json({"type": "cad_done", "job": event["job"]})
+
+
+# ==============================================================================================
+
+class QaScoreboardConsumer(AsyncWebsocketConsumer):
+    """Changes of the readiness scoreboard's points (helper/readiness_qa.py)
+    for the staff's open pages - staff only.
+
+    Server -> client: "qa_update" {user_ids, reason ("award" | "revoke")}
+    whenever points were gained or given back - the scoreboard reloads, the
+    users credited fetch their toast; "heartbeat" every
+    LOG_STREAM_HEARTBEAT_SECONDS (proxies close idle sockets).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.heartbeat_task = None
+        self.group_task = None
+        self.joined = False
+
+    async def connect(self):
+        from progeo.helper.readiness_qa import QA_GROUP
+
+        if not _is_staff_admin(self.scope.get("user")):
+            await self.close(code=4403)
+            return
+        await self.channel_layer.group_add(QA_GROUP, self.channel_name)
+        self.joined = True
+        await self.accept()
+        self.heartbeat_task = asyncio.create_task(self._heartbeat())
+        self.group_task = asyncio.create_task(_stay_in_group(self.channel_layer, QA_GROUP, self.channel_name))
+
+    async def disconnect(self, close_code):
+        from progeo.helper.readiness_qa import QA_GROUP
+
+        for task in (self.heartbeat_task, self.group_task):
+            if task:
+                task.cancel()
+        if self.joined:
+            await self.channel_layer.group_discard(QA_GROUP, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        # Nothing to ask - a ping keeps the socket open.
+        if text_data and '"ping"' in text_data:
+            await self.send_json({"type": "pong"})
+
+    async def send_json(self, payload):
+        await self.send(text_data=json.dumps(payload))
+
+    async def _heartbeat(self):
+        try:
+            while True:
+                await asyncio.sleep(LOG_STREAM_HEARTBEAT_SECONDS)
+                await self.send_json({"type": "heartbeat"})
+        except asyncio.CancelledError:
+            pass
+
+    async def qa_update(self, event):
+        await self.send_json({"type": "qa_update", "user_ids": event.get("user_ids", []),
+                              "reason": event.get("reason")})

@@ -27,7 +27,10 @@ const api = vi.hoisted(() => ({
   awards: [] as unknown[],
 }));
 const hooks = vi.hoisted(() => ({
-  auth: { token: 'x', canViewAsUser: true },
+  auth: { token: 'x', canViewAsUser: true, user: { user_id: 7 } } as Record<
+    string,
+    unknown
+  >,
   snackbar: { enqueueSnackbar: vi.fn() },
   translation: {
     t: (key: string, options?: Record<string, unknown>) =>
@@ -107,6 +110,29 @@ vi.mock('./QaScoreboardChart', () => ({
   ),
 }));
 
+/** The live socket (/ws/qa/) - its messages are sent by the tests. */
+class FakeSocket {
+  static instances: FakeSocket[] = [];
+  url: string;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeSocket.instances.push(this);
+  }
+
+  close() {
+    this.onclose?.();
+  }
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) });
+  }
+}
+(globalThis as { WebSocket?: unknown }).WebSocket = FakeSocket;
+
 const { default: QaScoreboard } = await import('./QaScoreboard');
 const { QaAwardToasts } = await import('./QaAwardToasts');
 
@@ -121,7 +147,8 @@ beforeEach(() => {
   api.post.mockClear();
   api.awards = [];
   hooks.snackbar.enqueueSnackbar.mockClear();
-  hooks.auth = { token: 'x', canViewAsUser: true };
+  hooks.auth = { token: 'x', canViewAsUser: true, user: { user_id: 7 } };
+  FakeSocket.instances = [];
 });
 
 afterEach(() => {
@@ -198,5 +225,61 @@ describe('QaAwardToasts', () => {
     await act(async () => root.render(<QaAwardToasts />));
 
     expect(api.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('live updates', () => {
+  it('fetches the toast at once when the socket names the user', async () => {
+    await act(async () => root.render(<QaAwardToasts />));
+    const socket = FakeSocket.instances[0];
+    expect(socket.url).toMatch(/\/ws\/qa\/$/);
+    act(() => socket.onopen?.());
+    api.post.mockClear();
+    const updates: unknown[] = [];
+    const listen = (event: Event) =>
+      updates.push((event as CustomEvent).detail);
+    window.addEventListener('progeo:qa-updated', listen);
+
+    await act(async () =>
+      socket.emit({ type: 'qa_update', user_ids: [3], reason: 'award' }),
+    );
+    expect(api.post).not.toHaveBeenCalled();
+    await act(async () =>
+      socket.emit({ type: 'qa_update', user_ids: [7], reason: 'award' }),
+    );
+    expect(api.post).toHaveBeenCalledWith('/v1/qa/notifications/');
+    await act(async () => socket.emit({ type: 'heartbeat' }));
+
+    window.removeEventListener('progeo:qa-updated', listen);
+    expect(updates).toEqual([
+      { user_ids: [3], reason: 'award' },
+      { user_ids: [7], reason: 'award' },
+    ]);
+  });
+
+  it('reloads a loaded scoreboard after a change - an unloaded one stays unloaded', async () => {
+    vi.useFakeTimers();
+    try {
+      act(() => root.render(<QaScoreboard />));
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('progeo:qa-updated'));
+        vi.advanceTimersByTime(1000);
+      });
+      expect(api.get).not.toHaveBeenCalled();
+
+      await act(async () => {
+        (byTestId('qa-scoreboard-load') as HTMLButtonElement).click();
+      });
+      expect(api.get).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('progeo:qa-updated'));
+        window.dispatchEvent(new CustomEvent('progeo:qa-updated'));
+        vi.advanceTimersByTime(1000);
+      });
+      // A burst of changes: one reload.
+      expect(api.get).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

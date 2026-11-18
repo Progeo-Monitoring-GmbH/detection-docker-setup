@@ -183,6 +183,40 @@ export const awardToastText = (
 /** A readiness check was answered (checklist) - the toasts look for new fixes now. */
 export const QA_CHECKED_EVENT = 'progeo:qa-checked';
 
+/** The websocket of the scoreboard's point changes (backend QaScoreboardConsumer, staff). */
+export const QA_SOCKET_PATH = '/ws/qa/';
+
+/** Points were gained or given back (QaAwardToasts passes the socket's message on) - the scoreboard reloads. */
+export const QA_UPDATED_EVENT = 'progeo:qa-updated';
+
+export type QaUpdate = { user_ids: number[]; reason: 'award' | 'revoke' };
+
+/** A "qa_update" message of the socket - null for anything else (heartbeats). */
+export const parseQaUpdate = (raw: unknown): QaUpdate | null => {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  try {
+    const data = JSON.parse(raw) as {
+      type?: string;
+      user_ids?: unknown;
+      reason?: unknown;
+    };
+    if (data.type !== 'qa_update') {
+      return null;
+    }
+    const userIds = Array.isArray(data.user_ids)
+      ? data.user_ids.filter((id): id is number => typeof id === 'number')
+      : [];
+    return {
+      user_ids: userIds,
+      reason: data.reason === 'revoke' ? 'revoke' : 'award',
+    };
+  } catch {
+    return null;
+  }
+};
+
 /** What POST /v1/location/<id>/purgeable/ did on the scoreboard. */
 export type PurgeableQa =
   { awarded?: QaNotification; revoked?: number } | null | undefined;

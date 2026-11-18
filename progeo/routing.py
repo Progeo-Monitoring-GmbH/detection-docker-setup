@@ -4,7 +4,12 @@ from channels.security.websocket import AllowedHostsOriginValidator
 from django.core.asgi import get_asgi_application
 from django.urls import re_path
 
-from progeo.consumer import CadImportJobConsumer, CommandConsumer, LogStreamConsumer
+from progeo.consumer import (
+    CadImportJobConsumer,
+    CommandConsumer,
+    LogStreamConsumer,
+    QaScoreboardConsumer,
+)
 from progeo.metrics import track_websocket
 
 ws_pattern = [
@@ -12,6 +17,8 @@ ws_pattern = [
     re_path(r'^ws/dev/$', track_websocket("dev", CommandConsumer.as_asgi())),
     re_path(r'^ws/logs/stream/$', track_websocket("logs", LogStreamConsumer.as_asgi())),
     re_path(r'^ws/cad_import/(?P<job_id>[0-9a-f]{32})/$', track_websocket("cad_import", CadImportJobConsumer.as_asgi())),
+    # The readiness scoreboard's point changes (staff).
+    re_path(r'^ws/qa/$', track_websocket("qa", QaScoreboardConsumer.as_asgi())),
 ]
 
 application = ProtocolTypeRouter({

@@ -25,6 +25,10 @@ stored result, their status unchanged.
 Marking a location for deletion (purgeable) gains PURGEABLE_POINTS flat,
 once per location; taking back one's own mark gives them back.
 
+Every change of the points is told to the staff's open pages over the
+websocket /ws/qa/ (QaScoreboardConsumer, broadcast_update): the scoreboard
+reloads, the one credited gets the toast right away.
+
 The overall line: ProgeoReadinessSnapshot, the mean score of all locations
 per day - written by the nightly refresh and whenever the scoreboard loads.
 """
@@ -264,6 +268,8 @@ def award(location, previous_checks, previous_score, previous_at, result, now=No
             continue
         if new:
             created.append(qa)
+    if created:
+        broadcast_update([qa.user_id for qa in created], "award", using=db)
     return [award_payload(qa) for qa in created]
 
 
@@ -300,11 +306,41 @@ def purgeable_changed(location, user, purgeable, now=None):
                 )
         except IntegrityError:
             return None
-        return {"awarded": award_payload(qa)} if created else None
+        if not created:
+            return None
+        broadcast_update([user.pk], "award", using=db)
+        return {"awarded": award_payload(qa)}
     deleted, _rows = ProgeoQA.objects.using(db).filter(
         location_id=location.pk, check_key=PURGEABLE_KEY, user=user,
     ).delete()
-    return {"revoked": PURGEABLE_POINTS} if deleted else None
+    if not deleted:
+        return None
+    broadcast_update([user.pk], "revoke", using=db)
+    return {"revoked": PURGEABLE_POINTS}
+
+
+# The websocket group of the scoreboard (consumer.QaScoreboardConsumer).
+QA_GROUP = "qa-scoreboard"
+
+
+def broadcast_update(user_ids, reason, using=None):
+    """Tells the open scoreboards (and the toasts of `user_ids`) that the
+    points changed - after the transaction commits. Never raises: without
+    the channel layer the pages notice it on their next poll."""
+    user_ids = sorted({user_id for user_id in user_ids if user_id})
+
+    def send():
+        try:
+            from asgiref.sync import async_to_sync
+            from channels.layers import get_channel_layer
+
+            layer = get_channel_layer()
+            if layer is not None:
+                async_to_sync(layer.group_send)(QA_GROUP, {"type": "qa.update", "user_ids": user_ids, "reason": reason})
+        except Exception as exc:  # noqa: BLE001 - the change itself stands
+            elog(f"Could not tell the scoreboards about {reason}: {exc!r}", tag="[READINESS]")
+
+    transaction.on_commit(send, using=using)
 
 
 def award_payload(qa) -> dict:
