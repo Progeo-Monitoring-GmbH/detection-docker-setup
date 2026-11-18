@@ -15,6 +15,8 @@ network, with a bearer token:
                                     "mode"? ("points" | "klemmliste")}
                                    -> NDJSON: {"line": ...} per output line, last {"result": {...}}
                                       or {"error": ..., "reason": ...}
+    POST /e2e-screens/run          {"run", "devices", "roles", "only", "timeout_seconds"}
+                                   -> NDJSON like the CAD factory run (the e2e_screenshots command)
 
 Errors: {"error": <type>, "reason": <text>} with the status of ops.DockerOpsError.
 
@@ -154,6 +156,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             "/containers/logs": self._logs,
             "/containers/state": self._state,
             "/cad-factory/run": self._cad_factory_run,
+            "/e2e-screens/run": self._e2e_screens_run,
         }
         route = routes.get(self.path)
         if route is None:
@@ -200,7 +203,22 @@ class AgentHandler(BaseHTTPRequestHandler):
         }
         # Refused before the stream starts: a plain JSON error with its status.
         self.ops.check_cad_factory_args(**arguments)
+        self._stream_run(lambda on_line: self.ops.run_cad_factory(on_line=on_line, **arguments))
 
+    def _e2e_screens_run(self, data):
+        arguments = {
+            "run": data.get("run"),
+            "devices": data.get("devices", ["pc", "mobile"]),
+            "roles": data.get("roles", ["user", "staff"]),
+            "only": data.get("only", []),
+            "timeout_seconds": data.get("timeout_seconds", 1800),
+        }
+        self.ops.check_e2e_screens_args(**arguments)
+        self._stream_run(lambda on_line: self.ops.run_e2e_screens(on_line=on_line, **arguments))
+
+    def _stream_run(self, run):
+        """A container run as NDJSON: its output lines while it runs, then
+        its result (or error)."""
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/x-ndjson")
         self.end_headers()
@@ -217,7 +235,7 @@ class AgentHandler(BaseHTTPRequestHandler):
                 connected[0] = False
 
         try:
-            result = self.ops.run_cad_factory(on_line=lambda line: emit({"line": line}), **arguments)
+            result = run(lambda line: emit({"line": line}))
         except default_ops.DockerOpsError as error:
             emit({"error": type(error).__name__, "reason": error.reason})
         else:

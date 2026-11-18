@@ -172,3 +172,46 @@ def test_superusers_delete_a_run_with_its_notes(api_client, run, staff):
 
     assert not run.exists()
     assert not ScreenReviewNote.objects.exists()
+
+
+# -- the command ------------------------------------------------------------------------
+
+def test_without_a_local_frontend_the_command_runs_the_screenshot_container(uploads, tmp_path, monkeypatch):
+    from django.core.management import call_command
+
+    from progeo.helper import docker_access
+
+    calls = []
+
+    def fake_run(run, devices, roles, only, timeout_seconds, on_line):
+        calls.append((run, devices, roles, only, timeout_seconds))
+        folder = uploads / "e2e" / run
+        _png(folder / "pc" / "pc-user-login.png", (1440, 900))
+        on_line("ok    pc-user-login.png")
+        return {"exit_code": 0, "stdout": "", "stderr": "", "oom_killed": False, "timed_out": False}
+
+    monkeypatch.setattr(docker_access, "run_e2e_screens", fake_run)
+    out = io.StringIO()
+
+    call_command("e2e_screenshots", "--frontend-dir", str(tmp_path / "no-frontend"), "--devices", "pc",
+                 "--only", "login", stdout=out)
+
+    assert calls[0][1:] == (["pc"], ["user", "staff"], ["login"], 1800)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{6}", calls[0][0])
+    assert "1 screenshot(s)" in out.getvalue()
+
+
+def test_a_screenshot_container_that_cannot_run_leaves_no_empty_run(uploads, tmp_path, monkeypatch):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from progeo.helper import docker_access
+
+    def broken(*args, **kwargs):
+        raise docker_access.OperationFailed("Failed to run progeo-e2e_screens: no such image")
+
+    monkeypatch.setattr(docker_access, "run_e2e_screens", broken)
+
+    with pytest.raises(CommandError, match="--profile e2e_screens build"):
+        call_command("e2e_screenshots", "--docker", stdout=io.StringIO())
+    assert list((uploads / "e2e").iterdir()) == []

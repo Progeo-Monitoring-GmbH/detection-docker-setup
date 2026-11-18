@@ -295,6 +295,21 @@ services:
     networks:
       default_net:
 
+  # Optional helper: the screenshots of every screen for the screen review
+  # (python manage.py e2e_screenshots, /review/screens/) - the frontend's dev
+  # server and Playwright with mocked data. Only built with the profile:
+  #   docker compose --profile e2e_screens build progeo-e2e_screens
+  # The Docker agent starts a one-off container per run (docker_agent/ops.py
+  # run_e2e_screens) with just the run's folder mounted and no network.
+  progeo-e2e_screens:
+    container_name: progeo-e2e_screens
+    restart: 'no'
+    profiles: ["e2e_screens"]
+    build:
+      context: .
+      dockerfile: docker/e2e_screens/Dockerfile
+    network_mode: none
+
   # ---------------------------------------------------------------------------
   # Messenger gateways (helper/messenger.py, docker/matrix/README.md) - only
   # started with the compose profile "messenger" (COMPOSE_PROFILES=messenger).

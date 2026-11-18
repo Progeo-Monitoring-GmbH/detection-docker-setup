@@ -9,9 +9,10 @@ No Django and no other progeo import: the agent runs this file without the
 application (python progeo/docker_agent/server.py).
 
 The dangerous part of the socket is creating containers: whoever may do that
-can mount the host's disk. The only container created here is the CAD factory
-run, and its image, mounts, user and network are decided here - the caller
-only passes the plan's path and two options, all checked.
+can mount the host's disk. The only containers created here are the CAD
+factory run and the screenshot run (e2e_screenshots), and their image, mounts,
+user and network are decided here - the caller only passes a few options,
+all checked.
 """
 import os
 import re
@@ -23,6 +24,7 @@ from docker.errors import DockerException, NotFound
 import docker
 
 CAD_FACTORY_SERVICE = "progeo-cad_factory"
+E2E_SCREENS_SERVICE = "progeo-e2e_screens"
 # Compose labels of a service container that belong to that one container, not the project.
 _COMPOSE_PROJECT_LABELS = ("com.docker.compose.project", "com.docker.compose.version")
 
@@ -181,29 +183,34 @@ def _resolve_media_source(backend) -> str:
 
 
 def _cad_factory_run_settings(client, backend, run_id: str) -> dict:
-    """Name, image, labels and network of a progeo-cad_factory run, like
-    `docker compose run progeo-cad_factory`: a one-off container of the
-    service in the backend's compose project (grouped with it in `docker
-    compose ps -a` and Docker Desktop), on the service's network default_net.
+    """The settings of a progeo-cad_factory run (_one_off_settings)."""
+    return _one_off_settings(client, backend, CAD_FACTORY_SERVICE, "DOCKER_CAD_FACTORY_CONTAINER", run_id)
+
+
+def _one_off_settings(client, backend, service_name: str, container_env: str, run_id: str) -> dict:
+    """Name, image, labels and network of a run of `service_name`, like
+    `docker compose run <service>`: a one-off container of the service in the
+    backend's compose project (grouped with it in `docker compose ps -a` and
+    Docker Desktop), on the service's network default_net.
 
     The image is the one compose created the service container with (the
     pushed image in prod, the local build otherwise); without that container
-    (cad_factory profile never started) the local build's name.
+    (the service's profile never started) the local build's name.
     """
     backend_labels = (backend.labels if backend is not None else None) or {}
     labels = {key: value for key, value in backend_labels.items() if key.startswith(_COMPOSE_PROJECT_LABELS)}
     project = labels.get("com.docker.compose.project")
     if project:
         labels.update({
-            "com.docker.compose.service": CAD_FACTORY_SERVICE,
+            "com.docker.compose.service": service_name,
             "com.docker.compose.oneoff": "True",
             "com.docker.compose.slug": run_id,
         })
 
-    service = _get_container_or_none(client, os.getenv("DOCKER_CAD_FACTORY_CONTAINER", CAD_FACTORY_SERVICE))
+    service = _get_container_or_none(client, os.getenv(container_env, service_name))
     image = service.attrs.get("Config", {}).get("Image") if service is not None else None
     if not image:
-        image = f"{os.getenv('DOCKER_BASE_IMAGE') or project or 'detection-docker-setup'}-{CAD_FACTORY_SERVICE}"
+        image = f"{os.getenv('DOCKER_BASE_IMAGE') or project or 'detection-docker-setup'}-{service_name}"
 
     network = None
     if project:
@@ -212,7 +219,7 @@ def _cad_factory_run_settings(client, backend, run_id: str) -> dict:
         ]})
         network = networks[0].name if networks else None
 
-    return {"name": f"{CAD_FACTORY_SERVICE}-run-{run_id}", "image": image, "labels": labels, "network": network}
+    return {"name": f"{service_name}-run-{run_id}", "image": image, "labels": labels, "network": network}
 
 
 def _split_lines(chunks, on_line):
@@ -284,8 +291,22 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
         command += ["--png-out", f"/workspace/out/{png_out}"]
     if mode == "klemmliste":
         command.append("--klemmliste")
-    run_user = f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
+    return _run_one_off(
+        client, settings, command=command, volumes=volumes, timeout_seconds=timeout_seconds,
+        on_line=on_line, what=CAD_FACTORY_SERVICE, working_dir="/workspace",
+    )
 
+
+def _run_user() -> str:
+    return f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
+
+
+def _run_one_off(client, settings, *, command, volumes, timeout_seconds, on_line, what, working_dir,
+                 environment=None, network_mode=None, shm_size=None) -> dict:
+    """A one-off container (settings: _one_off_settings) as the app's user:
+    every output line to on_line while it runs, killed after
+    timeout_seconds, removed afterwards.
+    Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}."""
     container = None
     timed_out = threading.Event()
 
@@ -298,21 +319,25 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
 
     watchdog = threading.Timer(timeout_seconds, kill_on_timeout)
     watchdog.daemon = True
+    options = {"network_mode": network_mode} if network_mode else {"network": settings["network"]}
+    if shm_size:
+        options["shm_size"] = shm_size
     try:
         container = client.containers.run(
             image=settings["image"],
             name=settings["name"],
             labels=settings["labels"],
-            network=settings["network"],
             command=command,
             hostname=settings["name"],
-            working_dir="/workspace",
-            user=run_user,
+            working_dir=working_dir,
+            user=_run_user(),
+            environment=environment or {},
             detach=True,
             remove=False,
             stdout=True,
             stderr=True,
             volumes=volumes,
+            **options,
         )
         watchdog.start()
 
@@ -329,7 +354,7 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
             "timed_out": timed_out.is_set(),
         }
     except DockerException as exc:
-        raise OperationFailed(f"Failed to run progeo-cad_factory: {exc}") from exc
+        raise OperationFailed(f"Failed to run {what}: {exc}") from exc
     finally:
         watchdog.cancel()
         if container is not None:
@@ -337,3 +362,66 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
                 container.remove(force=True)
             except DockerException:
                 pass
+
+
+# ---------------------------------------------------------------------------- screenshots
+
+# A run of the e2e_screenshots command: its folder media/uploads/e2e/<run>/,
+# created by the backend before (helper/screen_review.new_run_dir).
+_E2E_RUN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
+_E2E_ACTION = re.compile(r"^[a-z0-9][a-z0-9-]{0,120}$")
+E2E_DEVICES = ("pc", "mobile")
+E2E_ROLES = ("user", "staff")
+E2E_TIMEOUT_RANGE = (60, 3 * 3600)
+
+
+def check_e2e_screens_args(run, devices, roles, only, timeout_seconds):
+    """The screenshot run's arguments, checked - its only mount is the run's folder."""
+    if not isinstance(run, str) or not _E2E_RUN.match(run):
+        raise InvalidRequest("run must be a run folder name (YYYY-MM-DD_HHMMSS)")
+    for name, values, allowed in (("devices", devices, E2E_DEVICES), ("roles", roles, E2E_ROLES)):
+        if not isinstance(values, list) or not values or any(value not in allowed for value in values):
+            raise InvalidRequest(f"{name} must be a list of {', '.join(allowed)}")
+    if not isinstance(only, list) or len(only) > 200 or any(
+            not isinstance(action, str) or not _E2E_ACTION.match(action) for action in only):
+        raise InvalidRequest("only must be a list of screen actions (a-z, 0-9, -)")
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int) \
+            or not E2E_TIMEOUT_RANGE[0] <= timeout_seconds <= E2E_TIMEOUT_RANGE[1]:
+        raise InvalidRequest(f"timeout_seconds must be between {E2E_TIMEOUT_RANGE[0]} and {E2E_TIMEOUT_RANGE[1]}")
+
+
+def run_e2e_screens(run: str, devices=E2E_DEVICES, roles=E2E_ROLES, only=(), timeout_seconds: int = 1800,
+                    on_line=None) -> dict:
+    """Run progeo-e2e_screens (docker/e2e_screens/: the frontend's dev server
+    and Playwright, every API request mocked) for the run folder
+    media/uploads/e2e/<run>/ - its only mount, writable. No network: the dev
+    server and the browser talk over the container's own loopback. Output
+    lines go to on_line while it runs; killed after timeout_seconds.
+
+    Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}."""
+    devices, roles, only = list(devices), list(roles), list(only)
+    check_e2e_screens_args(run, devices, roles, only, timeout_seconds)
+    client = _client()
+    backend = _get_container_or_none(client, os.getenv("DOCKER_BACKEND_CONTAINER", "progeo-backend"))
+    settings = _one_off_settings(client, backend, E2E_SCREENS_SERVICE, "DOCKER_E2E_SCREENS_CONTAINER",
+                                 run.replace("-", "").replace("_", ""))
+    media_source = _resolve_media_source(backend).rstrip("/")
+    return _run_one_off(
+        client, settings,
+        # The image's own entrypoint (docker/e2e_screens/run.sh).
+        command=None,
+        volumes={f"{media_source}/uploads/e2e/{run}": {"bind": "/workspace/out", "mode": "rw"}},
+        environment={
+            "SCREENS_RUN": run,
+            "SCREENS_DEVICES": ",".join(devices),
+            "SCREENS_ROLES": ",".join(roles),
+            "SCREENS_ONLY": ",".join(only),
+        },
+        timeout_seconds=timeout_seconds,
+        on_line=on_line,
+        what=E2E_SCREENS_SERVICE,
+        working_dir="/workspace/frontend",
+        network_mode="none",
+        # Chromium's shared memory - Docker's 64 MB crash long pages.
+        shm_size="1g",
+    )

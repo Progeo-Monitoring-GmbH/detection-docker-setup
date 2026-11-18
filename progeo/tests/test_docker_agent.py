@@ -19,8 +19,9 @@ TOKEN = "agent-token-for-tests"
 class FakeOps:
     """The operations the server serves, recorded."""
 
-    # The server checks the CAD arguments with the real rules.
+    # The server checks the arguments with the real rules.
     check_cad_factory_args = staticmethod(ops.check_cad_factory_args)
+    check_e2e_screens_args = staticmethod(ops.check_e2e_screens_args)
 
     def __init__(self):
         self.calls = []
@@ -53,6 +54,11 @@ class FakeOps:
         for line in ("[1] reading", "[2] matching"):
             on_line(line)
         return {"exit_code": 0, "stdout": "[]", "stderr": "", "oom_killed": False, "timed_out": False}
+
+    def run_e2e_screens(self, on_line, **arguments):
+        self.calls.append(("screens", arguments))
+        on_line("ok    pc-user-login.png")
+        return {"exit_code": 0, "stdout": "", "stderr": "", "oom_killed": False, "timed_out": False}
 
 
 @pytest.fixture
@@ -268,3 +274,52 @@ def test_the_agent_runs_without_django(tmp_path):
     result = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, env=env,
                             capture_output=True, text=True, timeout=60, check=True)
     assert result.stdout.split() == ["False", "False"]
+
+
+# -- the screenshot run (e2e_screenshots in the backend container) ----------------
+
+SCREENS = {"run": "2026-11-18_235532", "devices": ["pc", "mobile"], "roles": ["user", "staff"],
+           "only": ["location-status"], "timeout_seconds": 1800}
+
+
+def test_valid_screenshot_arguments_pass():
+    ops.check_e2e_screens_args(**SCREENS)
+    ops.check_e2e_screens_args(**{**SCREENS, "devices": ["mobile"], "roles": ["staff"], "only": []})
+
+
+@pytest.mark.parametrize("changes", [
+    {"run": "../2026-11-18_235532"},
+    {"run": "2026-11-18_235532/../../etc"},
+    {"run": "latest"},
+    {"devices": []},
+    {"devices": ["tablet"]},
+    {"devices": "pc"},
+    {"roles": ["admin"]},
+    {"only": ["Location Status"]},
+    {"only": ["--help"]},
+    {"only": "location-status"},
+    {"timeout_seconds": 10},
+    {"timeout_seconds": True},
+])
+def test_screenshot_arguments_outside_the_rules_are_refused(changes):
+    with pytest.raises(ops.InvalidRequest):
+        ops.check_e2e_screens_args(**{**SCREENS, **changes})
+
+
+def test_a_screenshot_run_streams_its_lines_through_the_agent(agent):
+    lines = []
+
+    outcome = docker_access.run_e2e_screens(
+        SCREENS["run"], devices=["pc", "mobile"], roles=["user", "staff"], only=["location-status"],
+        on_line=lines.append,
+    )
+
+    assert lines == ["ok    pc-user-login.png"]
+    assert outcome["exit_code"] == 0
+    assert agent.ops.calls[-1] == ("screens", SCREENS)
+
+
+def test_a_screenshot_run_outside_the_rules_never_starts(agent):
+    with pytest.raises(docker_access.InvalidRequest, match="run folder"):
+        docker_access.run_e2e_screens("../../etc")
+    assert agent.ops.calls == []

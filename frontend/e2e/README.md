@@ -81,6 +81,13 @@ python manage.py e2e_screenshots --base-url http://127.0.0.1:3000  # a dev serve
                                                                    # with VITE_BACKEND_URL=http://127.0.0.1:59999
 ```
 
+On a server (`docker exec -it progeo-backend python manage.py e2e_screenshots`)
+the backend container has no frontend and no Node: the command then asks the
+Docker agent to run the `progeo-e2e_screens` image (`docker/e2e_screens/`) -
+build it once (and after frontend changes) with
+`docker compose --profile e2e_screens build progeo-e2e_screens`
+(production: the `e2e_screens-<version>` image, like `cad_factory`).
+
 A new page: add it to `routes.mjs`. A screen showing empty data or a page
 error: the run's `manifest.json` lists per screenshot the requests without a
 mock (`unmocked`) and the page errors - add those answers to `mockApi.mjs`.

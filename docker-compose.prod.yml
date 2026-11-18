@@ -280,6 +280,16 @@ services:
     networks:
       default_net:
 
+  # Optional helper: the screenshots for the screen review (e2e_screenshots,
+  # docker/e2e_screens/) - only with COMPOSE_PROFILES=e2e_screens. The Docker
+  # agent starts a one-off container of this image per run.
+  progeo-e2e_screens:
+    image: progeomonitoring/detection-docker-setup:e2e_screens-${IMAGE_VERSION:-latest}
+    container_name: progeo-e2e_screens
+    restart: 'no'
+    profiles: ['e2e_screens']
+    network_mode: none
+
   # ---------------------------------------------------------------------------
   # Messenger gateways (helper/messenger.py, docker/matrix/README.md) - only
   # started with the compose profile "messenger" (COMPOSE_PROFILES=messenger).

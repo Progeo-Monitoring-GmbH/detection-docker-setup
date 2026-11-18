@@ -141,3 +141,31 @@ def run_cad_factory(cad_input, coord_margin=0.2, timeout_seconds=1800, on_line=N
             elif "error" in event:
                 raise _ERRORS.get(event["error"], OperationFailed)(event.get("reason") or "CAD factory run failed")
     raise OperationFailed("Docker agent ended the CAD factory run without a result")
+
+
+def run_e2e_screens(run, devices=("pc", "mobile"), roles=("user", "staff"), only=(), timeout_seconds=1800,
+                    on_line=None):
+    """ops.run_e2e_screens (the e2e_screenshots command in the backend
+    container) - through the agent: its output lines arrive while it runs."""
+    devices, roles, only = list(devices), list(roles), list(only)
+    if not uses_agent():
+        return ops.run_e2e_screens(run, devices=devices, roles=roles, only=only,
+                                   timeout_seconds=timeout_seconds, on_line=on_line)
+    body = {"run": run, "devices": devices, "roles": roles, "only": only, "timeout_seconds": timeout_seconds}
+    response = _request(
+        "POST", "/e2e-screens/run", body, stream=True,
+        timeout=(CONNECT_TIMEOUT, timeout_seconds + CAD_RUN_GRACE_SECONDS),
+    )
+    with response:
+        for raw in response.iter_lines():
+            if not raw:
+                continue
+            event = json.loads(raw)
+            if "line" in event:
+                if on_line is not None:
+                    on_line(event["line"])
+            elif "result" in event:
+                return event["result"]
+            elif "error" in event:
+                raise _ERRORS.get(event["error"], OperationFailed)(event.get("reason") or "Screenshot run failed")
+    raise OperationFailed("Docker agent ended the screenshot run without a result")
