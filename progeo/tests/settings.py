@@ -361,7 +361,8 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [CHANNEL_LAYER_REDIS_URL],
+            # As in progeo/settings.py: a read timeout above channels_redis' blocking wait.
+            "hosts": [{"address": CHANNEL_LAYER_REDIS_URL, "socket_timeout": 30, "socket_connect_timeout": 5}],
         },
     },
 }

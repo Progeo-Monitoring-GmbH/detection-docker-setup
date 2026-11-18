@@ -134,3 +134,22 @@ def test_a_message_for_a_client_that_left_is_dropped():
     closed.send = _ClosedSocket().send
 
     async_to_sync(closed.qa_update)({"user_ids": [1], "reason": "award"})
+
+
+def test_the_channel_layer_reads_longer_than_it_blocks():
+    """Redis' read timeout above channels_redis' blocking wait - else every
+    idle websocket ends in "TimeoutError: Timeout reading from ..."
+    (redis-py 8 reads with a 5 s timeout by default, as long as the wait)."""
+    import re
+    from pathlib import Path
+
+    from channels_redis.core import RedisChannelLayer
+    from django.conf import settings
+
+    least = RedisChannelLayer.brpop_timeout * 2
+    host = settings.CHANNEL_LAYERS["default"]["CONFIG"]["hosts"][0]
+    assert host["socket_timeout"] > least
+    # The servers' settings (not importable here: they read the environment).
+    source = (Path(settings.BASE_DIR) / "progeo" / "settings.py").read_text(encoding="utf-8")
+    assert '"hosts": [CHANNEL_LAYER_HOST]' in source
+    assert int(re.search(r"^CHANNEL_LAYER_SOCKET_TIMEOUT = (\d+)", source, re.MULTILINE).group(1)) > least

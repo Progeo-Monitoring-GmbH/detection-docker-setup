@@ -552,11 +552,23 @@ REDIS_AUTH = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
 REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/1"
 CHANNEL_LAYER_REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/2"
 
+# The channel layer's connections wait for messages with a blocking read of
+# up to 5 s (channels_redis RedisChannelLayer.brpop_timeout); redis-py 8
+# gives every connection a 5 s read timeout by default - an idle websocket
+# then dies with "TimeoutError: Timeout reading from progeo-redis:6379".
+# The read timeout must stay well above that wait.
+CHANNEL_LAYER_SOCKET_TIMEOUT = 30
+CHANNEL_LAYER_HOST = {
+    "address": CHANNEL_LAYER_REDIS_URL,
+    "socket_timeout": CHANNEL_LAYER_SOCKET_TIMEOUT,
+    "socket_connect_timeout": 5,
+}
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [CHANNEL_LAYER_REDIS_URL],
+            "hosts": [CHANNEL_LAYER_HOST],
             # Default: a day. A member whose process died without leaving the
             # group (restart, killed worker) is dropped after an hour; live
             # consumers join again every GROUP_REFRESH_SECONDS (consumer.py).
