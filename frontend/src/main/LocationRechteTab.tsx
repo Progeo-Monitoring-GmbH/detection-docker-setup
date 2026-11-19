@@ -6,7 +6,10 @@ import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
@@ -52,6 +55,9 @@ type Member = UserContact & {
 };
 
 type Scope = 'single' | 'account';
+
+/** The location's account - "All objects of <name> (n objects)". */
+type AccountInfo = { id: number; name: string; location_count: number };
 /** "staff" = ProGeo team: sees every object; managed in Einstellungen. */
 type Access = Scope | 'staff';
 
@@ -72,7 +78,11 @@ const CHANNEL_OPTIONS = [
   { value: TRANSPORT_SMS, labelKey: 'rechte_transport_sms' },
   { value: TRANSPORT_MESSENGER, labelKey: 'rechte_transport_messenger' },
 ];
-const MESSENGER_LABELS = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
+const MESSENGER_LABELS = {
+  signal: 'Signal',
+  whatsapp: 'WhatsApp',
+  matrix: 'Matrix',
+};
 const channelBits = (transport: number) =>
   transport & TRANSPORT_LEGACY_BOTH
     ? (transport & ~TRANSPORT_LEGACY_BOTH) | TRANSPORT_EMAIL | TRANSPORT_SMS
@@ -145,6 +155,30 @@ export const mayEditRule = ({
   isOwn: boolean;
 }) => isOwn || (canEdit && (!memberIsStaff || viewerIsStaff));
 
+/**
+ * May the viewer revoke this member's access here? Single access with
+ * module_notifications_edit or as a mini admin of the account (backend:
+ * can_revoke_account); account members only as such a mini admin (or
+ * staff) - it takes them out of the account, so never oneself. ProGeo
+ * staff see every object anyway: nothing to revoke.
+ */
+export const mayRevoke = ({
+  access,
+  isOwn,
+  canEdit,
+  canRevokeAccount,
+}: {
+  access: Access;
+  isOwn: boolean;
+  canEdit: boolean;
+  canRevokeAccount: boolean;
+}) => {
+  if (access === 'single') {
+    return canEdit || canRevokeAccount;
+  }
+  return access === 'account' && canRevokeAccount && !isOwn;
+};
+
 const LocationRechteTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
@@ -157,7 +191,8 @@ const LocationRechteTab = () => {
   // The backend decides (`can_invite`); the role check keeps the button
   // hidden in "view as normal user", where the backend still answers as staff.
   const [canInvite, setCanInvite] = useState(false);
-  const canAdd = canInvite && role !== 'nutzer' && hasPermission('module_notifications_add');
+  const canAdd =
+    canInvite && role !== 'nutzer' && hasPermission('module_notifications_add');
   // Staff set their own and other staff's notifications here; customers
   // only ever see staff assigned as Objektleitung (read-only for them).
   const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
@@ -167,6 +202,12 @@ const LocationRechteTab = () => {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [canGrantAccount, setCanGrantAccount] = useState(false);
+  // Staff and mini admins of the account: take members out of it (Revoke) -
+  // other mini admins too, never themselves.
+  const [canRevokeAccount, setCanRevokeAccount] = useState(false);
+  const [account, setAccount] = useState<AccountInfo | null>(null);
+  // Revoke buttons at all - which members they unlock: mayRevoke.
+  const canRevoke = canEdit || canRevokeAccount;
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -191,9 +232,17 @@ const LocationRechteTab = () => {
         const loaded = (response?.data?.members || []) as Member[];
         // ProGeo staff are for staff eyes only (the backend sends them to
         // nobody else - this keeps it so with an older backend, too).
-        setMembers(viewerIsStaff ? loaded : loaded.filter((member) => member.access !== 'staff'));
+        setMembers(
+          viewerIsStaff
+            ? loaded
+            : loaded.filter((member) => member.access !== 'staff'),
+        );
         setCanGrantAccount(Boolean(response?.data?.can_grant_account));
         setCanInvite(Boolean(response?.data?.can_invite));
+        setCanRevokeAccount(Boolean(response?.data?.can_revoke_account));
+        setAccount(
+          (response?.data?.account as AccountInfo | undefined) ?? null,
+        );
         setLoading(false);
       },
       (error) => {
@@ -208,7 +257,9 @@ const LocationRechteTab = () => {
   }, [load]);
 
   const updateMember = (userId: number, patch: Partial<Member>) =>
-    setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, ...patch } : m)));
+    setMembers((prev) =>
+      prev.map((m) => (m.user_id === userId ? { ...m, ...patch } : m)),
+    );
 
   // Updates the member's rule, or creates one (account members without a
   // rule are silent by default).
@@ -237,7 +288,11 @@ const LocationRechteTab = () => {
 
   const toggleType = (member: Member, bit: number) => {
     const current = member.rule?.type ?? 0;
-    saveRule(member, member.rule?.transport ?? 0, current & bit ? current & ~bit : current | bit);
+    saveRule(
+      member,
+      member.rule?.transport ?? 0,
+      current & bit ? current & ~bit : current | bit,
+    );
   };
 
   const closeAdd = () => {
@@ -267,7 +322,8 @@ const LocationRechteTab = () => {
       },
       (response) => {
         const status = response?.data?.status as InviteStatus | undefined;
-        const messageKey = (status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added';
+        const messageKey =
+          (status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added';
         showSuccessBar(enqueueSnackbar, t(messageKey, { email }));
         setAdding(false);
         closeAdd();
@@ -281,14 +337,24 @@ const LocationRechteTab = () => {
   };
 
   const revoke = () => {
-    if (!revokeTarget?.rule) {
+    if (!revokeTarget) {
+      return;
+    }
+    // Account members leave the account; single access loses its rule.
+    const body =
+      revokeTarget.access === 'account'
+        ? { user_id: revokeTarget.user_id, scope: 'account' }
+        : revokeTarget.rule
+          ? { id: revokeTarget.rule.id }
+          : null;
+    if (!body) {
       return;
     }
     setRevoking(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/delete/`,
-      { id: revokeTarget.rule.id },
+      body,
       () => {
         showSuccessBar(enqueueSnackbar, t('rechte_removed'));
         setRevoking(false);
@@ -309,23 +375,44 @@ const LocationRechteTab = () => {
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/user/`,
-      { user_id: contactEdit.userId, [contactEdit.field]: contactEdit.value.trim() },
+      {
+        user_id: contactEdit.userId,
+        [contactEdit.field]: contactEdit.value.trim(),
+      },
       (response) => {
         const updated = response?.data?.user as
           | { id: number; email?: string | null; mobile?: string | null }
           | undefined;
         if (updated) {
-          updateMember(updated.id, { email: updated.email, mobile: updated.mobile });
+          updateMember(updated.id, {
+            email: updated.email,
+            mobile: updated.mobile,
+          });
         }
         setContactEdit(null);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not update contact data', error);
+        showRequestError(
+          enqueueSnackbar,
+          'Could not update contact data',
+          error,
+        );
       },
     );
   };
 
-  const countOf = (access: Access) => members.filter((m) => m.access === access).length;
+  const countOf = (access: Access) =>
+    members.filter((m) => m.access === access).length;
+
+  // "All objects of Muster GmbH (12 objects)" - plain without the account (older backend).
+  const accountScopeLabel = account
+    ? t('rechte_scope_account_named', {
+        account: account.name,
+        count: account.location_count,
+      })
+    : t('rechte_scope_account');
+  const accessLabel = (access: Access) =>
+    access === 'account' ? accountScopeLabel : t(ACCESS_LABEL_KEYS[access]);
 
   const renderContactFix = (member: Member) => {
     const hasEmail = Boolean(member.email?.trim());
@@ -334,14 +421,31 @@ const LocationRechteTab = () => {
       return null;
     }
     const fields = [
-      !hasEmail && { field: 'email' as const, label: 'rechte_field_email', add: 'rechte_add_email' },
-      !hasMobile && { field: 'mobile' as const, label: 'rechte_field_mobile', add: 'rechte_add_mobile' },
-    ].filter(Boolean) as { field: 'email' | 'mobile'; label: string; add: string }[];
+      !hasEmail && {
+        field: 'email' as const,
+        label: 'rechte_field_email',
+        add: 'rechte_add_email',
+      },
+      !hasMobile && {
+        field: 'mobile' as const,
+        label: 'rechte_field_mobile',
+        add: 'rechte_add_mobile',
+      },
+    ].filter(Boolean) as {
+      field: 'email' | 'mobile';
+      label: string;
+      add: string;
+    }[];
     return (
-      <div className="location-rechte-contact-fix" {...repeatedTestId('rechte-contact-fix', member.user_id)}>
+      <div
+        className="location-rechte-contact-fix"
+        {...repeatedTestId('rechte-contact-fix', member.user_id)}
+      >
         {fields.map(({ field, label, add }) => {
           const editing =
-            contactEdit && contactEdit.userId === member.user_id && contactEdit.field === field
+            contactEdit &&
+            contactEdit.userId === member.user_id &&
+            contactEdit.field === field
               ? contactEdit
               : null;
           return editing ? (
@@ -361,7 +465,11 @@ const LocationRechteTab = () => {
                   onChange={(value) => setContactEdit({ ...editing, value })}
                 />
               )}
-              <PillButton testId="rechte-contact-save" label={t('rechte_save')} onClick={saveContact} />
+              <PillButton
+                testId="rechte-contact-save"
+                label={t('rechte_save')}
+                onClick={saveContact}
+              />
             </div>
           ) : (
             <PillButton
@@ -370,7 +478,9 @@ const LocationRechteTab = () => {
               testKey={`${member.user_id}-${field}`}
               variant="ghost"
               label={t(add)}
-              onClick={() => setContactEdit({ userId: member.user_id, field, value: '' })}
+              onClick={() =>
+                setContactEdit({ userId: member.user_id, field, value: '' })
+              }
             />
           );
         })}
@@ -388,20 +498,27 @@ const LocationRechteTab = () => {
       [TRANSPORT_MESSENGER]: Boolean(member.messenger),
     };
     const type = member.rule?.type ?? 0;
-    // Only single-access can be revoked here; account/staff access is
-    // broader than this object. A staff member's notifications only staff
-    // can change (customers see staff only as Objektleitung).
-    const revokeLocked = member.access !== 'single';
+    // A staff member's notifications only staff can change (customers see
+    // staff only as Objektleitung).
     const isStaff = member.access === 'staff';
+    const isOwn = viewerId != null && member.user_id === viewerId;
+    const revokeLocked = !mayRevoke({
+      access: member.access,
+      isOwn,
+      canEdit,
+      canRevokeAccount,
+    });
     const canEditRule = mayEditRule({
       canEdit,
       viewerIsStaff,
       memberIsStaff: isStaff,
-      isOwn: viewerId != null && member.user_id === viewerId,
+      isOwn,
     });
     const lockedHint = isStaff
       ? t(viewerIsStaff ? 'rechte_staff_hint_staff' : 'rechte_staff_hint')
-      : t('rechte_account_revoke_hint');
+      : isOwn && member.access === 'account' && canRevokeAccount
+        ? t('rechte_revoke_own_hint')
+        : t('rechte_account_revoke_hint');
     return (
       <div
         key={member.user_id}
@@ -414,35 +531,52 @@ const LocationRechteTab = () => {
           </div>
           <div className="location-rechte-member-info">
             <div className="location-rechte-member-name-row">
-              <span className="location-rechte-member-name" {...repeatedTestId('rechte-member-name', member.user_id)}>
+              <span
+                className="location-rechte-member-name"
+                {...repeatedTestId('rechte-member-name', member.user_id)}
+              >
                 {displayName(member)}
               </span>
               <ScopeBadge
                 scope={member.access}
-                label={t(ACCESS_LABEL_KEYS[member.access])}
+                label={accessLabel(member.access)}
               />
               {isStaff && member.rule?.objektleitung && (
                 <ScopeBadge scope="account" label={t('rechte_objektleitung')} />
               )}
             </div>
-            <div className="location-rechte-member-email" {...repeatedTestId('rechte-member-email', member.user_id)}>
+            <div
+              className="location-rechte-member-email"
+              {...repeatedTestId('rechte-member-email', member.user_id)}
+            >
               {member.email || '–'}
             </div>
           </div>
           <div className="location-rechte-last-login">
-            <div className="location-rechte-label location-rechte-label--tight">{t('rechte_last_login')}</div>
-            <div className="location-rechte-last-login-value" {...repeatedTestId('rechte-member-last-login', member.user_id)}>
-              {member.last_login ? formatDate(member.last_login) : t('rechte_never_logged_in')}
+            <div className="location-rechte-label location-rechte-label--tight">
+              {t('rechte_last_login')}
+            </div>
+            <div
+              className="location-rechte-last-login-value"
+              {...repeatedTestId('rechte-member-last-login', member.user_id)}
+            >
+              {member.last_login
+                ? formatDate(member.last_login)
+                : t('rechte_never_logged_in')}
             </div>
           </div>
-          {canEdit && (
+          {canRevoke && (
             <button
               type="button"
               onClick={() => setRevokeTarget(member)}
               {...repeatedTestId('rechte-revoke', member.user_id)}
               disabled={revokeLocked}
               title={revokeLocked ? lockedHint : t('rechte_revoke')}
-              className={revokeLocked ? 'location-rechte-revoke location-rechte-revoke--locked' : 'location-rechte-revoke'}
+              className={
+                revokeLocked
+                  ? 'location-rechte-revoke location-rechte-revoke--locked'
+                  : 'location-rechte-revoke'
+              }
             >
               {t('rechte_revoke')}
             </button>
@@ -476,9 +610,17 @@ const LocationRechteTab = () => {
                     }
                     active={active}
                     // An active channel can always be switched off.
-                    disabled={!canEditRule || (!active && !available[option.value])}
-                    title={isMessenger && !member.messenger ? t('rechte_messenger_missing') : undefined}
-                    onClick={() => setTransport(member, transport ^ option.value)}
+                    disabled={
+                      !canEditRule || (!active && !available[option.value])
+                    }
+                    title={
+                      isMessenger && !member.messenger
+                        ? t('rechte_messenger_missing')
+                        : undefined
+                    }
+                    onClick={() =>
+                      setTransport(member, transport ^ option.value)
+                    }
                   />
                 );
               })}
@@ -504,8 +646,11 @@ const LocationRechteTab = () => {
 
         {!isStaff && renderContactFix(member)}
 
-        {revokeLocked && canEdit && (
-          <div className="location-rechte-locked-hint" {...repeatedTestId('rechte-locked-hint', member.user_id)}>
+        {revokeLocked && canRevoke && (
+          <div
+            className="location-rechte-locked-hint"
+            {...repeatedTestId('rechte-locked-hint', member.user_id)}
+          >
             {lockedHint}
           </div>
         )}
@@ -520,7 +665,10 @@ const LocationRechteTab = () => {
         title={
           <span className="location-rechte-title">
             {t('rechte_title')}
-            <span className="location-rechte-summary" data-testid="rechte-summary">
+            <span
+              className="location-rechte-summary"
+              data-testid="rechte-summary"
+            >
               {/* ProGeo staff are listed (and counted) for staff only - the backend sends them to nobody else. */}
               {t(viewerIsStaff ? 'rechte_summary' : 'rechte_summary_customer', {
                 account: countOf('account'),
@@ -538,7 +686,16 @@ const LocationRechteTab = () => {
               className="location-rechte-add-button"
               data-testid="rechte-add-button"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
                 <path d="M12 5v14M5 12h14" />
               </svg>
               {t('rechte_add_user')}
@@ -547,7 +704,10 @@ const LocationRechteTab = () => {
         }
       >
         {loading ? (
-          <div className="d-flex justify-content-center py-4 text-muted" data-testid="rechte-loading">
+          <div
+            className="d-flex justify-content-center py-4 text-muted"
+            data-testid="rechte-loading"
+          >
             <Spinner animation="border" size="sm" />
           </div>
         ) : (
@@ -580,18 +740,30 @@ const LocationRechteTab = () => {
                     onChange={setInviteLastName}
                   />
                 </div>
-                <div className="location-rechte-add-hint">{t('rechte_invite_hint')}</div>
+                <div className="location-rechte-add-hint">
+                  {t('rechte_invite_hint')}
+                </div>
                 {canGrantAccount && (
                   <div>
-                    <div className="location-rechte-label">{t('rechte_scope')}</div>
+                    <div className="location-rechte-label">
+                      {t('rechte_scope')}
+                    </div>
                     <div className="location-rechte-track">
                       {(['single', 'account'] as Scope[]).map((scope) => (
                         <PillButton
                           key={scope}
                           testId="rechte-scope"
                           testKey={scope}
-                          label={t(scope === 'account' ? 'rechte_scope_account' : 'rechte_scope_single')}
-                          title={scope === 'account' ? t('rechte_scope_account_hint') : undefined}
+                          label={
+                            scope === 'account'
+                              ? accountScopeLabel
+                              : t('rechte_scope_single')
+                          }
+                          title={
+                            scope === 'account'
+                              ? t('rechte_scope_account_hint')
+                              : undefined
+                          }
                           active={newScope === scope}
                           onClick={() => setNewScope(scope)}
                         />
@@ -600,18 +772,24 @@ const LocationRechteTab = () => {
                   </div>
                 )}
                 <div className="location-rechte-add-actions">
-                  <PillButton
-                    testId="rechte-add-confirm"
-                    label={t('rechte_add_confirm')}
+                  <button
+                    type="button"
+                    className="location-rechte-add-button"
+                    data-testid="rechte-add-confirm"
                     onClick={addUser}
                     disabled={!inviteValid || adding}
-                  />
-                  <PillButton
-                    testId="rechte-add-cancel"
-                    variant="ghost"
-                    label={t('rechte_cancel')}
+                  >
+                    {adding && <Spinner animation="border" size="sm" />}
+                    {t('rechte_add_confirm')}
+                  </button>
+                  <button
+                    type="button"
+                    className="location-rechte-revoke location-rechte-cancel"
+                    data-testid="rechte-add-cancel"
                     onClick={closeAdd}
-                  />
+                  >
+                    {t('rechte_cancel')}
+                  </button>
                 </div>
               </div>
             )}
@@ -625,7 +803,10 @@ const LocationRechteTab = () => {
             {members.map(renderMember)}
 
             {!canEdit && !canAdd && (
-              <span className="location-rechte-no-permission" data-testid="rechte-no-permission">
+              <span
+                className="location-rechte-no-permission"
+                data-testid="rechte-no-permission"
+              >
                 {t('rechte_own_only')}
               </span>
             )}
@@ -636,7 +817,16 @@ const LocationRechteTab = () => {
         testId="rechte-revoke-dialog"
         show={revokeTarget !== null}
         title={t('rechte_revoke_title')}
-        message={t('rechte_revoke_message', { name: revokeTarget ? displayName(revokeTarget) : '' })}
+        message={
+          revokeTarget?.access === 'account'
+            ? t('rechte_revoke_account_message', {
+                name: displayName(revokeTarget),
+                scope: accountScopeLabel,
+              })
+            : t('rechte_revoke_message', {
+                name: revokeTarget ? displayName(revokeTarget) : '',
+              })
+        }
         confirmLabel={t('rechte_revoke')}
         cancelLabel={t('rechte_cancel')}
         confirming={revoking}

@@ -4,28 +4,41 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('../../../hooks/CoreAuthProvider.tsx', () => ({ useAuth: () => ({}) }));
-vi.mock('../../axiosConfig', () => ({ default: { perform_get: () => undefined } }));
+vi.mock('../../axiosConfig', () => ({
+  default: { perform_get: () => undefined },
+}));
 vi.mock('../../main/access', () => ({
   useAccess: () => ({ can: () => true, hasPermission: () => false }),
   routeRule: (route: string) => route,
   portalItemRule: () => null,
 }));
 vi.mock('../../main/roleModel', () => ({ useProgeoRole: () => 'staff' }));
-vi.mock('../../main/portalNav', () => ({ PORTAL_NAV_ITEMS: [], portalNavPath: () => '' }));
+vi.mock('../../main/portalNav', () => ({
+  PORTAL_NAV_ITEMS: [],
+  portalNavPath: () => '',
+}));
 vi.mock('./SidebarShell', () => ({
-  default: ({ children }: { children: (state: { collapsed: boolean }) => React.ReactNode }) => (
-    <>{children({ collapsed: false })}</>
-  ),
+  default: ({
+    children,
+  }: {
+    children: (state: { collapsed: boolean }) => React.ReactNode;
+  }) => <>{children({ collapsed: false })}</>,
 }));
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const { default: LocationSidebar, selectedLocationParam, showsVerwaltungLink } = await import('./LocationSidebar');
+const {
+  default: LocationSidebar,
+  selectedLocationParam,
+  showsVerwaltungLink,
+} = await import('./LocationSidebar');
 
 let container: HTMLDivElement;
 let root: Root;
@@ -51,7 +64,9 @@ const render = (url: string, locationId: number | null = null) =>
   });
 
 const href = (key: string) =>
-  container.querySelector(`[data-testid="sidebar-link"][data-test-key="${key}"]`)!.getAttribute('href');
+  container
+    .querySelector(`[data-testid="sidebar-link"][data-test-key="${key}"]`)!
+    .getAttribute('href');
 
 describe('LocationSidebar carries the selected location', () => {
   it('takes ?location= to the device overview and the Lageplan wizard', () => {
@@ -67,7 +82,9 @@ describe('LocationSidebar carries the selected location', () => {
   it('marks the page active although its link carries the location', () => {
     render('/site-plan/wizard/?location=7&plan=3');
 
-    const link = container.querySelector('[data-testid="sidebar-link"][data-test-key="lageplan"]')!;
+    const link = container.querySelector(
+      '[data-testid="sidebar-link"][data-test-key="lageplan"]',
+    )!;
     expect(link.getAttribute('aria-current')).toBe('page');
     expect(href('device')).toBe('/device/overview?location=7');
   });
@@ -103,5 +120,10 @@ describe('showsVerwaltungLink', () => {
     expect(showsVerwaltungLink(false, 0)).toBe(false);
     expect(showsVerwaltungLink(false, 1)).toBe(false);
     expect(showsVerwaltungLink(false, 2)).toBe(true);
+  });
+
+  it('always shows the overview to staff who may open it', () => {
+    expect(showsVerwaltungLink(false, 0, true)).toBe(true);
+    expect(showsVerwaltungLink(false, null, true)).toBe(true);
   });
 });

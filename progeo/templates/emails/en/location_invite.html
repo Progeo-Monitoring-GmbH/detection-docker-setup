@@ -5,7 +5,7 @@
 {% block content %}
 <h1 style="margin:0 0 12px; font-size:20px;">Welcome to the ProGeo portal</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
-<p style="margin:0 0 4px;">{{ inviter_name }} has invited you to the object <strong>{{ location_name }}</strong> in the ProGeo monitoring portal. An account has been set up for you (username: <strong>{{ username }}</strong>). Sign in once with the following link and set a password in your profile afterwards; the link is valid for {{ valid_hours }} hours.</p>
+<p style="margin:0 0 4px;">{{ inviter_name }} has invited you to the object <strong>{{ location_name }}</strong> in the ProGeo monitoring portal. An account has been set up for you (sign in with: <strong>{{ username }}</strong>). Sign in once with the following link and set a password in your profile afterwards; the link is valid for {{ valid_hours }} hours.</p>
 {% include "emails/_button.html" with url=action_url label="Accept invitation" %}
 <p style="margin:0; font-size:12px; color:#6E6868;">Later you can always request a new link with "Get a login link by email" on the sign-in page. If you did not expect this invitation, you can ignore this email.</p>
 {% endblock %}

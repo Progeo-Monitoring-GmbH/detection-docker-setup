@@ -1482,6 +1482,11 @@ i18n
           rechte_scope: 'Access',
           rechte_scope_single: 'This object only',
           rechte_scope_account: 'All objects of the account',
+          rechte_scope_account_named_one: 'All objects of {{account}} ({{count}} object)',
+          rechte_scope_account_named_other: 'All objects of {{account}} ({{count}} objects)',
+          rechte_revoke_account_message:
+            '{{name}} is removed from the account and loses access to all its objects ({{scope}}) and the notifications for them.',
+          rechte_revoke_own_hint: 'You cannot revoke your own access.',
           rechte_scope_account_hint:
             'Grants access to every object of this account.',
           rechte_account_revoke_hint:
@@ -3933,6 +3938,11 @@ i18n
           rechte_scope: 'Zugriff',
           rechte_scope_single: 'Nur dieses Objekt',
           rechte_scope_account: 'Alle Objekte des Kontos',
+          rechte_scope_account_named_one: 'Alle Objekte von {{account}} ({{count}} Objekt)',
+          rechte_scope_account_named_other: 'Alle Objekte von {{account}} ({{count}} Objekte)',
+          rechte_revoke_account_message:
+            '{{name}} wird aus dem Konto entfernt und verliert den Zugriff auf alle seine Objekte ({{scope}}) und die Benachrichtigungen dazu.',
+          rechte_revoke_own_hint: 'Den eigenen Zugriff können Sie nicht entziehen.',
           rechte_scope_account_hint:
             'Gewährt Zugriff auf alle Objekte dieses Kontos.',
           rechte_account_revoke_hint:

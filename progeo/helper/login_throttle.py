@@ -3,7 +3,7 @@
 Failed attempts are counted in the cache per login name and per client IP
 within WINDOW_SECONDS; past the limit every further attempt is refused
 without checking the password - also a correct one - until the window
-runs out. CaseInsensitiveUsernameOrEmailBackend applies it, so every way a
+runs out. CaseInsensitiveEmailBackend applies it, so every way a
 password is checked is covered: /api/token/, /auth/login/, Basic auth and
 the Django admin login. A broken cache never locks anyone out.
 """

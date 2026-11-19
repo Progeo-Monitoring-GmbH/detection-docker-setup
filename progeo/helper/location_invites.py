@@ -111,10 +111,15 @@ def _grant(user, location, account, scope) -> bool:
         return True
     if _has_single_access(user, location, account):
         return False
+    from progeo.helper.project_db_signals import ensure_users_in
+
+    db_name = location_db(location, account)
+    # A user invited just now is not mirrored into the project database yet.
+    ensure_users_in(db_name, [user.pk])
     ProgeoAccess(
         location=location, user_id=user.pk,
         transport=ProgeoAccess.NotifiTrans.EMAIL, type=ProgeoAccess.NotifiTypes.ALARM,
-    ).save(using=location_db(location, account))
+    ).save(using=db_name)
     return True
 
 

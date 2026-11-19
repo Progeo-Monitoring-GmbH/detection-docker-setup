@@ -8,7 +8,7 @@ which every major element carries (`src/testIds.ts`).
 ```bash
 cd frontend
 npm run e2e:install          # once: downloads Chromium for Playwright
-export E2E_USERNAME=...      # a test user WITHOUT 2FA
+export E2E_USERNAME=...      # email address of a test user WITHOUT 2FA (login is by email only)
 export E2E_PASSWORD=...
 export E2E_LOCATION_ID=3031  # optional: a location the user sees (location pages)
 npm run e2e                  # all tests, headless

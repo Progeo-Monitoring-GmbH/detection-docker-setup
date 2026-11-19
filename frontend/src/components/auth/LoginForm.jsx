@@ -13,7 +13,7 @@ import AuthPage, { AuthLinks, authButtonClass } from './AuthPage';
  * product, the page is the first thing customers see of it.
  *
  * Users with 2FA get a second step: the password was right, now the code
- * from the authenticator app (or a recovery code) - username and password
+ * from the authenticator app (or a recovery code) - email and password
  * are sent again with it (the form keeps their values meanwhile).
  */
 const LoginForm = () => {
@@ -49,8 +49,16 @@ const LoginForm = () => {
 
   if (otpStep) {
     return (
-      <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')} testId="page-login">
-        <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="login-otp-form">
+      <AuthPage
+        title={t('login_otp_title')}
+        intro={t('login_otp_intro')}
+        testId="page-login"
+      >
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="auth-form"
+          data-testid="login-otp-form"
+        >
           <label className="auth-label">
             <span className="auth-field-label">{t('login_otp_code')}</span>
             <input
@@ -64,7 +72,9 @@ const LoginForm = () => {
             />
           </label>
           {otpStep === 'otp_invalid' && (
-            <p className="auth-error" data-testid="login-otp-error">{t('login_otp_invalid')}</p>
+            <p className="auth-error" data-testid="login-otp-error">
+              {t('login_otp_invalid')}
+            </p>
           )}
           <button
             type="submit"
@@ -91,12 +101,21 @@ const LoginForm = () => {
   }
 
   return (
-    <AuthPage title={t('login_title')} intro={t('login_intro')} testId="page-login">
-      <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="login-form">
+    <AuthPage
+      title={t('login_title')}
+      intro={t('login_intro')}
+      testId="page-login"
+    >
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="auth-form"
+        data-testid="login-form"
+      >
         <label className="auth-label">
-          <span className="auth-field-label">{t('login_username')}</span>
+          {/* Login with the email address only (backend CaseInsensitiveEmailBackend). */}
+          <span className="auth-field-label">{t('login_email')}</span>
           <input
-            type="text"
+            type="email"
             autoComplete="username"
             autoFocus
             required
@@ -145,9 +164,15 @@ const LoginForm = () => {
       </form>
 
       <AuthLinks>
-        <Link to="/forgot-password" data-testid="login-forgot-password-link">{t('login_forgot_password')}</Link>
-        <Link to="/login/link" data-testid="login-magic-link-link">{t('login_magic_link')}</Link>
-        <Link to="/access/request" data-testid="login-request-access-link">{t('login_request_access')}</Link>
+        <Link to="/forgot-password" data-testid="login-forgot-password-link">
+          {t('login_forgot_password')}
+        </Link>
+        <Link to="/login/link" data-testid="login-magic-link-link">
+          {t('login_magic_link')}
+        </Link>
+        <Link to="/access/request" data-testid="login-request-access-link">
+          {t('login_request_access')}
+        </Link>
       </AuthLinks>
     </AuthPage>
   );

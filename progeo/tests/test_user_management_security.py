@@ -54,7 +54,7 @@ def _user(**fields):
 
 
 def _login(client, user, otp=None, password=PASSWORD):
-    data = {"username": user.username, "password": password}
+    data = {"username": user.email, "password": password}
     if otp is not None:
         data["otp"] = otp
     return client.post("/api/token/", data, format="json")
@@ -404,7 +404,7 @@ def test_failed_logins_lock_the_name(client, settings):
     response = _login(client, user)
 
     assert response.status_code == 401
-    login_throttle.clear_failures(user.username)
+    login_throttle.clear_failures(user.email)
     assert _login(client, user).status_code == 200
 
 
@@ -413,7 +413,7 @@ def test_failed_logins_lock_basic_auth_too(client, settings):
     user = _user(staff=True)
 
     def basic(password):
-        raw = base64.b64encode(f"{user.username}:{password}".encode()).decode()
+        raw = base64.b64encode(f"{user.email}:{password}".encode()).decode()
         return client.get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Basic {raw}")
 
     assert basic(PASSWORD).status_code == 200
@@ -472,7 +472,7 @@ def test_login_asks_for_the_code(client):
 def test_two_factor_users_get_no_basic_auth(client):
     user = _user(staff=True)
     _enable_2fa(user)
-    raw = base64.b64encode(f"{user.username}:{PASSWORD}".encode()).decode()
+    raw = base64.b64encode(f"{user.email}:{PASSWORD}".encode()).decode()
 
     response = client.get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Basic {raw}")
 
@@ -483,8 +483,8 @@ def test_drf_token_login_asks_for_the_code_too(client):
     user = _user()
     secret, _codes = _enable_2fa(user)
 
-    assert client.post("/auth/login/", {"username": user.username, "password": PASSWORD}).status_code == 401
-    response = client.post("/auth/login/", {"username": user.username, "password": PASSWORD, "otp": _code(secret)})
+    assert client.post("/auth/login/", {"username": user.email, "password": PASSWORD}).status_code == 401
+    response = client.post("/auth/login/", {"username": user.email, "password": PASSWORD, "otp": _code(secret)})
     assert response.status_code == 200 and response.data["token"]
 
 
@@ -580,10 +580,10 @@ def test_admin_login_checks_the_code():
     secret, _codes = _enable_2fa(user)
     client = APIClient()
 
-    response = client.post("/aadmin/login/", {"username": user.username, "password": PASSWORD})
+    response = client.post("/aadmin/login/", {"username": user.email, "password": PASSWORD})
     assert "Authenticator" in response.content.decode()
     assert "_auth_user_id" not in client.session
-    client.post("/aadmin/login/", {"username": user.username, "password": PASSWORD, "otp": _code(secret)})
+    client.post("/aadmin/login/", {"username": user.email, "password": PASSWORD, "otp": _code(secret)})
     # (The debug toolbar may turn the redirect into a 200 page - the session tells.)
     assert client.session.get("_auth_user_id") == str(user.pk)
 
@@ -784,14 +784,14 @@ def test_drf_tokens_expire_and_login_issues_a_new_one(client, settings):
 
     settings.DRF_TOKEN_MAX_AGE_DAYS = 30
     user = _user(staff=True)
-    old = client.post("/auth/login/", {"username": user.username, "password": PASSWORD}).data["token"]
+    old = client.post("/auth/login/", {"username": user.email, "password": PASSWORD}).data["token"]
     Token.objects.using(f.DB).filter(key=old).update(created=timezone.now() - timedelta(days=31))
 
     response = APIClient().get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Token {old}")
     assert response.status_code == 401
     assert not Token.objects.using(f.DB).filter(key=old).exists()
 
-    new = client.post("/auth/login/", {"username": user.username, "password": PASSWORD}).data["token"]
+    new = client.post("/auth/login/", {"username": user.email, "password": PASSWORD}).data["token"]
     assert new != old
     assert APIClient().get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Token {new}").status_code == 200
 

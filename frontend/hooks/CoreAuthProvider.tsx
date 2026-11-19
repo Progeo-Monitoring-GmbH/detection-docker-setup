@@ -31,6 +31,7 @@ import {
   shouldRefreshAccessToken,
   storeTokens,
 } from '../src/tokenRefresh';
+import { resetPermissionsVersion } from '../src/permissionVersion';
 
 type User = JwtPayload;
 const intervalMin = 30;
@@ -110,9 +111,7 @@ const defaultAuthContextValue: AuthContextType = {
   location: '/',
 };
 
-const AuthContext = createContext<AuthContextType>(
-  defaultAuthContextValue,
-);
+const AuthContext = createContext<AuthContextType>(defaultAuthContextValue);
 
 // At call time, not import: node-environment tests import this module without `window`.
 const apiUrl = () => getBackendBaseUrl();
@@ -198,6 +197,8 @@ const CoreAuthProvider = ({ children }) => {
         clearStoredTokens();
         clearImpersonation();
         setViewAsUser(false);
+        // The next user's first answer sets the new baseline (permissionVersion.ts).
+        resetPermissionsVersion();
         if (wasDemo) {
           // Leaving the demo: no way (and no reason) to come back to it via the login form.
           setDemoToken(null);

@@ -4,7 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
+import AuthPage, {
+  AuthLinks,
+  authButtonClass,
+} from '../components/auth/AuthPage';
 import { repeatedTestId } from '../testIds';
 
 /**
@@ -106,10 +109,16 @@ const PasswordResetConfirm = () => {
   if (state === 'invalid') {
     return (
       <AuthPage title={t('password_new_title')} testId="page-password-reset">
-        <p className="auth-muted" data-testid="password-reset-invalid">{t('password_new_invalid')}</p>
+        <p className="auth-muted" data-testid="password-reset-invalid">
+          {t('password_new_invalid')}
+        </p>
         <AuthLinks>
-          <Link to="/forgot-password" data-testid="password-reset-request-new">{t('password_new_request_new')}</Link>
-          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
+          <Link to="/forgot-password" data-testid="password-reset-request-new">
+            {t('password_new_request_new')}
+          </Link>
+          <Link to="/login" data-testid="auth-back-to-login">
+            {t('auth_back_to_login')}
+          </Link>
         </AuthLinks>
       </AuthPage>
     );
@@ -121,9 +130,13 @@ const PasswordResetConfirm = () => {
       intro={t('password_new_intro', { name: firstName || username })}
       testId="page-password-reset"
     >
-      <form onSubmit={onSubmit} className="auth-form" data-testid="password-reset-form">
+      <form
+        onSubmit={onSubmit}
+        className="auth-form"
+        data-testid="password-reset-form"
+      >
         <label className="auth-label">
-          <span className="auth-field-label">{t('login_username')}</span>
+          <span className="auth-field-label">{t('login_email')}</span>
           <input
             type="text"
             value={username}
@@ -171,11 +184,20 @@ const PasswordResetConfirm = () => {
           />
         </label>
         {errors.map((message) => (
-          <p key={message} className="auth-error" {...repeatedTestId('password-reset-error', message)}>
+          <p
+            key={message}
+            className="auth-error"
+            {...repeatedTestId('password-reset-error', message)}
+          >
             {message}
           </p>
         ))}
-        <button type="submit" disabled={busy} className={authButtonClass(busy)} data-testid="password-reset-submit">
+        <button
+          type="submit"
+          disabled={busy}
+          className={authButtonClass(busy)}
+          data-testid="password-reset-submit"
+        >
           {t('password_new_submit')}
         </button>
       </form>

@@ -67,13 +67,16 @@ export const selectedLocationParam = (
 
 /**
  * "Objektverwaltung": object managers always (it is their /management/);
- * everyone else only with more than one location - a list of one is no
- * overview. Hidden until the count is known, so it never flashes in.
+ * staff who may open the overview always (they work across accounts - they
+ * may see no location of their own); everyone else only with more than one
+ * location - a list of one is no overview. Hidden until the count is known,
+ * so it never flashes in.
  */
 export const showsVerwaltungLink = (
   canCreateLocation: boolean,
   locationCount: number | null,
-) => canCreateLocation || (locationCount ?? 0) > 1;
+  staffOverview = false,
+) => canCreateLocation || staffOverview || (locationCount ?? 0) > 1;
 
 /**
  * The app's sidebar, ported from the "Portal v2" mockup's <aside> (ProGeo
@@ -90,7 +93,7 @@ const LocationSidebar = ({
 }: LocationSidebarProps) => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const { can, hasPermission } = useAccess();
+  const { can, hasPermission, isStaffOrSuperuser } = useAccess();
   const role = useProgeoRole();
   const routerLocation = useRouterLocation();
 
@@ -164,7 +167,11 @@ const LocationSidebar = ({
       () => setLocationCount(null),
     );
   }, [canListLocations]);
-  const showVerwaltung = showsVerwaltungLink(canCreateLocation, locationCount);
+  const showVerwaltung = showsVerwaltungLink(
+    canCreateLocation,
+    locationCount,
+    isStaffOrSuperuser && can(routeRule('/location/overview/')),
+  );
 
   // Cross-object modules, listed under "Alle Objekte". The location list is
   // only extra for object managers - everyone else's "Verwaltung" link above

@@ -1,6 +1,6 @@
 """Django admin login with the 2FA step (helper/two_factor.py).
 
-CaseInsensitiveUsernameOrEmailBackend lets a user with 2FA log in by
+CaseInsensitiveEmailBackend lets a user with 2FA log in by
 password on /aadmin/login/ only because this form checks the code as well.
 With TWO_FACTOR_REQUIRED_FOR_STAFF, staff without 2FA are sent to the portal
 to set it up first.

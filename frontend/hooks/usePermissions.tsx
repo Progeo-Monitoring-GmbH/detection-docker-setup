@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axiosConfig from '../src/axiosConfig';
 import { AuthContextType, useAuth } from './CoreAuthProvider';
 import { isPendingUser } from '../src/main/pendingReview';
+import { onPermissionsChanged } from '../src/permissionVersion';
 
 export type ModulePermissions = Record<string, boolean>;
 
@@ -131,6 +132,15 @@ const clearPermissionsCache = () => {
   pendingPermissionRequest = null;
 };
 
+// The permissions changed (a new X-Permissions-Version, permissionVersion.ts):
+// the cache is dropped once, then every mounted hook fetches - one request,
+// they share it (pendingPermissionRequest).
+const refetchers = new Set<() => void>();
+onPermissionsChanged(() => {
+  clearPermissionsCache();
+  refetchers.forEach((refetch) => refetch());
+});
+
 /**
  * The token plus the view: as a normal user (viewAsUser) a superuser gets
  * a new user's default permissions plus the ones granted to it, not all.
@@ -200,7 +210,10 @@ export const useActivityTrackingFlag = () => {
   const auth = useAuth();
   const token = auth?.token || '';
   const userId = (auth?.user as UserClaims)?.user_id ?? null;
-  const [state, setState] = useState<{ userId: unknown; on: boolean }>({ userId: null, on: false });
+  const [state, setState] = useState<{ userId: unknown; on: boolean }>({
+    userId: null,
+    on: false,
+  });
 
   useEffect(() => {
     if (!token) {
@@ -208,14 +221,20 @@ export const useActivityTrackingFlag = () => {
     }
     let isMounted = true;
     fetchPermissionPayload(auth, token)
-      .then((payload) => isMounted && setState({ userId, on: Boolean(payload.activity_tracking) }))
+      .then(
+        (payload) =>
+          isMounted &&
+          setState({ userId, on: Boolean(payload.activity_tracking) }),
+      )
       .catch(() => isMounted && setState({ userId, on: false }));
     return () => {
       isMounted = false;
     };
   }, [auth, token, userId]);
 
-  return Boolean(token) && userId != null && state.userId === userId && state.on;
+  return (
+    Boolean(token) && userId != null && state.userId === userId && state.on
+  );
 };
 
 const usePermissions = () => {
@@ -278,6 +297,30 @@ const usePermissions = () => {
       isMounted = false;
     };
   }, [auth, token, cacheKey]);
+
+  // The permissions changed on the server (a new X-Permissions-Version):
+  // fetched again - the sidebar and the route guards follow without a new login.
+  useEffect(() => {
+    if (!token) {
+      return undefined;
+    }
+    let isMounted = true;
+    const refetch = () => {
+      fetchPermissionPayload(auth, token)
+        .then((payload) => {
+          if (isMounted) {
+            setPermissionPayload(payload);
+            setError(null);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refetchers.add(refetch);
+    return () => {
+      isMounted = false;
+      refetchers.delete(refetch);
+    };
+  }, [auth, token]);
 
   const permissions = permissionPayload.permissions;
 

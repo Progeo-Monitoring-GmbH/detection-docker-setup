@@ -2,8 +2,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseCoordinate } from './LocationStandortPanel';
 import { onlineSince } from './LocationObjektTab';
-import { mayEditRule } from './LocationRechteTab';
-import { locationConnectivity, locationState, OVERVIEW_ROWS_PER_PAGE } from './LocationsOverview';
+import { mayEditRule, mayRevoke } from './LocationRechteTab';
+import {
+  locationConnectivity,
+  locationState,
+  OVERVIEW_ROWS_PER_PAGE,
+} from './LocationsOverview';
 
 const NOW = Date.parse('2026-11-17T12:00:00Z');
 
@@ -35,7 +39,12 @@ describe('onlineSince (Objekt tab)', () => {
 });
 
 describe('mayEditRule (Rechte tab)', () => {
-  const base = { canEdit: false, viewerIsStaff: false, memberIsStaff: false, isOwn: false };
+  const base = {
+    canEdit: false,
+    viewerIsStaff: false,
+    memberIsStaff: false,
+    isOwn: false,
+  };
 
   it('lets everyone change their own notifications', () => {
     expect(mayEditRule({ ...base, isOwn: true })).toBe(true);
@@ -44,16 +53,77 @@ describe('mayEditRule (Rechte tab)', () => {
   it("needs the edit permission for other people's - and staff for a staff member's", () => {
     expect(mayEditRule(base)).toBe(false);
     expect(mayEditRule({ ...base, canEdit: true })).toBe(true);
-    expect(mayEditRule({ ...base, canEdit: true, memberIsStaff: true })).toBe(false);
-    expect(mayEditRule({ ...base, canEdit: true, memberIsStaff: true, viewerIsStaff: true })).toBe(true);
+    expect(mayEditRule({ ...base, canEdit: true, memberIsStaff: true })).toBe(
+      false,
+    );
+    expect(
+      mayEditRule({
+        ...base,
+        canEdit: true,
+        memberIsStaff: true,
+        viewerIsStaff: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('mayRevoke (Rechte tab)', () => {
+  const base = { isOwn: false, canEdit: false, canRevokeAccount: false };
+
+  it('revokes single access with the edit permission or as a mini admin', () => {
+    expect(mayRevoke({ ...base, access: 'single' })).toBe(false);
+    expect(mayRevoke({ ...base, access: 'single', canEdit: true })).toBe(true);
+    expect(
+      mayRevoke({ ...base, access: 'single', canRevokeAccount: true }),
+    ).toBe(true);
+  });
+
+  it('takes account members (other mini admins too) out only as a mini admin - never oneself', () => {
+    expect(mayRevoke({ ...base, access: 'account', canEdit: true })).toBe(
+      false,
+    );
+    expect(
+      mayRevoke({ ...base, access: 'account', canRevokeAccount: true }),
+    ).toBe(true);
+    expect(
+      mayRevoke({
+        ...base,
+        access: 'account',
+        canRevokeAccount: true,
+        isOwn: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('never revokes ProGeo staff', () => {
+    expect(
+      mayRevoke({
+        access: 'staff',
+        isOwn: false,
+        canEdit: true,
+        canRevokeAccount: true,
+      }),
+    ).toBe(false);
   });
 });
 
 describe('location overview state', () => {
   it('is online with a measurement within 24 h, offline with an older one', () => {
-    expect(locationConnectivity({ last_measurement_at: '2026-11-17T08:00:00Z' }, NOW)).toBe('online');
-    expect(locationConnectivity({ last_measurement_at: '2026-11-15T08:00:00Z' }, NOW)).toBe('offline');
-    expect(locationConnectivity({ last_measurement_at: null }, NOW)).toBe('none');
+    expect(
+      locationConnectivity(
+        { last_measurement_at: '2026-11-17T08:00:00Z' },
+        NOW,
+      ),
+    ).toBe('online');
+    expect(
+      locationConnectivity(
+        { last_measurement_at: '2026-11-15T08:00:00Z' },
+        NOW,
+      ),
+    ).toBe('offline');
+    expect(locationConnectivity({ last_measurement_at: null }, NOW)).toBe(
+      'none',
+    );
   });
 
   it('colours a row with open alarms as alarm, whatever its connectivity', () => {

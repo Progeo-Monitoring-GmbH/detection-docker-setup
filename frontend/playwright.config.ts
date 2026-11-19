@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
  * (e2e/auth.setup.ts) and the tests reuse that session (storageState).
  *
  *   E2E_BASE_URL   the frontend to test (default: the local dev server, started if not running)
- *   E2E_USERNAME   login of the test user (without 2FA)
+ *   E2E_USERNAME   email address of the test user (without 2FA) - login is by email only
  *   E2E_PASSWORD
  *   E2E_LOCATION_ID  optional: a location the user sees, for the location pages
  */

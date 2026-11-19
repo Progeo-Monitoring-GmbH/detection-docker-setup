@@ -3,7 +3,6 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions
@@ -17,8 +16,11 @@ from rest_framework.permissions import BasePermission
 from progeo.v1.models import LimitedToken
 
 
-class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
-    """Allows login with the username or email, case-insensitively."""
+class CaseInsensitiveEmailBackend(ModelBackend):
+    """Login with the email address (case-insensitive) - not the username:
+    customers know their address, usernames were generated and differed
+    between the old and the new platform. Several users with one address:
+    the oldest (provisioning refuses to create such duplicates)."""
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         UserModel = get_user_model()
@@ -26,6 +28,7 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
             username = kwargs.get(UserModel.USERNAME_FIELD)
         if username is None or password is None:
             return None
+        username = str(username).strip()
 
         from progeo.helper import login_throttle
 
@@ -34,12 +37,10 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
             raise PermissionDenied("Too many failed logins")
 
         user = (
-            UserModel.objects.filter(
-                Q(username__iexact=username) | Q(email__iexact=username)
-            )
+            UserModel.objects.filter(email__iexact=username).exclude(email="")
             .order_by("id")
             .first()
-        )
+        ) if username else None
         if user is None:
             # Run the default password hasher to mitigate user enumeration
             # via timing attacks (same behavior as ModelBackend).
@@ -225,3 +226,9 @@ def is_expired_drf_token(token) -> bool:
 
     max_age_days = getattr(settings, "DRF_TOKEN_MAX_AGE_DAYS", 30)
     return bool(max_age_days) and token.created <= timezone.now() - timedelta(days=max_age_days)
+
+
+def login_name(user) -> str:
+    """What `user` signs in with (CaseInsensitiveEmailBackend): the email
+    address - the username only for an old account without one."""
+    return (getattr(user, "email", "") or "").strip() or user.username

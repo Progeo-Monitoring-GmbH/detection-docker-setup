@@ -284,7 +284,7 @@ def test_demo_role_users_can_log_in_and_stay_read_only(api_client, demo_account)
     assert not viewer.has_perm("progeo.module_locations_edit")
 
     password = _password_of(out.getvalue(), "demo-kundenadmin")
-    token = api_client.post("/api/token/", {"username": "demo-kundenadmin", "password": password}, format="json")
+    token = api_client.post("/api/token/", {"username": "demo-kundenadmin@progeo.com", "password": password}, format="json")
     assert token.status_code == 200, token.content
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.json()['access']}")
 

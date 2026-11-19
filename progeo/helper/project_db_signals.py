@@ -214,6 +214,34 @@ def _drop_clashing_profiles(alias, profiles):
         )
 
 
+def ensure_users_in(alias, user_ids):
+    """Copy the `user_ids` (with their profiles) into the project database
+    `alias` now, if they are not there yet - before a row there points at
+    them (ProgeoAccess.user). The regular mirror runs after the commit, in
+    celery: a user created moments ago (an invitation) is missing in the
+    project database until then, and the access row broke its foreign key.
+    Reads "default" on the caller's connection, so a user of the still open
+    transaction is copied as well."""
+    user_ids = sorted({int(user_id) for user_id in user_ids if user_id})
+    # Project databases only - an account's own legacy database has its own users.
+    if not user_ids or alias == DEFAULT_DB_ALIAS or not split_enabled() or alias not in existing_project_aliases():
+        return
+    present = set(User.objects.using(alias).filter(pk__in=user_ids).values_list("pk", flat=True))
+    missing = [user_id for user_id in user_ids if user_id not in present]
+    if not missing:
+        return
+    profiles = dict(
+        UserProfile.objects.using(DEFAULT_DB_ALIAS).filter(user_id__in=missing).values_list("pk", "user_id")
+    )
+    with transaction.atomic(using=alias):
+        transfer_rows(User, sql.SQL("{} = ANY(%s)").format(sql.Identifier(User._meta.pk.column)),
+                      [missing], alias, upsert=True)
+        if profiles:
+            _drop_clashing_profiles(alias, profiles)
+            transfer_rows(UserProfile, sql.SQL("{} = ANY(%s)").format(sql.Identifier(UserProfile._meta.pk.column)),
+                          [sorted(profiles)], alias, upsert=True)
+
+
 def _queue(add):
     """add(batch) for the batch of the open "default" transaction. A new
     batch when the last one's flush already ran or went with a rollback;

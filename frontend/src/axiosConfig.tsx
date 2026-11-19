@@ -11,9 +11,16 @@ import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isImpersonationBlockedError } from './main/impersonation';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
-import { isPendingReviewError, PENDING_REVIEW_PATH } from './main/pendingReview';
+import {
+  isPendingReviewError,
+  PENDING_REVIEW_PATH,
+} from './main/pendingReview';
 import { watchAxios } from './maintenance';
 import { refreshAccessToken } from './tokenRefresh';
+import {
+  notePermissionsVersion,
+  PERMISSIONS_HEADER,
+} from './permissionVersion';
 
 // The login/logout requests (CoreAuthProvider) use the global instance.
 watchAxios(axios);
@@ -27,7 +34,9 @@ export const defaultErrorCallback = (error) => {
 };
 
 const normalizeBackendUrl = (rawUrl?: string) => {
-  if (!rawUrl) {return rawUrl;}
+  if (!rawUrl) {
+    return rawUrl;
+  }
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return rawUrl.replace(/^http:\/\//i, 'https://');
   }
@@ -54,10 +63,18 @@ export default class axiosConfig {
     // covers tabs asleep past the token lifetime; CoreAuthProvider also
     // renews proactively. Only Bearer sessions refresh - an explicit "Token"
     // (transfer token) must never be replaced by the user's session.
-    type RetryableConfig = InternalAxiosRequestConfig & { __authRetry?: boolean };
+    type RetryableConfig = InternalAxiosRequestConfig & {
+      __authRetry?: boolean;
+    };
     this.axiosHolder.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Permissions changed since the last answer: fetched again (permissionVersion.ts).
+        notePermissionsVersion(response?.headers?.[PERMISSIONS_HEADER]);
+        return response;
+      },
       async (error) => {
+        // A 403 may be the change itself (a permission taken away).
+        notePermissionsVersion(error?.response?.headers?.[PERMISSIONS_HEADER]);
         const config = error?.config as RetryableConfig | undefined;
         const authorization = config?.headers?.Authorization;
         const isBearer =
@@ -132,7 +149,9 @@ export default class axiosConfig {
         if (isImpersonationBlockedError(error)) {
           // Logged in as another user: their credentials stay theirs.
           if (callBackError === defaultErrorCallback) {
-            enqueueSnackbar(i18n.t('impersonation_blocked'), { variant: 'info' });
+            enqueueSnackbar(i18n.t('impersonation_blocked'), {
+              variant: 'info',
+            });
           }
           return;
         }
@@ -153,7 +172,8 @@ export default class axiosConfig {
         // Demo users only log in again (via their link) on an expired session -
         // a 403 is a page the demo doesn't offer, and the link wouldn't help.
         const status = error?.response?.status;
-        const relogin = status === 401 || (status === 403 && !isDemoUser(auth?.user));
+        const relogin =
+          status === 401 || (status === 403 && !isDemoUser(auth?.user));
         if (relogin && auth) {
           auth.navigate(loginPathFor(auth.user, auth.location));
         }
@@ -170,7 +190,12 @@ export default class axiosConfig {
     config: IConfig = {},
   ) {
     axiosConfig.updateToken(config.token);
-    return axiosConfig.handle(auth, axiosConfig.holder.post(url, data, config), callBackSuccess, callBackError);
+    return axiosConfig.handle(
+      auth,
+      axiosConfig.holder.post(url, data, config),
+      callBackSuccess,
+      callBackError,
+    );
   }
 
   static async perform_patch(
@@ -182,7 +207,12 @@ export default class axiosConfig {
     config: IConfig = {},
   ) {
     axiosConfig.updateToken(config.token);
-    return axiosConfig.handle(auth, axiosConfig.holder.patch(url, data, config), callBackSuccess, callBackError);
+    return axiosConfig.handle(
+      auth,
+      axiosConfig.holder.patch(url, data, config),
+      callBackSuccess,
+      callBackError,
+    );
   }
 
   static async perform_get(
@@ -193,7 +223,12 @@ export default class axiosConfig {
     config = {},
   ) {
     axiosConfig.updateToken();
-    return axiosConfig.handle(auth, axiosConfig.holder.get(url, config), callBackSuccess, callBackError);
+    return axiosConfig.handle(
+      auth,
+      axiosConfig.holder.get(url, config),
+      callBackSuccess,
+      callBackError,
+    );
   }
 
   static updateToken(token = '') {

@@ -2241,4 +2241,9 @@ def _forget_cached_lageplans(sender, using, **kwargs):
 # Signal receivers: mirroring users/accounts/locations/devices into the
 # project databases, remembering chat logins (UserProfile.matrix_connected_at),
 # staff changes of locations for the readiness scoreboard (readiness_qa).
-from progeo.helper import matrix_accounts, project_db_signals, readiness_qa  # noqa: F401
+from progeo.helper import (  # noqa: F401
+    matrix_accounts,
+    permission_version,
+    project_db_signals,
+    readiness_qa,
+)

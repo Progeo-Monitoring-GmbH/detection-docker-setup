@@ -229,6 +229,10 @@ def _apply_permissions(user, requested_codes, grantable, keep_ungrantable=False)
             [Through(user_id=user.pk, permission_id=perm.pk) for perm in allowed_perms],
             ignore_conflicts=True,
         )
+    # Bulk writes send no m2m signals: the user's open pages learn it here.
+    from progeo.helper.permission_version import bump
+
+    bump([user.pk])
     return sorted(denied)
 
 

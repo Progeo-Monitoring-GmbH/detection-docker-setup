@@ -237,7 +237,7 @@ class PendingAccessMiddleware:
     other requests pay no database access; a claim that is outdated because
     the request was approved meanwhile is re-checked and let through.
     Pending users get no session and no Basic/DRF-token login (see
-    CaseInsensitiveUsernameOrEmailBackend), so the JWT is the only way in."""
+    CaseInsensitiveEmailBackend), so the JWT is the only way in."""
 
     # /v1/demo/login/: the panel offers the public demo (a separate demo user).
     ALLOWED_PATHS = ("/api/token/", "/api/auth-support/access-requests/", "/api/auth-support/login-link/",
@@ -388,3 +388,23 @@ class ReadinessTouchMiddleware:
             return self.get_response(request)
         finally:
             release_request(token)
+
+
+class PermissionVersionMiddleware:
+    """Every answer to a logged-in user carries the version of their
+    permissions (helper/permission_version.py): the frontend fetches its
+    module permissions again when it changes - granted or taken away, it
+    shows on the next request, not only after the next login."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        # Read after the view: DRF has put the JWT's user on the request by then.
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False) and getattr(user, "pk", None):
+            from progeo.helper.permission_version import HEADER, version
+
+            response[HEADER] = version(user.pk)
+        return response

@@ -77,6 +77,9 @@ def grant_project_access(user, project_ids, notify: bool = False, dry_run: bool 
             created = True
             if dry_run:
                 continue
+            from progeo.helper.project_db_signals import ensure_users_in
+
+            ensure_users_in(db_name, [user.pk])  # a new user is mirrored only after the commit
             ProgeoAccess(
                 location=location, user_id=user.pk,
                 transport=ProgeoAccess.NotifiTrans.EMAIL if notify else ProgeoAccess.NotifiTrans.SILENT,

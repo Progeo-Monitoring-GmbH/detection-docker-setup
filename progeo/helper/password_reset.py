@@ -16,6 +16,7 @@ link: LoginLinkExchangeView refuses it.
 from django.db import transaction
 from django.utils import timezone
 
+from progeo.authentication import login_name
 from progeo.helper import outbound
 from progeo.helper.basics import ilog, wlog
 
@@ -70,7 +71,7 @@ def send_reset(user_id: int, language: str | None = None) -> bool:
     if reason in ("inactive", "no_email"):
         wlog(f"[password_reset] No mail for user {user_id}: {reason}")
         return False
-    context = {"first_name": user.first_name, "username": user.username}
+    context = {"first_name": user.first_name, "username": login_name(user)}
     if reason == "no_2fa":
         return bool(send_template_mail(
             [user.email], "password_reset_unavailable",
@@ -146,6 +147,6 @@ def confirm(token: str, otp, password: str, request=None):
     ilog(f"[password_reset] Password of user {user.pk} reset by link")
     outbound.dispatch(
         send_template_mail_task, [user.email], "password_changed",
-        {"first_name": user.first_name, "username": user.username}, "password_reset",
+        {"first_name": user.first_name, "username": login_name(user)}, "password_reset",
     )
     return user, None

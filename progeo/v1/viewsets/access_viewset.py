@@ -29,6 +29,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from progeo.authentication import login_name
 from progeo.helper import access_requests, login_links, outbound, password_reset
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.v1.models import AccessRequest, EmailSuppression, OutboundMessage
@@ -186,7 +187,7 @@ class PasswordResetCheckView(APIView):
         link = password_reset.find_link(str(_data(request).get("token") or ""))
         if link is None:
             return RequestFailed({"reason": "invalid_token"})
-        return RequestSuccess({"username": link.user.username, "first_name": link.user.first_name})
+        return RequestSuccess({"username": login_name(link.user), "first_name": link.user.first_name})
 
 
 class PasswordResetConfirmView(APIView):
@@ -221,7 +222,7 @@ class MigrationCheckView(APIView):
         if link is None:
             return RequestFailed({"reason": "invalid_token"})
         user = link.user
-        return RequestSuccess({"username": user.username, "first_name": user.first_name, "email": user.email})
+        return RequestSuccess({"username": login_name(user), "first_name": user.first_name, "email": user.email})
 
 
 class MigrationConfirmView(APIView):

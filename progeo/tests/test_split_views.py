@@ -299,6 +299,28 @@ def test_access_changes_drop_the_cached_access_rows(world):
 
 @WITH_PROJECT_DBS
 @LOCMEM_CACHE
+def test_inviting_a_new_address_copies_the_user_into_the_project_database(world, settings, fake_smtp,
+                                                                          django_capture_on_commit_callbacks):
+    """The regular mirror of a new user runs after the commit (in celery) -
+    the access row in the project database needs the user right away
+    (it was an IntegrityError: "Key (user_id) is not present in table auth_user")."""
+    from django.contrib.auth.models import User
+
+    from progeo.helper.location_invites import invite_to_location
+
+    settings.PROJECT_DB_MIRROR_ASYNC = True
+    inviter = f.make_user(staff=True)
+    with SPLIT, django_capture_on_commit_callbacks(execute=False):
+        result = invite_to_location(inviter, world["location"], world["account"], "new.invite@progeo.com")
+
+    user = User.objects.using(f.DB).get(email="new.invite@progeo.com")
+    assert result == "invited"
+    assert User.objects.using(ALIAS).filter(pk=user.pk).exists()
+    assert ProgeoAccess.objects.using(ALIAS).filter(location_id=world["location"].pk, user_id=user.pk).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
 def test_devices_overview_collects_the_devices_of_every_project_database(staff_client, world):
     ProgeoDevice.objects.using(ALIAS).create(raw_hash=f.unique("device"), location_id=world["location"].pk)
     with SPLIT:

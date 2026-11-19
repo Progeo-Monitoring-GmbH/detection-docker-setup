@@ -21,6 +21,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
 
+from progeo.authentication import login_name
 from progeo.helper import outbound
 from progeo.helper.basics import ilog, wlog
 
@@ -105,7 +106,7 @@ def send_login_link(user_id: int, purpose: str = "login", template: str | None =
     context = {
         **(context or {}),
         "first_name": user.first_name,
-        "username": user.username,
+        "username": login_name(user),
         "valid_minutes": settings.MAGIC_LINK_LOGIN_MINUTES,
         "valid_hours": settings.MAGIC_LINK_INVITE_HOURS,
     }

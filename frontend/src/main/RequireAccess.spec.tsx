@@ -4,7 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
   permissions: {} as Record<string, boolean>,
@@ -15,14 +17,19 @@ const state = vi.hoisted(() => ({
   auth: {
     token: 'token-1',
     user: { user_id: 5, is_staff: false, is_superuser: false },
-    location: '/staff/',
+    location: '/location/overview/',
     navigate: () => undefined,
   },
 }));
 
 vi.mock('../axiosConfig', () => ({
   default: {
-    perform_get: (_auth: unknown, _url: string, ok: (response: unknown) => void, fail: (error: unknown) => void) => {
+    perform_get: (
+      _auth: unknown,
+      _url: string,
+      ok: (response: unknown) => void,
+      fail: (error: unknown) => void,
+    ) => {
       state.calls += 1;
       if (state.fail) {
         fail(new Error('down'));
@@ -31,7 +38,9 @@ vi.mock('../axiosConfig', () => ({
         ok({
           data: {
             permissions,
-            enabled: Object.keys(permissions).filter((code) => permissions[code]),
+            enabled: Object.keys(permissions).filter(
+              (code) => permissions[code],
+            ),
           },
         });
       }
@@ -69,36 +78,41 @@ const render = async (token: string) => {
   await act(async () => {
     root.render(
       <MemoryRouter>
-        <RequireAccess rule={routeRule('/staff/')}>
-          <div data-testid="page">users</div>
+        <RequireAccess rule={routeRule('/location/overview/')}>
+          <div data-testid="page">objects</div>
         </RequireAccess>
       </MemoryRouter>,
     );
   });
 };
 
-describe('RequireAccess on /staff/', () => {
-  it('lets a mini admin in', async () => {
-    state.permissions = { module_locations_enabled: true, module_mini_admin_enabled: true };
+describe('RequireAccess on /location/overview/', () => {
+  it('lets a user with the permission in', async () => {
+    state.permissions = { module_locations_enabled: true };
     state.fail = false;
-    await render('token-mini');
+    await render('token-locations');
 
     expect(container.querySelector('[data-testid="page"]')).not.toBeNull();
   });
 
   it('keeps a customer without the permission out - after asking once more', async () => {
-    state.permissions = { module_locations_enabled: true };
+    state.permissions = { module_devices_enabled: true };
     state.fail = false;
     await render('token-plain');
 
-    expect(container.querySelector('[data-testid="require-access-denied"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="require-access-denied"]'),
+    ).not.toBeNull();
     expect(state.calls).toBe(2);
   });
 
   it('lets in a user granted the role after the permissions were loaded', async () => {
     // Loaded at login without it; granted since - the recheck finds it.
-    state.sequence = [{ module_locations_enabled: true }];
-    state.permissions = { module_locations_enabled: true, module_mini_admin_enabled: true };
+    state.sequence = [{ module_devices_enabled: true }];
+    state.permissions = {
+      module_devices_enabled: true,
+      module_locations_enabled: true,
+    };
     state.fail = false;
     await render('token-granted-later');
 
@@ -106,16 +120,24 @@ describe('RequireAccess on /staff/', () => {
   });
 
   it('shows a load error with a retry, not "no access", when the permissions fail', async () => {
-    state.permissions = { module_mini_admin_enabled: true };
+    state.permissions = { module_locations_enabled: true };
     state.fail = true;
     await render('token-down');
 
-    expect(container.querySelector('[data-testid="require-access-denied"]')).toBeNull();
-    expect(container.querySelector('[data-testid="require-access-error"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="require-access-denied"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="require-access-error"]'),
+    ).not.toBeNull();
 
     state.fail = false;
     await act(async () => {
-      (container.querySelector('[data-testid="require-access-retry"]') as HTMLElement).click();
+      (
+        container.querySelector(
+          '[data-testid="require-access-retry"]',
+        ) as HTMLElement
+      ).click();
     });
     expect(container.querySelector('[data-testid="page"]')).not.toBeNull();
   });

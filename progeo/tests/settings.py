@@ -187,6 +187,7 @@ MIDDLEWARE = [
     "progeo.middlewares.ImpersonationMiddleware",
     "progeo.middlewares.TwoFactorRequiredMiddleware",
     "progeo.middlewares.ReadinessTouchMiddleware",
+    "progeo.middlewares.PermissionVersionMiddleware",
 ]
 
 
@@ -324,10 +325,10 @@ DATABASE_ROUTERS = [
     "progeo.router.AccountRouter",
 ]
 
-# Login accepts the username or email, case-insensitively (see backend).
 AUTHENTICATION_BACKENDS = [
-    "progeo.authentication.CaseInsensitiveUsernameOrEmailBackend",
-    "django.contrib.auth.backends.ModelBackend",
+    # Login with the email address only. No plain ModelBackend behind it:
+    # it would let the username in again (its permission checks are inherited).
+    "progeo.authentication.CaseInsensitiveEmailBackend",
 ]
 
 # Password validation

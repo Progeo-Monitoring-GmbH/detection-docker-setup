@@ -74,11 +74,18 @@ from progeo.helper.location_access import (
     visible_location_filters,
 )
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
-from progeo.helper.project_dbs import location_db, map_databases, split_enabled
+from progeo.helper.project_db_signals import ensure_users_in
+from progeo.helper.project_dbs import (
+    location_db,
+    locations_by_db,
+    map_databases,
+    split_enabled,
+)
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
     HEAT_LIMITATION_MAX_POINTS,
+    MINI_ADMIN_PERMISSION,
     SMS,
     Account,
     EMail,
@@ -115,6 +122,19 @@ def _staff_user_ids(user_ids) -> set:
     """The ids among `user_ids` of ProGeo staff - is_staff or is_superuser."""
     return set(
         User.objects.filter(Q(is_staff=True) | Q(is_superuser=True), pk__in=set(user_ids)).values_list("pk", flat=True)
+    )
+
+
+def _may_revoke_account(user, account) -> bool:
+    """May `user` take members out of `account` (Rechte tab, Revoke)? Staff,
+    and mini admins (module_mini_admin_enabled) who are members of it - they
+    manage the people of their account, other mini admins included."""
+    if _is_staff_admin(user):
+        return True
+    return bool(
+        account is not None
+        and has_module_permissions(user, MINI_ADMIN_PERMISSION)
+        and account.users.filter(pk=user.pk).exists()
     )
 
 
@@ -574,8 +594,6 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         """(locations, [(database, [locations])] sorted by database) of the
         user's primary account - the chunks slice that list. Not
         get_queryset(): with the split off it annotates the full stats."""
-        from progeo.helper.project_dbs import locations_by_db
-
         account = self._primary_account(request)
         if not account:
             return [], []
@@ -962,6 +980,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 # "Nutzer hinzufuegen" (access/invite): customer admins and staff only.
                 "can_invite": _is_customer_admin(viewer)
                 and has_module_permissions(viewer, "module_notifications_add"),
+                # Revoke account members (access/delete {user_id, scope: "account"}).
+                "can_revoke_account": _may_revoke_account(viewer, account),
+                # "All objects of <account> (n objects)" - the scope an account membership grants.
+                "account": {
+                    "id": account.pk,
+                    "name": account.name,
+                    "location_count": ProgeoLocation.objects.using(account.db_name).filter(account=account).count(),
+                },
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
@@ -1028,6 +1054,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 rule.objektleitung = _as_bool(objektleitung)
             except ValueError:
                 return RequestFailed({"reason": "objektleitung must be a boolean"})
+        # A user created just now (Objektleitung by email) is mirrored into
+        # the project database only after the commit.
+        ensure_users_in(db_name, [rule.user_id])
         rule.save(using=db_name)
         return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
 
@@ -1220,20 +1249,34 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return RequestFailed({"reason": str(exc)})
         return RequestSuccess({"status": result})
 
-    @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
+    @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access/delete", methods=["POST"])
     def access_delete(self, request, pk=None, *args, **kwargs):
-        """Delete an access rule of the location: POST {"id": <access_id>}."""
+        """Revoke access to the location:
+
+        - POST {"id": <access_id>}: delete a single-access rule
+          (module_notifications_edit, or a mini admin of the account).
+        - POST {"user_id": N, "scope": "account"}: take an account member out
+          of the location's account - staff and mini admins of that account
+          (also other mini admins, never themselves or ProGeo staff). Their
+          rules on the account's locations go too: they would leave them
+          single access to every object whose notifications they had set.
+        """
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        viewer = request.user
+        if str(request.data.get("scope") or "") == "account":
+            return self._revoke_account_member(request, account)
+        if not (has_module_permissions(viewer, "module_notifications_edit") or _may_revoke_account(viewer, account)):
+            return permission_denied_response(["module_notifications_edit"])
         db_name = location_db(location, account)
         try:
             access_id = int(request.data.get("id"))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "id required"})
         rules = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location)
-        if not _is_staff_admin(request.user):
+        if not _is_staff_admin(viewer):
             # Staff rules are hidden from customers - and not theirs to delete.
             rule = rules.first()
             if rule is not None and _staff_user_ids({rule.user_id}):
@@ -1242,6 +1285,32 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not deleted:
             return RequestFailed({"reason": "Access rule not found"})
         return RequestSuccess({"deleted": access_id})
+
+    @staticmethod
+    def _revoke_account_member(request, account):
+        if not _may_revoke_account(request.user, account):
+            return permission_denied_response(["module_mini_admin_enabled"])
+        try:
+            user_id = int(request.data.get("user_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "user_id required"})
+        if user_id == request.user.pk:
+            return RequestFailed({"reason": "You cannot revoke your own access"})
+        member = account.users.filter(pk=user_id, is_staff=False, is_superuser=False).first()
+        if member is None:
+            return RequestFailed({"reason": "User not found"})
+        account.users.remove(member)
+        locations = ProgeoLocation.objects.using(account.db_name).filter(account=account).only(
+            "pk", "project_id", "account_id"
+        )
+        rules = 0
+        for db_name, group in locations_by_db(locations, account).items():
+            deleted, _ = ProgeoAccess.objects.using(db_name).filter(
+                user_id=member.pk, location_id__in=[loc.pk for loc in group]
+            ).delete()
+            rules += deleted
+        ilog(f"[access] User {request.user.pk} took user {member.pk} out of account {account.pk} ({rules} rules)")
+        return RequestSuccess({"user_id": member.pk, "account": account.pk, "rules_deleted": rules})
 
     def _superuser_location(self, request, pk):
         """(location, account, error) - measurement maintenance is superuser-only."""
