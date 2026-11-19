@@ -657,6 +657,9 @@ const LocationsOverview = () => {
   const canListAlarms = hasPermission('module_measurements_enabled');
   // Checkboxes in the rows: "Assign to user" and "Merge projects" for the selection.
   const canSelect = hasPermission('module_locations_selectable');
+  // The selection's buttons, each with its own permission (the backend checks the same).
+  const canMerge = hasPermission('module_locations_mergable');
+  const canAssign = hasPermission('module_user_invitable');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<'assign' | 'merge' | null>(null);
   const navigate = useNavigate();
@@ -1149,7 +1152,9 @@ const LocationsOverview = () => {
           testId="locations-selection-bar"
           message={t('selection_count', { count: selectedLocations.length })}
           detail={
-            blocker && selectedLocations.length > 1 ? t(blocker) : undefined
+            canMerge && blocker && selectedLocations.length > 1
+              ? t(blocker)
+              : undefined
           }
           actions={[
             {
@@ -1158,18 +1163,26 @@ const LocationsOverview = () => {
               onClick: clearSelection,
               testId: 'locations-selection-clear',
             },
-            {
-              label: t('selection_merge'),
-              variant: 'secondary',
-              disabled: blocker !== null,
-              onClick: () => setDialog('merge'),
-              testId: 'locations-selection-merge',
-            },
-            {
-              label: t('selection_assign'),
-              onClick: () => setDialog('assign'),
-              testId: 'locations-selection-assign',
-            },
+            ...(canMerge
+              ? [
+                  {
+                    label: t('selection_merge'),
+                    variant: 'secondary' as const,
+                    disabled: blocker !== null,
+                    onClick: () => setDialog('merge'),
+                    testId: 'locations-selection-merge',
+                  },
+                ]
+              : []),
+            ...(canAssign
+              ? [
+                  {
+                    label: t('selection_assign'),
+                    onClick: () => setDialog('assign'),
+                    testId: 'locations-selection-assign',
+                  },
+                ]
+              : []),
           ]}
         />
       )}

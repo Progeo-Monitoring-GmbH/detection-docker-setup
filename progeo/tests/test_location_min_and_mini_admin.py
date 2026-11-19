@@ -141,7 +141,11 @@ def test_a_mini_admin_lists_only_the_customers_of_their_account(api_client, mini
     colleague = next(user for user in body["users"] if user["id"] == mini["colleague"].pk)
     assert colleague["accounts"] == [{"id": mini["own"].pk, "name": "Eigen"}]
     assert MINI not in body["grantable_codes"]
-    assert set(body["grantable_codes"]) == {*READ, "module_notifications_enabled"}
+    # Their own codes - the button permissions of mini admins included (helper/button_permissions.py).
+    assert set(body["grantable_codes"]) == {
+        *READ, "module_notifications_enabled", "module_user_add", "module_user_invitable",
+        "module_user_disability", "module_user_revokable",
+    }
 
 
 def test_a_mini_admin_creates_users_of_their_account_with_permissions_they_hold(api_client, mini):

@@ -12,6 +12,7 @@ from datetime import timedelta
 from django.contrib.auth.models import Permission, User
 from django.utils import timezone
 
+from progeo.helper.button_permissions import implied_permissions
 from progeo.v1.models import (
     Account,
     ProgeoAccess,
@@ -36,29 +37,10 @@ def make_account(name=None, db_name=DB):
     )
 
 
-# The button permissions (holds_permission - staff need them too) as
-# migration 0070 granted them to who could do the action before: a test user
-# keeps what such a user could do. `implied=False` leaves them out (tests of
-# the refusals).
-IMPLIED = {
-    "module_locations_mergable": [("staff",), ("module_locations_selectable", "module_locations_edit")],
-    "module_admin_storage": [("module_admin_enabled",)],
-    "module_admin_lageplan_export": [("module_admin_enabled",)],
-    "module_admin_logs": [("module_admin_enabled",)],
-    "module_user_add": [("staff",), ("module_mini_admin_enabled",)],
-    "module_user_invitable": [("staff",), ("module_mini_admin_enabled",),
-                              ("module_notifications_add", "module_locations_edit")],
-    "module_user_disability": [("staff",), ("module_mini_admin_enabled",)],
-    "module_user_erasability": [("staff",)],
-    "module_user_revokable": [("staff",), ("module_mini_admin_enabled",), ("module_notifications_edit",)],
-}
-
-
-def implied_permissions(perms, staff=False):
-    held = set(perms) | ({"staff"} if staff else set())
-    return sorted(code for code, sets in IMPLIED.items() if any(set(codes) <= held for codes in sets))
-
-
+# The button permissions (holds_permission - staff need them too), granted
+# like grant_button_permissions gave them to who could do the action before:
+# a test user keeps what such a user could do. `implied=False` leaves them
+# out (tests of the refusals).
 def make_user(username=None, staff=False, perms=(), accounts=(), implied=True, **fields):
     user = User.objects.using(DB).create(
         username=username or unique("user"), is_staff=staff, **fields

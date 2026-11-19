@@ -192,7 +192,10 @@ const LocationRechteTab = () => {
   // hidden in "view as normal user", where the backend still answers as staff.
   const [canInvite, setCanInvite] = useState(false);
   const canAdd =
-    canInvite && role !== 'nutzer' && hasPermission('module_notifications_add');
+    canInvite &&
+    role !== 'nutzer' &&
+    hasPermission('module_notifications_add') &&
+    hasPermission('module_user_invitable');
   // Staff set their own and other staff's notifications here; customers
   // only ever see staff assigned as Objektleitung (read-only for them).
   const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
@@ -206,8 +209,10 @@ const LocationRechteTab = () => {
   // other mini admins too, never themselves.
   const [canRevokeAccount, setCanRevokeAccount] = useState(false);
   const [account, setAccount] = useState<AccountInfo | null>(null);
-  // Revoke buttons at all - which members they unlock: mayRevoke.
-  const canRevoke = canEdit || canRevokeAccount;
+  // Revoking at all needs module_user_revokable (the backend checks the
+  // same) - which members it unlocks: mayRevoke.
+  const revokable = hasPermission('module_user_revokable');
+  const canRevoke = revokable && (canEdit || canRevokeAccount);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -505,8 +510,8 @@ const LocationRechteTab = () => {
     const revokeLocked = !mayRevoke({
       access: member.access,
       isOwn,
-      canEdit,
-      canRevokeAccount,
+      canEdit: revokable && canEdit,
+      canRevokeAccount: revokable && canRevokeAccount,
     });
     const canEditRule = mayEditRule({
       canEdit,

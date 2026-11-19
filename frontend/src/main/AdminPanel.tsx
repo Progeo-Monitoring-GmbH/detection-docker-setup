@@ -1,16 +1,36 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Form, Spinner } from 'react-bootstrap';
-import { ArrowClockwise, Download, FileEarmarkZip, PauseFill, PlayFill, Search } from 'react-bootstrap-icons';
+import {
+  ArrowClockwise,
+  Download,
+  FileEarmarkZip,
+  PauseFill,
+  PlayFill,
+  Search,
+} from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig.tsx';
 import { downloadBlob } from '../download';
-import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import PillSelect from '../components/ui/kit/PillSelect';
 import useLogStream, { type LogStreamStatus } from './admin/useLogStream';
+import usePermissions from '../../hooks/usePermissions';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import './AdminPanel.css';
@@ -50,19 +70,29 @@ const bytesToReadable = (value?: number) => {
   return `${val.toFixed(val >= 10 ? 1 : 2)} ${units[idx]}`;
 };
 
-const formatTime = (value?: string | Date | null) => formatDate(value, 'dateTimeSeconds');
+const formatTime = (value?: string | Date | null) =>
+  formatDate(value, 'dateTimeSeconds');
 
 /** "attachment; filename="x.tar"" -> x.tar */
-const attachmentName = (header?: string | null) => header?.match(/filename="?([^";]+)"?/)?.[1] ?? null;
+const attachmentName = (header?: string | null) =>
+  header?.match(/filename="?([^";]+)"?/)?.[1] ?? null;
 
 // ------------------------------------------------------------------- storage
 
 const UsageBar = ({ percent }: { percent: number | null }) => {
   const value = percent == null ? 0 : Math.max(0, Math.min(100, percent));
-  const level = value >= 90 ? ' admin-usage-fill--danger' : value >= 75 ? ' admin-usage-fill--warn' : '';
+  const level =
+    value >= 90
+      ? ' admin-usage-fill--danger'
+      : value >= 75
+        ? ' admin-usage-fill--warn'
+        : '';
   return (
     <div className="admin-usage-bar">
-      <div className={`admin-usage-fill${level}`} style={{ width: `${value}%` }} />
+      <div
+        className={`admin-usage-fill${level}`}
+        style={{ width: `${value}%` }}
+      />
     </div>
   );
 };
@@ -81,9 +111,15 @@ const StorageTile = ({
   /** data-test-key of the tile (src/testIds.ts). */
   testKey: string;
 }) => (
-  <div className="admin-storage-tile" {...repeatedTestId('admin-storage-tile', testKey)}>
+  <div
+    className="admin-storage-tile"
+    {...repeatedTestId('admin-storage-tile', testKey)}
+  >
     <div className="admin-storage-label">{label}</div>
-    <div className="admin-storage-value" {...repeatedTestId('admin-storage-tile-value', testKey)}>
+    <div
+      className="admin-storage-value"
+      {...repeatedTestId('admin-storage-tile-value', testKey)}
+    >
       {value}
     </div>
     {percent != null && <UsageBar percent={percent} />}
@@ -100,7 +136,9 @@ const usedPercent = (disk?: DiskInfo) => {
   if (Number.isFinite(fromText)) {
     return fromText;
   }
-  return disk?.total_bytes && disk.used_bytes != null ? (disk.used_bytes / disk.total_bytes) * 100 : null;
+  return disk?.total_bytes && disk.used_bytes != null
+    ? (disk.used_bytes / disk.total_bytes) * 100
+    : null;
 };
 
 const StorageSection = () => {
@@ -126,7 +164,11 @@ const StorageSection = () => {
         },
         (error) => {
           setLoading(false);
-          showRequestError(enqueueSnackbar, 'Could not load storage info', error);
+          showRequestError(
+            enqueueSnackbar,
+            'Could not load storage info',
+            error,
+          );
         },
       );
     },
@@ -151,14 +193,27 @@ const StorageSection = () => {
       actions={
         <>
           <span className="admin-muted" data-testid="admin-storage-host">
-            {[info?.host?.hostname, info?.host?.kernel, info?.generated_at && t('admin_storage_generated', { time: formatTime(info.generated_at) })]
+            {[
+              info?.host?.hostname,
+              info?.host?.kernel,
+              info?.generated_at &&
+                t('admin_storage_generated', {
+                  time: formatTime(info.generated_at),
+                }),
+            ]
               .filter(Boolean)
               .join(' · ')}
           </span>
           <PillButton
             variant="ghost"
             label={t('admin_refresh')}
-            icon={loading ? <Spinner size="sm" animation="border" /> : <ArrowClockwise />}
+            icon={
+              loading ? (
+                <Spinner size="sm" animation="border" />
+              ) : (
+                <ArrowClockwise />
+              )
+            }
             disabled={loading}
             onClick={() => load(true)}
             testId="admin-storage-refresh"
@@ -173,8 +228,13 @@ const StorageSection = () => {
           value={rootPercent != null ? `${rootPercent.toFixed(0)} %` : '-'}
           percent={rootPercent}
           lines={[
-            t('admin_storage_used', { used: bytesToReadable(root.used_bytes), total: bytesToReadable(root.total_bytes) }),
-            t('admin_storage_free', { free: bytesToReadable(root.available_bytes) }),
+            t('admin_storage_used', {
+              used: bytesToReadable(root.used_bytes),
+              total: bytesToReadable(root.total_bytes),
+            }),
+            t('admin_storage_free', {
+              free: bytesToReadable(root.available_bytes),
+            }),
           ]}
         />
         <StorageTile
@@ -184,7 +244,10 @@ const StorageSection = () => {
           percent={mediaPercent}
           lines={[
             media.total_bytes
-              ? t('admin_storage_used', { used: bytesToReadable(media.used_bytes), total: bytesToReadable(media.total_bytes) })
+              ? t('admin_storage_used', {
+                  used: bytesToReadable(media.used_bytes),
+                  total: bytesToReadable(media.total_bytes),
+                })
               : null,
             media.path ?? null,
           ]}
@@ -223,13 +286,17 @@ const LageplanExportSection = () => {
         const count = Number(headers['x-lageplan-count'] ?? 0);
         downloadBlob(
           new Blob([response.data], { type: 'application/x-tar' }),
-          attachmentName(headers['content-disposition']) ?? `lageplans_${usedDays}d.tar`,
+          attachmentName(headers['content-disposition']) ??
+            `lageplans_${usedDays}d.tar`,
         );
         setResult(
           <>
             {t('admin_lageplan_done', { count, days: usedDays })}
             {usedDays !== Number(days) && (
-              <span className="admin-warning-text"> {t('admin_lageplan_widened', { days: usedDays })}</span>
+              <span className="admin-warning-text">
+                {' '}
+                {t('admin_lageplan_widened', { days: usedDays })}
+              </span>
             )}
           </>,
         );
@@ -240,7 +307,11 @@ const LageplanExportSection = () => {
         if (error?.response?.status === 404) {
           showErrorBar(enqueueSnackbar, t('admin_lageplan_none'));
         } else {
-          showRequestError(enqueueSnackbar, 'Could not export Lageplans', error);
+          showRequestError(
+            enqueueSnackbar,
+            'Could not export Lageplans',
+            error,
+          );
         }
       },
       { responseType: 'blob' },
@@ -270,9 +341,18 @@ const LageplanExportSection = () => {
           {busy ? <Spinner size="sm" animation="border" /> : <FileEarmarkZip />}
           {t('admin_lageplan_download')}
         </button>
-        {result && <span className="admin-lageplan-result" data-testid="admin-lageplan-result">{result}</span>}
+        {result && (
+          <span
+            className="admin-lageplan-result"
+            data-testid="admin-lageplan-result"
+          >
+            {result}
+          </span>
+        )}
       </div>
-      <div className="admin-muted admin-lageplan-hint">{t('admin_lageplan_hint')}</div>
+      <div className="admin-muted admin-lageplan-hint">
+        {t('admin_lageplan_hint')}
+      </div>
     </PanelCard>
   );
 };
@@ -290,7 +370,10 @@ const STATUS_KEY: Record<LogStreamStatus, string> = {
 const StatusPill = ({ status }: { status: LogStreamStatus }) => {
   const { t } = useTranslation();
   return (
-    <span className={`admin-status-pill admin-status-pill--${status}`} data-testid="admin-logs-status">
+    <span
+      className={`admin-status-pill admin-status-pill--${status}`}
+      data-testid="admin-logs-status"
+    >
       <span className="admin-status-dot" />
       {t(STATUS_KEY[status])}
     </span>
@@ -301,10 +384,17 @@ const LogsSection = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const [lines, setLines] = useState('500');
-  const { status, files, selected, select, refreshFiles, content, meta, updatedAt, error } = useLogStream(
-    auth,
-    Number(lines),
-  );
+  const {
+    status,
+    files,
+    selected,
+    select,
+    refreshFiles,
+    content,
+    meta,
+    updatedAt,
+    error,
+  } = useLogStream(auth, Number(lines));
   const [fileFilter, setFileFilter] = useState('');
   const [lineFilter, setLineFilter] = useState('');
   const [paused, setPaused] = useState<string | null>(null);
@@ -314,7 +404,9 @@ const LogsSection = () => {
 
   const shownFiles = useMemo(() => {
     const needle = fileFilter.trim().toLowerCase();
-    return (files ?? []).filter((item) => !needle || item.file.toLowerCase().includes(needle));
+    return (files ?? []).filter(
+      (item) => !needle || item.file.toLowerCase().includes(needle),
+    );
   }, [files, fileFilter]);
 
   const text = paused ?? content ?? '';
@@ -323,7 +415,9 @@ const LogsSection = () => {
     if (!needle) {
       return { text, matches: null as number | null };
     }
-    const kept = text.split('\n').filter((line) => line.toLowerCase().includes(needle));
+    const kept = text
+      .split('\n')
+      .filter((line) => line.toLowerCase().includes(needle));
     return { text: kept.join('\n'), matches: kept.length };
   }, [text, lineFilter]);
 
@@ -338,7 +432,9 @@ const LogsSection = () => {
   const onScroll = () => {
     const viewer = viewerRef.current;
     if (viewer) {
-      setFollow(viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 24);
+      setFollow(
+        viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 24,
+      );
     }
   };
 
@@ -355,7 +451,13 @@ const LogsSection = () => {
       actions={
         <>
           <StatusPill status={status} />
-          <PillButton variant="ghost" label={t('admin_refresh')} icon={<ArrowClockwise />} onClick={refreshFiles} testId="admin-logs-refresh" />
+          <PillButton
+            variant="ghost"
+            label={t('admin_refresh')}
+            icon={<ArrowClockwise />}
+            onClick={refreshFiles}
+            testId="admin-logs-refresh"
+          />
         </>
       }
     >
@@ -374,11 +476,19 @@ const LogsSection = () => {
           </div>
           <div className="admin-log-files" data-testid="admin-logs-files">
             {files === null ? (
-              <div className="text-muted small py-3 text-center" data-testid="admin-logs-files-loading">
+              <div
+                className="text-muted small py-3 text-center"
+                data-testid="admin-logs-files-loading"
+              >
                 <Spinner size="sm" animation="border" />
               </div>
             ) : shownFiles.length === 0 ? (
-              <div className="text-muted small py-3" data-testid="admin-logs-files-empty">{t('admin_logs_no_files')}</div>
+              <div
+                className="text-muted small py-3"
+                data-testid="admin-logs-files-empty"
+              >
+                {t('admin_logs_no_files')}
+              </div>
             ) : (
               shownFiles.map((item) => {
                 const active = item.file === selected;
@@ -388,14 +498,17 @@ const LogsSection = () => {
                     type="button"
                     onClick={() => choose(item.file)}
                     title={item.path}
-                    className={active ? 'admin-log-file admin-log-file--active' : 'admin-log-file'}
+                    className={
+                      active
+                        ? 'admin-log-file admin-log-file--active'
+                        : 'admin-log-file'
+                    }
                     {...repeatedTestId('admin-logs-file', item.file)}
                   >
-                    <div className="admin-log-file-name">
-                      {item.file}
-                    </div>
+                    <div className="admin-log-file-name">{item.file}</div>
                     <div className="admin-log-file-meta">
-                      {bytesToReadable(item.size_bytes)} · {formatTime(item.modified_at)}
+                      {bytesToReadable(item.size_bytes)} ·{' '}
+                      {formatTime(item.modified_at)}
                     </div>
                   </button>
                 );
@@ -444,10 +557,16 @@ const LogsSection = () => {
             />
             <PillButton
               variant="ghost"
-              label={paused != null ? t('admin_logs_resume') : t('admin_logs_pause')}
+              label={
+                paused != null ? t('admin_logs_resume') : t('admin_logs_pause')
+              }
               icon={paused != null ? <PlayFill /> : <PauseFill />}
               disabled={content == null}
-              onClick={() => setPaused((current) => (current != null ? null : (content ?? '')))}
+              onClick={() =>
+                setPaused((current) =>
+                  current != null ? null : (content ?? ''),
+                )
+              }
               testId="admin-logs-pause"
             />
             <PillButton
@@ -456,7 +575,10 @@ const LogsSection = () => {
               icon={<Download />}
               disabled={!text}
               onClick={() =>
-                downloadBlob(new Blob([text], { type: 'text/plain' }), (selected.split('/').pop() || 'log') + '.txt')
+                downloadBlob(
+                  new Blob([text], { type: 'text/plain' }),
+                  (selected.split('/').pop() || 'log') + '.txt',
+                )
               }
               testId="admin-logs-download"
             />
@@ -467,23 +589,53 @@ const LogsSection = () => {
               {meta?.path || selected || '-'}
             </span>
             {meta && <span>{bytesToReadable(meta.size_bytes)}</span>}
-            {updatedAt && <span>{t('admin_logs_updated', { time: formatTime(updatedAt) })}</span>}
-            {filtered.matches != null && <span data-testid="admin-logs-matches">{t('admin_logs_matches', { count: filtered.matches })}</span>}
-            {paused != null && <span className="admin-logs-paused" data-testid="admin-logs-paused">{t('admin_logs_paused')}</span>}
+            {updatedAt && (
+              <span>
+                {t('admin_logs_updated', { time: formatTime(updatedAt) })}
+              </span>
+            )}
+            {filtered.matches != null && (
+              <span data-testid="admin-logs-matches">
+                {t('admin_logs_matches', { count: filtered.matches })}
+              </span>
+            )}
+            {paused != null && (
+              <span
+                className="admin-logs-paused"
+                data-testid="admin-logs-paused"
+              >
+                {t('admin_logs_paused')}
+              </span>
+            )}
           </div>
-          {error && <div className="admin-logs-error" data-testid="admin-logs-error">{error}</div>}
+          {error && (
+            <div className="admin-logs-error" data-testid="admin-logs-error">
+              {error}
+            </div>
+          )}
 
           <pre
             ref={viewerRef}
             onScroll={onScroll}
-            className={wrap ? 'admin-log-viewer admin-log-viewer--wrap' : 'admin-log-viewer'}
+            className={
+              wrap
+                ? 'admin-log-viewer admin-log-viewer--wrap'
+                : 'admin-log-viewer'
+            }
             data-testid="admin-logs-viewer"
           >
-            {content == null && selected ? t('ui_loading') : filtered.text || t('admin_logs_empty')}
+            {content == null && selected
+              ? t('ui_loading')
+              : filtered.text || t('admin_logs_empty')}
           </pre>
           {!follow && (
             <div className="admin-logs-end">
-              <PillButton variant="ghost" label={t('admin_logs_jump_end')} onClick={() => setFollow(true)} testId="admin-logs-jump-end" />
+              <PillButton
+                variant="ghost"
+                label={t('admin_logs_jump_end')}
+                onClick={() => setFollow(true)}
+                testId="admin-logs-jump-end"
+              />
             </div>
           )}
         </div>
@@ -493,15 +645,28 @@ const LogsSection = () => {
 };
 
 /** Admin Panel (/admin/panel/, module_admin_enabled): host storage, the
- * Lageplan export and the live log viewer. */
+ * Lageplan export and the live log viewer - each with its own permission
+ * (module_admin_storage / _lageplan_export / _logs; the backend checks the same). */
 const AdminPanelView = () => {
   const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const sections = [
+    hasPermission('module_admin_storage') && <StorageSection key="storage" />,
+    hasPermission('module_admin_lageplan_export') && (
+      <LageplanExportSection key="lageplan" />
+    ),
+    hasPermission('module_admin_logs') && <LogsSection key="logs" />,
+  ].filter(Boolean);
   return (
     <div className="admin-panel" data-testid="page-admin-panel">
       <h2 className="mb-0">{t('admin_title')}</h2>
-      <StorageSection />
-      <LageplanExportSection />
-      <LogsSection />
+      {sections.length ? (
+        sections
+      ) : (
+        <div className="text-muted small" data-testid="admin-panel-empty">
+          {t('admin_no_sections')}
+        </div>
+      )}
     </div>
   );
 };

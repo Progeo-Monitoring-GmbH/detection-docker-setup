@@ -171,6 +171,8 @@ const UserFormModal = ({
   onSave,
   onGeneratePassword,
   staffFields = true,
+  canInvite = true,
+  canDisable = true,
   accounts = [],
   testId,
 }: {
@@ -185,6 +187,10 @@ const UserFormModal = ({
   onGeneratePassword?: (user: StaffUser) => void;
   /** The staff switch - not for mini admins, who manage customers only. */
   staffFields?: boolean;
+  /** "Send invitation" (module_user_invitable). */
+  canInvite?: boolean;
+  /** The active switch (module_user_disability) - without it the flag stays as it is. */
+  canDisable?: boolean;
   /** A mini admin's accounts: a new user joins one (chosen when there are several). */
   accounts?: UserAccount[];
   /** data-testid of the dialog; its fields and buttons are "<testId>-<name>". */
@@ -322,15 +328,17 @@ const UserFormModal = ({
                 data-testid={childTestId(testId, 'is-staff')}
               />
             )}
-            <Form.Check
-              type="switch"
-              id="active-switch"
-              label={t('staff_field_is_active')}
-              checked={isActive}
-              onChange={(event) => setIsActive(event.target.checked)}
-              data-testid={childTestId(testId, 'is-active')}
-            />
-            {isNew && (
+            {canDisable && (
+              <Form.Check
+                type="switch"
+                id="active-switch"
+                label={t('staff_field_is_active')}
+                checked={isActive}
+                onChange={(event) => setIsActive(event.target.checked)}
+                data-testid={childTestId(testId, 'is-active')}
+              />
+            )}
+            {isNew && canInvite && (
               <Form.Check
                 type="switch"
                 id="invite-switch"
@@ -396,7 +404,11 @@ const UserFormModal = ({
             </Button>
           </>
         )}
-        <Button variant="secondary" onClick={onHide} data-testid={childTestId(testId, 'cancel')}>
+        <Button
+          variant="secondary"
+          onClick={onHide}
+          data-testid={childTestId(testId, 'cancel')}
+        >
           {t('staff_cancel')}
         </Button>
         <Button
@@ -425,7 +437,12 @@ const PasswordResultModal = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <Modal show={show} onHide={onHide} centered data-testid="staff-password-result">
+    <Modal
+      show={show}
+      onHide={onHide}
+      centered
+      data-testid="staff-password-result"
+    >
       <Modal.Header closeButton>
         <Modal.Title>{t('staff_password_result_title')}</Modal.Title>
       </Modal.Header>
@@ -446,7 +463,11 @@ const PasswordResultModal = ({
         <Form.Text muted>{t('staff_password_invite_hint')}</Form.Text>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="primary" onClick={onHide} data-testid="staff-password-result-close">
+        <Button
+          variant="primary"
+          onClick={onHide}
+          data-testid="staff-password-result-close"
+        >
           {t('staff_close')}
         </Button>
       </Modal.Footer>
@@ -490,6 +511,11 @@ const StaffAdmin = () => {
   const { hasPermission } = useAccess();
   const isMiniAdmin = !isStaff && hasPermission('module_mini_admin_enabled');
   const canManageUsers = isStaff || isMiniAdmin;
+  // The user actions, each with its own permission (backend: holds_permission).
+  const canAddUser = hasPermission('module_user_add');
+  const canInviteUser = hasPermission('module_user_invitable');
+  const canDisableUser = hasPermission('module_user_disability');
+  const canDeleteUser = hasPermission('module_user_erasability');
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -788,7 +814,10 @@ const StaffAdmin = () => {
         selector: (row) => row.username.toLowerCase(),
         sortable: true,
         cell: (row) => (
-          <span className="d-inline-flex align-items-center" {...repeatedTestId('staff-user-name', row.id)}>
+          <span
+            className="d-inline-flex align-items-center"
+            {...repeatedTestId('staff-user-name', row.id)}
+          >
             <SessionDot user={row} />
             {row.username}
             {row.is_superuser && (
@@ -810,7 +839,13 @@ const StaffAdmin = () => {
         selector: (row) =>
           `${String(row.accounts?.length ?? 0).padStart(4, '0')} ${(row.accounts?.[0]?.name ?? '').toLowerCase()}`,
         sortable: true,
-        cell: (row) => <AccountBoxes userId={row.id} accounts={row.accounts ?? []} colorOf={accountColorOf} />,
+        cell: (row) => (
+          <AccountBoxes
+            userId={row.id}
+            accounts={row.accounts ?? []}
+            colorOf={accountColorOf}
+          />
+        ),
         minWidth: '140px',
       },
       {
@@ -837,9 +872,16 @@ const StaffAdmin = () => {
         sortable: true,
         cell: (row) =>
           row.is_active ? (
-            <Badge bg="success" {...repeatedTestId('staff-user-active', row.id)}>{t('staff_badge_active')}</Badge>
+            <Badge
+              bg="success"
+              {...repeatedTestId('staff-user-active', row.id)}
+            >
+              {t('staff_badge_active')}
+            </Badge>
           ) : (
-            <Badge bg="danger" {...repeatedTestId('staff-user-active', row.id)}>{t('staff_badge_inactive')}</Badge>
+            <Badge bg="danger" {...repeatedTestId('staff-user-active', row.id)}>
+              {t('staff_badge_inactive')}
+            </Badge>
           ),
         width: '100px',
       },
@@ -849,7 +891,12 @@ const StaffAdmin = () => {
         sortable: true,
         cell: (row) =>
           row.two_factor_enabled ? (
-            <Badge bg="success" {...repeatedTestId('staff-user-two-factor', row.id)}>{t('staff_badge_two_factor')}</Badge>
+            <Badge
+              bg="success"
+              {...repeatedTestId('staff-user-two-factor', row.id)}
+            >
+              {t('staff_badge_two_factor')}
+            </Badge>
           ) : (
             <span className="text-muted small">-</span>
           ),
@@ -863,13 +910,19 @@ const StaffAdmin = () => {
           const enabled = rowPermissions(row);
           if (enabled.length === 0) {
             return (
-              <span className="text-muted small" {...repeatedTestId('staff-user-permissions', row.id)}>
+              <span
+                className="text-muted small"
+                {...repeatedTestId('staff-user-permissions', row.id)}
+              >
                 {t('staff_permissions_none')}
               </span>
             );
           }
           return (
-            <span className="d-flex flex-wrap gap-1" {...repeatedTestId('staff-user-permissions', row.id)}>
+            <span
+              className="d-flex flex-wrap gap-1"
+              {...repeatedTestId('staff-user-permissions', row.id)}
+            >
               {enabled.slice(0, 3).map((code) => (
                 <Badge key={code} bg="info" pill text="dark">
                   {permissionLabel(code)}
@@ -915,37 +968,39 @@ const StaffAdmin = () => {
               <PencilSquare size={14} />
             </Button>
             {isStaff && (
-            <Button
-              size="sm"
-              variant="outline-warning"
-              title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
-              aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
-              disabled={busyId === row.id}
-              onClick={() => handleGeneratePassword(row)}
-              {...repeatedTestId('staff-user-generate-password', row.id)}
-            >
-              <Key size={14} />
-            </Button>
+              <Button
+                size="sm"
+                variant="outline-warning"
+                title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+                aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+                disabled={busyId === row.id}
+                onClick={() => handleGeneratePassword(row)}
+                {...repeatedTestId('staff-user-generate-password', row.id)}
+              >
+                <Key size={14} />
+              </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline-secondary"
-              title={
-                row.email
-                  ? t('staff_send_invite')
-                  : t('staff_send_invite_no_email')
-              }
-              aria-label={
-                row.email
-                  ? t('staff_send_invite')
-                  : t('staff_send_invite_no_email')
-              }
-              disabled={busyId === row.id || !row.email || !row.is_active}
-              onClick={() => handleInvite(row)}
-              {...repeatedTestId('staff-user-invite', row.id)}
-            >
-              <Envelope size={14} />
-            </Button>
+            {canInviteUser && (
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                title={
+                  row.email
+                    ? t('staff_send_invite')
+                    : t('staff_send_invite_no_email')
+                }
+                aria-label={
+                  row.email
+                    ? t('staff_send_invite')
+                    : t('staff_send_invite_no_email')
+                }
+                disabled={busyId === row.id || !row.email || !row.is_active}
+                onClick={() => handleInvite(row)}
+                {...repeatedTestId('staff-user-invite', row.id)}
+              >
+                <Envelope size={14} />
+              </Button>
+            )}
             {isStaff && row.two_factor_enabled && (
               <Button
                 size="sm"
@@ -972,25 +1027,34 @@ const StaffAdmin = () => {
                 <Incognito size={14} />
               </Button>
             )}
-            {isStaff && (
-            <Button
-              size="sm"
-              variant="outline-danger"
-              title={t('staff_delete_user')}
-              aria-label={t('staff_delete_user')}
-              disabled={busyId === row.id}
-              onClick={() => handleDelete(row)}
-              {...repeatedTestId('staff-user-delete', row.id)}
-            >
-              <Trash size={14} />
-            </Button>
+            {isStaff && canDeleteUser && (
+              <Button
+                size="sm"
+                variant="outline-danger"
+                title={t('staff_delete_user')}
+                aria-label={t('staff_delete_user')}
+                disabled={busyId === row.id}
+                onClick={() => handleDelete(row)}
+                {...repeatedTestId('staff-user-delete', row.id)}
+              >
+                <Trash size={14} />
+              </Button>
             )}
           </span>
         ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId, t, roleLabel, isSuperuser, isStaff, accountColorOf],
+    [
+      busyId,
+      t,
+      roleLabel,
+      isSuperuser,
+      isStaff,
+      accountColorOf,
+      canInviteUser,
+      canDeleteUser,
+    ],
   );
   // Phones: the name in the row, everything else (the actions too) in its expander.
   const { columns, expandable } = useMobileColumns(allColumns, ['username']);
@@ -998,7 +1062,10 @@ const StaffAdmin = () => {
   if (!canManageUsers) {
     return (
       <Container data-testid="page-staff">
-        <Card className="border-0 shadow-sm my-5" data-testid="staff-access-required">
+        <Card
+          className="border-0 shadow-sm my-5"
+          data-testid="staff-access-required"
+        >
           <Card.Body className="text-center py-5">
             <ShieldLock size={40} className="text-muted mb-3" />
             <h5>{t('staff_access_required')}</h5>
@@ -1028,19 +1095,24 @@ const StaffAdmin = () => {
                 <ArrowRepeat className="me-1" />
                 {t('staff_refresh')}
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setShowCreate(true)}
-                data-testid="staff-users-add"
-              >
-                <PersonPlus className="me-1" />
-                {t('staff_add_user')}
-              </Button>
+              {canAddUser && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setShowCreate(true)}
+                  data-testid="staff-users-add"
+                >
+                  <PersonPlus className="me-1" />
+                  {t('staff_add_user')}
+                </Button>
+              )}
             </div>
           </div>
 
-          <div className="d-flex flex-wrap align-items-center gap-2 mb-2" data-testid="staff-users-filters">
+          <div
+            className="d-flex flex-wrap align-items-center gap-2 mb-2"
+            data-testid="staff-users-filters"
+          >
             <Form.Control
               size="sm"
               className="staff-filter-text"
@@ -1136,7 +1208,10 @@ const StaffAdmin = () => {
                 {t('staff_filter_clear')}
               </Button>
             )}
-            <small className="text-muted ms-auto" data-testid="staff-users-count">
+            <small
+              className="text-muted ms-auto"
+              data-testid="staff-users-count"
+            >
               {t('staff_filter_count', {
                 shown: filteredUsers.length,
                 total: response.users.length,
@@ -1162,7 +1237,10 @@ const StaffAdmin = () => {
             paginationRowsPerPageOptions={[10, 15, 25, 50]}
             progressPending={loading}
             progressComponent={
-              <div className="d-flex align-items-center gap-2 text-muted py-4" data-testid="staff-users-loading">
+              <div
+                className="d-flex align-items-center gap-2 text-muted py-4"
+                data-testid="staff-users-loading"
+              >
                 <Spinner size="sm" animation="border" />
                 {t('staff_loading')}
               </div>
@@ -1190,6 +1268,8 @@ const StaffAdmin = () => {
         permissionDefs={response.all_permission_defs}
         onSave={handleSave(null, true)}
         staffFields={isStaff}
+        canInvite={canInviteUser}
+        canDisable={canDisableUser}
         accounts={isMiniAdmin ? (response.admin_accounts ?? []) : []}
         testId="staff-user-create"
       />
@@ -1207,6 +1287,7 @@ const StaffAdmin = () => {
         onSave={handleSave(editUser, false)}
         onGeneratePassword={isStaff ? handleGeneratePassword : undefined}
         staffFields={isStaff}
+        canDisable={canDisableUser}
         testId="staff-user-edit-dialog"
       />
 
