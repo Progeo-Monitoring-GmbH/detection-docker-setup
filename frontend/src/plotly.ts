@@ -5,11 +5,13 @@
 import Plotly from 'plotly.js/lib/core';
 import bar from 'plotly.js/lib/bar';
 import heatmap from 'plotly.js/lib/heatmap';
+// The scoreboard's donuts (QaScoreboardChart).
+import pie from 'plotly.js/lib/pie';
 import scatter from 'plotly.js/lib/scatter';
 import scattergl from 'plotly.js/lib/scattergl';
 import { type PlotLayoutFont, withPortalFont } from './styles/fonts';
 
-Plotly.register([bar, heatmap, scatter, scattergl]);
+Plotly.register([bar, heatmap, pie, scatter, scattergl]);
 
 type PlotFn = (
   el: unknown,

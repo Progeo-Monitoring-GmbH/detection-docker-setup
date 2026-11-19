@@ -119,6 +119,186 @@ export const cumulativeLine = (
   return line;
 };
 
+/** A staff member's running total at `time` (fixes up to and including it). */
+export const totalAt = (awards: QaAward[], time: number): number =>
+  Math.round(
+    awards
+      .filter((award) => new Date(award.at).getTime() <= time)
+      .reduce((sum, award) => sum + award.points, 0) * 10,
+  ) / 10;
+
+/**
+ * A smooth curve through the points (x ascending): monotone cubic Hermite
+ * (Fritsch-Carlson), `samples` points per segment. Unlike a spline it never
+ * overshoots - a running total never seems to dip, a flat stretch stays flat.
+ */
+export const smoothCurve = (
+  xs: number[],
+  ys: number[],
+  samples = 12,
+): { x: number[]; y: number[] } => {
+  const n = xs.length;
+  if (n < 3) {
+    return { x: [...xs], y: [...ys] };
+  }
+  const h: number[] = [];
+  const delta: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    h.push(xs[i + 1] - xs[i]);
+    delta.push(h[i] === 0 ? 0 : (ys[i + 1] - ys[i]) / h[i]);
+  }
+  const m: number[] = [delta[0]];
+  for (let i = 1; i < n - 1; i += 1) {
+    m.push(delta[i - 1] * delta[i] <= 0 ? 0 : (delta[i - 1] + delta[i]) / 2);
+  }
+  m.push(delta[n - 2]);
+  for (let i = 0; i < n - 1; i += 1) {
+    if (delta[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / delta[i];
+    const b = m[i + 1] / delta[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const tau = 3 / Math.sqrt(s);
+      m[i] = tau * a * delta[i];
+      m[i + 1] = tau * b * delta[i];
+    }
+  }
+  const out = { x: [xs[0]], y: [ys[0]] };
+  for (let i = 0; i < n - 1; i += 1) {
+    for (let step = 1; step <= samples; step += 1) {
+      const t = step / samples;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      out.x.push(xs[i] + t * h[i]);
+      out.y.push(
+        (2 * t3 - 3 * t2 + 1) * ys[i] +
+          (t3 - 2 * t2 + t) * h[i] * m[i] +
+          (-2 * t3 + 3 * t2) * ys[i + 1] +
+          (t3 - t2) * h[i] * m[i + 1],
+      );
+    }
+  }
+  return out;
+};
+
+/**
+ * The running total as a smooth line: it holds until shortly before each fix
+ * and rises into it (soft steps - the points still come at the fix, not
+ * spread over the days before it).
+ */
+export const smoothTotalLine = (
+  awards: QaAward[],
+  start: string,
+  end: string,
+): { x: number[]; y: number[] } => {
+  const begin = new Date(start).getTime();
+  const finish = Math.max(new Date(end).getTime(), begin);
+  const rise = Math.max((finish - begin) / 12, 60_000);
+  const times = [...awards]
+    .map((award) => ({
+      time: new Date(award.at).getTime(),
+      points: award.points,
+    }))
+    .sort((a, b) => a.time - b.time);
+  const xs = [begin];
+  const ys = [0];
+  let total = 0;
+  for (const { time, points } of times) {
+    const previous = xs[xs.length - 1];
+    if (time > previous) {
+      const hold = Math.max(time - rise, previous + (time - previous) / 2);
+      if (hold > previous) {
+        xs.push(hold);
+        ys.push(total);
+      }
+    }
+    total += points;
+    if (time > xs[xs.length - 1]) {
+      xs.push(time);
+      ys.push(total);
+    } else {
+      ys[ys.length - 1] = total;
+    }
+  }
+  if (finish > xs[xs.length - 1]) {
+    xs.push(finish);
+    ys.push(total);
+  }
+  return smoothCurve(xs, ys);
+};
+
+/**
+ * End labels without overlap: `values` (pixels from the bottom) moved apart
+ * to at least `gap`, within min..max, in their order. Returns the new
+ * positions in the order given.
+ */
+export const spreadLabels = (
+  values: number[],
+  gap: number,
+  min: number,
+  max: number,
+): number[] => {
+  const order = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
+  const placed = order.map((entry) =>
+    Math.min(Math.max(entry.value, min), max),
+  );
+  for (let i = 1; i < placed.length; i += 1) {
+    placed[i] = Math.max(placed[i], placed[i - 1] + gap);
+  }
+  // Pushed over the top: back down from there.
+  if (placed.length && placed[placed.length - 1] > max) {
+    placed[placed.length - 1] = max;
+    for (let i = placed.length - 2; i >= 0; i -= 1) {
+      placed[i] = Math.min(placed[i], placed[i + 1] - gap);
+    }
+  }
+  const result = new Array<number>(values.length);
+  order.forEach((entry, position) => {
+    result[entry.index] = placed[position];
+  });
+  return result;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The scoreboard's days so far (start to now, at least one). */
+export const scoreboardDays = (board: Scoreboard): number =>
+  Math.max(
+    1,
+    Math.ceil(
+      (new Date(board.now).getTime() -
+        new Date(scoreboardStart(board)).getTime()) /
+        DAY_MS,
+    ),
+  );
+
+/** "⌀ daily gain": a staff member's points per day of the scoreboard. */
+export const dailyGain = (user: QaUser, days: number): number =>
+  Math.round((user.total / Math.max(days, 1)) * 100) / 100;
+
+const localDay = (value: string | Date) => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+};
+
+/** The points a staff member gained on the day of `now` (local time). */
+export const pointsOnDay = (user: QaUser, now: string): number => {
+  const day = localDay(now);
+  return (
+    Math.round(
+      user.awards
+        .filter((award) => localDay(award.at) === day)
+        .reduce((sum, award) => sum + award.points, 0) * 10,
+    ) / 10
+  );
+};
+
 const pointsFormat = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });

@@ -273,7 +273,51 @@ const scoreboard = () => ({
         },
       ],
     },
-  ],
+    // Ends close to the others (the end labels must not overlap) and fixes
+    // today (the "today" donut).
+    ...[
+      [
+        3,
+        'j.klein',
+        [
+          [10, 9],
+          [6, 6.3],
+          [0.2, 8.1],
+        ],
+      ],
+      [
+        4,
+        'm.schulz',
+        [
+          [4, 2.7],
+          [0.1, 2.7],
+        ],
+      ],
+      [
+        5,
+        'l.wolf',
+        [
+          [8, 3.6],
+          [0.3, 1.8],
+        ],
+      ],
+    ].map(([id, username, fixes]) => ({
+      id,
+      username,
+      total:
+        Math.round(fixes.reduce((sum, [, points]) => sum + points, 0) * 10) /
+        10,
+      count: fixes.length,
+      awards: fixes.map(([daysAgo, points], index) => ({
+        at: iso(NOW - daysAgo * 24 * HOUR),
+        points,
+        check_key: index % 2 ? 'threshold' : 'lageplan',
+        location_id: index + 2,
+        project_id: 4701 + index,
+        location_name: locations[index + 1].name,
+      })),
+    })),
+  ].sort((a, b) => b.total - a.total), // ranked, like the backend
   unattributed: { total: 8.1, count: 2 },
   now: iso(NOW),
 });

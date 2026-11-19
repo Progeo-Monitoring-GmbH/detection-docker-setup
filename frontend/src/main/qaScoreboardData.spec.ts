@@ -5,10 +5,17 @@ import {
   SERIES_COLORS,
   awardToastText,
   cumulativeLine,
+  dailyGain,
   formatScore,
   meanRange,
   parseQaUpdate,
+  pointsOnDay,
+  scoreboardDays,
   scoreboardStart,
+  smoothCurve,
+  smoothTotalLine,
+  spreadLabels,
+  totalAt,
   userColors,
   type QaAward,
   type QaUser,
@@ -174,5 +181,92 @@ describe('parseQaUpdate', () => {
     expect(parseQaUpdate(JSON.stringify({ type: 'heartbeat' }))).toBeNull();
     expect(parseQaUpdate('not json')).toBeNull();
     expect(parseQaUpdate(undefined)).toBeNull();
+  });
+});
+
+describe('smoothCurve', () => {
+  it('passes through every point and never overshoots a running total', () => {
+    const xs = [0, 10, 20, 30, 40];
+    const ys = [0, 0, 5, 5, 9];
+    const curve = smoothCurve(xs, ys, 8);
+
+    xs.forEach((x, index) => {
+      const at = curve.x.indexOf(x);
+      expect(curve.y[at]).toBeCloseTo(ys[index]);
+    });
+    // Monotone: never dips, flat stretches stay flat.
+    curve.y
+      .slice(1)
+      .forEach((y, index) =>
+        expect(y).toBeGreaterThanOrEqual(curve.y[index] - 1e-9),
+      );
+    curve.x.forEach((x, index) => {
+      if (x > 0 && x < 10) {
+        expect(curve.y[index]).toBeCloseTo(0);
+      }
+    });
+  });
+
+  it('leaves two points alone', () => {
+    expect(smoothCurve([0, 1], [3, 4])).toEqual({ x: [0, 1], y: [3, 4] });
+  });
+});
+
+describe('smoothTotalLine', () => {
+  it('holds the total until shortly before each fix and ends at the sum', () => {
+    const start = '2026-11-01T00:00:00Z';
+    const end = '2026-11-11T00:00:00Z';
+    const line = smoothTotalLine(
+      [award('2026-11-06T00:00:00Z', 4)],
+      start,
+      end,
+    );
+    const fix = Date.parse('2026-11-06T00:00:00Z');
+
+    expect(line.y[0]).toBe(0);
+    expect(line.y[line.y.length - 1]).toBe(4);
+    // Days before the fix: still 0 (no ramp over the whole gap).
+    line.x.forEach((x, index) => {
+      if (x < fix - 2 * 24 * 3600 * 1000) {
+        expect(line.y[index]).toBeCloseTo(0);
+      }
+    });
+  });
+});
+
+describe('spreadLabels', () => {
+  it('moves overlapping labels apart and keeps the others', () => {
+    expect(spreadLabels([100, 102, 40], 14, 0, 200)).toEqual([100, 114, 40]);
+  });
+
+  it('stays within the plot - pushed down from the top', () => {
+    expect(spreadLabels([198, 199, 200], 10, 0, 200)).toEqual([180, 190, 200]);
+  });
+});
+
+describe('daily figures', () => {
+  const board: Scoreboard = {
+    mean: [{ day: '2026-11-08', score: 60, locations: 3 }],
+    users: [
+      user(1, [
+        award('2026-11-09T10:00:00', 4),
+        award('2026-11-18T09:00:00', 2.5),
+      ]),
+    ],
+    unattributed: { total: 0, count: 0 },
+    now: '2026-11-18T12:00:00',
+  };
+
+  it('averages the points over the days of the scoreboard', () => {
+    const days = scoreboardDays(board);
+    expect(days).toBe(11);
+    expect(dailyGain(board.users[0], days)).toBe(0.59);
+  });
+
+  it('counts the points of the current day and the total at a time', () => {
+    expect(pointsOnDay(board.users[0], board.now)).toBe(2.5);
+    expect(
+      totalAt(board.users[0].awards, Date.parse('2026-11-10T00:00:00')),
+    ).toBe(4);
   });
 });

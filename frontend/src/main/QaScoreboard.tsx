@@ -15,8 +15,10 @@ import SearchableDataTable, {
 import { formatDate } from './dateFormat';
 import {
   QA_UPDATED_EVENT,
+  dailyGain,
   formatPoints,
   formatScore,
+  scoreboardDays,
   userColors,
   type QaUser,
   type Scoreboard,
@@ -26,7 +28,7 @@ import './QaScoreboard.css';
 // Plotly only once the scoreboard is loaded - not with the checklist.
 const QaScoreboardChart = lazy(() => import('./QaScoreboardChart'));
 
-type RankedUser = QaUser & { rank: number; last: string | null };
+type RankedUser = QaUser & { rank: number; last: string | null; daily: number };
 
 /**
  * The readiness scoreboard (checklist overview): the mean score of all
@@ -107,17 +109,15 @@ const QaScoreboard = () => {
 
   const colors = useMemo(() => userColors(board?.users ?? []), [board]);
 
-  const ranked: RankedUser[] = useMemo(
-    () =>
-      (board?.users ?? []).map((user, index) => ({
-        ...user,
-        rank: index + 1,
-        last: user.awards.length
-          ? user.awards[user.awards.length - 1].at
-          : null,
-      })),
-    [board],
-  );
+  const ranked: RankedUser[] = useMemo(() => {
+    const days = board ? scoreboardDays(board) : 1;
+    return (board?.users ?? []).map((user, index) => ({
+      ...user,
+      rank: index + 1,
+      daily: dailyGain(user, days),
+      last: user.awards.length ? user.awards[user.awards.length - 1].at : null,
+    }));
+  }, [board]);
 
   const columns: SearchableColumn<RankedUser>[] = useMemo(
     () => [
@@ -153,6 +153,17 @@ const QaScoreboard = () => {
         sortable: true,
         selector: (row) => row.total,
         cell: (row) => <strong>{formatPoints(row.total)}</strong>,
+      },
+      {
+        // "⌀ Tageszuwachs": the points per day since the scoreboard starts.
+        id: 'daily',
+        name: (
+          <span title={t('qa_column_daily_hint')}>{t('qa_column_daily')}</span>
+        ),
+        right: true,
+        sortable: true,
+        selector: (row) => row.daily,
+        cell: (row) => formatPoints(row.daily),
       },
       {
         id: 'fixes',
@@ -261,6 +272,7 @@ const QaScoreboard = () => {
       }
       // Minimized: the header only (the body stays mounted, a loaded board is kept).
       className={collapsed ? 'qa-scoreboard--collapsed' : undefined}
+      bodyClassName="qa-scoreboard-body"
       testId="qa-scoreboard"
     >
       <div className="small text-muted">{t('qa_scoreboard_intro')}</div>
