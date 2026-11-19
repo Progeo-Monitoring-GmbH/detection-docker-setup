@@ -28,6 +28,7 @@ import {
 import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
 import StitchedScreenshot from './StitchedScreenshot';
+import StagingFetchButton from './StagingFetchButton';
 import {
   ACTION_COLORS,
   NOTE_ACTIONS,
@@ -886,8 +887,10 @@ const ScreenReviewView = () => {
       <PanelCard
         title={t('screens_title')}
         actions={
-          runId && (
-            <div className="d-flex gap-2 flex-wrap">
+          <div className="d-flex gap-2 flex-wrap">
+            {/* No screenshot container here (live): the runs come from staging. */}
+            <StagingFetchButton onFetched={loadRuns} />
+            {runId && (
               <PillButton
                 label={t('screens_export', { count: noteCount })}
                 icon={
@@ -901,16 +904,16 @@ const ScreenReviewView = () => {
                 disabled={exporting || noteCount === 0}
                 testId="screens-export"
               />
-              {isSuperuser && (
-                <PillButton
-                  label={t('screens_delete_run')}
-                  icon={<Trash />}
-                  onClick={() => setConfirmDelete(true)}
-                  testId="screens-delete-run"
-                />
-              )}
-            </div>
-          )
+            )}
+            {runId && isSuperuser && (
+              <PillButton
+                label={t('screens_delete_run')}
+                icon={<Trash />}
+                onClick={() => setConfirmDelete(true)}
+                testId="screens-delete-run"
+              />
+            )}
+          </div>
         }
         testId="screens-panel"
       >

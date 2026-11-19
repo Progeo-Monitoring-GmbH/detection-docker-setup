@@ -641,6 +641,14 @@ STAGING_REMOTE_KEY_FILE = os.getenv("STAGING_REMOTE_KEY_FILE", "").strip() or BA
 STAGING_REMOTE_HOST_KEY = os.getenv("STAGING_REMOTE_HOST_KEY", "").strip()
 STAGING_REMOTE_PATH = os.getenv("STAGING_REMOTE_PATH", "").strip() or "detection-docker-setup/media/staging"
 STAGING_REMOTE_KEEP = int(os.getenv("STAGING_REMOTE_KEEP", "") or 2)
+# The screen review's runs on the staging server (helper/screen_review_fetch.py):
+# relative to the SFTP login's home (/home/progeo) - the staging checkout is
+# /home/progeo/detection-docker-setup (the live one is /home/progeo itself).
+STAGING_SCREENS_REMOTE_PATH = (os.getenv("STAGING_SCREENS_REMOTE_PATH", "").strip()
+                               or "detection-docker-setup/media/uploads/e2e")
+# The compose profiles of this host (.env): with "e2e_screens" it takes its own
+# screenshots, without it the screen review fetches them from staging.
+COMPOSE_PROFILES = os.getenv("COMPOSE_PROFILES", "")
 STAGING_REMOTE_GPG_KEY_FILE = (os.getenv("STAGING_REMOTE_GPG_KEY_FILE", "").strip()
                                or "/etc/progeo/backup/staging-public-key.asc")
 # STAGING server: where the live server's bundles arrive (`import_live_backup`) and

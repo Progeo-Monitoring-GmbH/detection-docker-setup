@@ -33,6 +33,11 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         PATCH  /v1/screen-review/<run>/notes/<id>/             the same fields
         DELETE /v1/screen-review/<run>/notes/<id>/
         POST   /v1/screen-review/<run>/reviewed/               {image, reviewed: true|false}
+        GET    /v1/screen-review/fetch/                        the fetch from staging: {enabled, state}
+        POST   /v1/screen-review/fetch/                        fetch the runs this server lacks (background)
+
+    Without the screenshot container (COMPOSE_PROFILES without e2e_screens)
+    the runs come from the staging server (helper/screen_review_fetch.py).
     """
 
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
@@ -48,7 +53,38 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         return None if self._staff else _failed("staff only", 403)
 
     def list(self, request, *args, **kwargs):
-        return self._forbidden() or RequestSuccess({"runs": review.list_runs()})
+        from progeo.helper import screen_review_fetch as fetch
+
+        return self._forbidden() or RequestSuccess({
+            "runs": review.list_runs(),
+            # No screenshots of its own: the gallery offers "Fetch from staging".
+            "can_capture": fetch.capture_available(),
+            "can_fetch": fetch.fetch_enabled(),
+        })
+
+    @action(detail=False, methods=["GET", "POST"], url_path="fetch")
+    def fetch(self, request, *args, **kwargs):
+        """The runs from the staging server: GET the state of the last fetch,
+        POST starts one in the background (one at a time)."""
+        from progeo.helper import screen_review_fetch as fetch
+
+        if (denied := self._forbidden()) is not None:
+            return denied
+        if request.method == "GET":
+            return RequestSuccess({"enabled": fetch.fetch_enabled(), "state": fetch.state()})
+        if not fetch.fetch_enabled():
+            return _failed("This server takes its own screenshots or has no staging server (STAGING_REMOTE_HOST)",
+                           409)
+        if fetch.is_running():
+            return RequestSuccess({"enabled": True, "state": fetch.state()})
+        fetch.mark_queued()
+        from progeo.tasks import fetch_screen_reviews_task
+
+        try:
+            fetch_screen_reviews_task.apply_async(retry=False)
+        except Exception:  # noqa: BLE001 - no broker (local development): fetch right here
+            fetch.run_fetch()
+        return RequestSuccess({"enabled": True, "state": fetch.state()})
 
     def retrieve(self, request, run=None, *args, **kwargs):
         if (denied := self._forbidden()) is not None:

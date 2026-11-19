@@ -22,6 +22,8 @@ ROLE_USERS = (
     ("kundenadmin", "demo-kundenadmin", "Demo", "Kundenadmin", (
         DEMO_PERMISSION, *_CUSTOMER,
         "module_locations_edit", "module_notifications_add", "module_notifications_edit",
+        # The buttons of a customer admin: "Nutzer hinzufügen", "Entziehen" (helper/button_permissions.py).
+        "module_user_invitable", "module_user_revokable",
     )),
     ("kundennutzer", "demo-kundennutzer", "Demo", "Kundennutzer", (DEMO_PERMISSION, *_CUSTOMER)),
 )

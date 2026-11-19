@@ -716,7 +716,7 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         db_name = account.db_name if account else "default"
         now = timezone.now()
         min_valid_updated = now.replace(
-            year=2025,
+            year=2026,
             month=1,
             day=1,
             hour=0,

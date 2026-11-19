@@ -51,7 +51,7 @@ def test_superuser_without_grants_as_user_can_open_locations(client):
 
 
 def test_as_user_changes_nothing_for_staff_and_users(client):
-    staff = f.make_user(staff=True, perms=(GRANTED,))
+    staff = f.make_user(staff=True, perms=(GRANTED,), implied=False)
     plain = f.make_user()
 
     assert _enabled(client, staff, f"{URL}?as_user=1") == _enabled(client, staff, URL) == {GRANTED}

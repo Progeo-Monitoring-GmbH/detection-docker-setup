@@ -914,6 +914,14 @@ def mirror_project_rows_task(payload: dict):
     _MirrorBatch.from_payload(payload).flush()
 
 
+@shared_task(time_limit=60 * 60, soft_time_limit=55 * 60)
+def fetch_screen_reviews_task():
+    """The screen review's runs from the staging server (helper/screen_review_fetch.py)."""
+    from progeo.helper.screen_review_fetch import run_fetch
+
+    return run_fetch()
+
+
 @shared_task
 def refresh_legacy_gprs_state():
     """Snapshot of the legacy GPRS controllers' configuration and alarms for
