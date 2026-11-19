@@ -16,6 +16,7 @@ from progeo.v1.viewsets.firmware_viewset import (
     FirmwareChannelUploadView,
 )
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
+from progeo.v1.viewsets.location_selection_viewset import LocationSelectionViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.notification_viewset import (
     NotificationCaseViewSet,
@@ -80,6 +81,9 @@ database_usage_router.register(r'', DatabaseUsageViewSet, basename='database-usa
 qa_router = CustomRouter()
 qa_router.register(r'', QAViewSet, basename='qa')
 
+location_selection_router = CustomRouter()
+location_selection_router.register(r'', LocationSelectionViewSet, basename='location-selection')
+
 screen_review_router = CustomRouter()
 screen_review_router.register(r'', ScreenReviewViewSet, basename='screen-review')
 
@@ -99,6 +103,7 @@ urlpatterns = [
     re_path(r'^activity/', include(activity_router.urls)),
     re_path(r'^qa/', include(qa_router.urls)),
     re_path(r'^screen-review/', include(screen_review_router.urls)),
+    re_path(r'^location-selection/', include(location_selection_router.urls)),
     re_path(r'^database-usage/', include(database_usage_router.urls)),
     re_path(r'^notification-case/', include(notification_case_router.urls)),
     re_path(r'^notification-location/', include(notification_location_router.urls)),

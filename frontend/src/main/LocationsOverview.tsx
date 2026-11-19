@@ -15,7 +15,15 @@ import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
-import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
+import {
+  progeoTableStyles,
+  selectedRowStyle,
+  selectionColumn,
+} from '../components/ui/kit/SearchableDataTable';
+import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
+import AssignLocationsModal from './AssignLocationsModal';
+import MergeProjectsModal from './MergeProjectsModal';
+import { mergeBlocker, type SelectedLocation } from './locationSelection';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 import { repeatedTestId } from '../testIds';
@@ -52,6 +60,10 @@ type LocationRow = {
   project_type?: number | null;
   measurement_count?: number;
   last_measurement_at?: string | null;
+  /** Part of a merged project (helper/location_merge.py): its parent's id. */
+  parent_location?: number | null;
+  /** A merged project: how many locations it groups. */
+  part_count?: number;
 };
 
 type LocationAlarmSummary = {
@@ -87,7 +99,10 @@ const ALARM_STATUS_KEYS: Record<string, string> = {
 };
 
 /** Columns of the active alarms list (a row opens its location's alarms). */
-const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlarm>[] => [
+const activeAlarmColumnsFor = (
+  flagsOf: FlagsOf,
+  t: TFn,
+): TableColumn<ActiveAlarm>[] => [
   {
     name: t('locations_col_triggered'),
     selector: (row) => row.triggered_at ?? '',
@@ -105,11 +120,17 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlar
     name: t('locations_col_location'),
     selector: (row) => row.location.name || '-',
     cell: (row) => (
-      <span className="location-list-name-wrap" {...repeatedTestId('locations-active-alarm', row.id)}>
+      <span
+        className="location-list-name-wrap"
+        {...repeatedTestId('locations-active-alarm', row.id)}
+      >
         <TwoLineCell
           primary={
             <>
-              <LocationFlagIcons flags={flagsOf(row.location.id)} testKey={`active-alarm-${row.id}`} />
+              <LocationFlagIcons
+                flags={flagsOf(row.location.id)}
+                testKey={`active-alarm-${row.id}`}
+              />
               {row.location.name || '–'}
             </>
           }
@@ -147,7 +168,9 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlar
     name: t('locations_col_status'),
     selector: (row) => row.status ?? '-',
     format: (row) =>
-      row.status && ALARM_STATUS_KEYS[row.status] ? t(ALARM_STATUS_KEYS[row.status]) : (row.status ?? '-'),
+      row.status && ALARM_STATUS_KEYS[row.status]
+        ? t(ALARM_STATUS_KEYS[row.status])
+        : (row.status ?? '-'),
     sortable: true,
     width: '110px',
   },
@@ -191,7 +214,9 @@ const mergeAlarmSummary = (
   const missing = ids.filter((id) => !(String(id) in merged));
   return {
     ...merged,
-    ...Object.fromEntries(missing.map((id) => [String(id), { count: 0, active: 0 }])),
+    ...Object.fromEntries(
+      missing.map((id) => [String(id), { count: 0, active: 0 }]),
+    ),
   };
 };
 
@@ -220,7 +245,9 @@ export const locationConnectivity = (
   if (!row.last_measurement_at) {
     return 'none';
   }
-  return isRecentMeasurement(row.last_measurement_at, now) ? 'online' : 'offline';
+  return isRecentMeasurement(row.last_measurement_at, now)
+    ? 'online'
+    : 'offline';
 };
 
 /** The row colour - open alarms first, then online/offline. */
@@ -228,7 +255,8 @@ export const locationState = (
   row: Pick<LocationRow, 'last_measurement_at'>,
   summary: LocationAlarmSummary | undefined,
   now: number = Date.now(),
-): LocationState => (summary && summary.count > 0 ? 'alarm' : locationConnectivity(row, now));
+): LocationState =>
+  summary && summary.count > 0 ? 'alarm' : locationConnectivity(row, now);
 
 const CONNECTIVITY_KEYS: Record<Connectivity, string> = {
   online: 'locations_state_online',
@@ -237,19 +265,52 @@ const CONNECTIVITY_KEYS: Record<Connectivity, string> = {
 };
 
 /** Placeholder of a cell whose data is still loading - a soft bar, not a spinner. */
-const CellLoading = ({ testId, rowId, t }: { testId: string; rowId: number; t: TFn }) => (
-  <span className="locations-cell-loading" role="status" aria-label={t('ui_loading')} {...repeatedTestId(testId, rowId)} />
+const CellLoading = ({
+  testId,
+  rowId,
+  t,
+}: {
+  testId: string;
+  rowId: number;
+  t: TFn;
+}) => (
+  <span
+    className="locations-cell-loading"
+    role="status"
+    aria-label={t('ui_loading')}
+    {...repeatedTestId(testId, rowId)}
+  />
 );
 
 /** A cell whose data could not be loaded: a dash, the reason as tooltip. */
-const CellFailed = ({ testId, rowId, t }: { testId: string; rowId: number; t: TFn }) => (
-  <span className="location-list-muted" title={t('locations_row_failed')} {...repeatedTestId(testId, rowId)}>
+const CellFailed = ({
+  testId,
+  rowId,
+  t,
+}: {
+  testId: string;
+  rowId: number;
+  t: TFn;
+}) => (
+  <span
+    className="location-list-muted"
+    title={t('locations_row_failed')}
+    {...repeatedTestId(testId, rowId)}
+  >
     –
   </span>
 );
 
 /** The State column: a dot and Online / Offline / No data. */
-const LocationStateCell = ({ row, failed, t }: { row: LocationRow; failed: boolean; t: TFn }) => {
+const LocationStateCell = ({
+  row,
+  failed,
+  t,
+}: {
+  row: LocationRow;
+  failed: boolean;
+  t: TFn;
+}) => {
   if (row.measurement_count === undefined) {
     return failed ? (
       <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
@@ -259,8 +320,13 @@ const LocationStateCell = ({ row, failed, t }: { row: LocationRow; failed: boole
   }
   const connectivity = locationConnectivity(row);
   return (
-    <div className="locations-state" {...repeatedTestId('locations-state', row.id)}>
-      <span className={`locations-state-dot locations-state-dot--${connectivity}`} />
+    <div
+      className="locations-state"
+      {...repeatedTestId('locations-state', row.id)}
+    >
+      <span
+        className={`locations-state-dot locations-state-dot--${connectivity}`}
+      />
       <span>{t(CONNECTIVITY_KEYS[connectivity])}</span>
     </div>
   );
@@ -287,30 +353,61 @@ const LocationAlarmCell = ({
   }
   if (summary.count === 0) {
     return (
-      <span className="location-list-muted" {...repeatedTestId('locations-alarm', row.id)}>
+      <span
+        className="location-list-muted"
+        {...repeatedTestId('locations-alarm', row.id)}
+      >
         –
       </span>
     );
   }
   return (
-    <div className="locations-state locations-state--alarm" {...repeatedTestId('locations-alarm', row.id)}>
+    <div
+      className="locations-state locations-state--alarm"
+      {...repeatedTestId('locations-alarm', row.id)}
+    >
       <span className="locations-state-dot locations-state-dot--alarm" />
-      <span>{t('locations_state_active', { active: summary.active, count: summary.count })}</span>
+      <span>
+        {t('locations_state_active', {
+          active: summary.active,
+          count: summary.count,
+        })}
+      </span>
     </div>
   );
 };
 
 /** The Last measurement column: how long ago (green while recent), the date as tooltip. */
-const LastMeasurementCell = ({ row, failed, t }: { row: LocationRow; failed: boolean; t: TFn }) => {
+const LastMeasurementCell = ({
+  row,
+  failed,
+  t,
+}: {
+  row: LocationRow;
+  failed: boolean;
+  t: TFn;
+}) => {
   if (row.measurement_count === undefined) {
     return failed ? (
-      <CellFailed testId="locations-last-measurement-failed" rowId={row.id} t={t} />
+      <CellFailed
+        testId="locations-last-measurement-failed"
+        rowId={row.id}
+        t={t}
+      />
     ) : (
-      <CellLoading testId="locations-last-measurement-loading" rowId={row.id} t={t} />
+      <CellLoading
+        testId="locations-last-measurement-loading"
+        rowId={row.id}
+        t={t}
+      />
     );
   }
   if (!row.last_measurement_at) {
-    return <span className="location-list-muted">{t('locations_never_measured')}</span>;
+    return (
+      <span className="location-list-muted">
+        {t('locations_never_measured')}
+      </span>
+    );
   }
   return (
     <span
@@ -352,9 +449,14 @@ const LocationMobileStateCell = ({
       title={t(CONNECTIVITY_KEYS[connectivity])}
       {...repeatedTestId('locations-state', row.id)}
     >
-      <span className={`locations-state-dot locations-state-dot--${connectivity}`} />
+      <span
+        className={`locations-state-dot locations-state-dot--${connectivity}`}
+      />
       {summary && summary.count > 0 && (
-        <span className="locations-mobile-alarm" {...repeatedTestId('locations-alarm', row.id)}>
+        <span
+          className="locations-mobile-alarm"
+          {...repeatedTestId('locations-alarm', row.id)}
+        >
           {summary.active}/{summary.count}
         </span>
       )}
@@ -383,7 +485,9 @@ export const sortValueOf = (
       return row.project_type ? getProjectTypeLabel(t, row.project_type) : '';
     case 'state':
       // Online first, then offline, never measured last (descending).
-      return detailsLoaded ? { online: 2, offline: 1, none: 0 }[locationConnectivity(row)] : null;
+      return detailsLoaded
+        ? { online: 2, offline: 1, none: 0 }[locationConnectivity(row)]
+        : null;
     case 'alarm':
     case 'mobile-state':
       return summary ? summary.active * 10_000 + summary.count : null;
@@ -417,7 +521,9 @@ const locationColumns = ({
     id: 'project',
     name: t('locations_col_project'),
     selector: (row) => row.project_id ?? 0,
-    cell: (row) => <span className="location-list-num">{row.project_id ?? '–'}</span>,
+    cell: (row) => (
+      <span className="location-list-num">{row.project_id ?? '–'}</span>
+    ),
     sortable: true,
     width: '90px',
   },
@@ -427,10 +533,28 @@ const locationColumns = ({
     selector: (row) => row.name || '',
     // The star pins the location as favorite; the address is the second line.
     cell: (row) => (
-      <span className="location-list-name-wrap" {...repeatedTestId('locations-row', row.id)}>
+      <span
+        className="location-list-name-wrap"
+        {...repeatedTestId('locations-row', row.id)}
+      >
         <LocationNameCell
           locationId={row.id}
-          name={row.name || '–'}
+          name={
+            row.part_count ? (
+              <>
+                {row.name || '–'}
+                {/* A merged project: one row for all its parts. */}
+                <span
+                  className="locations-group-badge"
+                  {...repeatedTestId('locations-group-badge', row.id)}
+                >
+                  {t('locations_group_badge', { count: row.part_count })}
+                </span>
+              </>
+            ) : (
+              row.name || '–'
+            )
+          }
           subline={locationAddressLine(row)}
           flags={flagsOf(row.id)}
           testKey={`location-${row.id}`}
@@ -445,10 +569,13 @@ const locationColumns = ({
   {
     id: 'product',
     name: t('locations_col_product'),
-    selector: (row) => (row.project_type ? getProjectTypeLabel(t, row.project_type) : ''),
+    selector: (row) =>
+      row.project_type ? getProjectTypeLabel(t, row.project_type) : '',
     cell: (row) =>
       row.project_type ? (
-        <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
+        <span className="location-list-product">
+          {getProjectTypeLabel(t, row.project_type)}
+        </span>
       ) : (
         <span className="location-list-muted">–</span>
       ),
@@ -460,8 +587,11 @@ const locationColumns = ({
     id: 'state',
     name: t('locations_col_state'),
     // Online first, then offline, never measured last.
-    selector: (row) => ({ online: 2, offline: 1, none: 0 })[locationConnectivity(row)],
-    cell: (row) => <LocationStateCell row={row} failed={failedDetails.has(row.id)} t={t} />,
+    selector: (row) =>
+      ({ online: 2, offline: 1, none: 0 })[locationConnectivity(row)],
+    cell: (row) => (
+      <LocationStateCell row={row} failed={failedDetails.has(row.id)} t={t} />
+    ),
     sortable: true,
     width: '130px',
     omit: mobile,
@@ -471,7 +601,12 @@ const locationColumns = ({
     name: t('locations_col_alarm'),
     selector: (row) => alarmSummary[String(row.id)]?.active ?? -1,
     cell: (row) => (
-      <LocationAlarmCell row={row} summary={alarmSummary[String(row.id)]} failed={failedAlarms.has(row.id)} t={t} />
+      <LocationAlarmCell
+        row={row}
+        summary={alarmSummary[String(row.id)]}
+        failed={failedAlarms.has(row.id)}
+        t={t}
+      />
     ),
     sortable: true,
     width: '130px',
@@ -497,7 +632,9 @@ const locationColumns = ({
     id: 'last-measurement',
     name: t('locations_col_last_measurement'),
     selector: (row) => row.last_measurement_at ?? '',
-    cell: (row) => <LastMeasurementCell row={row} failed={failedDetails.has(row.id)} t={t} />,
+    cell: (row) => (
+      <LastMeasurementCell row={row} failed={failedDetails.has(row.id)} t={t} />
+    ),
     sortable: true,
     width: '150px',
     hide: Media.SM,
@@ -507,7 +644,8 @@ const locationColumns = ({
 /** Row colors by state (see locationState). */
 const rowStylesFor = (alarmSummary: Record<string, LocationAlarmSummary>) =>
   (Object.keys(ROW_CLASSES) as LocationState[]).map((state) => ({
-    when: (row: LocationRow) => locationState(row, alarmSummary[String(row.id)]) === state,
+    when: (row: LocationRow) =>
+      locationState(row, alarmSummary[String(row.id)]) === state,
     classNames: [ROW_CLASSES[state]],
   }));
 
@@ -517,6 +655,10 @@ const LocationsOverview = () => {
   const { hasPermission } = usePermissions();
   // Backend: /v1/alarm/active/ requires module_measurements_enabled.
   const canListAlarms = hasPermission('module_measurements_enabled');
+  // Checkboxes in the rows: "Assign to user" and "Merge projects" for the selection.
+  const canSelect = hasPermission('module_locations_selectable');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [dialog, setDialog] = useState<'assign' | 'merge' | null>(null);
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   // Only auto-forward on the very first load (an account with a single
@@ -538,7 +680,9 @@ const LocationsOverview = () => {
     setResetPage((current) => !current);
   };
   // The table sorts through us (sortServer): the rows on screen are known.
-  const [sort, setSort] = useState<{ id: string; ascending: boolean } | null>(null);
+  const [sort, setSort] = useState<{ id: string; ascending: boolean } | null>(
+    null,
+  );
   // Rows whose details / alarm summary could not be loaded - a dash, not a
   // placeholder forever; one error message per list.
   const [failedDetails, setFailedDetails] = useState<Set<number>>(new Set());
@@ -560,7 +704,11 @@ const LocationsOverview = () => {
         setLoadingActive(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, t('locations_error_active_alarms'), error);
+        showRequestError(
+          enqueueSnackbar,
+          t('locations_error_active_alarms'),
+          error,
+        );
         setLoadingActive(false);
       },
     );
@@ -648,7 +796,10 @@ const LocationsOverview = () => {
         `/v1/alarm/location_summary/?ids=${ids.join(',')}`,
         (response) => {
           if (current()) {
-            const payload = (response?.data?.locations || {}) as Record<string, LocationAlarmSummary>;
+            const payload = (response?.data?.locations || {}) as Record<
+              string,
+              LocationAlarmSummary
+            >;
             setAlarmSummary((prev) => mergeAlarmSummary(prev, payload, ids));
           }
           resolve();
@@ -676,16 +827,25 @@ const LocationsOverview = () => {
     navigate(`/location/${row.id}/status`);
   };
 
-  const openAlarmRow = (row: ActiveAlarm) => navigate(`/location/${row.location.id}/alarms`);
+  const openAlarmRow = (row: ActiveAlarm) =>
+    navigate(`/location/${row.location.id}/alarms`);
 
   const paginationOptions = {
     rowsPerPageText: t('locations_rows_per_page'),
     rangeSeparatorText: t('locations_range_separator'),
   };
 
+  // A merged project is one row: its parts (when the project itself is listed) are hidden.
+  const listedRows = useMemo(() => {
+    const ids = new Set(rows.map((row) => row.id));
+    return rows.filter(
+      (row) => row.parent_location == null || !ids.has(row.parent_location),
+    );
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => matchesLocationSearch(row, searchText));
-  }, [rows, searchText]);
+    return listedRows.filter((row) => matchesLocationSearch(row, searchText));
+  }, [listedRows, searchText]);
 
   const sortedRows = useMemo(
     () =>
@@ -715,7 +875,9 @@ const LocationsOverview = () => {
   }, [visibleKey, preload.enqueue]);
 
   // How far the background loading is: rows with details (or given up).
-  const preloaded = rows.filter((row) => row.measurement_count !== undefined || failedDetails.has(row.id)).length;
+  const preloaded = rows.filter(
+    (row) => row.measurement_count !== undefined || failedDetails.has(row.id),
+  ).length;
 
   // Staff: switched-off locations striped (grey), purgeable ones red.
   const { flagsOf } = useLocationFlags([
@@ -725,15 +887,51 @@ const LocationsOverview = () => {
 
   const mobile = useIsMobile();
   // Phones: name and the compact state in the row, the rest in its expander.
-  const { columns, expandable } = useMobileColumns(
-    locationColumns({ alarmSummary, failedDetails, failedAlarms, flagsOf, mobile, t }),
-    ['name', 'mobile-state'],
+  const selection = useMemo(
+    () => ({
+      rowKey: (row: LocationRow) => row.id,
+      selected,
+      onChange: setSelected,
+    }),
+    [selected],
   );
+  const { columns, expandable } = useMobileColumns(
+    [
+      ...(canSelect ? [selectionColumn(selection, filteredRows)] : []),
+      ...locationColumns({
+        alarmSummary,
+        failedDetails,
+        failedAlarms,
+        flagsOf,
+        mobile,
+        t,
+      }),
+    ],
+    canSelect
+      ? ['__selected', 'name', 'mobile-state']
+      : ['name', 'mobile-state'],
+  );
+  const selectedLocations: SelectedLocation[] = useMemo(
+    () =>
+      rows
+        .filter((row) => selected.has(row.id))
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          project_id: row.project_id,
+          parent_location: row.parent_location,
+          part_count: row.part_count,
+        })),
+    [rows, selected],
+  );
+  const blocker = mergeBlocker(selectedLocations);
+  const clearSelection = () => setSelected(new Set());
   // The stripes first (purgeable red, switched off grey): the table keeps the
   // style of the last matching rule, so the state colour stays.
   const conditionalRowStyles = [
     ...locationFlagRowStyles((row: LocationRow) => flagsOf(row.id)),
     ...rowStylesFor(alarmSummary),
+    ...(canSelect ? [selectedRowStyle(selection)] : []),
   ];
 
   const filters = (
@@ -785,7 +983,13 @@ const LocationsOverview = () => {
       {canListAlarms && (
         <PillButton
           label={t('locations_active_alarms')}
-          icon={loadingActive ? <Spinner size="sm" animation="border" /> : <Bell aria-hidden />}
+          icon={
+            loadingActive ? (
+              <Spinner size="sm" animation="border" />
+            ) : (
+              <Bell aria-hidden />
+            )
+          }
           onClick={fetchActiveAlarms}
           disabled={loadingActive}
           testId="locations-active-alarms-button"
@@ -819,22 +1023,36 @@ const LocationsOverview = () => {
           }
         >
           {activeTruncated && (
-            <Alert variant="secondary" className="small py-2" data-testid="locations-active-alarms-truncated">
-              {t('locations_active_alarms_truncated', { count: activeAlarms.length })}
+            <Alert
+              variant="secondary"
+              className="small py-2"
+              data-testid="locations-active-alarms-truncated"
+            >
+              {t('locations_active_alarms_truncated', {
+                count: activeAlarms.length,
+              })}
             </Alert>
           )}
           {activeAlarms.length === 0 ? (
-            <div className="locations-empty" data-testid="locations-active-alarms-empty">
+            <div
+              className="locations-empty"
+              data-testid="locations-active-alarms-empty"
+            >
               {t('locations_no_active_alarms')}
             </div>
           ) : (
             // Rows keep DataTable's own keyboard handling (Enter on a focused row).
-            <div className={LOCATION_LIST_CLASS} onClick={untaggedRowClick(activeAlarms, openAlarmRow)}>
+            <div
+              className={LOCATION_LIST_CLASS}
+              onClick={untaggedRowClick(activeAlarms, openAlarmRow)}
+            >
               <DataTable
                 columns={activeAlarmColumnsFor(flagsOf, t)}
                 data={activeAlarms}
                 customStyles={progeoTableStyles}
-                conditionalRowStyles={locationFlagRowStyles((row: ActiveAlarm) => flagsOf(row.location.id))}
+                conditionalRowStyles={locationFlagRowStyles(
+                  (row: ActiveAlarm) => flagsOf(row.location.id),
+                )}
                 pagination
                 paginationComponentOptions={paginationOptions}
                 highlightOnHover
@@ -856,14 +1074,26 @@ const LocationsOverview = () => {
         title={filters}
         actions={
           !loading && (
-            <span className="locations-list-count" data-testid="locations-count">
+            <span
+              className="locations-list-count"
+              data-testid="locations-count"
+            >
               {preloaded < rows.length && (
-                <span className="locations-preload" data-testid="locations-preload">
+                <span
+                  className="locations-preload"
+                  data-testid="locations-preload"
+                >
                   <Spinner size="sm" animation="border" />
-                  {t('locations_preload_progress', { done: preloaded, total: rows.length })}
+                  {t('locations_preload_progress', {
+                    done: preloaded,
+                    total: rows.length,
+                  })}
                 </span>
               )}
-              {t('locations_count', { count: filteredRows.length, total: rows.length })}
+              {t('locations_count', {
+                count: filteredRows.length,
+                total: listedRows.length,
+              })}
             </span>
           )
         }
@@ -881,7 +1111,10 @@ const LocationsOverview = () => {
             {...expandable}
             sortServer
             onSort={(column, direction) => {
-              setSort({ id: String(column.id), ascending: direction === 'asc' });
+              setSort({
+                id: String(column.id),
+                ascending: direction === 'asc',
+              });
               toFirstPage();
             }}
             pagination
@@ -900,7 +1133,9 @@ const LocationsOverview = () => {
                 <Spinner size="sm" animation="border" />
               </div>
             }
-            noDataComponent={<div className="locations-empty">{t('locations_empty')}</div>}
+            noDataComponent={
+              <div className="locations-empty">{t('locations_empty')}</div>
+            }
             highlightOnHover
             pointerOnHover
             conditionalRowStyles={conditionalRowStyles}
@@ -908,6 +1143,57 @@ const LocationsOverview = () => {
           />
         </div>
       </PanelCard>
+
+      {canSelect && selectedLocations.length > 0 && !dialog && (
+        <FloatingActionBar
+          testId="locations-selection-bar"
+          message={t('selection_count', { count: selectedLocations.length })}
+          detail={
+            blocker && selectedLocations.length > 1 ? t(blocker) : undefined
+          }
+          actions={[
+            {
+              label: t('selection_clear'),
+              variant: 'secondary',
+              onClick: clearSelection,
+              testId: 'locations-selection-clear',
+            },
+            {
+              label: t('selection_merge'),
+              variant: 'secondary',
+              disabled: blocker !== null,
+              onClick: () => setDialog('merge'),
+              testId: 'locations-selection-merge',
+            },
+            {
+              label: t('selection_assign'),
+              onClick: () => setDialog('assign'),
+              testId: 'locations-selection-assign',
+            },
+          ]}
+        />
+      )}
+      {dialog === 'assign' && (
+        <AssignLocationsModal
+          locations={selectedLocations}
+          onHide={() => setDialog(null)}
+          onDone={() => {
+            setDialog(null);
+            clearSelection();
+          }}
+        />
+      )}
+      {dialog === 'merge' && (
+        <MergeProjectsModal
+          locations={selectedLocations}
+          onHide={() => setDialog(null)}
+          onDone={(parentId) => {
+            setDialog(null);
+            clearSelection();
+            navigate(`/location/${parentId}/status`);
+          }}
+        />
+      )}
     </div>
   );
 };

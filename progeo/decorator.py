@@ -57,6 +57,44 @@ def has_module_permissions(user, *permission_codes) -> bool:
     return all(user.has_perm(f"progeo.{code}") for code in permission_codes)
 
 
+def holds_permission(user, *permission_codes) -> bool:
+    """True when ``user`` holds every code itself - only superusers pass
+    without. Unlike has_module_permissions staff are no exception: the
+    permissions that unlock single buttons (module_user_*, the admin panel's
+    sections, merging locations) are granted to staff like to anyone else -
+    the frontend hides the buttons the same way (usePermissions)."""
+    if not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return all(user.has_perm(f"progeo.{code}") for code in permission_codes)
+
+
+def missing_held_permissions(user, *permission_codes) -> list:
+    """The codes of `permission_codes` `user` does not hold (holds_permission)."""
+    return [code for code in permission_codes if not holds_permission(user, code)]
+
+
+def require_held_permissions(*permission_codes):
+    """require_module_permissions with holds_permission: staff need the codes too."""
+    def _decorator(wrapped_function):
+        @wraps(wrapped_function)
+        def _wrapper(*args, **kwargs):
+            request = _extract_request(args)
+            user = getattr(request, "user", None)
+            if not getattr(user, "is_authenticated", False):
+                return Response({"success": False, "reason": "Authentication required"},
+                                status=status.HTTP_401_UNAUTHORIZED)
+            missing = missing_held_permissions(user, *permission_codes)
+            if missing:
+                return permission_denied_response(missing)
+            return wrapped_function(*args, **kwargs)
+
+        return _wrapper
+
+    return _decorator
+
+
 def permission_denied_response(missing_permissions) -> Response:
     """403 Response shaped like the one require_module_permissions returns."""
     return Response(

@@ -54,7 +54,31 @@ const locations = Array.from({ length: 40 }, (_, index) => ({
   readiness_score: 40 + ((index * 7) % 61),
   purgeable: index === 7 ? true : null,
   notifications_disabled: index === 5,
+  // A merged project (helper/location_merge.py): #4739 groups #4700 and #4701.
+  parent_location: index < 2 ? 40 : null,
+  part_count: index === 39 ? 2 : 0,
 }));
+locations[39].name = 'Werk Köln (Projektverbund)';
+
+/** GET /v1/location-selection/group/: the merged project of the opened location. */
+const locationGroup = () => ({
+  group: {
+    parent: {
+      id: 40,
+      name: locations[39].name,
+      project_id: locations[39].project_id,
+    },
+    parts: locations.slice(0, 2).map((row, index) => ({
+      id: row.id,
+      name: row.name,
+      project_id: row.project_id,
+      lageplans: [
+        { id: 100 + index, name: index ? 'Halle 2 EG' : 'Hauptgebäude' },
+      ],
+    })),
+  },
+  can_dissolve: true,
+});
 
 const SENSORS = 12;
 const sensorPoints = Array.from({ length: SENSORS }, (_, index) => ({
@@ -349,6 +373,22 @@ export const mockAnswer = (method, url, role, language = 'de') => {
   }
   if (path.endsWith('/qa/scoreboard/')) {
     return scoreboard();
+  }
+  if (path.endsWith('/location-selection/group/')) {
+    return locationGroup();
+  }
+  if (path.endsWith('/location-selection/users/')) {
+    return {
+      users: [
+        { id: 2, name: 'Maria Müller', email: 'kunde.mueller@progeo.com' },
+        { id: 7, name: 'Tom Becker', email: 't.becker@progeo.com' },
+        { id: 8, name: null, email: 'objektleitung@progeo.com' },
+      ],
+    };
+  }
+  if (path.endsWith('/location-selection/project-id/')) {
+    const nr = Number(searchParams.get('nr')) || null;
+    return { nr, free: nr == null ? null : nr !== 4700, suggestion: 4740 };
   }
   if (path.endsWith('/location/min/')) {
     return role === 'user' ? locations.slice(0, 6) : locations;

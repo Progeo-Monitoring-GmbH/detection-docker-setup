@@ -58,7 +58,25 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_interface_sms_edit", "Can edit sms interface module"),
     ("module_demo_enabled", "Can access demo view"),
     ("module_mini_admin_enabled", "Can manage the users of their own account (mini admin)"),
+    ("module_locations_selectable", "Can select locations in the overview (assign users, merge projects)"),
+    ("module_locations_mergable", "Can merge locations into one project (overview)"),
+    ("module_admin_storage", "Admin panel: host storage"),
+    ("module_admin_lageplan_export", "Admin panel: Lageplan export"),
+    ("module_admin_logs", "Admin panel: log viewer"),
+    ("module_user_add", "Can create users"),
+    ("module_user_invitable", "Can invite users and give them access"),
+    ("module_user_disability", "Can deactivate and reactivate users"),
+    ("module_user_erasability", "Can delete users"),
+    ("module_user_revokable", "Can revoke the access of users"),
 )
+
+# Held for real - staff included (holds_permission): the buttons they unlock
+# are hidden in the frontend without them, the endpoints refuse.
+USER_PERMISSIONS = (
+    "module_user_add", "module_user_invitable", "module_user_disability",
+    "module_user_erasability", "module_user_revokable",
+)
+ADMIN_PANEL_PERMISSIONS = ("module_admin_storage", "module_admin_lageplan_export", "module_admin_logs")
 
 # The role between staff and normal users: manages the users of their own
 # account(s) on /staff/ (users table only) and grants permissions they hold -

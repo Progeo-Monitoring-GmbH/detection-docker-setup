@@ -7,7 +7,7 @@ import pytest
 AREA_MODULES = {
     "access": """
         access_and_login_links migration_invites access_scoping_api account_middleware admin_lists authentication_order
-        location_access location_invites location_min_and_mini_admin module_permissions_as_user monitoring_auth oidc permission_version rechte_api
+        location_access location_invites location_min_and_mini_admin location_selection module_permissions_as_user monitoring_auth oidc permission_version rechte_api
         staff_admin_api staff_impersonation user_management_security user_profile user_profile_actions
     """,
     "alarms": """

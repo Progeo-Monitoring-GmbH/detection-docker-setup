@@ -42,9 +42,9 @@ def _is_staff_admin(user) -> bool:
 @database_sync_to_async
 def _may_read_logs(user) -> bool:
     """Same rule as the HTTP log endpoints (status_viewset admin/log_files)."""
-    from progeo.decorator import has_module_permissions
+    from progeo.decorator import has_module_permissions, holds_permission
 
-    return has_module_permissions(user, "module_admin_enabled")
+    return has_module_permissions(user, "module_admin_enabled") and holds_permission(user, "module_admin_logs")
 
 
 class _ClientGone(Exception):

@@ -44,6 +44,8 @@ import { childTestId } from '../testIds';
 import './LocationPlanPanel.css';
 
 type LocationPlanPanelProps = {
+  /** The plan to show first (?plan=, planParam.ts) - the first one otherwise. */
+  preferredPlanId?: number | null;
   /** The frames of the selected range (with the location's plans and points). */
   heatmap: SensorHeatmapResponse | null;
   visualization: PlanVisualization;
@@ -136,13 +138,22 @@ const LocationPlanPanel = ({
   suspicions,
   onFrameTimeChange,
   testId = 'plan-panel',
+  preferredPlanId = null,
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
   const fullscreen = useFullscreen();
   const maxHeight = usePlanMaxHeight();
   // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
   const withHeat = visualization === 'heatmap' || visualization === 'lines';
-  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  // A plan picked here wins - until another one is asked for (preferredPlanId).
+  const [pickedPlan, setPickedPlan] = useState<{
+    from: number | null;
+    id: number;
+  } | null>(null);
+  const selectedPlanId =
+    pickedPlan && pickedPlan.from === preferredPlanId
+      ? pickedPlan.id
+      : preferredPlanId;
   // The frame the plan shows (its slider). The heatmap reports its own; the
   // overlays show the newest whenever the frames change (`picked.heatmap`).
   const [picked, setPicked] = useState<{
@@ -388,7 +399,9 @@ const LocationPlanPanel = ({
                     plan.name || t('status_plan_view', { index: index + 1 }),
                 }))}
                 value={String(shownPlan?.id)}
-                onChange={(value) => setSelectedPlanId(Number(value))}
+                onChange={(value) =>
+                  setPickedPlan({ from: preferredPlanId, id: Number(value) })
+                }
               />
             )}
             {!asTiles && (

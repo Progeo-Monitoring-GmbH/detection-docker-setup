@@ -38,6 +38,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import (
     has_module_permissions,
+    holds_permission,
     permission_denied_response,
     require_module_permissions,
 )
@@ -561,7 +562,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         data = []
         fields = (
             "id", "project_id", "name", "city", "plz", "address", "country",
-            "manager", "telefon", "mail", "project_type",
+            "manager", "telefon", "mail", "project_type", "parent_location",
         )
         # Staff see the readiness score next to the names (location_readiness).
         staff = _is_staff_admin(getattr(request, "user", None))
@@ -577,6 +578,17 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             ]
             seen.update((physical, location.pk) for location in locations)
             rows = ProgeoLocationMinSerializer(locations, many=True).data
+            # Merged projects (helper/location_merge.py): the overview shows
+            # one row per project - the parent with its number of parts.
+            parts = dict(
+                ProgeoLocation.objects.using(account.db_name)
+                .filter(parent_location_id__in=[location.pk for location in locations])
+                .values("parent_location_id").annotate(count=Count("pk"))
+                .values_list("parent_location_id", "count")
+            )
+            for row, location in zip(rows, locations):
+                row["parent_location"] = location.parent_location_id
+                row["part_count"] = parts.get(location.pk, 0)
             if staff:
                 for row, location in zip(rows, locations):
                     row["readiness_score"] = location.readiness_score
@@ -979,9 +991,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 "can_grant_account": is_staff or account.users.filter(pk=viewer.pk).exists(),
                 # "Nutzer hinzufuegen" (access/invite): customer admins and staff only.
                 "can_invite": _is_customer_admin(viewer)
-                and has_module_permissions(viewer, "module_notifications_add"),
-                # Revoke account members (access/delete {user_id, scope: "account"}).
-                "can_revoke_account": _may_revoke_account(viewer, account),
+                and has_module_permissions(viewer, "module_notifications_add")
+                and holds_permission(viewer, "module_user_invitable"),
+                # Revoke at all (module_user_revokable), account members too
+                # (access/delete {user_id, scope: "account"}).
+                "can_revoke": holds_permission(viewer, "module_user_revokable"),
+                "can_revoke_account": _may_revoke_account(viewer, account)
+                and holds_permission(viewer, "module_user_revokable"),
                 # "All objects of <account> (n objects)" - the scope an account membership grants.
                 "account": {
                     "id": account.pk,
@@ -1234,6 +1250,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         user = request.user
         if not _is_customer_admin(user):
             return permission_denied_response(["module_locations_edit"])
+        if not holds_permission(user, "module_user_invitable"):
+            return permission_denied_response(["module_user_invitable"])
         scope = str(request.data.get("scope") or "single")
         if scope == "account" and not (_is_staff_admin(user) or account.users.filter(pk=user.pk).exists()):
             return permission_denied_response(["account_member"])
@@ -1266,6 +1284,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
         viewer = request.user
+        # Revoking - single access or an account membership - needs module_user_revokable.
+        if not holds_permission(viewer, "module_user_revokable"):
+            return permission_denied_response(["module_user_revokable"])
         if str(request.data.get("scope") or "") == "account":
             return self._revoke_account_member(request, account)
         if not (has_module_permissions(viewer, "module_notifications_edit") or _may_revoke_account(viewer, account)):

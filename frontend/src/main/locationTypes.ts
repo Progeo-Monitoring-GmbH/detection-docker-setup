@@ -29,6 +29,10 @@ export type LocationDetail = {
   language?: string | null;
   /** The hourly rain check (ProgeoRainEvent) runs for this location. */
   rain_check_enabled?: boolean | null;
+  /** Part of a merged project (helper/location_merge.py): the project's location. */
+  parent_location?: number | null;
+  /** A merged project: its parts. */
+  child_location_ids?: number[] | null;
   /** The location's Lageplans, active ones first (the first is the main plan). */
   lageplans?: SensorHeatmapLageplanData[] | null;
 };

@@ -28,7 +28,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
-from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.decorator import (
+    calc_runtime,
+    require_held_permissions,
+    require_module_permissions,
+)
 from progeo.helper import cad_import, dm_transfer, lageplan_edit, plan_detect
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
 from progeo.helper.cacher import forget_location_answers
@@ -316,6 +320,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_admin_enabled")
+    @require_held_permissions("module_admin_storage")
     @action(detail=False, url_path="admin/storage_info", methods=["GET"])
     def admin_storage_info(self, request, *args, **kwargs):
         refresh = (request.query_params.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
@@ -348,6 +353,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_admin_enabled")
+    @require_held_permissions("module_admin_logs")
     @action(detail=False, url_path="admin/log_files", methods=["GET"])
     def admin_log_files(self, request, *args, **kwargs):
         requested_file = (request.query_params.get("file") or "").strip()
@@ -379,6 +385,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_admin_enabled")
+    @require_held_permissions("module_admin_lageplan_export")
     @action(detail=False, url_path="admin/lageplan_export", methods=["GET"])
     def admin_lageplan_export(self, request, *args, **kwargs):
         """The Lageplans created in the last ?days= as one tar download (see

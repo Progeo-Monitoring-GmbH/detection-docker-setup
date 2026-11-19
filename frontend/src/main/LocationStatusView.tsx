@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useSearchParams } from 'react-router';
+import { planFromParams } from './planParam';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
@@ -713,6 +714,7 @@ const LocationStatusView = ({
             <div className="status-columns" data-testid="status-roof">
               <div className="status-column-plan">
                 <LocationPlanPanel
+                  preferredPlanId={planFromParams(searchParams)}
                   heatmap={heatmap}
                   visualization={planVisualization(location?.project_type)}
                   withSensorTable={showsSensorTable(location?.project_type)}

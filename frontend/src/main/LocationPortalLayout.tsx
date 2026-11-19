@@ -11,6 +11,7 @@ import TopBar from '../components/topbar/TopBar';
 import EscalationBanner from './EscalationBanner';
 import FavoriteStar from './FavoriteStar';
 import FavoritesBar from './FavoritesBar';
+import LocationGroupBar from './LocationGroupBar';
 import ImpersonationBanner from './ImpersonationBanner';
 import { isStaffUser } from './favorites';
 import type { LocationDetail } from './locationTypes';
@@ -68,17 +69,28 @@ const LocationPortalLayout = () => {
   // "#4711 · smartex® dm" and "Street 1, 12345 City" under the name.
   const projectLine = [
     location?.project_id != null ? `#${location.project_id}` : null,
-    location?.project_type != null ? getProjectTypeLabel(t, location.project_type) : null,
+    location?.project_type != null
+      ? getProjectTypeLabel(t, location.project_type)
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');
-  const addressLine = [location?.address, [location?.plz, location?.city].filter(Boolean).join(' ')]
+  const addressLine = [
+    location?.address,
+    [location?.plz, location?.city].filter(Boolean).join(' '),
+  ]
     .filter(Boolean)
     .join(', ');
 
   return (
-    <div className={`portal-layout${mobile ? ' portal-layout--mobile' : ''}`} data-testid="location-portal">
-      <LocationSidebar location={id ? location : null} locationId={id ? locationId : null} />
+    <div
+      className={`portal-layout${mobile ? ' portal-layout--mobile' : ''}`}
+      data-testid="location-portal"
+    >
+      <LocationSidebar
+        location={id ? location : null}
+        locationId={id ? locationId : null}
+      />
       <div className="portal-content" data-testid="location-portal-content">
         <TopBar />
         <ImpersonationBanner />
@@ -97,29 +109,54 @@ const LocationPortalLayout = () => {
                 {location.name || location.project_id || locationId}
               </div>
               {projectLine && (
-                <div className="small text-muted text-truncate" data-testid="location-portal-project">
+                <div
+                  className="small text-muted text-truncate"
+                  data-testid="location-portal-project"
+                >
                   {projectLine}
                 </div>
               )}
               {addressLine && (
-                <div className="small text-muted text-truncate" title={addressLine} data-testid="location-portal-address">
+                <div
+                  className="small text-muted text-truncate"
+                  title={addressLine}
+                  data-testid="location-portal-address"
+                >
                   {addressLine}
                 </div>
               )}
             </div>
             {staff && (
-              <div className="portal-escalation" data-testid="location-portal-escalation">
+              <div
+                className="portal-escalation"
+                data-testid="location-portal-escalation"
+              >
                 <EscalationBanner locationId={locationId} />
               </div>
             )}
           </div>
         )}
+        {/* A merged project: the plans of all its parts in one bar. */}
+        {id && !loading && location && (
+          <LocationGroupBar location={location} locationId={locationId} />
+        )}
         {loading ? (
-          <div className="d-flex justify-content-center py-5 text-muted" data-testid="location-portal-loading">
+          <div
+            className="d-flex justify-content-center py-5 text-muted"
+            data-testid="location-portal-loading"
+          >
             <Spinner animation="border" className="me-2" />
           </div>
         ) : (
-          <Outlet context={{ location, locationId, setLocation } satisfies PortalOutletContext} />
+          <Outlet
+            context={
+              {
+                location,
+                locationId,
+                setLocation,
+              } satisfies PortalOutletContext
+            }
+          />
         )}
       </div>
     </div>

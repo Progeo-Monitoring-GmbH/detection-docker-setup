@@ -1,10 +1,10 @@
 {% extends "emails/en/base.html" %}
 {# Rechte tab: an existing user was given access to an object (English). #}
-{% block subject %}New object access in the ProGeo portal: {{ location_name }}{% endblock %}
+{% block subject %}{% if locations %}New access to {{ locations|length }} objects in the ProGeo portal{% else %}New object access in the ProGeo portal: {{ location_name }}{% endif %}{% endblock %}
 {% block content %}
 <h1 style="margin:0 0 12px; font-size:20px;">New object access</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
-<p style="margin:0 0 4px;">{{ inviter_name }} has given you access to the object <strong>{{ location_name }}</strong> in the ProGeo portal. You will find it in your object overview from now on.</p>
-{% include "emails/_button.html" with url=location_url label="Open object" %}
+<p style="margin:0 0 4px;">{% if locations %}{{ inviter_name }} has given you access to these objects in the ProGeo portal - you will find them in your object overview from now on:</p>{% if locations %}<ul style="margin:8px 0 4px; padding-left:20px;">{% for item in locations %}<li><a href="{{ item.url }}" style="color:#094b81;">{{ item.name }}</a></li>{% endfor %}</ul>{% endif %}{% else %}{{ inviter_name }} has given you access to the object <strong>{{ location_name }}</strong> in the ProGeo portal. You will find it in your object overview from now on.</p>{% endif %}
+{% include "emails/_button.html" with url=location_url label=locations|yesno:"Open objects,Open object" %}
 <p style="margin:0; font-size:12px; color:#6E6868;">If you did not expect this access, please contact {{ inviter_name }} or ProGeo.</p>
 {% endblock %}

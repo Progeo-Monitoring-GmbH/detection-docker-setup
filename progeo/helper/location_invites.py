@@ -123,16 +123,56 @@ def _grant(user, location, account, scope) -> bool:
     return True
 
 
+def _location_name(location) -> str:
+    return location.name or str(location.project_id or "")
+
+
+def _mail_context(inviter, targets):
+    """The mail's objects: one names it and links to it; several are listed
+    (`locations`) and the button opens the overview."""
+    from progeo.helper.emailhelper import portal_url
+
+    if len(targets) == 1:
+        location = targets[0][0]
+        return {
+            "location_name": _location_name(location),
+            "inviter_name": _display_name(inviter),
+            "location_url": portal_url(f"/location/{location.pk}/status"),
+        }
+    return {
+        "location_name": ", ".join(_location_name(location) for location, _account in targets),
+        "locations": [
+            {"name": _location_name(location), "url": portal_url(f"/location/{location.pk}/status")}
+            for location, _account in targets
+        ],
+        "inviter_name": _display_name(inviter),
+        "location_url": portal_url("/location/overview/"),
+    }
+
+
 def invite_to_location(inviter, location, account, email, scope="single", first_name="", last_name=""):
     """Give the person with `email` access to `location` (see the module
     docstring). Returns "granted", "invited", "already" or "staff"; raises
     InviteError. The caller checks that `inviter` may add people here."""
-    from progeo.helper.emailhelper import portal_url
+    return invite_to_locations(
+        inviter, [(location, account)], email, scope=scope, first_name=first_name, last_name=last_name,
+    )["status"]
+
+
+def invite_to_locations(inviter, targets, email, scope="single", first_name="", last_name=""):
+    """invite_to_location for several locations at once - `targets` are
+    (location, account) pairs - with a single mail listing them all
+    ("Assign to user" of the location overview). Returns {"status":
+    "granted"|"invited"|"already"|"staff", "granted": [location ids],
+    "already": [location ids]}; raises InviteError. The caller checks that
+    `inviter` may add people to every one of them."""
     from progeo.helper.user_provisioning import provision_user
     from progeo.tasks import send_login_link_task, send_template_mail_task
 
     if scope not in SCOPES:
         raise InviteError("scope must be 'single' or 'account'")
+    if not targets:
+        raise InviteError("no locations")
     email = outbound.normalize_address(email)
     try:
         validate_email(email)
@@ -142,38 +182,38 @@ def invite_to_location(inviter, location, account, email, scope="single", first_
     matches = list(User.objects.using(DB).filter(email__iexact=email).order_by("pk")[:2])
     if len(matches) > 1:
         raise InviteError("Several accounts use this email address - please contact ProGeo")
-    mail_context = {
-        "location_name": location.name or str(location.project_id or ""),
-        "inviter_name": _display_name(inviter),
-        "location_url": portal_url(f"/location/{location.pk}/status"),
-    }
+    location_ids = [location.pk for location, _account in targets]
 
     if matches:
         user = matches[0]
         if user.is_staff or user.is_superuser:
-            return "staff"
+            return {"status": "staff", "granted": [], "already": location_ids}
         if not user.is_active:
             raise InviteError("This user account is deactivated - please contact ProGeo")
-        if not _grant(user, location, account, scope):
-            return "already"
+        granted = [(location, account) for location, account in targets if _grant(user, location, account, scope)]
+        already = [location.pk for location, _account in targets if (location, _account) not in granted]
+        if not granted:
+            return {"status": "already", "granted": [], "already": already}
         outbound.dispatch(
             send_template_mail_task, [user.email], "location_access",
-            {**mail_context, "first_name": user.first_name}, "system",
+            {**_mail_context(inviter, granted), "first_name": user.first_name}, "system",
         )
-        ilog(f"[invites] User {inviter.pk} gave user {user.pk} {scope} access to location {location.pk}")
-        return "granted"
+        ilog(f"[invites] User {inviter.pk} gave user {user.pk} {scope} access to locations "
+             f"{[location.pk for location, _account in granted]}")
+        return {"status": "granted", "granted": [location.pk for location, _account in granted], "already": already}
 
     try:
         result = provision_user(email, first_name, last_name)
     except ValueError as exc:
         raise InviteError(str(exc)) from None
     user = result["user"]
-    _grant(user, location, account, scope)
-    language = invite_language(location, inviter)
+    for location, account in targets:
+        _grant(user, location, account, scope)
+    language = invite_language(targets[0][0], inviter)
     if result.get("created"):
         _start_in_language(user, language)
     outbound.dispatch(
-        send_login_link_task, user.pk, "invite", "location_invite", language, mail_context,
+        send_login_link_task, user.pk, "invite", "location_invite", language, _mail_context(inviter, targets),
     )
-    ilog(f"[invites] User {inviter.pk} invited new user {user.pk} to location {location.pk} ({scope})")
-    return "invited"
+    ilog(f"[invites] User {inviter.pk} invited new user {user.pk} to locations {location_ids} ({scope})")
+    return {"status": "invited", "granted": location_ids, "already": []}

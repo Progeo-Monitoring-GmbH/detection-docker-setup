@@ -201,3 +201,15 @@
     min-height: 56px;
   }
 }
+
+/* A merged project (helper/location_merge.py): one row for all its parts. */
+.locations-group-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--progeo-track-soft);
+  color: var(--progeo-blue);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}

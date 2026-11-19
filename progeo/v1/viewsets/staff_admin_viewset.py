@@ -61,6 +61,15 @@ def _managed_users(admin):
     )
 
 
+def _refuse_unheld(request, *codes):
+    """The 403 when the requester lacks one of the button permissions
+    `codes` (module_user_*, held by staff too - decorator.holds_permission)."""
+    from progeo.decorator import missing_held_permissions, permission_denied_response
+
+    missing = missing_held_permissions(request.user, *codes)
+    return permission_denied_response(missing) if missing else None
+
+
 def _require_user_admin(request):
     """None for staff and mini admins (the users table), else the refusal."""
     if _is_staff_admin(request.user) or _is_mini_admin(request.user):
@@ -291,6 +300,15 @@ class StaffUserListView(APIView):
             return denied
 
         data = request.data if isinstance(request.data, dict) else {}
+        # Creating needs module_user_add; the invitation sent along
+        # module_user_invitable, a user created deactivated module_user_disability.
+        codes = ["module_user_add"]
+        if data.get("send_invite"):
+            codes.append("module_user_invitable")
+        if "is_active" in data and not data.get("is_active"):
+            codes.append("module_user_disability")
+        if (denied := _refuse_unheld(request, *codes)) is not None:
+            return denied
         username = (data.get("username") or "").strip()
         email = (data.get("email") or "").strip()
 
@@ -379,7 +397,7 @@ class StaffUserInviteView(APIView):
     }
 
     def post(self, request, pk=None, *args, **kwargs):
-        denied = _require_user_admin(request)
+        denied = _require_user_admin(request) or _refuse_unheld(request, "module_user_invitable")
         if denied:
             return denied
         user = _managed_users(request.user).filter(pk=pk).first()
@@ -450,8 +468,13 @@ class StaffUserDetailView(APIView):
             user.is_superuser = bool(data.get("is_superuser", False))
             update_fields.append("is_superuser")
 
-        # Active flag (deactivate, not delete).
+        # Active flag (deactivate, not delete) - a change needs module_user_disability
+        # (the form sends the unchanged flag along).
         if "is_active" in data:
+            if bool(data.get("is_active", True)) != user.is_active and (
+                denied := _refuse_unheld(request, "module_user_disability")
+            ) is not None:
+                return denied
             if user.pk == request.user.pk and not data.get("is_active"):
                 return RequestFailed({"reason": "You cannot deactivate yourself"})
             user.is_active = bool(data.get("is_active", True))
@@ -517,6 +540,8 @@ class StaffUserDeleteView(APIView):
     def post(self, request, pk=None, *args, **kwargs):
         if not _is_staff_admin(request.user):
             return RequestFailed({"reason": "Staff access required"})
+        if (denied := _refuse_unheld(request, "module_user_erasability")) is not None:
+            return denied
 
         user = User.objects.using(_USER_DB).filter(pk=pk).first()
         if not user:

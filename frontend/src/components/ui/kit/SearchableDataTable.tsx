@@ -1,5 +1,8 @@
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
-import DataTable, { type TableColumn, type TableProps } from 'react-data-table-component';
+import DataTable, {
+  type TableColumn,
+  type TableProps,
+} from 'react-data-table-component';
 import { Search, XLg } from 'react-bootstrap-icons';
 import { matchesSearchWords, rowSearchText, searchWords } from './tableSearch';
 import { childTestId } from '../../../testIds';
@@ -90,6 +93,15 @@ const toggled = <K,>(selected: ReadonlySet<K>, key: K) => {
 
 const SELECTED_ROW_STYLE = { backgroundColor: 'var(--progeo-track-soft)' };
 
+/** The row style of selected rows (conditionalRowStyles entry). */
+export const selectedRowStyle = <T, K>({
+  rowKey,
+  selected,
+}: Pick<RowSelection<T, K>, 'rowKey' | 'selected'>) => ({
+  when: (row: T) => selected.has(rowKey(row)),
+  style: SELECTED_ROW_STYLE,
+});
+
 type CheckboxProps = {
   checked: boolean;
   indeterminate?: boolean;
@@ -98,7 +110,13 @@ type CheckboxProps = {
   label: string;
 };
 
-const Checkbox = ({ checked, indeterminate = false, disabled, onChange, label }: CheckboxProps) => (
+const Checkbox = ({
+  checked,
+  indeterminate = false,
+  disabled,
+  onChange,
+  label,
+}: CheckboxProps) => (
   <input
     type="checkbox"
     className="form-check-input m-0 progeo-table-check"
@@ -115,7 +133,60 @@ const Checkbox = ({ checked, indeterminate = false, disabled, onChange, label }:
   />
 );
 
-export type SearchableDataTableProps<T, K> = Omit<TableProps<T>, 'columns' | 'data'> & {
+/**
+ * The checkbox column of a selection: "select all" in the header toggles
+ * `rows` (the rows shown - selected rows a filter hides stay selected).
+ * Also for plain DataTables (the location overview).
+ */
+export const selectionColumn = <T, K>(
+  { rowKey, selected, onChange }: RowSelection<T, K>,
+  rows: T[],
+  labels: Pick<
+    SearchableDataTableLabels,
+    'selectAll' | 'selectRow'
+  > = DEFAULT_LABELS,
+): TableColumn<T> => {
+  const shownSelected = rows.filter((row) => selected.has(rowKey(row))).length;
+  const allShownSelected = rows.length > 0 && shownSelected === rows.length;
+  const toggleShown = () => {
+    const next = new Set(selected);
+    for (const row of rows) {
+      if (allShownSelected) {
+        next.delete(rowKey(row));
+      } else {
+        next.add(rowKey(row));
+      }
+    }
+    onChange(next);
+  };
+  return {
+    id: '__selected',
+    name: (
+      <Checkbox
+        label={labels.selectAll}
+        checked={allShownSelected}
+        indeterminate={shownSelected > 0 && !allShownSelected}
+        disabled={!rows.length}
+        onChange={toggleShown}
+      />
+    ),
+    cell: (row) => (
+      <Checkbox
+        label={labels.selectRow}
+        checked={selected.has(rowKey(row))}
+        onChange={() => onChange(toggled(selected, rowKey(row)))}
+      />
+    ),
+    width: '48px',
+    // The checkbox toggles itself; a row click on top would undo it.
+    ignoreRowClick: true,
+  };
+};
+
+export type SearchableDataTableProps<T, K> = Omit<
+  TableProps<T>,
+  'columns' | 'data'
+> & {
   /** Keep stable (module constant or useMemo): the rows' search texts are
    * rebuilt whenever `columns`, `data` or `rowSearchText` change. */
   columns: SearchableColumn<T>[];
@@ -167,13 +238,21 @@ const SearchableDataTable = <T, K = string | number>({
 
   // Built once per data/columns, not per keystroke.
   const searchTexts = useMemo(
-    () => data.map((row, index) => rowSearchText(row, index, columns, extraSearchText)),
+    () =>
+      data.map((row, index) =>
+        rowSearchText(row, index, columns, extraSearchText),
+      ),
     [data, columns, extraSearchText],
   );
 
   const words = useMemo(() => searchWords(query), [query]);
   const rows = useMemo(
-    () => (words.length ? data.filter((_row, index) => matchesSearchWords(searchTexts[index], words)) : data),
+    () =>
+      words.length
+        ? data.filter((_row, index) =>
+            matchesSearchWords(searchTexts[index], words),
+          )
+        : data,
     [data, searchTexts, words],
   );
 
@@ -181,65 +260,32 @@ const SearchableDataTable = <T, K = string | number>({
 
   const tableColumns = useMemo<TableColumn<T>[]>(() => {
     // DataTable doesn't know `searchText` - keep it out of its columns.
-    const plain = columns.map(({ searchText: _searchText, ...column }) => column);
+    const plain = columns.map(
+      ({ searchText: _searchText, ...column }) => column,
+    );
     if (!selection) {
       return plain;
     }
-    const { rowKey, selected, onChange } = selection;
-    const shownSelected = rows.filter((row) => selected.has(rowKey(row))).length;
-    const allShownSelected = rows.length > 0 && shownSelected === rows.length;
-
-    const toggleShown = () => {
-      const next = new Set(selected);
-      for (const row of rows) {
-        if (allShownSelected) {
-          next.delete(rowKey(row));
-        } else {
-          next.add(rowKey(row));
-        }
-      }
-      onChange(next);
-    };
-
     return [
-      {
-        id: '__selected',
-        name: (
-          <Checkbox
-            label={labels.selectAll}
-            checked={allShownSelected}
-            indeterminate={shownSelected > 0 && !allShownSelected}
-            disabled={!rows.length}
-            onChange={toggleShown}
-          />
-        ),
-        cell: (row) => (
-          <Checkbox
-            label={labels.selectRow}
-            checked={selected.has(rowKey(row))}
-            onChange={() => onChange(toggled(selected, rowKey(row)))}
-          />
-        ),
-        width: '48px',
-        // The checkbox toggles itself; a row click on top would undo it.
-        ignoreRowClick: true,
-      },
+      selectionColumn(selection, rows, {
+        selectAll: labels.selectAll,
+        selectRow: labels.selectRow,
+      }),
       ...plain,
     ];
   }, [columns, selection, rows, labels.selectAll, labels.selectRow]);
   // Phones: the `mobileColumns` in the row (the selection checkbox too), the
   // others in its expander.
-  const phone = useMobileColumns(tableColumns, mobileColumns && ['__selected', ...mobileColumns]);
+  const phone = useMobileColumns(
+    tableColumns,
+    mobileColumns && ['__selected', ...mobileColumns],
+  );
 
   const rowStyles = useMemo(() => {
     if (!selection) {
       return conditionalRowStyles;
     }
-    const { rowKey, selected } = selection;
-    return [
-      { when: (row: T) => selected.has(rowKey(row)), style: SELECTED_ROW_STYLE },
-      ...(conditionalRowStyles ?? []),
-    ];
+    return [selectedRowStyle(selection), ...(conditionalRowStyles ?? [])];
   }, [selection, conditionalRowStyles]);
 
   const handleRowClicked = (row: T, event: MouseEvent) => {
@@ -281,7 +327,11 @@ const SearchableDataTable = <T, K = string | number>({
           )}
         </div>
         {words.length > 0 && (
-          <span className="progeo-table-count" aria-live="polite" data-testid={childTestId(testId, 'count')}>
+          <span
+            className="progeo-table-count"
+            aria-live="polite"
+            data-testid={childTestId(testId, 'count')}
+          >
             {labels.count(rows.length, data.length)}
           </span>
         )}

@@ -30,6 +30,7 @@ vi.mock('../components/sidebar/LocationSidebar', () => ({ default: () => null })
 vi.mock('../components/topbar/TopBar', () => ({ default: () => null }));
 vi.mock('./EscalationBanner', () => ({ default: () => null }));
 vi.mock('./FavoritesBar', () => ({ default: () => null }));
+vi.mock('./LocationGroupBar', () => ({ default: () => null }));
 vi.mock('./ImpersonationBanner', () => ({ default: () => null }));
 vi.mock('./FavoriteStar', () => ({ default: () => <span data-testid="favorite-star" /> }));
 

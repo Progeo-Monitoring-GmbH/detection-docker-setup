@@ -1,0 +1,165 @@
+/* AssignLocationsModal / MergeProjectsModal: actions on locations selected
+   in the overview - the buttons look like the Rechte tab's (Add user / Revoke). */
+
+.location-selection-title {
+  font-size: 17px;
+  color: var(--progeo-blue);
+}
+
+.location-selection-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.location-selection-targets {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--progeo-blue);
+}
+
+.location-selection-list {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--progeo-blue);
+}
+
+.location-selection-names {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.location-selection-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.location-selection-hint {
+  font-size: 12.5px;
+  color: #6e6868;
+}
+
+.location-selection-nr {
+  min-height: 18px;
+  font-size: 12.5px;
+}
+
+.location-selection-ok {
+  color: #1b7a4c;
+}
+
+.location-selection-error {
+  color: #c44d26;
+}
+
+.location-selection-loading,
+.location-selection-empty {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+.location-selection-confirm,
+.location-selection-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.location-selection-confirm {
+  background: var(--progeo-orange);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
+}
+
+.location-selection-confirm:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.location-selection-cancel {
+  background: #fbeae4;
+  color: #c44d26;
+}
+
+/* The merged project's bar in the portal (LocationGroupBar). */
+.location-group-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--progeo-panel-bg);
+  box-shadow: var(--progeo-shadow-panel);
+}
+
+.location-group-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--progeo-blue);
+  margin-right: 4px;
+}
+
+.location-group-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.location-group-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.location-group-plan.is-active {
+  background: var(--progeo-blue);
+  color: #fff;
+}
+
+.location-group-plan-part {
+  opacity: 0.7;
+}
+
+.location-group-dissolve {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: #c44d26;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .location-selection-names {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
