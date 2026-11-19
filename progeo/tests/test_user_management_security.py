@@ -609,7 +609,7 @@ def test_reset_with_2fa(client):
     token = _link_token("/password/reset/")
 
     assert client.post("/api/auth-support/password-reset/check/", {"token": token},
-                       format="json").data["username"] == user.username
+                       format="json").data["username"] == user.email  # the login
     # A reset link is no login link.
     assert client.post("/api/auth-support/login-link/exchange/", {"token": token, "otp": _code(secret, 1)},
                        format="json").status_code == 400

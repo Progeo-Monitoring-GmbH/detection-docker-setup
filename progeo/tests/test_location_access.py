@@ -215,12 +215,12 @@ def test_a_saved_location_is_not_answered_from_the_cache(api_client):
     from progeo.tests import factories as f
 
     account = f.make_account()
-    location = f.make_location(account, project_id=4712, name="Halle", project_type=0)
+    location = f.make_location(account, project_id=4712, name="Halle")
     user = f.make_user(perms=("module_locations_enabled", "module_locations_edit"), accounts=[account])
     api_client.force_authenticate(user)
-    assert api_client.get(f"/v1/location/{location.pk}/").json()["project_type"] == 0  # now cached
+    assert api_client.get(f"/v1/location/{location.pk}/").json()["name"] == "Halle"  # now cached
 
-    response = api_client.patch(f"/v1/location/{location.pk}/", {"project_type": 1}, format="json")
+    response = api_client.patch(f"/v1/location/{location.pk}/", {"name": "Halle Nord"}, format="json")
 
     assert response.status_code == 200, response.content
-    assert api_client.get(f"/v1/location/{location.pk}/").json()["project_type"] == 1
+    assert api_client.get(f"/v1/location/{location.pk}/").json()["name"] == "Halle Nord"

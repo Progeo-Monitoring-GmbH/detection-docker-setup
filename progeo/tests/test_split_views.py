@@ -19,6 +19,7 @@ from progeo.helper.location_access import forget_single_access, location_q
 from progeo.helper.project_db_copy import mirror_shared
 from progeo.helper.project_dbs import register_project_db
 from progeo.tests import factories as f
+from progeo.tests.mailfakes import fake_smtp  # noqa: F401 - the invitation mail
 from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is the session fixture
     ALIAS,
     LOCMEM_CACHE,
@@ -299,7 +300,7 @@ def test_access_changes_drop_the_cached_access_rows(world):
 
 @WITH_PROJECT_DBS
 @LOCMEM_CACHE
-def test_inviting_a_new_address_copies_the_user_into_the_project_database(world, settings, fake_smtp,
+def test_inviting_a_new_address_copies_the_user_into_the_project_database(world, settings, fake_smtp,  # noqa: F811
                                                                           django_capture_on_commit_callbacks):
     """The regular mirror of a new user runs after the commit (in celery) -
     the access row in the project database needs the user right away

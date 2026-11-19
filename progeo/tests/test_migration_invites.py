@@ -107,7 +107,7 @@ def test_setting_the_password_signs_in_and_completes_the_invite(campaign):
     client = APIClient()
 
     check = client.post("/api/auth-support/migration/check/", {"token": token}, format="json")
-    assert check.data["success"] and check.data["username"] == user.username
+    assert check.data["success"] and check.data["username"] == "erika@progeo.com"  # the login
     weak = client.post("/api/auth-support/migration/confirm/", {"token": token, "password": "kurz"}, format="json")
     assert weak.data["reason"] == "password" and weak.data["errors"]
 

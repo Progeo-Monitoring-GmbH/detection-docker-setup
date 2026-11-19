@@ -301,6 +301,14 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         except ValueError:
             return None
 
+    @action(detail=True, url_path="sample/alarm", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
+    def catch_live_data_trigger_alarm(self, request, pk, *args, **kwargs):
+        try:
+            location = ProgeoLocation.objects.get(project_id=pk)
+        except ProgeoLocation.DoesNotExist:
+            return RequestFailed()
+    
+
     @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
     def catch_live_data_c_n_c(self, request, pk, *args, **kwargs):
         """The controller's command poll: {"commands": [{"command", "id",
