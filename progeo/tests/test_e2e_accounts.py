@@ -40,11 +40,42 @@ def _remove_created_plans():
                 pass
 
 
+def _small_demo():
+    """The demo account with its people and three plain locations - what the
+    e2e roles need, built with the command's own steps but without its plans
+    and measurements (a full run takes seconds; it runs in one test only)."""
+    from progeo.management.commands.demo_account import LOCATIONS, Command
+    from progeo.v1.models import ProgeoLageplan
+
+    db = settings.DEMO_DATABASE
+    command = Command()
+    account = command._ensure_account(None, db)
+    command._ensure_user(account)
+    kinds = ("smartex_dm", "smartex_is", "lorawan")
+    locations = {
+        spec["kind"]: ProgeoLocation.objects.using(db).create(
+            account=account, name=spec["name"], project_id=spec["project_id"], project_type=spec["project_type"]
+        )
+        for spec in LOCATIONS if spec["kind"] in kinds
+    }
+    ProgeoLageplan.objects.using(db).create(location=locations["smartex_dm"], lageplan="lageplan/demo_e2e-test.png")
+    command._ensure_people(account, db, locations)
+
+
 @pytest.fixture
 def demo(demo_db):
     with ON():
-        call_command("demo_account", "--skip-checks", "--days", "1")
+        _small_demo()
+        call_command("demo_account", "--skip-checks", "--e2e")
         yield e2e.info()
+
+
+def test_a_full_demo_run_applies_the_roles(demo_db):
+    with ON():
+        call_command("demo_account", "--skip-checks", "--days", "1")
+    for role, username in e2e.E2E_ROLES.items():
+        assert authenticate(username=f"{username}@progeo.com", password=PASSWORD) is not None, role
+    assert e2e.info()["target_location_id"]
 
 
 def _jwt_client(user):
@@ -82,7 +113,7 @@ def test_never_on_the_live_server():
 
 def test_without_e2e_nobody_logs_in_as_the_demo_people(demo_db):
     with override_settings(E2E_DEMO_PASSWORD=""):
-        call_command("demo_account", "--skip-checks", "--days", "1")
+        _small_demo()
     for username in e2e.E2E_ROLES.values():
         assert not User.objects.get(username=username).has_usable_password()
 

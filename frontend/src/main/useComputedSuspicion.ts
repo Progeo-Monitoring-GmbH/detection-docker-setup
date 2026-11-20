@@ -11,14 +11,16 @@ import {
 /**
  * smartex® mx-PEEL: the computed suspicion points of a location over the
  * last `days` (the Status tab's range) - loaded while `enabled`, again when
- * the range changes - and acknowledging a point, i.e. every pending alarm
- * of its member sensors (then it reloads).
+ * the range changes or, quietly, when `revision` goes up (new data,
+ * useLocationLiveRevision) - and acknowledging a point, i.e. every pending
+ * alarm of its member sensors (then it reloads).
  */
 export const useComputedSuspicion = (
   locationId: number,
   days: number,
   demo: boolean,
   enabled: boolean,
+  revision = 0,
 ) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -74,7 +76,7 @@ export const useComputedSuspicion = (
     if (enabled) {
       fetchPoints();
     }
-  }, [enabled, fetchPoints]);
+  }, [enabled, fetchPoints, revision]);
 
   /** Acknowledges every pending alarm of the point's sensors, then reloads. */
   const acknowledge = (point: ComputedSuspicionPoint) => {

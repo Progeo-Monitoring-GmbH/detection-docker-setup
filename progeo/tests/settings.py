@@ -130,6 +130,14 @@ DRF_TOKEN_MAX_AGE_DAYS = 30
 TWO_FACTOR_ISSUER = "ProGeo"
 TWO_FACTOR_ENCRYPTION_KEY = ""
 TWO_FACTOR_REQUIRED_FOR_STAFF = False
+# Tests only: the default PBKDF2 (1.5M iterations, ~0.5 s per password) made
+# every set_password/login of the suite slow. MD5 is Django's recommended
+# hasher for tests - never for real passwords. PBKDF2 stays second: hashes
+# already in a seeded test database still verify.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.MD5PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
 BOUNCE_IMAP_HOST = ""
 BOUNCE_IMAP_PORT = 993
 BOUNCE_IMAP_USER = ""

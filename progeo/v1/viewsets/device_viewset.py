@@ -40,6 +40,7 @@ from progeo.helper.location_access import (
     resolve_request_account,
     visible_locations_by_db,
 )
+from progeo.helper.location_live import is_alarm_flag, notify_location_status
 from progeo.helper.measurement_utils import flatten_numeric_values
 from progeo.helper.project_dbs import location_db, release_connection, split_enabled
 from progeo.management.commands.patch_live import fetch_device_locations
@@ -300,13 +301,6 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             return datetime.fromisoformat(value)
         except ValueError:
             return None
-
-    @action(detail=True, url_path="sample/alarm", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
-    def catch_live_data_trigger_alarm(self, request, pk, *args, **kwargs):
-        try:
-            location = ProgeoLocation.objects.get(project_id=pk)
-        except ProgeoLocation.DoesNotExist:
-            return RequestFailed()
     
 
     @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
@@ -380,7 +374,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         values per sensor (cut to `sensors` pairs). The device is identified
         by device_hash (default: the project_id); chip_id / ip are kept on
         the device, event / heap / mac / ... in raw_data. pk is the project_id
-        (only there to filter the logs).
+        (only there to filter the logs). alarm=1: the controller saw an alarm
+        - the open status pages of the device's location reload right away
+        (helper/location_live.py), not only on their next visit.
         """
         #ilog("DeviceViewSet: catch_live_data called | request.data:", request.data, "pk=", pk, tag="[DEBUG]")
         payload = request.data
@@ -405,12 +401,14 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         raw_hash = str(payload.get("device_hash") or project_id).strip()
         # MUXes that answered with missing channels - kept in raw_data, shown by the test measurements.
         mux_faults = device_commands.clean_mux_faults(payload.get("mux_faults"))
+        alarm = is_alarm_flag(payload.get("alarm"))
         measure = save_measurement_from_legacy_data(
             measurement={
                 "project_id": project_id,
                 "potentials": values,
                 **{key: payload.get(key) for key in ("event", "sensors", "chip_id", "heap", "ip", "mac")},
                 **({"mux_faults": mux_faults} if mux_faults is not None else {}),
+                **({"alarm": 1} if alarm else {}),
             },
             project_id=project_id,
             raw_hash=raw_hash,
@@ -432,6 +430,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             ProgeoDevice.objects.using(measure._state.db).filter(pk=measure.device_id).exclude(
                 **device_info
             ).update(**device_info)
+
+        if alarm:
+            notify_location_status(measure, reason="alarm")
 
         return RequestSuccess({
             "project_id": project_id,

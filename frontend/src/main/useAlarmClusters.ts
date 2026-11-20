@@ -9,10 +9,16 @@ const ALARM_WINDOW_DAYS = 90;
 
 /**
  * The Verdachtsstellen of a location (the alarm clusters of the last
- * ALARM_WINDOW_DAYS), loaded once while `enabled`, and acknowledging them -
- * which reloads them.
+ * ALARM_WINDOW_DAYS), loaded once while `enabled` - again, quietly, when
+ * `revision` goes up (new data, useLocationLiveRevision) - and acknowledging
+ * them, which reloads them.
  */
-export const useAlarmClusters = (locationId: number, demo: boolean, enabled: boolean) => {
+export const useAlarmClusters = (
+  locationId: number,
+  demo: boolean,
+  enabled: boolean,
+  revision = 0,
+) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const [clusters, setClusters] = useState<VerdachtsstelleCluster[]>([]);
@@ -55,7 +61,7 @@ export const useAlarmClusters = (locationId: number, demo: boolean, enabled: boo
     if (enabled) {
       fetchClusters();
     }
-  }, [enabled, fetchClusters]);
+  }, [enabled, fetchClusters, revision]);
 
   /** Acknowledges every pending alarm of the cluster, then reloads. */
   const acknowledge = (cluster: VerdachtsstelleCluster) => {

@@ -109,7 +109,7 @@ def test_outsider_gets_no_fallback_to_the_default_account(api_client, world):
 
 
 def test_alarm_list_is_scoped_to_single_access_location(api_client, world):
-    user = f.make_user(perms=READ_PERMS)
+    user = f.make_user(perms=(*READ_PERMS, "module_alarms_enabled"))
     f.make_access(world["granted"], user)
     api_client.force_authenticate(user=user)
 

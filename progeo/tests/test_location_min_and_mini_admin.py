@@ -203,7 +203,7 @@ def test_a_mini_admin_cannot_touch_anyone_else(api_client, mini):
 
 def test_only_staff_grant_the_mini_admin_permission(api_client, mini):
     colleague = mini["colleague"]
-    staff = f.make_user(staff=True, perms=READ)  # without holding it
+    staff = f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled"))  # without holding MINI
     api_client.force_authenticate(user=staff)
 
     api_client.post(f"{USERS}{colleague.pk}/update/", {"permissions": [*READ, MINI]}, format="json")

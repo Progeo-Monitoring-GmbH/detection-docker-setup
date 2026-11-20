@@ -17,6 +17,10 @@ from progeo.v1.log_files_helper import (
 
 GRP_NAME = "command-group"
 
+# Close code of a socket the user may not follow (useLocationLiveRevision.ts
+# doesn't reconnect on it).
+CLOSE_FORBIDDEN = 4403
+
 LOG_STREAM_MAX_LINES = 2000
 LOG_STREAM_POLL_SECONDS = 1
 # Docker logs are read through the Docker API - more costly than a stat().
@@ -414,3 +418,89 @@ class QaScoreboardConsumer(AsyncWebsocketConsumer):
     async def qa_update(self, event):
         await self.send_json({"type": "qa_update", "user_ids": event.get("user_ids", []),
                               "reason": event.get("reason")})
+
+
+# ==============================================================================================
+
+@database_sync_to_async
+def _status_group_of(user, location_id):
+    """The group of the location's status pages (helper/location_live.py) if
+    `user` may open them - the same lookup and permissions as the page's own
+    requests (LocationViewSet heatmap / measurement-range); else None."""
+    from types import SimpleNamespace
+
+    from progeo.decorator import has_module_permissions
+    from progeo.helper.location_live import location_status_group
+    from progeo.v1.viewsets.locations_viewset import LocationViewSet
+
+    if not has_module_permissions(user, "module_locations_enabled", "module_measurements_enabled"):
+        return None
+    location, _account = LocationViewSet._find_location(SimpleNamespace(user=user, account=None), pk=location_id)
+    if location is None:
+        return None
+    return location_status_group(location._state.db, location.pk)
+
+
+class LocationStatusConsumer(AsyncWebsocketConsumer):
+    """New data of one location for its open status pages
+    (/location/<id>/status) - only for users who may see that location.
+
+    Server -> client: "location_status" {location_id, reason ("alarm"),
+    measurement_id} when a controller reported a sample with alarm=1 - the
+    page reloads; "heartbeat" every LOG_STREAM_HEARTBEAT_SECONDS (proxies
+    close idle sockets). Client -> server: "ping" -> "pong". Users without
+    access are closed with CLOSE_FORBIDDEN (4403) - the page doesn't
+    reconnect then.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.group = None
+        self.heartbeat_task = None
+        self.group_task = None
+
+    async def connect(self):
+        user = self.scope.get("user")
+        location_id = int(self.scope["url_route"]["kwargs"]["location_id"])
+        group = None
+        if user is not None and getattr(user, "is_authenticated", False):
+            group = await _status_group_of(user, location_id)
+        if group is None:
+            # Accepted first: a socket closed during the handshake reaches the
+            # browser as 1006 (like a dropped connection - the page would try
+            # again); this way it gets 4403 and gives up.
+            await self.accept()
+            await self.close(code=CLOSE_FORBIDDEN)
+            return
+        self.group = group
+        await self.channel_layer.group_add(group, self.channel_name)
+        await self.accept()
+        self.heartbeat_task = _background(_heartbeats(self))
+        self.group_task = _background(_stay_in_group(self.channel_layer, group, self.channel_name))
+
+    async def disconnect(self, close_code):
+        for task in (self.heartbeat_task, self.group_task):
+            if task:
+                task.cancel()
+        if self.group:
+            await self.channel_layer.group_discard(self.group, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        # Nothing to ask - a ping keeps the socket open.
+        if text_data and '"ping"' in text_data:
+            await self.send_json({"type": "pong"})
+
+    async def send_json(self, payload):
+        """To the client - a group message for a client that is gone is dropped."""
+        try:
+            await _send_json(self, payload)
+        except _ClientGone:
+            pass
+
+    async def location_status(self, event):
+        await self.send_json({
+            "type": "location_status",
+            "location_id": event.get("location_id"),
+            "reason": event.get("reason"),
+            "measurement_id": event.get("measurement_id"),
+        })

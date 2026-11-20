@@ -67,6 +67,7 @@ import {
 import { useComputedSuspicion } from './useComputedSuspicion';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
+import { useLocationLiveRevision } from './useLocationLiveRevision';
 import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { useAccess } from './access';
@@ -489,10 +490,20 @@ const LocationStatusView = ({
   // show humidity/temperature charts instead, see LocationClimatePanels.
   const isLorawan = isLorawanProject(location?.project_type);
 
+  // New data while the page is open (a controller's alarm sample): the
+  // range, the history, the Verdachtsstellen and the KPIs reload quietly,
+  // the picked view, range and sensor stay.
+  const liveRevision = useLocationLiveRevision(locationId, !demo && !isLorawan);
+
   // The history to load, and the long Zeitreihe ranges once the data
   // reaches that far back (LoRaWAN: LocationClimatePanels does its own).
-  const { range: measurementRange, failed: measurementRangeFailed } =
-    useMeasurementRangeState(locationId, demo, !isLorawan);
+  const {
+    range: measurementRange,
+    failed: measurementRangeFailed,
+    // The history follows once the range of the new data is there (its
+    // window ends at the newest measurement).
+    revision: rangeRevision,
+  } = useMeasurementRangeState(locationId, demo, !isLorawan, liveRevision);
   const rangeOptions = useMemo(
     () =>
       availableTimeRanges(
@@ -540,12 +551,13 @@ const LocationStatusView = ({
     loadedAt: historyLoadedAt,
     loading: historyLoading,
     denied: historyDenied,
-  } = useLocationHistory(locationId, demo, historySpec);
+  } = useLocationHistory(locationId, demo, historySpec, 'diff', rangeRevision);
   const profileHistory = useLocationHistory(
     locationId,
     demo,
     heatProfile === 'diff' ? null : historySpec,
     heatProfile,
+    rangeRevision,
   );
   const {
     clusters,
@@ -554,7 +566,7 @@ const LocationStatusView = ({
     loadedAt: clustersLoadedAt,
     acknowledging,
     acknowledge,
-  } = useAlarmClusters(locationId, demo, !isLorawan);
+  } = useAlarmClusters(locationId, demo, !isLorawan, liveRevision);
   // smartex® mx-PEEL: computed suspicion points of the range instead of one
   // Verdachtsstelle per sensor - staff can switch (computedSuspicion.ts).
   const [pickedSuspicionMode, setSuspicionMode] =
@@ -569,6 +581,7 @@ const LocationStatusView = ({
     rangeDays,
     demo,
     suspicionMode === 'computed',
+    liveRevision,
   );
   const suspicionMarkers = useMemo(
     () =>

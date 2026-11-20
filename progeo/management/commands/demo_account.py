@@ -470,6 +470,12 @@ LOCATIONS = [_location(spec) for spec in (
     },
 )]
 
+# The drawn plans per (kind, view, first sensor number): the same every run -
+# drawing and the optimized PNG take seconds, and the tests build the demo
+# over and over in one process.
+_PLAN_IMAGES = {}
+
+
 class Command(BaseCommand):
     help = (
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
@@ -1115,24 +1121,27 @@ class Command(BaseCommand):
 
         from django.core.files.base import ContentFile
 
-        plan = _Plan()
-        reference, meters_per_pixel = plan_spec["draw"](plan)
-        address = f"{spec['address']}, 12345 {spec['city']}"
-        view = plan_spec.get("name")
-        plan.title_block(_ascii(spec["name"]), _ascii(f"{view} - {address}" if view else address))
-        for order, (name, px, py, _gx, _gy, *end) in enumerate(plan_spec["points"], start=first):
-            if end:  # smartex® dm: the band, labelled at its feed end
-                plan.band((px, py), end[0], name)
-            else:
-                plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
-
-        buffer = BytesIO()
-        plan.image.save(buffer, format="PNG", optimize=True)
+        key = (spec["kind"], plan_spec.get("suffix"), first)
+        if key not in _PLAN_IMAGES:
+            plan = _Plan()
+            reference, meters_per_pixel = plan_spec["draw"](plan)
+            address = f"{spec['address']}, 12345 {spec['city']}"
+            view = plan_spec.get("name")
+            plan.title_block(_ascii(spec["name"]), _ascii(f"{view} - {address}" if view else address))
+            for order, (name, px, py, _gx, _gy, *end) in enumerate(plan_spec["points"], start=first):
+                if end:  # smartex® dm: the band, labelled at its feed end
+                    plan.band((px, py), end[0], name)
+                else:
+                    plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
+            buffer = BytesIO()
+            plan.image.save(buffer, format="PNG", optimize=True)
+            _PLAN_IMAGES[key] = (buffer.getvalue(), reference, meters_per_pixel)
+        png, reference, meters_per_pixel = _PLAN_IMAGES[key]
 
         os.makedirs(os.path.join(settings.UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL)), exist_ok=True)
         file_name = f"{spec['kind']}_{plan_spec['suffix']}.png" if plan_spec.get("suffix") else f"{spec['kind']}.png"
         stored = FileSystemStorage(location=settings.UPLOAD_DIR).save(
-            f"{DEMO_LAGEPLAN_PREFIX_REL}{file_name}", ContentFile(buffer.getvalue(), name=file_name)
+            f"{DEMO_LAGEPLAN_PREFIX_REL}{file_name}", ContentFile(png, name=file_name)
         )
         heat_limitations = [
             {"id": uuid.uuid4().hex[:12], **area}

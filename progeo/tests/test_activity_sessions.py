@@ -46,7 +46,7 @@ def events():
 def test_sessions_list_duration_pages_and_clicks(events):
     user, _ = events
 
-    response = _client(f.make_user(staff=True)).get(SESSIONS_URL, {"days": 30})
+    response = _client(f.make_user(staff=True, perms=("module_admin_insights",))).get(SESSIONS_URL, {"days": 30})
 
     assert response.status_code == 200, response.content
     first, second = response.json()["sessions"]
@@ -59,13 +59,13 @@ def test_sessions_list_duration_pages_and_clicks(events):
 
 
 def test_sessions_only_of_the_period(events):
-    response = _client(f.make_user(staff=True)).get(SESSIONS_URL, {"days": 7})
+    response = _client(f.make_user(staff=True, perms=("module_admin_insights",))).get(SESSIONS_URL, {"days": 7})
 
     assert [row["session"] for row in response.json()["sessions"]] == ["session-a-0001"]
 
 
 def test_one_session_with_its_events_in_order(events):
-    response = _client(f.make_user(staff=True)).get(SESSION_URL, {"session": "session-a-0001"})
+    response = _client(f.make_user(staff=True, perms=("module_admin_insights",))).get(SESSION_URL, {"session": "session-a-0001"})
 
     assert response.status_code == 200, response.content
     body = response.json()
@@ -81,7 +81,7 @@ def test_one_session_with_its_events_in_order(events):
 
 
 def test_unknown_or_invalid_session(events):
-    client = _client(f.make_user(staff=True))
+    client = _client(f.make_user(staff=True, perms=("module_admin_insights",)))
 
     assert client.get(SESSION_URL, {"session": "no-such-session"}).status_code == 404
     assert client.get(SESSION_URL, {"session": "../x"}).status_code == 404
@@ -95,7 +95,7 @@ def test_staff_only(events, url):
 
 
 def test_the_summary_has_the_total_time_per_page(events):
-    response = _client(f.make_user(staff=True)).get("/v1/activity/summary/", {"days": 30})
+    response = _client(f.make_user(staff=True, perms=("module_admin_insights",))).get("/v1/activity/summary/", {"days": 30})
 
     pages = {row["path"]: row for row in response.json()["pages"]}
     assert pages["/location/:id/status"]["total_ms"] == 70_000

@@ -413,7 +413,7 @@ def test_failed_logins_lock_the_name(client, settings):
 
 def test_failed_logins_lock_basic_auth_too(client, settings):
     settings.LOGIN_MAX_FAILURES_PER_NAME = 2
-    user = _user(staff=True)
+    user = _user(staff=True, perms=("module_admin_staff_enabled",))
 
     def basic(password):
         raw = base64.b64encode(f"{user.email}:{password}".encode()).decode()
@@ -549,7 +549,7 @@ def test_staff_can_reset_a_lost_second_factor(client):
     _enable_2fa(user)
     superuser = _user(is_superuser=True)
     _enable_2fa(superuser)
-    client.force_authenticate(user=f.make_user(staff=True))
+    client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_staff_enabled",)))
 
     assert client.post(f"/api/auth-support/staff/users/{superuser.pk}/update/", {"reset_two_factor": True},
                        format="json").data["success"] is False
@@ -561,7 +561,7 @@ def test_staff_can_reset_a_lost_second_factor(client):
 
 def test_staff_without_2fa_only_reach_the_setup_when_required(client, settings):
     settings.TWO_FACTOR_REQUIRED_FOR_STAFF = True
-    staff = _user(staff=True)
+    staff = _user(staff=True, perms=("module_admin_staff_enabled",))
     access = _login(client, staff).data["access"]
     assert AccessToken(access)["two_factor_setup_required"] is True
     _bearer(client, access)
@@ -788,7 +788,7 @@ def test_drf_tokens_expire_and_login_issues_a_new_one(client, settings):
     from rest_framework.authtoken.models import Token
 
     settings.DRF_TOKEN_MAX_AGE_DAYS = 30
-    user = _user(staff=True)
+    user = _user(staff=True, perms=("module_admin_staff_enabled",))
     old = client.post("/auth/login/", {"username": user.email, "password": PASSWORD}).data["token"]
     Token.objects.using(f.DB).filter(key=old).update(created=timezone.now() - timedelta(days=31))
 

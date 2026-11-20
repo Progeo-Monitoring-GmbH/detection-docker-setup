@@ -45,24 +45,26 @@ def superuser(api_client):
 
 # -- staff only --------------------------------------------------------------
 
+# The users table answers non-staff with 400 (_require_user_admin - mini
+# admins pass there), password and delete with the 403 of staff_permissions_denied.
 @pytest.mark.parametrize(
-    "method, url",
+    "method, url, status",
     [
-        ("get", BASE),
-        ("post", BASE),
-        ("post", BASE + "{pk}/update/"),
-        ("post", BASE + "{pk}/password/"),
-        ("post", BASE + "{pk}/delete/"),
+        ("get", BASE, 400),
+        ("post", BASE, 400),
+        ("post", BASE + "{pk}/update/", 400),
+        ("post", BASE + "{pk}/password/", 403),
+        ("post", BASE + "{pk}/delete/", 403),
     ],
 )
-def test_non_staff_is_refused_everywhere(api_client, method, url):
+def test_non_staff_is_refused_everywhere(api_client, method, url, status):
     target = f.make_user()
     regular = f.make_user(perms=("module_admin_enabled",))
     api_client.force_authenticate(user=regular)
 
     response = getattr(api_client, method)(url.format(pk=target.pk), {"username": "x", "email": "a@b.de"}, format="json")
 
-    assert response.status_code == 400
+    assert response.status_code == status
     assert response.json() == {"reason": "Staff access required", "success": False}
     assert User.objects.using(f.DB).filter(pk=target.pk).exists()
     assert not User.objects.using(f.DB).filter(username="x").exists()

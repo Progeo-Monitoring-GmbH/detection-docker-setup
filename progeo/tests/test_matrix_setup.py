@@ -166,7 +166,7 @@ def test_messaging_statistics_count_chat_accounts_and_used_links(api_client):
 
     api_client.force_authenticate(user=f.make_user())
     assert api_client.get("/v1/activity/messaging/").status_code == 403
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_insights",)))
     body = api_client.get("/v1/activity/messaging/").json()
 
     links = body["login_links"]

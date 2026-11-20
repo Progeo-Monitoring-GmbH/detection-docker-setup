@@ -8,7 +8,7 @@ AREA_MODULES = {
     "access": """
         access_and_login_links migration_invites access_scoping_api account_middleware admin_lists authentication_order
         button_permissions location_access location_invites location_min_and_mini_admin location_selection module_permissions_as_user monitoring_auth oidc permission_version rechte_api
-        staff_admin_api staff_impersonation user_management_security user_profile user_profile_actions
+        staff_admin_api staff_impersonation user_management_security user_profile user_profile_actions login_throttle
     """,
     "alarms": """
         admin_overview_and_test_notification alarm_episodes alarm_evaluation_and_check alarm_thresholds_unit
@@ -23,7 +23,7 @@ AREA_MODULES = {
         legacy_file_migration merge_duplicate_locations project_db_move project_dbs pytest_database_setup pytest_selection
         relink_locations_command router_regressions split_views sync_default_skipping wipe_project_databases
     """,
-    "demo": "demo_account_areas demo_view",
+    "demo": "demo_account_areas demo_view e2e_accounts",
     "devices": """
         controller_qrcodes controller_wifi device_commands device_legacy_query
         device_lorawan device_overview device_provisioning device_statistics_api

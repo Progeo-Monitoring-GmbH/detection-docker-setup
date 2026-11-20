@@ -7,6 +7,7 @@ from django.urls import re_path
 from progeo.consumer import (
     CadImportJobConsumer,
     CommandConsumer,
+    LocationStatusConsumer,
     LogStreamConsumer,
     QaScoreboardConsumer,
 )
@@ -19,6 +20,9 @@ ws_pattern = [
     re_path(r'^ws/cad_import/(?P<job_id>[0-9a-f]{32})/$', track_websocket("cad_import", CadImportJobConsumer.as_asgi())),
     # The readiness scoreboard's point changes (staff).
     re_path(r'^ws/qa/$', track_websocket("qa", QaScoreboardConsumer.as_asgi())),
+    # New data (alarm=1 samples) of one location for its open status pages.
+    re_path(r'^ws/location/(?P<location_id>\d+)/status/$',
+            track_websocket("location_status", LocationStatusConsumer.as_asgi())),
 ]
 
 application = ProtocolTypeRouter({

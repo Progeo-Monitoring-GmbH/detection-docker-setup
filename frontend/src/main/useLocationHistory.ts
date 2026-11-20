@@ -23,7 +23,9 @@ type LocationHistory = {
  * The location's whole history in a fine base step (`spec`, see
  * historyWindow), loaded once: every window and step of the plan, and the
  * Zeitreihe, are cut out of it in the browser (heatmapData.ts) - nothing is
- * refetched. Nothing is loaded while `spec` is null.
+ * refetched, except when `revision` goes up (new data,
+ * useLocationLiveRevision): then it is loaded again, the old one shown until
+ * the new one is there. Nothing is loaded while `spec` is null.
  */
 export const useLocationHistory = (
   locationId: number,
@@ -31,6 +33,7 @@ export const useLocationHistory = (
   spec: HeatmapWindow | null,
   /** The value per sensor (?profile=) - |WP - EP| by default. */
   profile: HeatProfile = 'diff',
+  revision = 0,
 ): LocationHistory => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -47,15 +50,16 @@ export const useLocationHistory = (
       return;
     }
     const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${heatmapQuery(spec)}${heatProfileQuery(profile)}`;
-    if (requested.current === url) {
+    const request = `${url}#${revision}`;
+    if (requested.current === request) {
       return;
     }
-    requested.current = url;
+    requested.current = request;
     void axiosConfig.perform_get(
       auth,
       url,
       (response) => {
-        if (requested.current !== url) {
+        if (requested.current !== request) {
           return;
         }
         setState({
@@ -66,7 +70,7 @@ export const useLocationHistory = (
         });
       },
       (error) => {
-        if (requested.current !== url) {
+        if (requested.current !== request) {
           return;
         }
         const denied = error?.response?.status === 403;
@@ -76,7 +80,7 @@ export const useLocationHistory = (
         setState((prev) => ({ ...prev, loading: false, denied }));
       },
     );
-  }, [auth, demo, enqueueSnackbar, locationId, profile, spec]);
+  }, [auth, demo, enqueueSnackbar, locationId, profile, revision, spec]);
 
   return state;
 };

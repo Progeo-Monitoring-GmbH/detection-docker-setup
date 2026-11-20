@@ -150,7 +150,7 @@ def test_the_alarm_list_carries_the_rain_of_its_locations(api_client, location):
         location=location, start=NOW - 40 * 24 * HOUR, end=NOW - 40 * 24 * HOUR + HOUR, amount=1.0
     )
     ProgeoRainEvent.objects.using(f.DB).create(location=other, start=NOW - 5 * HOUR, end=NOW - 4 * HOUR, amount=1.0)
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_alarms_enabled",)))
 
     body = api_client.get(f"/v1/alarm/?location={location.pk}&days=14").json()
 
@@ -166,7 +166,7 @@ def test_a_location_without_alarms_shows_its_rain(api_client, location):
     event = ProgeoRainEvent.objects.using(f.DB).create(
         location=location, start=NOW - 5 * HOUR, end=NOW - 3 * HOUR, amount=2.5
     )
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_alarms_enabled",)))
 
     body = api_client.get(f"/v1/alarm/?location={location.pk}&days=14").json()
 

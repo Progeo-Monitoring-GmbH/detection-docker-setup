@@ -319,8 +319,8 @@ def test_staff_endpoints_need_staff(client):
     user = f.make_user()
     client.force_authenticate(user=user)
 
-    assert client.get("/api/auth-support/staff/access-requests/").status_code == 400
-    assert client.get("/api/auth-support/staff/messaging/").status_code == 400
+    assert client.get("/api/auth-support/staff/access-requests/").status_code == 403
+    assert client.get("/api/auth-support/staff/messaging/").status_code == 403
 
     client.force_authenticate(user=f.make_user(staff=True))
     access_requests = client.get("/api/auth-support/staff/access-requests/")

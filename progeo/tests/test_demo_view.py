@@ -53,7 +53,7 @@ def _fresh_throttles():
 
 # A short history keeps the tests fast; every demo leak (at most 12 days ago)
 # lies within it.
-HISTORY = ("--days", "30")
+HISTORY = ("--days", "14")
 
 
 @pytest.fixture

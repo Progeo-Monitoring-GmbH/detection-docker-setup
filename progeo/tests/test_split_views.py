@@ -69,7 +69,7 @@ def world(project_dbs):  # noqa: F811 - the imported session fixture
 
 @pytest.fixture
 def staff_client(api_client):
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_alarms_enabled",)))
     return api_client
 
 
