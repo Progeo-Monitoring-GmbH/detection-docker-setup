@@ -423,7 +423,7 @@ const LocationStatusView = ({
 
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
   // The range of both views - the plan's frames and the Zeitreihe; or
-  // "Letzte Messung" (LATEST_RANGE): only every device's newest measurement.
+  // "Letzte Messung" (LATEST_RANGE): the newest 10 measurements.
   const [selectedRange, setSelectedRange] = useState<StatusRange>('7d');
   // Step of the plan's frames, picked in its dropdown; null: the range's default.
   const [pickedStep, setPickedStep] = useState<number | null>(null);
@@ -578,7 +578,7 @@ const LocationStatusView = ({
     [isLorawan, measurementRange, measurementRangeFailed, openedAt],
   );
   // The whole history is only loaded for a period - "Letzte Messung" needs
-  // one small frame (?latest=1) and reloads just that on new data.
+  // ten small frames (?latest=1) and reloads just those on new data.
   const periodSpec = isLatest ? null : historySpec;
   const {
     history,
@@ -685,7 +685,7 @@ const LocationStatusView = ({
         : profileHistoryShown,
     [isLatest, profileHistoryShown, now, rangeDays, heatmapStep],
   );
-  // "Letzte Messung": the one frame - the tables classify its values.
+  // "Letzte Messung": its ten frames - the same the plan and its table show.
   const zeitreihe = useMemo(
     () =>
       isLatest

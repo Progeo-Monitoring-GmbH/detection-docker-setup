@@ -280,24 +280,46 @@ def test_group_names_keep_the_id_spaces_apart():
 
 # ---------------------------------------------------------------------------- "Letzte Messung" (?latest=1)
 
-def test_latest_is_every_devices_newest_measurement_as_one_frame(api_client, location, other_location, account):
-    """The sensors can be split over devices (1-2 / 3-4): each device's newest
-    measurement, merged - older ones and other locations left out."""
-    first = f.make_device(location, first_sensor_order=1)
-    second = f.make_device(location, first_sensor_order=3)
-    f.make_measurement(first, pairs=[10, 11])  # older - replaced
-    f.make_measurement(first, pairs=[20, 21])
-    f.make_measurement(second, pairs=[30, 31])
+def test_latest_is_the_newest_ten_measurements(api_client, location, other_location, account):
+    """One frame per measurement, oldest -> newest - older ones and other
+    locations left out."""
+    from progeo.v1.viewsets.locations_viewset import LATEST_MEASUREMENTS
+
+    device = f.make_device(location)
+    for value in range(12):
+        f.make_measurement(device, pairs=[value, 0])
     f.make_measurement(f.make_device(other_location), pairs=[99, 99])
     api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS, accounts=[account]))
 
     body = api_client.get(f"/v1/location/{location.pk}/heatmap/?latest=1").json()
 
+    assert LATEST_MEASUREMENTS == 10
     assert body["latest"] is True
-    assert body["data"] == {"1": [20], "2": [21], "3": [30], "4": [31]}
-    assert len(body["timestamps"]) == 1 and body["timestamps"][0] is not None
+    assert body["data"]["1"] == list(range(2, 12))
+    assert len(body["timestamps"]) == 10 and None not in body["timestamps"]
+    assert body["total"] == 10
+
+
+def test_latest_frames_keep_the_other_devices_values(api_client, location, account):
+    """The sensors can be split over devices (1-2 / 3-4): every frame is the
+    state at its measurement - the other device's sensors keep their value,
+    also one from before the ten."""
+    from progeo.v1.viewsets.locations_viewset import LATEST_MEASUREMENTS
+
+    first = f.make_device(location, first_sensor_order=1)
+    second = f.make_device(location, first_sensor_order=3)
+    f.make_measurement(second, pairs=[30, 31])  # before the window
+    for value in range(LATEST_MEASUREMENTS - 1):
+        f.make_measurement(first, pairs=[value, 0])
+    f.make_measurement(second, pairs=[40, 41])
+    api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.pk}/heatmap/?latest=1").json()
+
+    assert body["data"]["1"] == list(range(9)) + [8]
+    assert body["data"]["3"] == [30] * 9 + [40]
+    assert body["data"]["4"] == [31] * 9 + [41]
     assert set(body["measured"]) == {"1", "2", "3", "4"}
-    assert body["total"] == 2
 
 
 def test_latest_without_measurements_is_empty(api_client, location, account):
@@ -317,13 +339,13 @@ def test_an_escalation_keeps_the_latest_range():
 
 # ---------------------------------------------------------------------------- the alarm behind "Objektstatus"
 
-def test_a_reported_alarm_is_evaluated_before_the_page_reloads(
+def test_a_live_sample_is_evaluated_before_the_page_reloads(
     api_client, location, settings, monkeypatch, django_capture_on_commit_callbacks,
 ):
-    """Without instant evaluation the hourly run created the alarm - the page
-    the socket reloaded still said "Objektstatus OK". alarm=1 is evaluated
-    right away now: the clusters (Objektstatus, Verdachtsstellen) the reload
-    fetches have it."""
+    """Without instant evaluation the hourly run raised and ended alarms - the
+    page the socket reloaded still said "Objektstatus OK" (or still showed
+    the alarm). Every live sample is evaluated right away now: the clusters
+    (Objektstatus, Verdachtsstellen) the reload fetches are up to date."""
     from progeo.helper import notifications
     from progeo.v1.models import ProgeoAlarm
 
@@ -342,39 +364,56 @@ def test_a_reported_alarm_is_evaluated_before_the_page_reloads(
         return response.json()["clusters"]
 
     def alarms():
-        return ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).count()
-
-    # Over the threshold (100) but not reported: the hourly run's job, as before.
-    _send_sample(api_client, location, device, token, samples="0,500", alarm=0)
-    assert alarms() == 0
+        return list(ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device))
 
     async def run():
         socket = await _logged_in(await _open(_status_socket(staff, location.pk)))
 
-        def sample():
+        def sample(**extra):
             with django_capture_on_commit_callbacks(execute=True):
-                _send_sample(api_client, location, device, token, samples="0,500", alarm=1)
+                _send_sample(api_client, location, device, token, **extra)
 
-        await sync_to_async(sample)()
+        # Over the threshold (100): raised before the page hears of it.
+        await sync_to_async(sample)(samples="0,500", alarm=1)
         assert (await socket.receive_json_from(timeout=3))["alarm"] is True
-        # What the page fetches on the message.
         assert [cluster["sensor_id"] for cluster in await sync_to_async(clusters)()] == [1]
+        # Back to normal: ended before the page hears of it.
+        await sync_to_async(sample)(samples="0,10", alarm=0)
+        assert (await socket.receive_json_from(timeout=3))["alarm"] is False
+        assert [cluster["state"] for cluster in await sync_to_async(clusters)()] == ["geloest"]
         await socket.disconnect()
 
     async_to_sync(run)()
-    assert alarms() == 1 and len(notified) == 1
-
-    # Reported again: the same alarm is prolonged, not a second one.
-    _send_sample(api_client, location, device, token, samples="0,600", alarm=1)
-    assert alarms() == 1 and len(notified) == 1
+    [alarm] = alarms()
+    assert alarm.normalized_at is not None and len(notified) == 1
 
 
-def test_our_thresholds_decide_not_the_controllers_flag(api_client, location, settings):
+def test_a_repeated_alarm_is_prolonged(api_client, location, settings, monkeypatch):
+    from progeo.helper import notifications
     from progeo.v1.models import ProgeoAlarm
 
     settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = False
+    notified = []
+    monkeypatch.setattr(notifications, "queue_alarm_notification", lambda alarm, *args: notified.append(alarm))
     device, token = _provisioned_device(api_client, location)
 
-    _send_sample(api_client, location, device, token, samples="0,50", alarm=1)  # below 100
+    _send_sample(api_client, location, device, token, samples="0,500", alarm=1)
+    _send_sample(api_client, location, device, token, samples="0,600", alarm=1)
 
-    assert not ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).exists()
+    assert ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).count() == 1
+    assert len(notified) == 1
+
+
+def test_our_thresholds_decide_not_the_controllers_flag(api_client, location, settings, monkeypatch):
+    from progeo.helper import notifications
+    from progeo.v1.models import ProgeoAlarm
+
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = False
+    monkeypatch.setattr(notifications, "queue_alarm_notification", lambda *args: None)
+    device, token = _provisioned_device(api_client, location)
+    alarms = ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device)
+
+    _send_sample(api_client, location, device, token, samples="0,50", alarm=1)  # below 100
+    assert not alarms.exists()
+    _send_sample(api_client, location, device, token, samples="0,500", alarm=0)  # over 100
+    assert alarms.count() == 1

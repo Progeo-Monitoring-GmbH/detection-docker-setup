@@ -304,6 +304,9 @@ def _window_days(request):
 # without measurements aren't sent, so the payload follows the measurements.
 HEATMAP_MAX_FRAMES = 20000
 HEATMAP_MIN_STEP_SECONDS = 60
+# ?latest=1 (the status page's "Letzte Messung"): the location's newest N
+# measurements, one frame each.
+LATEST_MEASUREMENTS = 10
 
 
 def _days_window(days, until):
@@ -2821,8 +2824,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         else:
             step = None
 
-        # Or ?latest=1: the newest measurement of every device, as one frame
-        # (the status page's "Letzte Messung") - no window, no step.
+        # Or ?latest=1: the newest LATEST_MEASUREMENTS measurements, one frame
+        # each (the status page's "Letzte Messung") - no window, no step.
         latest = request.query_params.get("latest") in ("1", "true")
         if latest:
             time_from = time_to = days = step = None
@@ -2932,27 +2935,41 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     @staticmethod
     def _latest_heatmap_response(location, account, db_name, queryset, starts, profile, sensor_points,
                                  plan_sensors, lageplan, limit):
-        """?latest=1: every device's newest measurement (pk is chronological),
-        merged into one frame - a location's sensors can be split over
-        devices (dm 1-300 / 301-558), each sends its own samples. The frame's
-        time is the newest of them; `measured` names each sensor's own."""
-        # One index lookup per device - not a scan of the location's history.
-        device_ids = ProgeoDevice.objects.using(db_name).filter(location=location).order_by("pk")
-        newest = [
-            measurement
-            for device_id in device_ids.values_list("pk", flat=True)
-            if (measurement := queryset.filter(device_id=device_id).order_by("-pk").first()) is not None
-        ]
-        merged, measured = {}, {}
-        for measurement in sorted(newest, key=lambda row: row.pk):
+        """?latest=1: the location's newest LATEST_MEASUREMENTS measurements
+        (pk is chronological), one frame each, oldest -> newest - the plan
+        shows the newest, the Zeitreihe and the sensor table all of them.
+        A location's sensors can be split over devices (dm 1-300 / 301-558),
+        each sends its own samples: every frame is the state at its
+        measurement - a sensor keeps its device's previous value, from before
+        the window too (so the first frames are complete). `measured` names
+        when each sensor's newest value was measured."""
+        newest = list(queryset.order_by("-pk")[:LATEST_MEASUREMENTS])
+        newest.reverse()
+        rows = []
+        if newest:
+            # The value each device had before the window - one index lookup
+            # per device, not a scan of the location's history.
+            device_ids = ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", flat=True)
+            before = [
+                measurement
+                for device_id in device_ids
+                if (measurement := queryset.filter(device_id=device_id, pk__lt=newest[0].pk)
+                    .order_by("-pk").first()) is not None
+            ]
+            rows = sorted(before, key=lambda row: row.pk) + newest
+        state, measured, timestamps, frames = {}, {}, [], []
+        for index, measurement in enumerate(rows):
             ts = measurement.last_fetched.timestamp() if measurement.last_fetched else None
             for sensor, value in _sensor_values(measurement, starts, profile).items():
-                merged[sensor] = value
+                state[sensor] = value
                 measured[sensor] = ts
+            if index >= len(rows) - len(newest):
+                timestamps.append(ts)
+                frames.append(dict(state))
         if plan_sensors is not None:
-            merged = {sensor: value for sensor, value in merged.items() if sensor in plan_sensors}
+            frames = [{sensor: value for sensor, value in frame.items() if sensor in plan_sensors} for frame in frames]
             measured = {sensor: ts for sensor, ts in measured.items() if sensor in plan_sensors}
-        times = [ts for ts in measured.values() if ts is not None]
+        data = _aligned_series(frames)
         return RequestSuccess({
             "location": _location_data(location, account),
             "limit": limit,
@@ -2963,9 +2980,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "profile": profile,
             "latest": True,
             "total": len(newest),
-            "data": {sensor: [merged[sensor]] for sensor in sorted(merged)},
-            "timestamps": [max(times)] if merged and times else ([None] if merged else []),
-            # Per sensor: when its device measured it (seconds).
+            "data": data,
+            "timestamps": timestamps,
+            # Per sensor: when its newest value was measured (seconds).
             "measured": measured,
             "sensor_points": sensor_points,
             "lageplan": lageplan.pk if lageplan else None,

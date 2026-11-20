@@ -26,7 +26,7 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper import device_commands, firmware_update
-from progeo.helper.alarm_evaluation import evaluate_measurement_instantly, evaluate_reported_alarm
+from progeo.helper.alarm_evaluation import evaluate_live_sample, evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
@@ -375,9 +375,11 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         by device_hash (default: the project_id); chip_id / ip are kept on
         the device, event / heap / mac / ... in raw_data. pk is the project_id
         (only there to filter the logs). Every sample reloads the open status
-        pages of the device's location right away (helper/location_live.py);
-        alarm=1 / alarm=0 (the controller saw an alarm or not) is kept in
-        raw_data and passed on - the page's toast tells it.
+        pages of the device's location right away (helper/location_live.py),
+        evaluated first (evaluate_live_sample: the alarm they reload is
+        already raised or ended); alarm=1 / alarm=0 (the controller saw an
+        alarm or not) is kept in raw_data and passed on - the page's toast
+        tells it.
         """
         #ilog("DeviceViewSet: catch_live_data called | request.data:", request.data, "pk=", pk, tag="[DEBUG]")
         payload = request.data
@@ -433,10 +435,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
                 **device_info
             ).update(**device_info)
 
-        if alarm:
-            # Before the live update: the status page it reloads must already
-            # see the alarm (Objektstatus, Verdachtsstellen).
-            evaluate_reported_alarm(measure, measure._state.db)
+        # Before the live update: the status page it reloads must already see
+        # the alarm raised or ended (Objektstatus, Verdachtsstellen).
+        evaluate_live_sample(measure, measure._state.db)
         notify_location_status(measure, alarm=alarm)
 
         return RequestSuccess({

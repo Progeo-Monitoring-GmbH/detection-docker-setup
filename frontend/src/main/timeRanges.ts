@@ -18,8 +18,9 @@ export const TIME_RANGE_DAYS: Record<TimeRange, number> = {
   '3y': 1095,
 };
 
-/** The status page's "Letzte Messung": only the newest measurement (of every
- * device) - no period; the plan shows it, the Zeitreihe tables classify it. */
+/** The status page's "Letzte Messung": the location's newest 10
+ * measurements - no period; the plan shows the newest, the Zeitreihe and the
+ * sensor table all ten. */
 export const LATEST_RANGE = 'latest' as const;
 /** The ranges of the status page: a period, or the latest measurement. */
 export type StatusRange = TimeRange | typeof LATEST_RANGE;

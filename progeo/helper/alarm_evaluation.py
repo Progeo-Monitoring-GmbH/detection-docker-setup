@@ -330,16 +330,17 @@ def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
         return False
 
 
-def evaluate_reported_alarm(measurement, db: str = "default") -> bool:
-    """A sample the controller itself reported as an alarm (alarm=1,
-    DeviceViewSet.catch_live_data): evaluated right away even without
+def evaluate_live_sample(measurement, db: str = "default") -> bool:
+    """A controller's live sample (DeviceViewSet.catch_live_data, alarm=1 or
+    alarm=0 alike): evaluated right away even without
     PROGEO_CONFIG_EVALUATE_INSTANTLY - otherwise its alarm would only appear
-    with the next hourly evaluate_measurements run, and the status page the
-    live update reloads would still say "OK". With instant evaluation on, the
-    save already evaluated it (nothing to do). Our thresholds decide, not the
-    controller's flag. The hourly run evaluating it again prolongs the same
-    alarm (create_progeo_alarm_safe) - no second one. Never raises; returns
-    True if an alarm was triggered or prolonged."""
+    (or end) with the next hourly evaluate_measurements run, and the status
+    page the live update reloads would still say "OK" (or still the alarm).
+    With instant evaluation on, the save already evaluated it (nothing to
+    do). Our thresholds decide, not the controller's flag. The hourly run
+    evaluating it again prolongs the same alarm (create_progeo_alarm_safe) -
+    no second one - and finds a normalized one already normalized. Never
+    raises; returns True if an alarm was triggered or prolonged."""
     from django.conf import settings
 
     from progeo.helper.basics import elog
@@ -354,7 +355,7 @@ def evaluate_reported_alarm(measurement, db: str = "default") -> bool:
             return False
         return _evaluate_measurement(measurement, location, db)
     except Exception as exc:  # noqa: BLE001 - must never break storing the measurement
-        elog(f"[evaluate_reported_alarm] measurement={measurement.pk} db={db} failed: {exc}")
+        elog(f"[evaluate_live_sample] measurement={measurement.pk} db={db} failed: {exc}")
         return False
 
 

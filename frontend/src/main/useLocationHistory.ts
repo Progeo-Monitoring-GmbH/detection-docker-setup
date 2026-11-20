@@ -30,8 +30,8 @@ type LocationHistory = {
 export const useLocationHistory = (
   locationId: number,
   demo: boolean,
-  /** The window - or 'latest': every device's newest measurement as one
-   * frame (?latest=1, the status page's "Letzte Messung"). */
+  /** The window - or 'latest': the newest 10 measurements, one frame each
+   * (?latest=1, the status page's "Letzte Messung"). */
   spec: HeatmapWindow | 'latest' | null,
   /** The value per sensor (?profile=) - |WP - EP| by default. */
   profile: HeatProfile = 'diff',
