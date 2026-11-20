@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import { repeatedTestId } from '../testIds';
 import {
   LocationFlagIcons,
@@ -177,9 +178,10 @@ const StaffNotificationCases = () => {
     );
   };
 
-  const columns = useMemo<TableColumn<NotificationCase>[]>(
+  const allColumns = useMemo<TableColumn<NotificationCase>[]>(
     () => [
       {
+        id: 'kind',
         name: t('staff_notifications_col_kind'),
         width: '100px',
         cell: (row) => (
@@ -189,6 +191,7 @@ const StaffNotificationCases = () => {
         ),
       },
       {
+        id: 'project',
         name: t('staff_notifications_col_project'),
         selector: (row) => `${row.project_id ?? row.location_id} ${row.location_name}`,
         sortable: true,
@@ -203,6 +206,7 @@ const StaffNotificationCases = () => {
         ),
       },
       {
+        id: 'phase',
         name: t('staff_notifications_col_phase'),
         width: '190px',
         cell: (row) => (
@@ -214,6 +218,7 @@ const StaffNotificationCases = () => {
         ),
       },
       {
+        id: 'stage',
         name: t('staff_notifications_col_stage'),
         width: '80px',
         selector: (row) => row.stage,
@@ -221,11 +226,13 @@ const StaffNotificationCases = () => {
         format: (row) => `${row.stage}/${row.stages}`,
       },
       {
+        id: 'opened',
         name: t('staff_notifications_col_opened'),
         width: '140px',
         selector: (row) => row.opened_at || '',
       },
       {
+        id: 'next',
         name: t('staff_notifications_col_next'),
         width: '140px',
         selector: (row) => (row.state === 'open' ? row.next_contact_at || '-' : row.resolved_at || '-'),
@@ -235,6 +242,8 @@ const StaffNotificationCases = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [t, flagsOf],
   );
+  // Phones: kind, project in the row, the rest in the row's expander.
+  const { columns, expandable } = useMobileColumns(allColumns, ['kind', 'project']);
 
   const offline = summary?.counts.offline;
   const alarm = summary?.counts.alarm;
@@ -293,7 +302,7 @@ const StaffNotificationCases = () => {
                 </ul>
               </div>
             )}
-            <Table size="sm" bordered className="mb-3 small staff-notifications-summary" data-testid="staff-notifications-summary">
+            <Table size="sm" bordered responsive className="mb-3 small staff-notifications-summary" data-testid="staff-notifications-summary">
               <thead>
                 <tr>
                   <th />
@@ -354,6 +363,7 @@ const StaffNotificationCases = () => {
         <DataTable
           columns={columns}
           data={cases}
+          {...expandable}
           pagination
           paginationPerPage={15}
           progressPending={loading}

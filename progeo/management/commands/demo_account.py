@@ -22,6 +22,7 @@ from progeo.helper.demo import (
     demo_email,
 )
 from progeo.helper import e2e
+from progeo.helper.project_db_signals import _delete_in_project_db
 from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import (
@@ -701,6 +702,12 @@ class Command(BaseCommand):
             account.db_name, account.name = db, DEMO_ACCOUNT_NAME
             account.save(using="default")
         if not _same_database(db):
+            # The copy of a demo account deleted in "default" (another pk):
+            # it holds the raw_hash - away with it and its locations.
+            for stale in Account.objects.using(db).filter(raw_hash=DEMO_ACCOUNT_HASH).exclude(pk=account.pk):
+                self._remove_locations(stale, db)
+                _delete_in_project_db(Account, [stale.pk], db)
+                self.stdout.write(f"Removed the left-over copy of a deleted demo account (#{stale.pk}) from '{db}'.")
             Account.objects.using(db).update_or_create(
                 pk=account.pk, defaults={"raw_hash": DEMO_ACCOUNT_HASH, "name": DEMO_ACCOUNT_NAME, "db_name": db}
             )
@@ -798,6 +805,12 @@ class Command(BaseCommand):
                 targets = [locations[role.split(":", 1)[1]]]
 
             if not _same_database(db):
+                # The copy of a person deleted in "default" and created again
+                # (another pk) holds the username.
+                _delete_in_project_db(
+                    User, list(User.objects.using(db).filter(username=username).exclude(pk=person.pk)
+                               .values_list("pk", flat=True)), db,
+                )
                 User.objects.using(db).update_or_create(
                     pk=person.pk,
                     defaults={"username": username, "email": person.email, "first_name": first,

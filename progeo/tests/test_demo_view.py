@@ -871,3 +871,40 @@ def test_merge_account_needs_a_unique_name_and_not_the_demo_itself(demo):
         call_command("demo_account", "--skip-checks", "--merge-account", str(demo.account_id), *HISTORY)
     with pytest.raises(CommandError, match="No account"):
         call_command("demo_account", "--skip-checks", "--merge-account", "nope", *HISTORY)
+
+
+# ------------------------------------------------------------------ re-run after deleting
+# The demo database keeps copies of the account and the demo people (same
+# pk as in "default"): deleted in "default" and created again under new pks,
+# the old copies were in the way (unique raw_hash / username).
+
+def _delete_demo_users():
+    from django.contrib.auth.models import User
+    from django.db.models import Q
+
+    User.objects.using("default").filter(Q(username="demo") | Q(username__startswith="demo.")).delete()
+
+
+def test_a_rerun_after_deleting_the_demo_users(api_client, demo):
+    _delete_demo_users()
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    _login(api_client, LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE, disabled=False))
+
+
+def test_a_rerun_after_deleting_the_demo_account(api_client, demo):
+    from progeo.v1.models import Account
+
+    old = demo.account_id
+    _delete_demo_users()
+    Account.objects.using("default").filter(pk=old).delete()  # its copy in the demo database stays
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    copies = Account.objects.using(settings.DEMO_DATABASE).filter(raw_hash="demo-account")
+    new = Account.objects.using("default").get(raw_hash="demo-account").pk
+    assert list(copies.values_list("pk", flat=True)) == [new] and new != old
+    # The old copy's locations went with it.
+    assert not ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account_id=old).exists()
+    _login(api_client, LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE, disabled=False))

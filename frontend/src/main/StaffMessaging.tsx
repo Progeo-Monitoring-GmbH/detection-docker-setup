@@ -261,7 +261,7 @@ const StaffMessaging = () => {
           </Button>
         </div>
 
-        <div className="d-flex flex-wrap gap-2 mb-3" data-testid="staff-messaging-modes">
+        <div className="d-flex flex-wrap gap-2 mb-3 staff-messaging-modes" data-testid="staff-messaging-modes">
           {!state.mailing_enabled && (
             <Badge bg="secondary" data-testid="staff-messaging-mailing-disabled">
               {t('staff_messaging_mailing_disabled')}
@@ -367,7 +367,7 @@ const StaffMessaging = () => {
             {t('staff_messaging_no_suppressions')}
           </p>
         ) : (
-          <Table size="sm" hover className="small" data-testid="staff-messaging-suppressions">
+          <Table size="sm" hover responsive className="small" data-testid="staff-messaging-suppressions">
             <thead>
               <tr>
                 <th>{t('staff_messaging_col_address')}</th>

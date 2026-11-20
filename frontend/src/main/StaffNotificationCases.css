@@ -28,6 +28,7 @@
 
 .staff-notifications-legend {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   color: var(--bs-secondary-color);
 }

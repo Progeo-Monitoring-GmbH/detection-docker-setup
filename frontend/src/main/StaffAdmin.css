@@ -222,6 +222,13 @@
   max-width: 560px;
 }
 
+/* A long mode text ("Live: Mails gehen ...") wraps on a phone instead of
+   widening the page (.badge is nowrap). */
+.staff-messaging-modes .badge {
+  white-space: normal;
+  text-align: start;
+}
+
 /* "Berechtigungen übernehmen von": beside the permissions' label. */
 .form-select.staff-permission-copy {
   width: auto;

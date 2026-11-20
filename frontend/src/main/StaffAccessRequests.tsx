@@ -22,6 +22,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import { repeatedTestId } from '../testIds';
 import BadgePicker from '../components/ui/kit/BadgePicker';
 
@@ -265,9 +266,10 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
     [requests],
   );
 
-  const columns = useMemo<TableColumn<AccessRequest>[]>(
+  const allColumns = useMemo<TableColumn<AccessRequest>[]>(
     () => [
       {
+        id: 'status',
         name: t('staff_requests_col_status'),
         width: '120px',
         cell: (row) => (
@@ -277,6 +279,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         ),
       },
       {
+        id: 'name',
         name: t('staff_requests_col_name'),
         selector: (row) => `${row.last_name}, ${row.first_name}`,
         sortable: true,
@@ -291,6 +294,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         ),
       },
       {
+        id: 'contact',
         name: t('staff_requests_col_contact'),
         cell: (row) => (
           <span className="small">
@@ -305,6 +309,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         ),
       },
       {
+        id: 'project',
         name: t('staff_requests_col_project'),
         cell: (row) => (
           <span className="small" title={row.message}>
@@ -323,6 +328,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         ),
       },
       {
+        id: 'created',
         name: t('staff_requests_col_created'),
         width: '150px',
         selector: (row) => row.created || '',
@@ -342,6 +348,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         ),
       },
       {
+        id: 'actions',
         name: t('staff_col_actions'),
         width: '110px',
         cell: (row) =>
@@ -375,6 +382,8 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [t],
   );
+  // Phones: name, actions in the row, the rest in the row's expander.
+  const { columns, expandable } = useMobileColumns(allColumns, ['name', 'actions']);
 
   return (
     <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-requests">
@@ -411,6 +420,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         <DataTable
           columns={columns}
           data={sorted}
+          {...expandable}
           pagination
           paginationPerPage={10}
           progressPending={loading}

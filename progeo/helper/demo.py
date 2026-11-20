@@ -32,6 +32,7 @@ DEMO_USER_PERMISSIONS = (
     "module_locations_edit",
     "module_locations_delete",
     "module_measurements_enabled",
+    "module_alarms_enabled",
     "module_notifications_enabled",
     "module_notifications_edit",
     "module_notifications_add",
