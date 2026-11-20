@@ -440,6 +440,55 @@ const measurements = Array.from({ length: 48 }, (_, index) => ({
   ),
 }));
 
+/** A suspected leak at sensor 6 of location #1, not acknowledged yet. */
+const suspicionClusters = [
+  {
+    id: 'sensor-6',
+    sensor_id: 6,
+    device_ids: [1],
+    device_label: 'smartex dm Keller',
+    device_type: 'smartbox',
+    alarm_ids: [1, 4],
+    state: 'neu',
+    active: true,
+    severity: 'alarm',
+    max_value: 147,
+    since: iso(NOW - 30 * HOUR),
+    resolved_at: null,
+    ack_by: null,
+    ack_at: null,
+    pending_ack_alarm_ids: [1, 4],
+    alarms: [
+      { id: 1, triggered_at: iso(NOW - 30 * HOUR), value: 132, state: 'neu' },
+      { id: 4, triggered_at: iso(NOW - 9 * HOUR), value: 147, state: 'neu' },
+    ],
+  },
+];
+
+/** The same leak as a computed point (mx-PEEL). */
+const computedPoints = [
+  {
+    id: 'point-1',
+    x: 0.44,
+    y: 0.5,
+    lageplan: null,
+    strength: 1,
+    sensor_ids: [6, 7],
+    state: 'neu',
+    active: true,
+    severity: 'alarm',
+    max_value: 147,
+    max_exceedance: 47,
+    first_seen: iso(NOW - 30 * HOUR),
+    last_seen: iso(NOW - HOUR),
+    readings: 18,
+    alarm_ids: [1, 4],
+    pending_ack_alarm_ids: [1, 4],
+    x_m: null,
+    y_m: null,
+  },
+];
+
 const notificationCase = {
   id: 1,
   kind: 'offline',
@@ -551,6 +600,10 @@ export const SCENARIOS = {
   'breaker-tripped': { breaker: { tripped: true, tripped_at: iso(NOW - 2 * HOUR), reason: 'sms_per_hour' } },
   /** Location #1 as a LoRaWAN project (climate panels instead of sensors). */
   lorawan: { projectType: 6 },
+  /** Location #1 as an mx-PEEL project (computed suspicion points). */
+  'mx-peel': { projectType: 7 },
+  /** The controller has a command waiting to be fetched (cancel dialog). */
+  'pending-command': { pendingCommand: true },
 };
 
 /** The answer to an API request: a JSON body, or undefined (unmocked - {}). */
@@ -728,6 +781,22 @@ export const mockAnswer = (
           error: 'Gerät hat nicht geantwortet',
           has_result: false,
         },
+        ...(variant.pendingCommand
+          ? [
+              {
+                id: 3,
+                command: 'restart',
+                status: 'pending',
+                created: iso(NOW - 0.1 * HOUR),
+                sent_at: null,
+                finished_at: null,
+                created_by: 'staff.weber',
+                summary: {},
+                error: null,
+                has_result: false,
+              },
+            ]
+          : []),
       ],
       available: [
         'identify',
@@ -789,17 +858,33 @@ export const mockAnswer = (
           flip_x: false,
           flip_y: false,
           meters_per_pixel: 0.05,
-          heat_limitations: [],
+          heat_limitations: [
+            {
+              id: 'hl-1',
+              name: 'Dachfläche Nord',
+              points: [
+                [0.08, 0.12],
+                [0.62, 0.12],
+                [0.62, 0.58],
+                [0.08, 0.58],
+              ],
+            },
+          ],
         },
       ],
-      points: sensorPoints.map((point, index) => ({
-        id: index + 1,
-        device: 1,
-        sensor_order: point.pos,
-        nx: point.x,
-        ny: point.y,
-        lageplan: 100,
-      })),
+      points: [
+        // Device #1: a grid of points (a CAD import - replaced by a manual placement).
+        ...sensorPoints.map((point, index) => ({
+          id: index + 1,
+          device: 1,
+          sensor_order: point.pos,
+          nx: point.x,
+          ny: point.y,
+          lageplan: 100,
+        })),
+        // Device #2: placed by hand (one point).
+        { id: 50, device: 2, sensor_order: 1, nx: 0.82, ny: 0.74, lageplan: 100 },
+      ],
       devices: [
         {
           id: 1,
@@ -809,7 +894,34 @@ export const mockAnswer = (
           mac: device.mac,
           first_sensor_order: 1,
         },
+        {
+          id: 2,
+          raw_hash: '4700-02',
+          hardware: 'smartbox v3',
+          type: 'smartbox',
+          mac: 'A4:CF:12:9B:00:02',
+          first_sensor_order: 13,
+        },
       ],
+    };
+  }
+  if (/\/v1\/\d+\/backup\/projects\/$/.test(path)) {
+    return {
+      projects: [{ database: 'progeo_4700', project: 4700, name: locations[0].name }],
+    };
+  }
+  if (/\/v1\/\d+\/backup\/$/.test(path)) {
+    return {
+      elements: [1, 2].map((id) => ({
+        id,
+        name: `progeo_4700_2026-11-${String(20 - id).padStart(2, '0')}.sql.gz`,
+        size: `${10 + id} MB`,
+        is_compressed: true,
+        created_at: iso(NOW - id * 24 * HOUR),
+        database: 'progeo_4700',
+        project: 4700,
+        project_name: locations[0].name,
+      })),
     };
   }
   if (path.endsWith('/database-usage/')) {
@@ -1093,11 +1205,11 @@ export const mockAnswer = (
       ? { ...shown, project_type: variant.projectType }
       : shown;
   }
-  if (
-    path.endsWith('/alarm/clusters/') ||
-    path.endsWith('/alarm/computed-clusters/')
-  ) {
-    return { clusters: [], points: [] };
+  if (path.endsWith('/alarm/clusters/')) {
+    return { clusters: Number(searchParams.get('location')) === 1 ? suspicionClusters : [] };
+  }
+  if (path.endsWith('/alarm/computed-clusters/')) {
+    return { points: Number(searchParams.get('location')) === 1 ? computedPoints : [] };
   }
   if (path.endsWith('/alarm/active/')) {
     return { alarms: alarms.filter((alarm) => alarm.status === 0) };

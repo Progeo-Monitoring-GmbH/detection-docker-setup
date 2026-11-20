@@ -8,6 +8,7 @@ import {
   stepsFor,
   type ModalStep,
   type ScreenDevice,
+  type ScreenRole,
   type ScreenFailure,
   type ScreenImage,
   type ScreenModal,
@@ -38,14 +39,16 @@ const StepText = ({ step }: { step: ModalStep }) => {
 export const ModalSteps = ({
   modal,
   device,
+  role,
   testKey,
 }: {
   modal: ScreenModal;
   device: ScreenDevice;
+  role?: ScreenRole;
   testKey: string;
 }) => {
   const { t } = useTranslation();
-  const steps = stepsFor(modal, device);
+  const steps = stepsFor(modal, device, role);
   return (
     <div
       className="screen-location-steps"
@@ -112,7 +115,7 @@ const UrlLink = ({ url, testKey }: { url: string | null; testKey: string }) => {
 const ScreenLocation = ({
   image,
 }: {
-  image: Pick<ScreenImage, 'file' | 'device' | 'url' | 'path' | 'modal'>;
+  image: Pick<ScreenImage, 'file' | 'device' | 'role' | 'url' | 'path' | 'modal'>;
 }) => {
   const { t } = useTranslation();
   return (
@@ -131,6 +134,7 @@ const ScreenLocation = ({
           <ModalSteps
             modal={image.modal}
             device={image.device}
+            role={image.role}
             testKey={image.file}
           />
         </>
@@ -173,6 +177,7 @@ export const ScreenFailures = ({ failures }: { failures: ScreenFailure[] }) => {
               <ModalSteps
                 modal={failure.modal}
                 device={failure.device}
+                role={failure.role}
                 testKey={failure.file}
               />
             )}

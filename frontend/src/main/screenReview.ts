@@ -46,6 +46,8 @@ export type ModalStep = {
   ms?: number;
   /** Only on this device (e.g. a phone table's row expander). */
   device?: ScreenDevice;
+  /** Only for this role (e.g. a switch only staff have). */
+  role?: ScreenRole;
 };
 
 /** The dialog a screenshot shows, opened on its page. */
@@ -105,9 +107,17 @@ export const stepTarget = (step: ModalStep) =>
     `${step.testId ?? '?'}${step.key != null ? ` [${step.key}]` : ''}`) +
   (step.position ? ` @ ${step.position.x},${step.position.y}` : '');
 
-/** The steps that open a dialog on `device` (the other device's steps left out). */
-export const stepsFor = (modal: ScreenModal, device: ScreenDevice) =>
-  modal.steps.filter((step) => !step.device || step.device === device);
+/** The steps that open a dialog on `device` as `role` (the others' steps left out). */
+export const stepsFor = (
+  modal: ScreenModal,
+  device: ScreenDevice,
+  role?: ScreenRole,
+) =>
+  modal.steps.filter(
+    (step) =>
+      (!step.device || step.device === device) &&
+      (!step.role || !role || step.role === role),
+  );
 
 export type ArrowGeometry = { x1: number; y1: number; x2: number; y2: number };
 export type AreaGeometry = { x: number; y: number; w: number; h: number };

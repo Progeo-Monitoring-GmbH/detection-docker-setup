@@ -431,7 +431,9 @@ try {
               const name = modalName(modal);
               const file = `${prefix}--${name}.png`;
               const steps = normalizeSteps(modal.open).filter(
-                (step) => !step.device || step.device === device,
+                (step) =>
+                  (!step.device || step.device === device) &&
+                  (!step.role || step.role === role),
               );
               const target = modal.path ?? route.path;
               const info = {

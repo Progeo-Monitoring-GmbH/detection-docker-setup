@@ -168,7 +168,7 @@ def _clean_step(step):
     if not isinstance(step, dict) or step.get("do") not in STEP_VERBS:
         return None
     cleaned = {"do": step["do"]}
-    for name in ("testId", "key", "css", "value", "device"):
+    for name in ("testId", "key", "css", "value", "device", "role"):
         if _text(step.get(name)) is not None:
             cleaned[name] = _text(step[name])
     if isinstance(step.get("ms"), (int, float)) and not isinstance(step.get("ms"), bool):
@@ -221,6 +221,8 @@ def step_text(step: dict) -> str:
         text += f" ({step['file']})"
     if step.get("device"):
         text += f" (on {step['device']} only)"
+    if step.get("role"):
+        text += f" (as {step['role']} only)"
     return text
 
 

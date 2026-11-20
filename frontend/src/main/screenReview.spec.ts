@@ -153,6 +153,20 @@ describe('dialogs next to their page', () => {
     expect(stepsFor(modal('x'), 'pc').map(stepTarget)).toEqual(['staff-user-edit [2]']);
     expect(stepsFor(modal('x'), 'mobile')).toHaveLength(2);
   });
+
+  it("leaves out the other role's steps", () => {
+    const computed = {
+      ...modal('computed-suspicion-acknowledge-dialog'),
+      steps: [
+        { do: 'click' as const, testId: 'suspicion-mode-option', key: 'computed', role: 'staff' as const },
+        { do: 'click' as const, testId: 'computed-suspicion-acknowledge', key: 'point-1' },
+      ],
+    };
+    expect(stepsFor(computed, 'pc', 'user').map(stepTarget)).toEqual(['computed-suspicion-acknowledge [point-1]']);
+    expect(stepsFor(computed, 'pc', 'staff')).toHaveLength(2);
+    // Without a role (older callers): every step.
+    expect(stepsFor(computed, 'pc')).toHaveLength(2);
+  });
 });
 
 describe('filterImages', () => {

@@ -22,7 +22,8 @@
 //               `key` is the element's data-test-key (repeated elements);
 //               `position: { x, y }` clicks that point of the element (a plot);
 //               `device: 'mobile' | 'pc'` - a step on that device only (e.g. a
-//               phone table's row expander).
+//               phone table's row expander); `role: 'user' | 'staff'` - for
+//               that role only (e.g. a switch only staff have).
 //     name      the file name's dialog part (a-z, 0-9, -) - default: testId
 //     roles     fewer than the page's (default: the page's)
 //     devices   only these (default: all)
@@ -71,6 +72,36 @@ const ACCOUNT_MODALS = [
 ];
 
 const STAFF_USER_ROW = '2';
+
+/** The controller's commands dialog of device #1 (device list). */
+const OPEN_COMMANDS = [
+  expandRow(1),
+  { click: 'device-list-commands', key: '1' },
+];
+
+/** The climate panels' dialogs of a LoRaWAN project (`prefix`: the panels' test id). */
+const climateModals = (prefix) =>
+  [
+    { testId: 'device-rename-modal', open: [`${prefix}-rename-devices`] },
+    { testId: `${prefix}-clean-dialog`, open: [`${prefix}-clean`] },
+    {
+      testId: `${prefix}-import-dialog`,
+      open: [
+        {
+          upload: `${prefix}-import-file`,
+          file: {
+            name: 'messungen-4700.json',
+            content: JSON.stringify({
+              data: [
+                { clazz: 'Measurement', id: 1 },
+                { clazz: 'Measurement', id: 2 },
+              ],
+            }),
+          },
+        },
+      ],
+    },
+  ].map((modal) => ({ ...modal, roles: ['staff'], scenario: 'lorawan' }));
 
 /**
  * A notification case opened by a click on its row: DataTable takes a row
@@ -148,22 +179,24 @@ export const ROUTES = [
         open: ['location-group-dissolve'],
       },
       // A LoRaWAN project: climate panels with their own dialogs (superuser).
-      ...[
-        { testId: 'device-rename-modal', open: ['climate-panels-rename-devices'] },
-        { testId: 'climate-panels-clean-dialog', open: ['climate-panels-clean'] },
-        {
-          testId: 'climate-panels-import-dialog',
-          open: [
-            {
-              upload: 'climate-panels-import-file',
-              file: {
-                name: 'messungen-4700.json',
-                content: JSON.stringify({ data: [{ clazz: 'Measurement', id: 1 }, { clazz: 'Measurement', id: 2 }] }),
-              },
-            },
-          ],
-        },
-      ].map((modal) => ({ ...modal, roles: ['staff'], scenario: 'lorawan' })),
+      ...climateModals('climate-panels'),
+      {
+        testId: 'verdachtsstelle-acknowledge-dialog',
+        open: [
+          { click: 'verdachtsstelle-toggle', key: 'sensor-6' },
+          { click: 'verdachtsstelle-acknowledge', key: 'sensor-6' },
+        ],
+      },
+      {
+        // mx-PEEL: the computed points (staff switch to them first).
+        testId: 'computed-suspicion-acknowledge-dialog',
+        scenario: 'mx-peel',
+        open: [
+          { click: 'suspicion-mode-option', key: 'computed', role: 'staff' },
+          { click: 'computed-suspicion-toggle', key: 'point-1' },
+          { click: 'computed-suspicion-acknowledge', key: 'point-1' },
+        ],
+      },
       {
         // Location #3: no open escalation, the banner offers a new one.
         testId: 'escalation-create-dialog',
@@ -202,6 +235,7 @@ export const ROUTES = [
           'analyse-sensor-disable',
         ],
       },
+      ...climateModals('analyse-climate-panels'),
       {
         testId: 'noise-profile-delete-dialog',
         open: [
@@ -343,6 +377,30 @@ export const ROUTES = [
         testId: 'device-commands',
         open: [expandRow(1), { click: 'device-list-commands', key: '1' }],
       },
+      ...['restart', 'maintenance'].map((command) => ({
+        testId: `device-commands-${command}-dialog`,
+        open: [...OPEN_COMMANDS, { click: 'device-commands-command', key: command }],
+      })),
+      {
+        testId: 'device-commands-send-params-dialog',
+        open: [...OPEN_COMMANDS, 'device-commands-send-params'],
+      },
+      {
+        testId: 'device-commands-send-update-dialog',
+        open: [
+          ...OPEN_COMMANDS,
+          {
+            fill: 'device-commands-update-content',
+            value: '[measure]\ninterval = 3600',
+          },
+          'device-commands-send-update',
+        ],
+      },
+      {
+        testId: 'device-commands-cancel-command-dialog',
+        scenario: 'pending-command',
+        open: [...OPEN_COMMANDS, { click: 'device-commands-cancel', key: '3' }],
+      },
       {
         testId: 'device-commands-firmware-start-dialog',
         open: [
@@ -397,6 +455,40 @@ export const ROUTES = [
       {
         testId: 'lageplan-wizard-rename',
         open: [{ click: 'lageplan-tile-rename', key: '100' }],
+      },
+      {
+        testId: 'lageplan-wizard-import-dialog',
+        open: [
+          { click: 'lageplan-wizard-point-source-option', key: 'json' },
+          {
+            upload: 'lageplan-wizard-import-json-input',
+            file: {
+              name: 'messpunkte-4700.json',
+              content: JSON.stringify({
+                points: [{ x: 0.2, y: 0.3, device: 1, sensor_order: 1 }],
+              }),
+            },
+          },
+        ],
+      },
+      {
+        // Device #2 taken off the plan - saving replaces device #1's points.
+        testId: 'lageplan-wizard-placement-save-dialog',
+        open: [
+          { click: 'lageplan-wizard-sensor-device', key: '2' },
+          'lageplan-wizard-sensor-remove',
+          'lageplan-wizard-placement-save',
+        ],
+      },
+      {
+        testId: 'lageplan-wizard-heat-limits-heat-limit-delete-dialog',
+        open: [
+          { click: 'lageplan-wizard-heat-limits-heat-limit-delete', key: 'hl-1' },
+        ],
+      },
+      {
+        testId: 'lageplan-wizard-heat-limits-heat-limit-copy-dialog',
+        open: ['lageplan-wizard-heat-limits-heat-limit-copy'],
       },
     ],
   },
@@ -495,6 +587,8 @@ export const ROUTES = [
     roles: ['staff'],
     modals: [
       { testId: 'backup-delete-confirm', open: ['backup-delete-bulk'] },
+      { testId: 'backup-restore-dialog', open: [{ click: 'backup-restore', key: '1' }] },
+      { testId: 'backup-delete-dialog', open: [{ click: 'backup-delete', key: '1' }] },
     ],
   },
   { action: 'admin-panel', path: '/admin/panel/', roles: ['staff'] },
@@ -507,6 +601,11 @@ export const ROUTES = [
         name: 'docker-restart',
         testId: 'docker-confirm',
         open: [{ click: 'docker-container-restart', key: 'a1b2c3d4e5f60001' }],
+      },
+      {
+        name: 'docker-stop',
+        testId: 'docker-confirm',
+        open: [{ click: 'docker-container-start-stop', key: 'a1b2c3d4e5f60001' }],
       },
       {
         testId: 'docker-logs-dialog',
@@ -572,5 +671,6 @@ export const normalizeSteps = (steps = []) =>
       ...(step.position ? { position: { x: step.position.x, y: step.position.y } } : {}),
       ...(step.file ? { file: { name: step.file.name, content: step.file.content, mimeType: step.file.mimeType } } : {}),
       ...(step.device ? { device: step.device } : {}),
+      ...(step.role ? { role: step.role } : {}),
     };
   });

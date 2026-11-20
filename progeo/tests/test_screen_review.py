@@ -137,6 +137,8 @@ def test_a_dialog_screenshot_knows_its_page_url_and_how_it_opens(run):
     ({"do": "upload", "testId": "anlegen-import-input", "file": {"name": "standort.json", "content": "{}"}},
      'upload [data-testid="anlegen-import-input"] (standort.json)'),
     ({"do": "wait", "ms": 500}, "wait 500 ms"),
+    ({"do": "click", "testId": "suspicion-mode-option", "key": "computed", "role": "staff"},
+     'click [data-testid="suspicion-mode-option"][data-test-key="computed"] (as staff only)'),
     # Not a number: no position.
     ({"do": "click", "testId": "plot", "position": {"x": "12", "y": 1}}, 'click [data-testid="plot"]'),
 ])
