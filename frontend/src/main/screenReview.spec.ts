@@ -113,6 +113,18 @@ describe('dialogs next to their page', () => {
       image('mobile-staff-de-staff-admin.png', 'mobile', 'staff', 'staff-admin'),
     ];
 
+    const files = (kind: 'page' | 'dialog') =>
+      filterImages(images, { ...ALL_SCREENS, kind }).map((entry) => entry.file);
+    expect(files('page')).toEqual([
+      'pc-staff-de-backup.png',
+      'mobile-staff-de-staff-admin.png',
+      'pc-staff-de-staff-admin.png',
+    ]);
+    expect(files('dialog')).toEqual([
+      'mobile-staff-de-staff-admin--staff-user-create.png',
+      'pc-staff-de-staff-admin--staff-user-create.png',
+      'pc-staff-de-staff-admin--staff-user-edit.png',
+    ]);
     expect(filterImages(images, ALL_SCREENS).map((entry) => entry.file)).toEqual([
       'pc-staff-de-backup.png',
       'mobile-staff-de-staff-admin.png',

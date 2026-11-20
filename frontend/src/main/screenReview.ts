@@ -230,6 +230,8 @@ export type ScreenFilter = {
   device: ScreenDevice | 'all';
   role: ScreenRole | 'all';
   language: ScreenLanguage | 'all';
+  /** Pages only, dialogs only (an image with a `modal`) or both. */
+  kind: 'all' | 'page' | 'dialog';
   /** Only screenshots with comments. */
   commentedOnly: boolean;
   /** Without the ones marked as reviewed. */
@@ -240,6 +242,7 @@ export const ALL_SCREENS: ScreenFilter = {
   device: 'all',
   role: 'all',
   language: 'all',
+  kind: 'all',
   commentedOnly: false,
   hideReviewed: false,
 };
@@ -260,6 +263,7 @@ export const filterImages = (
         (filter.device === 'all' || image.device === filter.device) &&
         (filter.role === 'all' || image.role === filter.role) &&
         (filter.language === 'all' || image.language === filter.language) &&
+        (filter.kind === 'all' || (filter.kind === 'dialog') === Boolean(image.modal)) &&
         (!filter.commentedOnly || commented.has(image.file)) &&
         (!filter.hideReviewed || !reviewed.has(image.file)),
     )

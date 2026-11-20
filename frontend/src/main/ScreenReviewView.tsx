@@ -70,7 +70,7 @@ type RunDetail = {
 type Tool = 'arrow' | 'area' | 'note';
 
 /** Part height of the gallery's previews (px on screen). */
-const PREVIEW_PART_HEIGHT = 200;
+const PREVIEW_PART_HEIGHT = 300;
 
 /**
  * The screenshot as an object URL (it needs the login's header) - fetched
@@ -1142,6 +1142,18 @@ const ScreenReviewView = () => {
               value={filter.language}
               onChange={(value) =>
                 setFilterPart({ language: value as ScreenLanguage | 'all' })
+              }
+            />
+            <SegmentedControl
+              testId="screens-kind"
+              options={[
+                { value: 'all', label: t('screens_kind_all') },
+                { value: 'page', label: t('screens_kind_page') },
+                { value: 'dialog', label: t('screens_kind_dialog') },
+              ]}
+              value={filter.kind}
+              onChange={(value) =>
+                setFilterPart({ kind: value as ScreenFilter['kind'] })
               }
             />
             <Form.Check
