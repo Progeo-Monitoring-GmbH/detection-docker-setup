@@ -544,6 +544,10 @@ i18n
             'Measurement requested from {{count}} device(s).',
           status_request_measurement_error:
             'Could not request measurement: {{reason}}',
+          status_live_measurement: '{{count}} new measurement(s) received.',
+          status_live_measurement_alarm:
+            '{{count}} new measurement(s) received - alarm reported.',
+          status_live_measurement_new: 'New measurements received.',
           objekt_section_project: 'Project',
           objekt_section_product: 'Product information',
           objekt_section_address: 'Address',
@@ -3194,6 +3198,10 @@ i18n
             'Messung bei {{count}} Gerät(en) angefordert.',
           status_request_measurement_error:
             'Messung konnte nicht angefordert werden: {{reason}}',
+          status_live_measurement: '{{count}} neue Messung(en) empfangen.',
+          status_live_measurement_alarm:
+            '{{count}} neue Messung(en) empfangen - Alarm gemeldet.',
+          status_live_measurement_new: 'Neue Messungen empfangen.',
           objekt_section_project: 'Projekt',
           objekt_section_product: 'Produktinformationen',
           objekt_section_address: 'Adresse',

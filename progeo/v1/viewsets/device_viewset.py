@@ -374,9 +374,10 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         values per sensor (cut to `sensors` pairs). The device is identified
         by device_hash (default: the project_id); chip_id / ip are kept on
         the device, event / heap / mac / ... in raw_data. pk is the project_id
-        (only there to filter the logs). alarm=1: the controller saw an alarm
-        - the open status pages of the device's location reload right away
-        (helper/location_live.py), not only on their next visit.
+        (only there to filter the logs). Every sample reloads the open status
+        pages of the device's location right away (helper/location_live.py);
+        alarm=1 / alarm=0 (the controller saw an alarm or not) is kept in
+        raw_data and passed on - the page's toast tells it.
         """
         #ilog("DeviceViewSet: catch_live_data called | request.data:", request.data, "pk=", pk, tag="[DEBUG]")
         payload = request.data
@@ -401,14 +402,15 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         raw_hash = str(payload.get("device_hash") or project_id).strip()
         # MUXes that answered with missing channels - kept in raw_data, shown by the test measurements.
         mux_faults = device_commands.clean_mux_faults(payload.get("mux_faults"))
-        alarm = is_alarm_flag(payload.get("alarm"))
+        reported_alarm = payload.get("alarm")
+        alarm = is_alarm_flag(reported_alarm)
         measure = save_measurement_from_legacy_data(
             measurement={
                 "project_id": project_id,
                 "potentials": values,
                 **{key: payload.get(key) for key in ("event", "sensors", "chip_id", "heap", "ip", "mac")},
                 **({"mux_faults": mux_faults} if mux_faults is not None else {}),
-                **({"alarm": 1} if alarm else {}),
+                **({"alarm": int(alarm)} if reported_alarm not in (None, "") else {}),
             },
             project_id=project_id,
             raw_hash=raw_hash,
@@ -431,8 +433,7 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
                 **device_info
             ).update(**device_info)
 
-        if alarm:
-            notify_location_status(measure, reason="alarm")
+        notify_location_status(measure, alarm=alarm)
 
         return RequestSuccess({
             "project_id": project_id,

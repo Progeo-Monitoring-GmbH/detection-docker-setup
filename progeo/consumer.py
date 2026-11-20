@@ -441,53 +441,116 @@ def _status_group_of(user, location_id):
     return location_status_group(location._state.db, location.pk)
 
 
+@database_sync_to_async
+def _jwt_user(raw_token):
+    """The user of a JWT access token - checked like the REST API's
+    JWTAuthentication (signature, expiry, active user); None if it fails or
+    the user still waits for the review of an access request."""
+    from rest_framework.exceptions import AuthenticationFailed
+    from rest_framework_simplejwt.authentication import JWTAuthentication
+    from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+    from progeo.helper.access_requests import is_pending_user
+
+    authentication = JWTAuthentication()
+    try:
+        user = authentication.get_user(authentication.get_validated_token(raw_token))
+    except (AuthenticationFailed, InvalidToken, TokenError):
+        return None
+    return None if is_pending_user(user) else user
+
+
+# Close code of a socket without a valid login: the page connects again
+# later, with the token it has then.
+CLOSE_UNAUTHENTICATED = 4401
+# How long a status socket waits for the client's "auth" message.
+STATUS_AUTH_WAIT_SECONDS = 10
+
+
 class LocationStatusConsumer(AsyncWebsocketConsumer):
     """New data of one location for its open status pages
     (/location/<id>/status) - only for users who may see that location.
 
-    Server -> client: "location_status" {location_id, reason ("alarm"),
-    measurement_id} when a controller reported a sample with alarm=1 - the
-    page reloads; "heartbeat" every LOG_STREAM_HEARTBEAT_SECONDS (proxies
-    close idle sockets). Client -> server: "ping" -> "pong". Users without
-    access are closed with CLOSE_FORBIDDEN (4403) - the page doesn't
-    reconnect then.
+    Login: the client's first message is {"type": "auth", "token": <JWT
+    access token or null>} - the SPA keeps its login in a JWT (magic-link
+    logins have no session at all), and a browser can't send headers with a
+    websocket. Like the REST API, the token wins over the session cookie;
+    without one the session's user counts. No valid login: closed with
+    CLOSE_UNAUTHENTICATED (4401, the page tries again later); no access to
+    the location: CLOSE_FORBIDDEN (4403, the page gives up). Both after
+    accepting - a close during the handshake reaches the browser as 1006,
+    like a dropped connection.
+
+    Server -> client: "location_status" {location_id, reason
+    ("measurement"), alarm, measurement_id} for every sample a controller
+    reported - the page reloads and shows a toast; "heartbeat" every
+    LOG_STREAM_HEARTBEAT_SECONDS (proxies close idle sockets). Client ->
+    server: "ping" -> "pong".
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.location_id = None
         self.group = None
+        self.settled = False  # logged in (joined) or closed
+        self.auth_task = None
         self.heartbeat_task = None
         self.group_task = None
 
     async def connect(self):
-        user = self.scope.get("user")
-        location_id = int(self.scope["url_route"]["kwargs"]["location_id"])
-        group = None
-        if user is not None and getattr(user, "is_authenticated", False):
-            group = await _status_group_of(user, location_id)
+        self.location_id = int(self.scope["url_route"]["kwargs"]["location_id"])
+        await self.accept()
+        # A client that never sends "auth" (an older page) gets its session's user.
+        self.auth_task = _background(self._auth_deadline())
+
+    async def _auth_deadline(self):
+        try:
+            await asyncio.sleep(STATUS_AUTH_WAIT_SECONDS)
+            await self._login(None)
+        except (asyncio.CancelledError, _ClientGone):
+            pass
+
+    async def _login(self, token):
+        """Joins the location's group as the token's user (else the
+        session's) - or closes the socket (see the class doc)."""
+        if self.settled:
+            return
+        self.settled = True
+        if self.auth_task and self.auth_task is not asyncio.current_task():
+            self.auth_task.cancel()
+        user = await _jwt_user(token) if token else self.scope.get("user")
+        if user is None or not getattr(user, "is_authenticated", False):
+            await self.close(code=CLOSE_UNAUTHENTICATED)
+            return
+        group = await _status_group_of(user, self.location_id)
         if group is None:
-            # Accepted first: a socket closed during the handshake reaches the
-            # browser as 1006 (like a dropped connection - the page would try
-            # again); this way it gets 4403 and gives up.
-            await self.accept()
             await self.close(code=CLOSE_FORBIDDEN)
             return
         self.group = group
         await self.channel_layer.group_add(group, self.channel_name)
-        await self.accept()
         self.heartbeat_task = _background(_heartbeats(self))
         self.group_task = _background(_stay_in_group(self.channel_layer, group, self.channel_name))
 
     async def disconnect(self, close_code):
-        for task in (self.heartbeat_task, self.group_task):
+        self.settled = True
+        for task in (self.auth_task, self.heartbeat_task, self.group_task):
             if task:
                 task.cancel()
         if self.group:
             await self.channel_layer.group_discard(self.group, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
-        # Nothing to ask - a ping keeps the socket open.
-        if text_data and '"ping"' in text_data:
+        try:
+            message = json.loads(text_data or "")
+        except json.JSONDecodeError:
+            return
+        if not isinstance(message, dict):
+            return
+        if message.get("type") == "auth":
+            token = message.get("token")
+            await self._login(token if isinstance(token, str) and token else None)
+        elif message.get("type") == "ping":
+            # Nothing else to ask - a ping keeps the socket open.
             await self.send_json({"type": "pong"})
 
     async def send_json(self, payload):
@@ -502,5 +565,6 @@ class LocationStatusConsumer(AsyncWebsocketConsumer):
             "type": "location_status",
             "location_id": event.get("location_id"),
             "reason": event.get("reason"),
+            "alarm": bool(event.get("alarm")),
             "measurement_id": event.get("measurement_id"),
         })

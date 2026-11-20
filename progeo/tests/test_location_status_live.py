@@ -1,6 +1,8 @@
-"""Live updates of the status page (helper/location_live.py): a controller
-sample with alarm=1 (catch_live_data) reaches the open status pages of its
-device's location (/ws/location/<id>/status/) - and only those."""
+"""Live updates of the status page (helper/location_live.py): every
+controller sample (catch_live_data) reaches the open status pages of its
+device's location (/ws/location/<id>/status/) - and only those; the cheap
+"is there new data?" check (/v1/location/<id>/latest-measurement/)."""
+import asyncio
 import itertools
 
 import pytest
@@ -42,6 +44,7 @@ def other_location(account):
 
 
 def _status_socket(user, location_id):
+    """A status socket whose session belongs to `user` (AnonymousUser: none)."""
     from channels.routing import URLRouter
     from channels.testing import WebsocketCommunicator
 
@@ -50,6 +53,44 @@ def _status_socket(user, location_id):
     communicator = WebsocketCommunicator(URLRouter(ws_pattern), f"/ws/location/{location_id}/status/")
     communicator.scope["user"] = user
     return communicator
+
+
+async def _open(socket, token=None):
+    """Connects and logs in like the page: {"type": "auth", "token"}."""
+    assert (await socket.connect())[0]
+    await socket.send_json_to({"type": "auth", "token": token})
+    return socket
+
+
+async def _assert_closed(socket, code):
+    """Closed with `code` - after accepting: a close during the handshake
+    would reach the browser as 1006 and the page would reconnect."""
+    assert await socket.receive_output(timeout=3) == {"type": "websocket.close", "code": code}
+
+
+async def _logged_in(socket):
+    """Waits until the "auth" message is handled - in order: after the pong."""
+    await socket.send_json_to({"type": "ping"})
+    assert await socket.receive_json_from(timeout=3) == {"type": "pong"}
+    return socket
+
+
+async def _assert_joined(socket, location):
+    """In the location's group: a message to it arrives."""
+    from channels.layers import get_channel_layer
+
+    await _logged_in(socket)
+    await get_channel_layer().group_send(
+        location_status_group(f.DB, location.pk),
+        {"type": "location.status", "location_id": location.pk, "reason": "measurement"},
+    )
+    assert (await socket.receive_json_from(timeout=3))["location_id"] == location.pk
+
+
+def _jwt(user):
+    from rest_framework_simplejwt.tokens import AccessToken
+
+    return str(AccessToken.for_user(user))
 
 
 def _provisioned_device(api_client, location):
@@ -72,7 +113,7 @@ def _send_sample(api_client, location, device, token, **extra):
     return response.json()
 
 
-def test_an_alarm_sample_reloads_only_the_status_pages_of_its_location(
+def test_every_sample_reloads_only_the_status_pages_of_its_location(
     api_client, location, other_location, django_capture_on_commit_callbacks,
 ):
     device, token = _provisioned_device(api_client, location)
@@ -83,24 +124,22 @@ def test_an_alarm_sample_reloads_only_the_status_pages_of_its_location(
         with django_capture_on_commit_callbacks(execute=True):
             answers.append(_send_sample(api_client, location, device, token, **extra))
 
-    async def run():
-        own = _status_socket(staff, location.pk)
-        other = _status_socket(staff, other_location.pk)
-        assert (await own.connect())[0]
-        assert (await other.connect())[0]
-
-        # No alarm: the pages wait for their next visit as before.
-        await sync_to_async(sample)()
-        assert await own.receive_nothing(timeout=0.3)
-
-        await sync_to_async(sample)(alarm=1)
-        message = await own.receive_json_from(timeout=3)
-        assert message == {
+    def announced(alarm):
+        return {
             "type": "location_status",
             "location_id": location.pk,
-            "reason": "alarm",
+            "reason": "measurement",
+            "alarm": alarm,
             "measurement_id": answers[-1]["measurement_id"],
         }
+
+    async def run():
+        own = await _logged_in(await _open(_status_socket(staff, location.pk)))
+        other = await _logged_in(await _open(_status_socket(staff, other_location.pk)))
+
+        for extra, alarm in (({}, False), ({"alarm": 0}, False), ({"alarm": 1}, True)):
+            await sync_to_async(sample)(**extra)
+            assert await own.receive_json_from(timeout=3) == announced(alarm)
         # Another location's page hears nothing.
         assert await other.receive_nothing(timeout=0.3)
         await own.disconnect()
@@ -113,40 +152,75 @@ def test_the_alarm_flag_is_kept_with_the_measurement(api_client, location):
     from progeo.v1.models import ProgeoMeasurement
 
     device, token = _provisioned_device(api_client, location)
-    quiet = _send_sample(api_client, location, device, token)
-    alarm = _send_sample(api_client, location, device, token, alarm="1")
+    def raw_data(**extra):
+        answer = _send_sample(api_client, location, device, token, **extra)
+        return ProgeoMeasurement.objects.using(f.DB).get(pk=answer["measurement_id"]).raw_data
 
-    assert "alarm" not in ProgeoMeasurement.objects.using(f.DB).get(pk=quiet["measurement_id"]).raw_data
-    assert ProgeoMeasurement.objects.using(f.DB).get(pk=alarm["measurement_id"]).raw_data["alarm"] == 1
+    assert "alarm" not in raw_data()  # not reported
+    assert raw_data(alarm="0")["alarm"] == 0
+    assert raw_data(alarm="1")["alarm"] == 1
 
 
 def test_only_users_who_see_the_location_follow_its_status(location, account):
     from django.contrib.auth.models import AnonymousUser
 
     member = f.make_user(perms=STATUS_PERMS, accounts=[account])
-    refused = [
-        AnonymousUser(),
+    forbidden = [
         f.make_user(perms=STATUS_PERMS),  # no access to the location
         f.make_user(accounts=[account], implied=False),  # no measurements permission
     ]
 
     async def run():
-        for user in refused:
-            await _assert_rejected(_status_socket(user, location.pk))
-        socket = _status_socket(member, location.pk)
-        assert (await socket.connect())[0]
+        # Not logged in: 4401 - the page tries again later.
+        await _assert_closed(await _open(_status_socket(AnonymousUser(), location.pk)), 4401)
+        # Logged in, no access: 4403 - the page gives up.
+        for user in forbidden:
+            await _assert_closed(await _open(_status_socket(user, location.pk)), 4403)
+        await _assert_closed(await _open(_status_socket(member, 2_000_000_000)), 4403)
+
+        socket = await _open(_status_socket(member, location.pk))
+        await _assert_joined(socket, location)
         await socket.disconnect()
-        # Unknown location.
-        await _assert_rejected(_status_socket(member, 2_000_000_000))
 
     async_to_sync(run)()
 
 
-async def _assert_rejected(socket):
-    """Accepted and closed right away with 4403 - a close during the
-    handshake would reach the browser as 1006 and the page would reconnect."""
-    assert (await socket.connect())[0]
-    assert await socket.receive_output(timeout=3) == {"type": "websocket.close", "code": 4403}
+def test_a_jwt_logs_in_without_a_session(location, account):
+    """Magic-link logins have no session - only the SPA's JWT."""
+    from django.contrib.auth.models import AnonymousUser
+
+    member = f.make_user(perms=STATUS_PERMS, accounts=[account])
+    outsider = f.make_user(perms=STATUS_PERMS)
+
+    async def run():
+        socket = await _open(_status_socket(AnonymousUser(), location.pk), token=await sync_to_async(_jwt)(member))
+        await _assert_joined(socket, location)
+        await socket.disconnect()
+
+        # The token wins over the session, like in the REST API.
+        socket = await _open(_status_socket(member, location.pk), token=await sync_to_async(_jwt)(outsider))
+        await _assert_closed(socket, 4403)
+
+        await _assert_closed(await _open(_status_socket(member, location.pk), token="not-a-jwt"), 4401)
+
+    async_to_sync(run)()
+
+
+def test_without_an_auth_message_the_session_counts(location, account, monkeypatch):
+    """Pages from before the "auth" message keep working (after a short wait)."""
+    from progeo import consumer
+
+    monkeypatch.setattr(consumer, "STATUS_AUTH_WAIT_SECONDS", 0.05)
+    member = f.make_user(perms=STATUS_PERMS, accounts=[account])
+
+    async def run():
+        socket = _status_socket(member, location.pk)
+        assert (await socket.connect())[0]
+        await asyncio.sleep(0.2)
+        await _assert_joined(socket, location)
+        await socket.disconnect()
+
+    async_to_sync(run)()
 
 
 def test_a_rejected_page_hears_nothing_of_its_location(
@@ -155,17 +229,39 @@ def test_a_rejected_page_hears_nothing_of_its_location(
     device, token = _provisioned_device(api_client, location)
     outsider = f.make_user(perms=STATUS_PERMS)  # no access to the location
 
-    def alarm():
+    def sample():
         with django_capture_on_commit_callbacks(execute=True):
             _send_sample(api_client, location, device, token, alarm=1)
 
     async def run():
-        socket = _status_socket(outsider, location.pk)
-        await _assert_rejected(socket)
-        await sync_to_async(alarm)()
+        socket = await _open(_status_socket(outsider, location.pk))
+        await _assert_closed(socket, 4403)
+        await sync_to_async(sample)()
         assert await socket.receive_nothing(timeout=0.3)
 
     async_to_sync(run)()
+
+
+def test_latest_measurement_names_the_newest_one(api_client, location, other_location, account):
+    device = f.make_device(location)
+    other_device = f.make_device(other_location)
+    member = f.make_user(perms=STATUS_PERMS, accounts=[account])
+    api_client.force_authenticate(user=member)
+
+    def latest():
+        response = api_client.get(f"/v1/location/{location.pk}/latest-measurement/")
+        assert response.status_code == 200, response.content
+        return response.json()["id"]
+
+    assert latest() is None
+    first = f.make_measurement(device)
+    assert latest() == first.pk
+    second = f.make_measurement(f.make_device(location))  # another device of the location
+    f.make_measurement(other_device)  # another location: not counted
+    assert latest() == second.pk
+
+    api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS))  # no access
+    assert api_client.get(f"/v1/location/{location.pk}/latest-measurement/").status_code >= 400
 
 
 @pytest.mark.parametrize("value, expected", [

@@ -251,6 +251,26 @@ def next_measurement_of(location, account, user):
     return min(expected, default=None)
 
 
+def latest_measurement_id_of(location, account, user):
+    """The id of the location's newest measurement (None without one) - the
+    status page's cheap "is there new data?" check: one index lookup per
+    device, pk is chronological."""
+    db_name = location_db(location, account)
+    newest = (
+        ProgeoMeasurement.for_account(account, using=db_name, user=user)
+        .filter(device=OuterRef("pk"))
+        .order_by("-pk")
+        .values("pk")[:1]
+    )
+    ids = (
+        ProgeoDevice.objects.using(db_name)
+        .filter(location=location)
+        .annotate(newest=Subquery(newest))
+        .values_list("newest", flat=True)
+    )
+    return max((newest_id for newest_id in ids if newest_id is not None), default=None)
+
+
 def measurement_range_of(location, account, user):
     """{"first", "last", "count", "next"} of a location's measurements
     (measurement time); "next" is the expected next one (next_measurement_of)."""
@@ -3088,6 +3108,17 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
         return RequestSuccess(measurement_range_of(location, account, request.user))
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="latest-measurement", methods=["GET"])
+    def latest_measurement(self, request, pk=None, *args, **kwargs):
+        """{"id"}: the location's newest measurement (null without one) - the
+        status page asks now and then whether there is new data and only
+        reloads it then (useLocationLiveRevision.ts)."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        return RequestSuccess({"id": latest_measurement_id_of(location, account, request.user)})
 
     # ------------------------------------------------------------------
     # Testleackage, CSV/PDF export, Verwaltung, Anlegen

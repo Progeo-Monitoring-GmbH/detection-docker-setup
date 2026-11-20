@@ -1121,12 +1121,12 @@ class Command(BaseCommand):
 
         from django.core.files.base import ContentFile
 
+        view = plan_spec.get("name")
         key = (spec["kind"], plan_spec.get("suffix"), first)
         if key not in _PLAN_IMAGES:
             plan = _Plan()
             reference, meters_per_pixel = plan_spec["draw"](plan)
             address = f"{spec['address']}, 12345 {spec['city']}"
-            view = plan_spec.get("name")
             plan.title_block(_ascii(spec["name"]), _ascii(f"{view} - {address}" if view else address))
             for order, (name, px, py, _gx, _gy, *end) in enumerate(plan_spec["points"], start=first):
                 if end:  # smartex® dm: the band, labelled at its feed end

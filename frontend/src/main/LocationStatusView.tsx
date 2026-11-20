@@ -67,7 +67,10 @@ import {
 import { useComputedSuspicion } from './useComputedSuspicion';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
-import { useLocationLiveRevision } from './useLocationLiveRevision';
+import {
+  type LiveMeasurements,
+  useLocationLiveRevision,
+} from './useLocationLiveRevision';
 import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { useAccess } from './access';
@@ -490,10 +493,30 @@ const LocationStatusView = ({
   // show humidity/temperature charts instead, see LocationClimatePanels.
   const isLorawan = isLorawanProject(location?.project_type);
 
-  // New data while the page is open (a controller's alarm sample): the
-  // range, the history, the Verdachtsstellen and the KPIs reload quietly,
-  // the picked view, range and sensor stay.
-  const liveRevision = useLocationLiveRevision(locationId, !demo && !isLorawan);
+  // New data while the page is open (every controller sample, and whatever
+  // came while the socket was down): the range, the history, the
+  // Verdachtsstellen and the KPIs reload quietly, the picked view, range
+  // and sensor stay - a toast tells new measurements.
+  const { enqueueSnackbar } = useSnackbar();
+  const onLiveMeasurements = useCallback(
+    ({ count, alarm }: LiveMeasurements) =>
+      enqueueSnackbar(
+        count === null
+          ? // Found by the background check: how many is unknown.
+            t('status_live_measurement_new')
+          : t(
+              alarm ? 'status_live_measurement_alarm' : 'status_live_measurement',
+              { count },
+            ),
+        { variant: alarm ? 'warning' : 'info' },
+      ),
+    [enqueueSnackbar, t],
+  );
+  const liveRevision = useLocationLiveRevision(
+    locationId,
+    !demo && !isLorawan,
+    onLiveMeasurements,
+  );
 
   // The history to load, and the long Zeitreihe ranges once the data
   // reaches that far back (LoRaWAN: LocationClimatePanels does its own).

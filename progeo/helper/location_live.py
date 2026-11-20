@@ -1,16 +1,18 @@
 """Live updates of a location's status page (/location/<id>/status).
 
 Every open status page joins the group of its location
-(consumer.LocationStatusConsumer, /ws/location/<id>/status/); a controller
-sample with alarm=1 (DeviceViewSet.catch_live_data) tells the group of its
-device's location that new data is there - the pages reload. Pages of other
+(consumer.LocationStatusConsumer, /ws/location/<id>/status/); every
+controller sample (DeviceViewSet.catch_live_data) tells the group of its
+device's location that new data is there - the pages reload and show a
+toast (a warning one when the controller reported alarm=1). Pages of other
 locations are in other groups and hear nothing.
 
 Location ids are only unique within one id space: "default" and the project
 databases share it (same ids), an account with its own database has its own.
 The group name carries that space, so equal ids of two accounts never meet.
 
-Message: {"type": "location.status", "location_id", "reason", "measurement_id"}.
+Message: {"type": "location.status", "location_id", "reason": "measurement",
+"alarm": bool, "measurement_id"}.
 """
 import re
 
@@ -44,7 +46,7 @@ def is_alarm_flag(value) -> bool:
     return str(value).strip().lower() in ("1", "true")
 
 
-def notify_location_status(measure, reason: str = "alarm"):
+def notify_location_status(measure, alarm: bool = False, reason: str = "measurement"):
     """Tells the open status pages of the location of `measure`'s device that
     new data is there - after the measurement is committed, so their reload
     sees it. A device without a location has no status page. Never raises:
@@ -67,6 +69,7 @@ def notify_location_status(measure, reason: str = "alarm"):
         "type": EVENT_TYPE,
         "location_id": location_id,
         "reason": reason,
+        "alarm": bool(alarm),
         "measurement_id": measure.pk,
     }
 
