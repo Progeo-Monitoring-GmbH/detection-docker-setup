@@ -24,7 +24,7 @@
 # docker/backend/Dockerfile compiles the Python packages in a build stage
 # and copies only the finished venv. Rebuild regularly (--pull): the apk
 # upgrade below takes the fixes Alpine publishes in the meantime.
-FROM python:3.13-alpine3.24 AS runtime
+FROM python:3.15-alpine3.24 AS runtime
 
 # bash: the start/cron scripts; dcron: the cron daemon supervisord runs;
 # postgresql17-client: pg_dump/psql of dbbackup (same major as the server);
