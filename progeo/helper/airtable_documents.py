@@ -29,7 +29,10 @@ from progeo.helper.basics import wlog
 DOCUMENTS_FIELD = "Dokumente"
 ATTACHMENT_FIELD = "Anlage"
 MEA_TYPE = "MEA-Dokumente"
-DOCUMENT_FIELDS = ["Name", ATTACHMENT_FIELD, "Dokumententyp", "Created"]
+# Last modified time of the record's Name / Dokumententyp - the table has no
+# field that follows the attachment itself.
+MODIFIED_FIELD = "Name/Typ geändert"
+DOCUMENT_FIELDS = ["Name", ATTACHMENT_FIELD, "Dokumententyp", "Created", MODIFIED_FIELD]
 # What a Klemmliste PDF is called (lower case, anywhere in the name).
 KLEMMLISTE_NAME = re.compile(r"klemm(liste|plan)|pin[_ -]?(assignment|belegung)|pinbelegung|terminal[_ -]?list")
 # kind -> filename test (lower case); a .dwl / .bak next to the .dwg is no plan.
@@ -103,6 +106,7 @@ def _document(record) -> dict | None:
         "size": attachment.get("size"),
         "type": attachment.get("type"),
         "created": fields.get("Created") or record.get("createdTime"),
+        "modified": fields.get(MODIFIED_FIELD),
     }
 
 
@@ -123,7 +127,7 @@ def _fetch_documents(helper, location) -> dict:
 
 
 def location_documents(location, refresh=False) -> dict:
-    """{"project_found", "documents": [{id, name, kind, size, type, created}]}
+    """{"project_found", "documents": [{id, name, kind, size, type, created, modified}]}
     - cached CACHE_SECONDS per location."""
     key = f"progeo:airtable-documents:{location.pk}:{location.project_id}"
     if not refresh:

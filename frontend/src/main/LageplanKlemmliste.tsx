@@ -10,6 +10,7 @@ import CadUploadDropbox, { CadJobView } from '../components/form/CadUploadDropbo
 import type { CadImportJob } from '../components/form/useCadImportJob';
 import { errorReason, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { repeatedTestId } from '../testIds';
+import { formatDate } from './dateFormat';
 import './LageplanKlemmliste.css';
 
 type Auth = ReturnType<typeof useAuth>;
@@ -23,6 +24,8 @@ export type MeaDocument = {
   size: number | null;
   type: string | null;
   created: string | null;
+  /** Last change of the record's name / type in Airtable ("Name/Typ geändert") - null until it was changed. */
+  modified?: string | null;
 };
 
 /** A row the cad_factory read from the Klemmliste (docker/cad_factory/klemmliste.py). */
@@ -418,6 +421,15 @@ const LageplanKlemmliste = ({
                 {document.name}
               </span>
               <span className="lageplan-klemmliste-muted">{formatSize(document.size)}</span>
+              {(document.modified || document.created) && (
+                <span
+                  className="lageplan-klemmliste-muted"
+                  title={`Added ${formatDate(document.created)}`}
+                  {...repeatedTestId('lageplan-wizard-mea-changed', document.id)}
+                >
+                  {document.modified ? 'changed' : 'added'} {formatDate(document.modified || document.created)}
+                </span>
+              )}
               <span className="lageplan-klemmliste-actions">
                 {READABLE.has(document.kind) && (
                   <PillButton

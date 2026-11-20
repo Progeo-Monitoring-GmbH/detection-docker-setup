@@ -268,9 +268,10 @@ class FakeTable:
                 if record["id"] in formula and record["fields"].get("Dokumententyp") == "MEA-Dokumente"]
 
 
-def _doc(record_id, filename, kind="MEA-Dokumente"):
-    return {"id": record_id, "fields": {
+def _doc(record_id, filename, kind="MEA-Dokumente", modified=None):
+    return {"id": record_id, "createdTime": "2026-10-01T08:00:00.000Z", "fields": {
         "Name": filename, "Dokumententyp": kind,
+        **({"Name/Typ geändert": modified} if modified else {}),
         "Anlage": [{"id": f"att{record_id}", "filename": filename, "url": f"https://dl.airtable/{record_id}",
                     "size": 10, "type": "application/pdf"}]}}
 
@@ -282,7 +283,8 @@ def airtable(monkeypatch):
         "recPinAssign0000a", "recModel00000000a", "recXlsx000000000a"]}}
     projects = FakeTable({project["id"]: project})
     documents = FakeTable({record["id"]: record for record in (
-        _doc("recDwg0000000000a", "FCX_403018_B.dwg"), _doc("recDwl0000000000a", "FCX_403018_B.dwl"),
+        _doc("recDwg0000000000a", "FCX_403018_B.dwg", modified="2026-11-18T14:30:00.000Z"),
+        _doc("recDwl0000000000a", "FCX_403018_B.dwl"),
         _doc("recRouter0000000a", "Router_Daten.txt"),
         _doc("recKlemm00000000a", "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"),
         _doc("recOrder00000000a", "Klemmliste_alt.pdf", kind="Auftragsbestaetigungen"),
@@ -318,6 +320,10 @@ def test_the_mea_documents_of_the_project(api_client, staff, location, airtable)
     ]
     assert "url" not in body["documents"][0]
     assert "937078" in airtable["projects"].formulas[0]
+    # When the record was last changed ("Name/Typ geändert") - null until it was.
+    assert body["documents"][0]["modified"] == "2026-11-18T14:30:00.000Z"
+    assert body["documents"][1]["modified"] is None
+    assert body["documents"][1]["created"] == "2026-10-01T08:00:00.000Z"
 
 
 def test_the_airtable_link_names_the_project_record(location, airtable):

@@ -18,8 +18,10 @@ const api = vi.hoisted(() => ({
 }));
 
 const DOCUMENTS = [
-  { id: 'recDwg', name: 'FCX_403018_B.dwg', kind: 'dwg', size: 214853, type: null, created: null },
-  { id: 'recRouter', name: 'Router_Daten.txt', kind: 'router', size: 201, type: null, created: null },
+  { id: 'recDwg', name: 'FCX_403018_B.dwg', kind: 'dwg', size: 214853, type: null,
+    created: '2026-10-01T08:00:00.000Z', modified: '2026-11-18T14:30:00.000Z' },
+  { id: 'recRouter', name: 'Router_Daten.txt', kind: 'router', size: 201, type: null,
+    created: '2026-10-01T08:00:00.000Z', modified: null },
   { id: 'recKlemm', name: 'Klemmliste_dm_Gebrüder_Weiss.pdf', kind: 'klemmliste', size: 206334, type: null, created: null },
   { id: 'recModel', name: 'MEA-Modell.pdf', kind: 'pdf', size: 5000, type: null, created: null },
 ];
@@ -123,6 +125,10 @@ describe('LageplanKlemmliste', () => {
     expect(byTestId('lageplan-wizard-mea-read', 'recDwg')).toBeNull();
     expect(byTestId('lageplan-wizard-mea-read', 'recRouter')).toBeNull();
     expect(byTestId('lageplan-wizard-mea-read', 'recModel')).not.toBeNull();
+    // When the record was last changed in Airtable - its creation until it was; nothing without either.
+    expect(byTestId('lageplan-wizard-mea-changed', 'recDwg')!.textContent).toMatch(/^changed .*2026/);
+    expect(byTestId('lageplan-wizard-mea-changed', 'recRouter')!.textContent).toMatch(/^added .*2026/);
+    expect(byTestId('lageplan-wizard-mea-changed', 'recModel')).toBeNull();
 
     await click('lageplan-wizard-mea-download', 'recDwg');
 
