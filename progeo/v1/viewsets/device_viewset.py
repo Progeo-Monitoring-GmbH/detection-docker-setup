@@ -26,7 +26,7 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper import device_commands, firmware_update
-from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
+from progeo.helper.alarm_evaluation import evaluate_measurement_instantly, evaluate_reported_alarm
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
@@ -433,6 +433,10 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
                 **device_info
             ).update(**device_info)
 
+        if alarm:
+            # Before the live update: the status page it reloads must already
+            # see the alarm (Objektstatus, Verdachtsstellen).
+            evaluate_reported_alarm(measure, measure._state.db)
         notify_location_status(measure, alarm=alarm)
 
         return RequestSuccess({

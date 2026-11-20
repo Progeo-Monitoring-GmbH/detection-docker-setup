@@ -313,3 +313,68 @@ def test_an_escalation_keeps_the_latest_range():
     from progeo.v1.viewsets.escalation_viewset import VIEW_RANGES
 
     assert "latest" in VIEW_RANGES
+
+
+# ---------------------------------------------------------------------------- the alarm behind "Objektstatus"
+
+def test_a_reported_alarm_is_evaluated_before_the_page_reloads(
+    api_client, location, settings, monkeypatch, django_capture_on_commit_callbacks,
+):
+    """Without instant evaluation the hourly run created the alarm - the page
+    the socket reloaded still said "Objektstatus OK". alarm=1 is evaluated
+    right away now: the clusters (Objektstatus, Verdachtsstellen) the reload
+    fetches have it."""
+    from progeo.helper import notifications
+    from progeo.v1.models import ProgeoAlarm
+
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = False
+    notified = []
+    monkeypatch.setattr(notifications, "queue_alarm_notification", lambda alarm, *args: notified.append(alarm))
+    device, token = _provisioned_device(api_client, location)
+    staff = f.make_user(staff=True)
+
+    def clusters():
+        api_client.credentials()
+        api_client.force_authenticate(user=staff)
+        response = api_client.get(f"/v1/alarm/clusters/?location={location.pk}&days=90")
+        api_client.force_authenticate(user=None)
+        assert response.status_code == 200, response.content
+        return response.json()["clusters"]
+
+    def alarms():
+        return ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).count()
+
+    # Over the threshold (100) but not reported: the hourly run's job, as before.
+    _send_sample(api_client, location, device, token, samples="0,500", alarm=0)
+    assert alarms() == 0
+
+    async def run():
+        socket = await _logged_in(await _open(_status_socket(staff, location.pk)))
+
+        def sample():
+            with django_capture_on_commit_callbacks(execute=True):
+                _send_sample(api_client, location, device, token, samples="0,500", alarm=1)
+
+        await sync_to_async(sample)()
+        assert (await socket.receive_json_from(timeout=3))["alarm"] is True
+        # What the page fetches on the message.
+        assert [cluster["sensor_id"] for cluster in await sync_to_async(clusters)()] == [1]
+        await socket.disconnect()
+
+    async_to_sync(run)()
+    assert alarms() == 1 and len(notified) == 1
+
+    # Reported again: the same alarm is prolonged, not a second one.
+    _send_sample(api_client, location, device, token, samples="0,600", alarm=1)
+    assert alarms() == 1 and len(notified) == 1
+
+
+def test_our_thresholds_decide_not_the_controllers_flag(api_client, location, settings):
+    from progeo.v1.models import ProgeoAlarm
+
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = False
+    device, token = _provisioned_device(api_client, location)
+
+    _send_sample(api_client, location, device, token, samples="0,50", alarm=1)  # below 100
+
+    assert not ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).exists()
