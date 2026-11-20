@@ -549,6 +549,8 @@ const reviewImage = {
 export const SCENARIOS = {
   /** StaffMessaging: the circuit breaker stopped the SMS. */
   'breaker-tripped': { breaker: { tripped: true, tripped_at: iso(NOW - 2 * HOUR), reason: 'sms_per_hour' } },
+  /** Location #1 as a LoRaWAN project (climate panels instead of sensors). */
+  lorawan: { projectType: 6 },
 };
 
 /** The answer to an API request: a JSON body, or undefined (unmocked - {}). */
@@ -571,6 +573,14 @@ export const mockAnswer = (
   // -- dialogs' data (before the general answers below) ----------------------------
   if (/\/location\/\d+\/access\/$/.test(path)) {
     return locationAccess();
+  }
+  if (/\/location\/\d+\/devices\/names\/$/.test(path)) {
+    return {
+      devices: [
+        { id: 1, name: 'Fühler Nord', hardware: 'lht65', type: 'lorawan', display_name: 'Fühler Nord' },
+        { id: 2, name: '', hardware: 'lht65', type: 'lorawan', display_name: 'a84041000181c2b3' },
+      ],
+    };
   }
   if (/\/location\/\d+\/test_notification\/$/.test(path)) {
     return {
@@ -699,9 +709,24 @@ export const mockAnswer = (
           command: 'identify',
           status: 'success',
           created: iso(NOW - 3 * HOUR),
-          updated: iso(NOW - 3 * HOUR),
+          sent_at: iso(NOW - 2.9 * HOUR),
+          finished_at: iso(NOW - 2.9 * HOUR),
           created_by: 'staff.weber',
-          result: 'ok',
+          summary: {},
+          error: null,
+          has_result: false,
+        },
+        {
+          id: 2,
+          command: 'set_params',
+          status: 'failed',
+          created: iso(NOW - 26 * HOUR),
+          sent_at: iso(NOW - 25.9 * HOUR),
+          finished_at: iso(NOW - 25.9 * HOUR),
+          created_by: 'staff.weber',
+          summary: { params: { interval: 3600 } },
+          error: 'Gerät hat nicht geantwortet',
+          has_result: false,
         },
       ],
       available: [
@@ -717,6 +742,32 @@ export const mockAnswer = (
       pending_ttl_hours: 24,
       result_ttl_days: 7,
       last_command_poll: iso(NOW - 0.1 * HOUR),
+    };
+  }
+  if (/\/device\/\d+\/firmware\/$/.test(path)) {
+    return {
+      current: '2026.09.1',
+      bundles: [
+        {
+          id: '2026.09.1',
+          release: '2026.09.1',
+          firmware: '3.4.1',
+          created: iso(NOW - 70 * 24 * HOUR),
+          latest_in: [],
+          remote: false,
+          reason: 'current',
+        },
+        {
+          id: '2026.11.0',
+          release: '2026.11.0',
+          firmware: '3.5.0',
+          created: iso(NOW - 6 * 24 * HOUR),
+          latest_in: ['smartbox'],
+          remote: true,
+          reason: null,
+        },
+      ],
+      update: null,
     };
   }
   if (path.endsWith('/status/device_statistics/')) {
@@ -1036,9 +1087,11 @@ export const mockAnswer = (
   if (/\/location\/\d+\/$/.test(path)) {
     // #1 in full; another one (e.g. #3 - no escalation, no merged project) as itself.
     const id = Number(path.match(/\/location\/(\d+)\/$/)[1]);
-    return id === 1 || !locations[id - 1]
-      ? detail
-      : { ...detail, ...locations[id - 1] };
+    const shown =
+      id === 1 || !locations[id - 1] ? detail : { ...detail, ...locations[id - 1] };
+    return variant.projectType
+      ? { ...shown, project_type: variant.projectType }
+      : shown;
   }
   if (
     path.endsWith('/alarm/clusters/') ||

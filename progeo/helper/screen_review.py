@@ -38,8 +38,10 @@ from django.utils import timezone
 RUN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
 IMAGE_RE = re.compile(
     r"^(pc|mobile)-(user|staff)-(?:(de|en)-)?"
-    r"([a-z0-9][a-z0-9-]{0,120}?)(?:--([a-z0-9][a-z0-9-]{0,120}))?\.png$"
+    # The action and the dialog: kebab-case words, joined by "--".
+    r"([a-z0-9]+(?:-[a-z0-9]+)*)(?:--([a-z0-9]+(?:-[a-z0-9]+)*))?\.png$"
 )
+MAX_IMAGE_NAME = 260
 DEVICES = ("pc", "mobile")
 ROLES = ("user", "staff")
 LANGUAGES = ("de", "en")
@@ -145,7 +147,9 @@ def run_dir(run: str) -> Path:
 def parse_image_name(name: str):
     """(device, role, language, action, modal) of a screenshot's file name -
     modal: the dialog's name, None for the page itself. None if it isn't one."""
-    match = IMAGE_RE.match(name or "")
+    if not isinstance(name, str) or len(name) > MAX_IMAGE_NAME:
+        return None
+    match = IMAGE_RE.match(name)
     if not match:
         return None
     device, role, language, action, modal = match.groups()
@@ -171,6 +175,11 @@ def _clean_step(step):
         cleaned["ms"] = step["ms"]
     if isinstance(step.get("file"), dict) and _text(step["file"].get("name")):
         cleaned["file"] = _text(step["file"]["name"])
+    position = step.get("position")
+    if isinstance(position, dict) and all(
+            isinstance(position.get(axis), (int, float)) and not isinstance(position.get(axis), bool)
+            for axis in ("x", "y")):
+        cleaned["position"] = {"x": position["x"], "y": position["y"]}
     return cleaned
 
 
@@ -204,6 +213,8 @@ def step_text(step: dict) -> str:
         if step.get("key") is not None:
             target += f'[data-test-key="{step["key"]}"]'
     text = f"{verb} {target}"
+    if step.get("position"):
+        text += f" at ({step['position']['x']:g}, {step['position']['y']:g})"
     if verb in ("fill", "select") and step.get("value") is not None:
         text += f' = "{step["value"]}"'
     if verb == "upload" and step.get("file"):
@@ -446,7 +457,12 @@ def _where(note) -> str:
 
 def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
     """PROMPT.md: every comment of the run, per screen - for whoever works on it next."""
-    commented = [image for image in images if notes_by_image.get(image["file"])]
+    # Each page, then its dialogs - the order of the review page.
+    commented = sorted(
+        (image for image in images if notes_by_image.get(image["file"])),
+        key=lambda image: (image["action"], (image.get("modal") or {}).get("name") or "", image["device"],
+                           image["role"], image["language"]),
+    )
     total = sum(len(notes_by_image[image["file"]]) for image in commented)
     counts = {}
     for image in commented:
@@ -463,7 +479,8 @@ def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
         ("- Each screen names its URL (open it in the portal) - a dialog also how it is opened on that page:"
         " the steps by `data-testid` (`data-test-key` for repeated elements), then the dialog's own test id."),
         ("- Coordinates are pixels of the full-page screenshot = CSS pixels of the page at that viewport,"
-        " x from the left, y from the top of the page (not of the window)."),
+        " x from the left, y from the top of the page (not of the window). A dialog's screenshot is the"
+        " window with the dialog open (x, y from the window's top left)."),
         ("- Actions: **move** (arrow from the element to its new place), **select** (the element meant),"
         " **remove**, **bigger**, **smaller**."),
         "",

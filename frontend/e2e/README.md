@@ -118,7 +118,7 @@ with a `manifest.json`, and are reviewed at `/review/screens/` (staff):
 comments with arrows or areas, exported as a ZIP with a `PROMPT.md`.
 
 ```bash
-python manage.py e2e_screenshots                                   # everything (~4 min)
+python manage.py e2e_screenshots                                   # everything (~30 min, ~4 without dialogs)
 python manage.py e2e_screenshots --devices mobile --only location-status,staff-admin
 python manage.py e2e_screenshots --base-url http://127.0.0.1:3000  # a dev server started
                                                                    # with VITE_BACKEND_URL=http://127.0.0.1:59999
@@ -134,3 +134,50 @@ build it once (and after frontend changes) with
 A new page: add it to `routes.mjs`. A screen showing empty data or a page
 error: the run's `manifest.json` lists per screenshot the requests without a
 mock (`unmocked`) and the page errors - add those answers to `mockApi.mjs`.
+
+### Dialogs
+
+Every dialog a user or staff member can open (Modal, ConfirmDialog, drawer)
+gets its own screenshot too: `{...}-{action}--{dialog}.png`, the window with
+the dialog open (not the full page - the dialog is fixed to the window; a
+taller dialog grows the window to fit). A route lists its dialogs in
+`modals`, each opened from a freshly loaded page by clicking test ids:
+
+```js
+{
+  action: 'staff-admin', path: '/staff/', roles: ['staff'],
+  modals: [
+    { testId: 'staff-user-create', open: ['staff-users-add'] },
+    {
+      testId: 'staff-user-edit-dialog',
+      open: [
+        expandRow(2),                               // phones: the row's expander first
+        { click: 'staff-user-edit', key: '2' },     // data-test-key of a repeated button
+      ],
+    },
+  ],
+},
+```
+
+A new ConfirmDialog is one line in its page's `modals`:
+`{ testId: '<area>-<action>-dialog', open: ['<area>-<action>'] }`. The steps
+(`click`, `check`, `fill`, `select`, `upload`, `hover`, `press`, `wait`, a CSS
+selector for elements without a test id, `device: 'mobile'` for a phone-only
+step) and the other options (`name`, `roles`, `devices`, `path`, `scenario` -
+a variant of the mocked data) are described at the top of `routes.mjs`.
+
+The manifest records for every screenshot the URL it was taken on and, for a
+dialog, the steps and the dialog's test id; a dialog that does not open is no
+screenshot but an entry in `failures` with the reason (the step that failed).
+The review page shows the URL as a link into the portal, the dialog and its
+steps next to its page, and the failures above the gallery.
+
+```bash
+python manage.py e2e_screenshots --only staff-admin                       # the page and its dialogs
+python manage.py e2e_screenshots --only staff-admin--staff-user-create    # one dialog
+python manage.py e2e_screenshots --no-modals                              # the pages only (local runs)
+```
+
+Run it while nobody edits the frontend: the dev server reloads changed files,
+and a page reloaded mid-capture fails ("Failed to fetch dynamically imported
+module").

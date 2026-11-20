@@ -23,12 +23,12 @@ djangorestframework~=3.18.3
 djangorestframework-simplejwt~=5.5.1
 django-oauth-toolkit~=3.4.1
 docker~=7.2.0
-hiredis~=3.5.0
+hiredis~=3.5.0         # C parser redis-py picks up automatically (no import)
 jsonfield~=3.2.0
 kombu~=5.7.0
 matplotlib~=3.11.2
 numpy==2.5.4
-odfpy~=1.4.1
+odfpy~=1.4.1            # tablib Dataset.export("ods") (progeo_model_viewset.py)
 opencv-python-headless~=5.0.0.93   # pre-built wheel (no musl wheel on PyPI): docker/backend-base --target wheels - same version as OPENCV_VERSION there
 paramiko~=5.1.0        # SFTP of the daily backup transfer (progeo/helper/backup_transfer.py)
 Pillow~=13.0.0
@@ -46,16 +46,16 @@ pytest-cov~=7.1.0
 pytest-django~=4.14.0
 #pytest-playwright~=0.5.2
 qrcode~=8.2
-redis~=8.1.0
+redis~=8.1.0            # Celery broker: kombu's redis transport needs it but doesn't declare it
 reportlab~=5.1.0
 requests~=2.34.2
 ruff~=0.17.4            # ruff check --fix
 sentry-sdk~=2.75.0      # error tracking -> GlitchTip, only active with SENTRY_DSN (progeo/sentry.py)
 supervisor~=4.3.0      # supervisord/supervisorctl of the backend container - from pip, not apk
 tablib~=3.10.0
-Twisted[tls,http2]~=26.10.0
+Twisted[tls,http2]~=26.10.0   # extras for daphne: TLS + HTTP/2
 uvicorn~=0.54.0
-websockets~=17.4
+websockets~=17.4        # WebSocket support for uvicorn (run-server.sh, WEB_WORKERS>1)
 
 
 # ================

@@ -20,6 +20,7 @@
 //                 { upload: 'test-id', file: { name, content, mimeType? } }
 //                 { press: 'Escape' }   { wait: 500 }
 //               `key` is the element's data-test-key (repeated elements);
+//               `position: { x, y }` clicks that point of the element (a plot);
 //               `device: 'mobile' | 'pc'` - a step on that device only (e.g. a
 //               phone table's row expander).
 //     name      the file name's dialog part (a-z, 0-9, -) - default: testId
@@ -40,9 +41,9 @@ const expandRow = (key) => ({
 const selectRow = (table, key) => ({
   check: { css: `[data-testid="${table}"] #row-${key} input.progeo-table-check` },
 });
-/** react-data-table's own selection checkbox of a row (selectableRows). */
-const selectTableRow = (scope, key) => ({
-  check: { css: `${scope} input[name="select-row-${key}"]` },
+/** react-data-table's own selection checkbox (selectableRows) of the first row under `scope`. */
+const selectTableRow = (scope) => ({
+  check: { css: `${scope} .rdt_TableBody input[type="checkbox"]` },
 });
 
 /** The profile drawer (top bar → account) - on every page after the login. */
@@ -70,6 +71,17 @@ const ACCOUNT_MODALS = [
 ];
 
 const STAFF_USER_ROW = '2';
+
+/**
+ * A notification case opened by a click on its row: DataTable takes a row
+ * click only on the cell itself (not the badge in it) - its empty right part.
+ */
+const openCase = (id) => ({
+  click: {
+    css: `.rdt_TableCell:has([data-testid="staff-notifications-kind"][data-test-key="${id}"])`,
+  },
+  position: { x: 90, y: 8 },
+});
 
 export const ROUTES = [
   // -- before the login -----------------------------------------------------------
@@ -135,6 +147,23 @@ export const ROUTES = [
         testId: 'location-group-dissolve-dialog',
         open: ['location-group-dissolve'],
       },
+      // A LoRaWAN project: climate panels with their own dialogs (superuser).
+      ...[
+        { testId: 'device-rename-modal', open: ['climate-panels-rename-devices'] },
+        { testId: 'climate-panels-clean-dialog', open: ['climate-panels-clean'] },
+        {
+          testId: 'climate-panels-import-dialog',
+          open: [
+            {
+              upload: 'climate-panels-import-file',
+              file: {
+                name: 'messungen-4700.json',
+                content: JSON.stringify({ data: [{ clazz: 'Measurement', id: 1 }, { clazz: 'Measurement', id: 2 }] }),
+              },
+            },
+          ],
+        },
+      ].map((modal) => ({ ...modal, roles: ['staff'], scenario: 'lorawan' })),
       {
         // Location #3: no open escalation, the banner offers a new one.
         testId: 'escalation-create-dialog',
@@ -165,7 +194,11 @@ export const ROUTES = [
       {
         testId: 'analyse-sensor-disable-dialog',
         open: [
-          { click: 'measurement-compare-columns-column', key: '1' },
+          // The plot picks the sensor under the click: the first column.
+          {
+            click: 'measurement-compare-columns-plot',
+            position: { x: 12, y: 120 },
+          },
           'analyse-sensor-disable',
         ],
       },
@@ -311,11 +344,27 @@ export const ROUTES = [
         open: [expandRow(1), { click: 'device-list-commands', key: '1' }],
       },
       {
+        testId: 'device-commands-firmware-start-dialog',
+        open: [
+          expandRow(1),
+          { click: 'device-list-commands', key: '1' },
+          'device-commands-firmware-start',
+        ],
+      },
+      {
         testId: 'provision-test-clear-dialog',
         open: [
           expandRow(1),
           { click: 'device-list-test-measurements', key: '1' },
           'provision-test-clear',
+        ],
+      },
+      {
+        testId: 'provision-test-commands-dialog',
+        open: [
+          expandRow(1),
+          { click: 'device-list-test-measurements', key: '1' },
+          'provision-test-commands',
         ],
       },
     ],
@@ -330,7 +379,6 @@ export const ROUTES = [
         open: [
           selectTableRow(
             '[data-testid="device-stats-type-group"][data-test-key="smartbox"]',
-            1,
           ),
           'device-stats-delete-selected',
         ],
@@ -410,12 +458,12 @@ export const ROUTES = [
       },
       {
         testId: 'staff-notifications-detail',
-        open: [{ click: 'staff-notifications-kind', key: '1' }],
+        open: [openCase(1)],
       },
       {
         testId: 'staff-notifications-close-dialog',
         open: [
-          { click: 'staff-notifications-kind', key: '1' },
+          openCase(1),
           'staff-notifications-close',
         ],
       },
@@ -476,6 +524,17 @@ export const ROUTES = [
         open: [{ click: 'screen-card-comment', key: 'pc-user-de-login.png' }],
       },
       { testId: 'screens-delete-confirm', open: ['screens-delete-run'] },
+      {
+        testId: 'screen-note-delete-dialog',
+        open: [
+          { click: 'screen-card-comment', key: 'pc-user-de-login.png' },
+          {
+            click: {
+              css: '[data-testid="screen-note"][data-test-key="1"] [data-testid="screen-note-delete"]',
+            },
+          },
+        ],
+      },
     ],
   },
 ];
@@ -510,6 +569,7 @@ export const normalizeSteps = (steps = []) =>
       ...(typeof target === 'string' ? { testId: target } : { css: target.css }),
       ...(step.key != null ? { key: String(step.key) } : {}),
       ...(step.value != null ? { value: step.value } : {}),
+      ...(step.position ? { position: { x: step.position.x, y: step.position.y } } : {}),
       ...(step.file ? { file: { name: step.file.name, content: step.file.content, mimeType: step.file.mimeType } } : {}),
       ...(step.device ? { device: step.device } : {}),
     };

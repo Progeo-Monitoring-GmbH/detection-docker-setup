@@ -4,9 +4,13 @@ normal user and as staff, with mocked API answers (no backend, no database):
     python manage.py e2e_screenshots
     python manage.py e2e_screenshots --devices mobile --roles staff --only location-overview,staff-admin
     python manage.py e2e_screenshots --base-url http://127.0.0.1:3000   # a running frontend dev server
+    python manage.py e2e_screenshots --only staff-admin--staff-user-create   # one dialog of a page
+    python manage.py e2e_screenshots --no-modals                         # the pages without their dialogs
 
-Into media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/{pc,mobile}/{pc|mobile}-{user|staff}-{action}.png
-with a manifest.json - reviewed at /review/screens/ (helper/screen_review.py).
+Into media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/{pc,mobile}/{pc|mobile}-{user|staff}-{de|en}-{action}.png,
+each dialog of a page (routes.mjs `modals`) {...}-{action}--{dialog}.png, with a manifest.json
+(the URL of every screenshot, how its dialog opens, the dialogs that did not) - reviewed at
+/review/screens/ (helper/screen_review.py).
 
 Two ways to run:
 
@@ -47,9 +51,14 @@ class Command(BaseCommand):
         parser.add_argument("--devices", default="pc,mobile", help="pc, mobile or both (default).")
         parser.add_argument("--roles", default="user,staff", help="user, staff or both (default).")
         parser.add_argument("--languages", default="de,en", help="de, en or both (default).")
-        parser.add_argument("--only", default="", help="Only these actions (comma-separated, e.g. location-overview).")
+        parser.add_argument("--only", default="",
+                            help="Only these actions (comma-separated, e.g. location-overview: the page and its "
+                                 "dialogs; staff-admin--staff-user-create: only that dialog).")
+        parser.add_argument("--no-modals", action="store_true",
+                            help="The pages only, without their dialogs (local runs).")
         parser.add_argument("--frontend-dir", default=str(Path(settings.BASE_DIR) / "frontend"))
-        parser.add_argument("--timeout", type=int, default=1800, help="Seconds for the whole capture (default 1800).")
+        # The dialogs take a page load each: about three times the pages' time.
+        parser.add_argument("--timeout", type=int, default=3600, help="Seconds for the whole capture (default 3600).")
         parser.add_argument("--docker", action="store_true",
                             help="Run it in the progeo-e2e_screens container (the default without a local frontend).")
 
@@ -67,6 +76,9 @@ class Command(BaseCommand):
         if options["docker"] or not local:
             if options["base_url"]:
                 raise CommandError("--base-url needs a local frontend (and Node) - not the container run")
+            if options["no_modals"]:
+                raise CommandError("--no-modals needs a local frontend (and Node) - the container run takes every "
+                                   "dialog; pick screens with --only")
             return self._run_in_container(devices, roles, languages, only, options["timeout"])
 
         run_dir = screen_review.new_run_dir()
@@ -87,6 +99,7 @@ class Command(BaseCommand):
                 "SCREENS_ROLES": ",".join(roles),
                 "SCREENS_LANGUAGES": ",".join(languages),
                 "SCREENS_ONLY": options["only"],
+                "SCREENS_MODALS": "0" if options["no_modals"] else "1",
             }
             result = subprocess.run([node, str(script)], cwd=frontend, env=env, timeout=options["timeout"],
                                     check=False)

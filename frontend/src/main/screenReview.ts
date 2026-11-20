@@ -20,6 +20,45 @@ export type ScreenRun = {
 
 export type ScreenLanguage = 'de' | 'en';
 
+/**
+ * A step of a dialog's way to open (frontend/e2e/screenshots/routes.mjs):
+ * an element by its test id (and data-test-key) or a CSS selector.
+ */
+export type ModalStep = {
+  do:
+    | 'click'
+    | 'check'
+    | 'uncheck'
+    | 'hover'
+    | 'fill'
+    | 'select'
+    | 'upload'
+    | 'press'
+    | 'wait';
+  testId?: string;
+  key?: string;
+  css?: string;
+  value?: string;
+  /** The file uploaded (its name). */
+  file?: string;
+  /** The point of the element clicked (a plot). */
+  position?: { x: number; y: number };
+  ms?: number;
+  /** Only on this device (e.g. a phone table's row expander). */
+  device?: ScreenDevice;
+};
+
+/** The dialog a screenshot shows, opened on its page. */
+export type ScreenModal = {
+  name: string;
+  /** data-testid of the dialog - null on a run without a manifest entry. */
+  testId: string | null;
+  path: string | null;
+  /** A variant of the mocked data (mockApi.mjs SCENARIOS). */
+  scenario: string | null;
+  steps: ModalStep[];
+};
+
 export type ScreenImage = {
   file: string;
   device: ScreenDevice;
@@ -27,11 +66,48 @@ export type ScreenImage = {
   language: ScreenLanguage;
   action: string;
   path: string | null;
+  /** Where it was taken (path and query) - runs before: missing, the path is it. */
+  url?: string | null;
+  /** The dialog on the page - null (or missing) for the page itself. */
+  modal?: ScreenModal | null;
   viewport: [number, number] | null;
   width: number;
   height: number;
   errors: string[];
 };
+
+/** A screenshot the capture could not take (a dialog that did not open). */
+export type ScreenFailure = {
+  file: string;
+  device: ScreenDevice;
+  role: ScreenRole;
+  language: ScreenLanguage;
+  action: string;
+  url: string | null;
+  modal: ScreenModal | null;
+  reason: string;
+};
+
+/** The address a screenshot was taken on: its url, else (older runs) its route's path. */
+export const imageUrl = (image: Pick<ScreenImage, 'url' | 'path'>) =>
+  image.url || image.path || null;
+
+/**
+ * A link into the portal for `url` - only a path of this site (no other
+ * origin, no "javascript:"), else null.
+ */
+export const portalHref = (url: string | null | undefined) =>
+  url && url.startsWith('/') && !url.startsWith('//') ? url : null;
+
+/** The element a step acts on, readable: "staff-user-edit [2]" or the CSS selector. */
+export const stepTarget = (step: ModalStep) =>
+  (step.css ??
+    `${step.testId ?? '?'}${step.key != null ? ` [${step.key}]` : ''}`) +
+  (step.position ? ` @ ${step.position.x},${step.position.y}` : '');
+
+/** The steps that open a dialog on `device` (the other device's steps left out). */
+export const stepsFor = (modal: ScreenModal, device: ScreenDevice) =>
+  modal.steps.filter((step) => !step.device || step.device === device);
 
 export type ArrowGeometry = { x1: number; y1: number; x2: number; y2: number };
 export type AreaGeometry = { x: number; y: number; w: number; h: number };
@@ -158,7 +234,10 @@ export const ALL_SCREENS: ScreenFilter = {
   hideReviewed: false,
 };
 
-/** Screenshots matching the filter, in a stable order (action, device, role, language). */
+/**
+ * Screenshots matching the filter, in a stable order: action (the page),
+ * the page before its dialogs (by name), then device, role, language.
+ */
 export const filterImages = (
   images: ScreenImage[],
   filter: ScreenFilter,
@@ -177,6 +256,7 @@ export const filterImages = (
     .sort(
       (a, b) =>
         a.action.localeCompare(b.action) ||
+        (a.modal?.name ?? '').localeCompare(b.modal?.name ?? '') ||
         a.device.localeCompare(b.device) ||
         a.role.localeCompare(b.role) ||
         a.language.localeCompare(b.language),

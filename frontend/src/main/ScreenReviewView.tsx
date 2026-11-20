@@ -32,6 +32,7 @@ import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
 import StitchedScreenshot from './StitchedScreenshot';
 import StagingFetchButton from './StagingFetchButton';
+import ScreenLocation, { ScreenFailures } from './ScreenLocation';
 import {
   ACTION_COLORS,
   NOTE_ACTIONS,
@@ -48,6 +49,7 @@ import {
   type NoteAction,
   type ReviewedMark,
   type ScreenDevice,
+  type ScreenFailure,
   type ScreenFilter,
   type ScreenImage,
   type ScreenLanguage,
@@ -62,6 +64,8 @@ type RunDetail = {
   images: ScreenImage[];
   notes: ScreenNote[];
   reviewed?: ReviewedMark[];
+  /** The dialogs (and pages) the capture could not take - runs before: missing. */
+  failures?: ScreenFailure[];
 };
 type Tool = 'arrow' | 'area' | 'note';
 
@@ -184,7 +188,7 @@ const ScreenCard = ({
         >
           {image.action}
         </button>
-        <span className="screen-card-path">{image.path}</span>
+        <ScreenLocation image={image} />
         <ImageBadges image={image} notes={notes.length} />
         <PillButton
           label={reviewed ? t('screens_reviewed') : t('screens_mark_reviewed')}
@@ -442,7 +446,7 @@ const ScreenEditor = ({
       <Modal.Header closeButton>
         <Modal.Title className="screen-editor-title">
           {image.action}
-          <span className="screen-card-path">{image.path}</span>
+          <ScreenLocation image={image} />
           <ImageBadges image={image} notes={notes.length} />
         </Modal.Title>
         <div
@@ -1200,6 +1204,7 @@ const ScreenReviewView = () => {
             )}
           </div>
         )}
+        {shownDetail && <ScreenFailures failures={shownDetail.failures ?? []} />}
       </PanelCard>
 
       {runId && !shownDetail && (

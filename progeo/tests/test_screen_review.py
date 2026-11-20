@@ -33,11 +33,26 @@ def run(uploads):
     folder = uploads / "e2e" / RUN
     _png(folder / "pc" / "pc-staff-en-location-overview.png", (1440, 2600))
     _png(folder / "mobile" / "mobile-user-login.png", (390, 900))
+    _png(folder / "pc" / "pc-staff-en-staff-admin--staff-user-edit-dialog.png", (1440, 900))
     # Not a screenshot of the run: left out.
     _png(folder / "pc" / "notes.png", (10, 10))
     (folder / "manifest.json").write_text(json.dumps({"run": RUN, "images": [
         {"file": "pc-staff-en-location-overview.png", "path": "/location/overview/", "viewport": [1440, 900],
          "width": 1, "height": 1, "errors": ["TypeError: x is undefined"]},
+        {"file": "pc-staff-en-staff-admin--staff-user-edit-dialog.png", "path": "/staff/",
+         "url": "/staff/?tab=users", "viewport": [1440, 900], "errors": [],
+         "modal": {"name": "staff-user-edit-dialog", "testId": "staff-user-edit-dialog", "path": "/staff/",
+                   "scenario": None, "steps": [
+                       {"do": "click", "css": '#row-2 [data-testid^="expander-button-"]', "device": "mobile"},
+                       {"do": "click", "testId": "staff-user-edit", "key": "2"},
+                       {"do": "teleport", "testId": "nowhere"},
+                   ]}},
+    ], "failures": [
+        {"file": "pc-staff-en-staff-admin--staff-user-delete-dialog.png", "url": "/staff/",
+         "modal": {"name": "staff-user-delete-dialog", "testId": "staff-user-delete-dialog",
+                   "steps": [{"do": "click", "testId": "staff-user-delete", "key": "2"}]},
+         "reason": "step 1 (click staff-user-delete): Timeout 8000ms exceeded."},
+        {"file": "../../etc/passwd", "reason": "not a screenshot"},
     ]}), encoding="utf-8")
     return folder
 
@@ -62,10 +77,24 @@ def test_a_new_run_gets_its_dated_folder_with_pc_and_mobile(uploads):
     assert {child.name for child in folder.iterdir()} == {"pc", "mobile"}
 
 
+@pytest.mark.parametrize("name, parsed", [
+    ("pc-staff-en-location-overview.png", ("pc", "staff", "en", "location-overview", None)),
+    ("mobile-user-login.png", ("mobile", "user", "de", "login", None)),
+    ("pc-user-de-location-overview--user-profile.png", ("pc", "user", "de", "location-overview", "user-profile")),
+    ("mobile-staff-en-staff-admin--staff-user-reset-two-factor-dialog.png",
+     ("mobile", "staff", "en", "staff-admin", "staff-user-reset-two-factor-dialog")),
+    ("pc-user-de-login--.png", None),
+    ("pc-user-de---x.png", None),
+])
+def test_file_names_name_the_page_and_its_dialog(name, parsed):
+    assert review.parse_image_name(name) == parsed
+
+
 def test_the_images_of_a_run_come_from_its_folders_and_manifest(run):
     images = {image["file"]: image for image in review.run_images(RUN)}
 
-    assert set(images) == {"pc-staff-en-location-overview.png", "mobile-user-login.png"}
+    assert set(images) == {"pc-staff-en-location-overview.png", "mobile-user-login.png",
+                           "pc-staff-en-staff-admin--staff-user-edit-dialog.png"}
     overview = images["pc-staff-en-location-overview.png"]
     assert (overview["device"], overview["role"], overview["language"], overview["action"]) == (
         "pc", "staff", "en", "location-overview")
@@ -76,6 +105,66 @@ def test_the_images_of_a_run_come_from_its_folders_and_manifest(run):
     assert images["mobile-user-login.png"]["viewport"] is None
     # A run from before the languages: German.
     assert images["mobile-user-login.png"]["language"] == "de"
+    # Runs before the dialogs: the route's path is the URL, no dialog.
+    assert (overview["url"], overview["modal"]) == ("/location/overview/", None)
+    assert (images["mobile-user-login.png"]["url"], images["mobile-user-login.png"]["modal"]) == (None, None)
+
+
+def test_a_dialog_screenshot_knows_its_page_url_and_how_it_opens(run):
+    images = {image["file"]: image for image in review.run_images(RUN)}
+
+    dialog = images["pc-staff-en-staff-admin--staff-user-edit-dialog.png"]
+    assert (dialog["action"], dialog["path"], dialog["url"]) == ("staff-admin", "/staff/", "/staff/?tab=users")
+    assert dialog["modal"] == {
+        "name": "staff-user-edit-dialog", "testId": "staff-user-edit-dialog", "path": "/staff/", "scenario": None,
+        # Unknown steps are left out.
+        "steps": [
+            {"do": "click", "css": '#row-2 [data-testid^="expander-button-"]', "device": "mobile"},
+            {"do": "click", "testId": "staff-user-edit", "key": "2"},
+        ],
+    }
+    assert [review.step_text(step) for step in dialog["modal"]["steps"]] == [
+        'click #row-2 [data-testid^="expander-button-"] (on mobile only)',
+        'click [data-testid="staff-user-edit"][data-test-key="2"]',
+    ]
+
+
+@pytest.mark.parametrize("step, text", [
+    ({"do": "click", "testId": "measurement-compare-columns-plot", "position": {"x": 12, "y": 120}},
+     'click [data-testid="measurement-compare-columns-plot"] at (12, 120)'),
+    ({"do": "select", "testId": "noise-profile-select", "value": "5"},
+     'select [data-testid="noise-profile-select"] = "5"'),
+    ({"do": "upload", "testId": "anlegen-import-input", "file": {"name": "standort.json", "content": "{}"}},
+     'upload [data-testid="anlegen-import-input"] (standort.json)'),
+    ({"do": "wait", "ms": 500}, "wait 500 ms"),
+    # Not a number: no position.
+    ({"do": "click", "testId": "plot", "position": {"x": "12", "y": 1}}, 'click [data-testid="plot"]'),
+])
+def test_the_steps_read_as_text(step, text):
+    assert review.step_text(review._clean_step(step)) == text
+
+
+def test_a_dialog_without_manifest_entry_still_has_its_name(run):
+    _png(run / "pc" / "pc-user-de-login--privacy-settings.png", (1440, 900))
+
+    images = {image["file"]: image for image in review.run_images(RUN)}
+
+    assert images["pc-user-de-login--privacy-settings.png"]["modal"] == {
+        "name": "privacy-settings", "testId": None, "path": None, "scenario": None, "steps": []}
+
+
+def test_the_dialogs_that_did_not_open_are_listed_with_their_reason(run):
+    failures = review.run_failures(RUN)
+
+    assert [(entry["action"], entry["modal"]["name"], entry["url"]) for entry in failures] == [
+        ("staff-admin", "staff-user-delete-dialog", "/staff/")]
+    assert "Timeout 8000ms" in failures[0]["reason"]
+
+
+def test_a_run_without_failures_in_its_manifest_has_none(run):
+    (run / "manifest.json").write_text(json.dumps({"run": RUN, "images": []}), encoding="utf-8")
+
+    assert review.run_failures(RUN) == []
 
 
 @pytest.mark.parametrize("run_name, image", [
@@ -91,11 +180,15 @@ def test_only_screenshots_of_a_run_are_served(run, run_name, image):
 
 def test_staff_list_the_runs_and_see_a_run(api_client, run, staff):
     runs = api_client.get("/v1/screen-review/").json()["runs"]
-    assert runs == [{"run": RUN, "created": runs[0]["created"], "images": 2, "notes": 0}]
+    assert runs == [{"run": RUN, "created": runs[0]["created"], "images": 3, "notes": 0}]
 
     body = api_client.get(URL).json()
-    assert {image["file"] for image in body["images"]} == {"pc-staff-en-location-overview.png", "mobile-user-login.png"}
+    assert {image["file"] for image in body["images"]} == {
+        "pc-staff-en-location-overview.png", "mobile-user-login.png",
+        "pc-staff-en-staff-admin--staff-user-edit-dialog.png"}
     assert body["notes"] == []
+    assert [entry["file"] for entry in body["failures"]] == ["pc-staff-en-staff-admin--staff-user-delete-dialog.png"]
+    assert api_client.get(f"{URL}image/pc-staff-en-staff-admin--staff-user-edit-dialog.png/").status_code == 200
 
     image = api_client.get(f"{URL}image/mobile-user-login.png/")
     assert image.status_code == 200
@@ -171,11 +264,30 @@ def test_the_export_holds_the_commented_screens_and_the_prompt(api_client, run, 
     assert "2. **BIGGER** – area x 40–640, y 1200–1500: Tabelle zu klein" in prompt
     assert "1. **SELECT** – the whole screen: Logo fehlt" in prompt
     assert "TypeError: x is undefined" in prompt
+    assert "- URL: `/location/overview/`" in prompt
     # The arrow is drawn in: the plain grey screenshot has its colour now.
     drawn = Image.open(io.BytesIO(archive.read("screens/pc-staff-en-location-overview.png"))).convert("RGB")
     assert drawn.size == (1440, 2600)
     assert drawn.getpixel((500, 310)) == review.ACTION_COLOR["move"]
     assert len(json.loads(archive.read("notes.json"))["notes"]) == 3
+
+
+def test_the_export_names_a_dialog_its_url_and_how_it_opens(api_client, run, staff):
+    _note(api_client, image="pc-staff-en-staff-admin--staff-user-edit-dialog.png", kind="note", action="remove",
+          comment="Feld weg", geometry=None)
+    _note(api_client, kind="note", action="select", comment="Seite", geometry=None)
+
+    archive = zipfile.ZipFile(io.BytesIO(api_client.get(f"{URL}export/").content))
+    prompt = archive.read("PROMPT.md").decode("utf-8")
+
+    section = prompt.split("## pc-staff-en-staff-admin--staff-user-edit-dialog.png")[1]
+    assert "- URL: `/staff/?tab=users`" in section
+    assert '- Dialog: **staff-user-edit-dialog** (`[data-testid="staff-user-edit-dialog"]`)' in section
+    assert ('- Opened by: `click #row-2 [data-testid^="expander-button-"] (on mobile only)` → '
+            '`click [data-testid="staff-user-edit"][data-test-key="2"]`') in section
+    assert "screens/pc-staff-en-staff-admin--staff-user-edit-dialog.png" in archive.namelist()
+    # The page comes before its dialogs.
+    assert prompt.index("## pc-staff-en-location-overview.png") < prompt.index("## pc-staff-en-staff-admin--")
 
 
 def test_superusers_delete_a_run_with_its_notes(api_client, run, staff):
@@ -211,9 +323,44 @@ def test_without_a_local_frontend_the_command_runs_the_screenshot_container(uplo
     call_command("e2e_screenshots", "--frontend-dir", str(tmp_path / "no-frontend"), "--devices", "pc",
                  "--only", "login", stdout=out)
 
-    assert calls[0][1:] == (["pc"], ["user", "staff"], ["de", "en"], ["login"], 1800)
+    assert calls[0][1:] == (["pc"], ["user", "staff"], ["de", "en"], ["login"], 3600)
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{6}", calls[0][0])
     assert "1 screenshot(s)" in out.getvalue()
+
+
+def test_a_local_run_passes_the_dialog_switch_to_the_capture(uploads, tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+
+    from django.core.management import call_command
+
+    frontend = tmp_path / "frontend"
+    (frontend / "e2e" / "screenshots").mkdir(parents=True)
+    (frontend / "e2e" / "screenshots" / "capture.mjs").write_text("")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    envs = []
+
+    def fake_run(command, cwd, env, timeout, check):
+        envs.append(env)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    call_command("e2e_screenshots", "--frontend-dir", str(frontend), "--base-url", "http://127.0.0.1:3000",
+                 "--only", "staff-admin--staff-user-create", stdout=io.StringIO())
+    call_command("e2e_screenshots", "--frontend-dir", str(frontend), "--base-url", "http://127.0.0.1:3000",
+                 "--no-modals", stdout=io.StringIO())
+
+    assert (envs[0]["SCREENS_ONLY"], envs[0]["SCREENS_MODALS"]) == ("staff-admin--staff-user-create", "1")
+    assert envs[1]["SCREENS_MODALS"] == "0"
+
+
+def test_the_container_run_takes_every_dialog(uploads):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    with pytest.raises(CommandError, match="--no-modals needs a local frontend"):
+        call_command("e2e_screenshots", "--docker", "--no-modals", stdout=io.StringIO())
 
 
 def test_a_screenshot_container_that_cannot_run_leaves_no_empty_run(uploads, tmp_path, monkeypatch):

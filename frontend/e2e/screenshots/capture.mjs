@@ -220,7 +220,10 @@ const runStep = async (page, step) => {
   await target.scrollIntoViewIfNeeded().catch(() => undefined);
   switch (step.do) {
     case 'click':
-      await target.click({ timeout: STEP_TIMEOUT });
+      await target.click({
+        timeout: STEP_TIMEOUT,
+        ...(step.position ? { position: step.position } : {}),
+      });
       break;
     case 'check':
       await target.check({ timeout: STEP_TIMEOUT });
@@ -250,20 +253,33 @@ const runStep = async (page, step) => {
  * a full-page screenshot would only add the page under the backdrop.
  */
 const growToDialog = async (page, selector, width, height) => {
-  const bottom = await page
+  // The content's own height: a centered Bootstrap dialog is at least as
+  // tall as the window (min-height), its .modal-content is not.
+  const needed = await page
     .locator(selector)
     .first()
     .evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return Math.ceil(rect.top + Math.max(rect.height, element.scrollHeight));
+      const content = element.querySelector('.modal-content') ?? element;
+      return Math.ceil(content.scrollHeight);
     })
     .catch(() => 0);
-  if (bottom + 24 > height) {
+  if (needed + 48 > height) {
     await page.setViewportSize({
       width,
-      height: Math.min(bottom + 32, MAX_HEIGHT),
+      height: Math.min(needed + 64, MAX_HEIGHT),
     });
     await page.waitForTimeout(400);
+    // The grown dialog from its top (a scrolled .modal keeps its offset).
+    await page
+      .locator(selector)
+      .first()
+      .evaluate((element) => {
+        const scroller = element.closest('.modal');
+        if (scroller) {
+          scroller.scrollTop = 0;
+        }
+      })
+      .catch(() => undefined);
   }
 };
 

@@ -25,7 +25,7 @@ class ScreenReviewViewSet(viewsets.ViewSet):
     (helper/screen_review.py) - staff only:
 
         GET    /v1/screen-review/                              the runs, newest first
-        GET    /v1/screen-review/<run>/                        its images, notes and reviewed marks
+        GET    /v1/screen-review/<run>/                        its images, notes, reviewed marks and failures
         DELETE /v1/screen-review/<run>/                        the run with its notes (superusers)
         GET    /v1/screen-review/<run>/image/<file>/           a screenshot (PNG)
         GET    /v1/screen-review/<run>/export/                 ZIP: PROMPT.md, notes.json, screens/
@@ -90,6 +90,8 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         return RequestSuccess({
             "run": run, "images": images, "notes": [review.note_payload(note) for note in notes],
             "reviewed": [review.mark_payload(mark) for mark in marks],
+            # The dialogs (and pages) the capture could not take - and why.
+            "failures": review.run_failures(run),
         })
 
     @require_staff_permissions("module_admin_screen_review")

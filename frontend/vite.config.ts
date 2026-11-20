@@ -91,6 +91,11 @@ export default ({ mode }) => {
         'react-dom',
         'react-use-websocket',
         'react-data-table-component',
+        // Only reached through lazy pages (LocationPicker): found late, the
+        // dev server re-bundled it mid-session and served a stale version
+        // (504 "outdated optimize dep" - the e2e screenshots' device, checklist
+        // and site-plan pages failed to load).
+        'react-bootstrap-typeahead',
       ], // Add frequently used deps
     },
     define: {

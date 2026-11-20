@@ -5,13 +5,33 @@ import {
   defaultAction,
   filterImages,
   imagePointOf,
+  imageUrl,
   notesByImage,
+  portalHref,
   sliceHeightOf,
   slicesOf,
   stepCursor,
+  stepTarget,
+  stepsFor,
   type ScreenImage,
+  type ScreenModal,
   type ScreenNote,
 } from './screenReview';
+
+const modal = (name: string): ScreenModal => ({
+  name,
+  testId: name,
+  path: '/staff/',
+  scenario: null,
+  steps: [
+    {
+      do: 'click',
+      css: '#row-2 [data-testid^="expander-button-"]',
+      device: 'mobile',
+    },
+    { do: 'click', testId: 'staff-user-edit', key: '2' },
+  ],
+});
 
 const image = (
   file: string,
@@ -75,6 +95,64 @@ it('suggests moving for an arrow, selecting otherwise', () => {
   expect(defaultAction('arrow')).toBe('move');
   expect(defaultAction('area')).toBe('select');
   expect(defaultAction('note')).toBe('select');
+});
+
+describe('dialogs next to their page', () => {
+  const dialog = (file: string, action: string, name: string) => ({
+    ...image(file, file.startsWith('pc') ? 'pc' : 'mobile', 'staff', action),
+    modal: modal(name),
+  });
+
+  it('sorts each page before its dialogs, the dialogs by name', () => {
+    const images = [
+      dialog('pc-staff-de-staff-admin--staff-user-edit.png', 'staff-admin', 'staff-user-edit'),
+      image('pc-staff-de-backup.png', 'pc', 'staff', 'backup'),
+      dialog('mobile-staff-de-staff-admin--staff-user-create.png', 'staff-admin', 'staff-user-create'),
+      image('pc-staff-de-staff-admin.png', 'pc', 'staff', 'staff-admin'),
+      dialog('pc-staff-de-staff-admin--staff-user-create.png', 'staff-admin', 'staff-user-create'),
+      image('mobile-staff-de-staff-admin.png', 'mobile', 'staff', 'staff-admin'),
+    ];
+
+    expect(filterImages(images, ALL_SCREENS).map((entry) => entry.file)).toEqual([
+      'pc-staff-de-backup.png',
+      'mobile-staff-de-staff-admin.png',
+      'pc-staff-de-staff-admin.png',
+      'mobile-staff-de-staff-admin--staff-user-create.png',
+      'pc-staff-de-staff-admin--staff-user-create.png',
+      'pc-staff-de-staff-admin--staff-user-edit.png',
+    ]);
+  });
+
+  it('takes the url a screenshot was taken on, else (older runs) its path', () => {
+    expect(imageUrl({ url: '/device/overview?location=1', path: '/device/overview' })).toBe(
+      '/device/overview?location=1',
+    );
+    expect(imageUrl({ path: '/location/overview/' })).toBe('/location/overview/');
+    expect(imageUrl({ url: null, path: null })).toBeNull();
+  });
+
+  it('links only to paths of the portal itself', () => {
+    expect(portalHref('/location/1/status?view=zeitreihe')).toBe('/location/1/status?view=zeitreihe');
+    expect(portalHref('https://staging.progeo.com/')).toBeNull();
+    expect(portalHref('//staging.progeo.com/')).toBeNull();
+    expect(portalHref('javascript:alert(1)')).toBeNull();
+    expect(portalHref(null)).toBeNull();
+  });
+
+  it('names each step by its test id and key, or its selector', () => {
+    const [expander, edit] = modal('x').steps;
+    expect(stepTarget(edit)).toBe('staff-user-edit [2]');
+    expect(stepTarget(expander)).toBe('#row-2 [data-testid^="expander-button-"]');
+    expect(stepTarget({ do: 'click', testId: 'topbar-account' })).toBe('topbar-account');
+    expect(
+      stepTarget({ do: 'click', testId: 'measurement-compare-columns-plot', position: { x: 12, y: 120 } }),
+    ).toBe('measurement-compare-columns-plot @ 12,120');
+  });
+
+  it("leaves out the other device's steps", () => {
+    expect(stepsFor(modal('x'), 'pc').map(stepTarget)).toEqual(['staff-user-edit [2]']);
+    expect(stepsFor(modal('x'), 'mobile')).toHaveLength(2);
+  });
 });
 
 describe('filterImages', () => {
