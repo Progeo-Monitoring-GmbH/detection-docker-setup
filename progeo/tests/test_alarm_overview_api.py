@@ -429,3 +429,21 @@ def test_timeline_includes_sms_of_the_location(api_client, world):
     assert [event["kind"] for event in events] == ["sms", "email"]
     sms = events[0]
     assert (sms["detail"], sms["success"], sms["error"]) == ("+4915100", False, "Esendex API answered HTTP 401.")
+
+
+def test_global_alarm_list_without_split_is_one_chunk(api_client, world):
+    account, _location, _other, device, _member = world
+    f.make_alarm(device, triggered_ago=f.minutes(30))
+    api_client.force_authenticate(user=f.make_user(
+        perms=(*MEASURE, *NOTIFY, "module_alarms_enabled"), accounts=[account]))
+
+    whole = api_client.get("/v1/alarm/?days=7").json()
+    first = api_client.get("/v1/alarm/?days=7&chunk=0").json()
+
+    assert "chunks" not in whole  # without ?chunk= as before
+    assert (first["chunk"], first["chunks"]) == (0, 1)
+    assert len(first["alarms"]) == 1
+    assert sorted(alarm["id"] for alarm in first["alarms"]) == sorted(alarm["id"] for alarm in whole["alarms"])
+    assert api_client.get("/v1/alarm/?days=7&chunk=1").status_code == 400
+    assert api_client.get("/v1/alarm/?days=7&chunk=-1").status_code == 400
+    assert api_client.get("/v1/alarm/?days=7&chunk=x").status_code == 400

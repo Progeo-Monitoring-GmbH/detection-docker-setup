@@ -58,8 +58,33 @@ class AlarmViewSet(ProgeoModalViewSet):
     def _locations_by_db(request, account, location_ids=None):
         return visible_locations_by_db(request.user, account, location_ids)
 
+    # Project databases per ?chunk= of the overview - each a query (and its
+    # rain events); a few hundred at once kept the alarms page waiting.
+    CHUNK_DATABASES = 20
+
+    @staticmethod
+    def _chunk_index(request):
+        """?chunk= as an int, None without it; ValueError for anything else."""
+        raw = request.query_params.get("chunk")
+        if raw in (None, ""):
+            return None
+        index = int(raw)
+        if index < 0:
+            raise ValueError(raw)
+        return index
+
     @require_held_permissions("module_alarms_enabled")
     def list(self, request, *args, **kwargs):
+        """The alarms in the window (?days= or ?from=/?to=, ?location=) with
+        their locations' rain events. The overview (no ?location=) asks in
+        chunks: ?chunk=<k> lists the alarms of the k-th slice of project
+        databases (CHUNK_DATABASES) and says how many `chunks` there are -
+        chunk 0 first, then the rest, the page fills as they come. Without
+        the split there is one chunk. No ?chunk=: everything at once."""
+        try:
+            chunk = self._chunk_index(request)
+        except ValueError:
+            return RequestFailed({"reason": "chunk must be a non-negative integer"})
         cache_key, _cache = search_cache(request)
         if not kwargs.get("no_cache", False) and _cache:
             return _cache
@@ -68,6 +93,15 @@ class AlarmViewSet(ProgeoModalViewSet):
             # The overview spans every visible location - their alarms are
             # spread over the project databases: collect them per database.
             groups = self._locations_by_db(request, account)
+            chunk_info = {}
+            if chunk is not None:
+                databases = sorted(groups)
+                slices = [databases[start:start + self.CHUNK_DATABASES]
+                          for start in range(0, len(databases), self.CHUNK_DATABASES)] or [[]]
+                if chunk >= len(slices):
+                    return RequestFailed({"reason": f"chunk {chunk} out of range (0..{len(slices) - 1})"})
+                groups = {db_name: groups[db_name] for db_name in slices[chunk]}
+                chunk_info = {"chunk": chunk, "chunks": len(slices)}
 
             def alarms_of(db_name):
                 # Serialized here: lazy relations use this database's connection before it closes.
@@ -82,7 +116,10 @@ class AlarmViewSet(ProgeoModalViewSet):
             # Like order_by("-triggered_at", "-id") - Postgres puts NULL first when descending.
             data.sort(key=lambda alarm: (alarm.get("triggered_at") is None, alarm.get("triggered_at") or "",
                                          alarm.get("id") or 0), reverse=True)
-            return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
+            return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain, **chunk_info})
+        if chunk:
+            # One database (no split, or one location): everything is chunk 0.
+            return RequestFailed({"reason": f"chunk {chunk} out of range (0..0)"})
         data = self.get_serializer(self.get_queryset(), many=True).data
         location_id = self._location_id(request)
         account_db = self._db_for(account, location_id) if account else None
@@ -96,7 +133,8 @@ class AlarmViewSet(ProgeoModalViewSet):
             else set()
         )
         rain = self._rain_events(account_db, data, shown) if account_db else []
-        return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
+        chunk_info = {"chunk": 0, "chunks": 1} if chunk is not None else {}
+        return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain, **chunk_info})
 
     def _rain_events(self, db_name, alarms, location_ids=()):
         """The rain events (ProgeoRainEvent) of the serialized `alarms`'

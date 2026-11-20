@@ -33,7 +33,8 @@ import AlarmTimeline, {
   isAlarmActive,
   parseTimestamp,
 } from './AlarmTimeline.tsx';
-import { type RainEvent, rainEventKey } from './alarmUtils';
+import { type RainEvent } from './alarmUtils';
+import { type AlarmChunk, loadAlarmChunks, mergeAlarmRows, mergeRainEvents } from './alarmChunks';
 import { formatDate, toLocalIso } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import {
@@ -106,9 +107,9 @@ const HEATMAP_LIMIT = 300;
 // Live "how long active" counter: 30s granularity is plenty and avoids
 // re-rendering the whole timeline every second.
 const TICK_MS = 30_000;
-// Default alarm window: the backend also defaults to 7 days, but passing it
-// explicitly keeps the overview bounded even if the backend default changes.
-const DEFAULT_ALARM_DAYS = 3;
+// Default alarm window: the last 24 hours - the page opens fast, older days
+// are one click ("+") or a pick in the select away.
+const DEFAULT_ALARM_DAYS = 1;
 // Selectable window sizes for the days select-box (older alarms are fetched
 // incrementally, one missing slice at a time).
 const DAY_OPTIONS = [1, 2, 3, 7, 14, 30, 90, 365];
@@ -173,62 +174,74 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
     return () => window.clearInterval(intervalId);
   }, [hasActiveAlarm, onlyLastHour]);
 
-  // Fetch a specific time window [fromMs, toMs]. When `merge` is true the
-  // returned alarms are added to the existing rows (deduplicated by id) so
-  // older alarms can be loaded incrementally without re-fetching the whole
-  // window; otherwise the rows are replaced.
+  // The newest fetch - a chunk of an older one (a refresh started meanwhile) is dropped.
+  const fetchGeneration = useRef(0);
+  // Chunks of project databases loaded / in all, while a window loads (alarmChunks.ts).
+  const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // Fetch a time window [fromMs, toMs] in chunks of project databases, each
+  // shown as it arrives. `merge`: the alarms are added to the existing rows
+  // (older ones loaded incrementally); otherwise - a refresh - the rows are
+  // updated chunk by chunk and, once all are there, replaced by the fresh
+  // list (alarms that left the window go), so the table never empties.
   const fetchWindow = useCallback(
     (fromMs: number, toMs: number, merge: boolean, onSuccess?: () => void) => {
+      fetchGeneration.current += 1;
+      const generation = fetchGeneration.current;
+      const cancelled = () => generation !== fetchGeneration.current;
       setLoading(true);
+      setChunkProgress(null);
       const params = new URLSearchParams({
         from: toLocalIso(fromMs),
         to: toLocalIso(toMs),
       });
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/alarm/?${params.toString()}`,
-        (response) => {
-          const incoming = (response?.data?.alarms || []) as AlarmRow[];
-          const incomingRain = (response?.data?.rain_events ||
-            []) as RainEvent[];
-          setRainEvents((prev) => {
-            if (!merge) {
-              return incomingRain;
-            }
-            // A rain event can span both loaded windows: keep it once.
-            const map = new Map(
-              prev.map((event) => [rainEventKey(event), event]),
-            );
-            for (const event of incomingRain) {
-              map.set(rainEventKey(event), event);
-            }
-            return [...map.values()];
-          });
-          setRows((prev) => {
-            if (!merge) {
-              return incoming;
-            }
-            const map = new Map<number, AlarmRow>();
-            for (const row of prev) {
-              map.set(row.id, row);
-            }
-            for (const row of incoming) {
-              map.set(row.id, row); // incoming wins on duplicate ids
-            }
-            return [...map.values()];
-          });
-          setLoading(false);
-          onSuccess?.();
-        },
-        (error) => {
-          showRequestError(
-            enqueueSnackbar,
-            t('alarm_detail_load_alarms_failed'),
-            error,
+      let errorShown = false;
+      const fresh: AlarmRow[] = [];
+      const freshRain: RainEvent[] = [];
+      const fetchChunk = (index: number) =>
+        new Promise<AlarmChunk<AlarmRow> | null>((resolve) => {
+          void axiosConfig.perform_get(
+            auth,
+            `/v1/alarm/?${params.toString()}&chunk=${index}`,
+            (response) =>
+              resolve({
+                alarms: (response?.data?.alarms || []) as AlarmRow[],
+                rainEvents: (response?.data?.rain_events || []) as RainEvent[],
+                chunks: Number(response?.data?.chunks) || 1,
+              }),
+            (error) => {
+              if (!errorShown && !cancelled()) {
+                errorShown = true;
+                showRequestError(enqueueSnackbar, t('alarm_detail_load_alarms_failed'), error);
+              }
+              resolve(null);
+            },
           );
-          setLoading(false);
+        });
+      void loadAlarmChunks<AlarmRow>({
+        fetchChunk,
+        cancelled,
+        onChunk: (chunk) => {
+          fresh.push(...chunk.alarms);
+          freshRain.push(...chunk.rainEvents);
+          setRows((prev) => mergeAlarmRows(prev, chunk.alarms));
+          setRainEvents((prev) => mergeRainEvents(prev, chunk.rainEvents));
         },
-      );
+        onProgress: (done, total) => setChunkProgress(total > 1 ? { done, total } : null),
+      }).then(({ complete }) => {
+        if (cancelled()) {
+          return;
+        }
+        if (complete && !merge) {
+          setRows(mergeAlarmRows([], fresh));
+          setRainEvents(mergeRainEvents([], freshRain));
+        }
+        setLoading(false);
+        setChunkProgress(null);
+        if (complete) {
+          onSuccess?.();
+        }
+      });
     },
     [auth, enqueueSnackbar, t],
   );
@@ -679,11 +692,20 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         <div>
           <h2 className="mb-0">{t('alarms_overview_title')}</h2>
           <small className="text-muted" data-testid="alarms-count">
-            {t('alarms_overview_count', {
-              shown: filteredRows.length,
-              total: rows.length,
-              days: loadedDays > 0 ? loadedDays : days,
-            })}
+            {t(
+              (loadedDays > 0 ? loadedDays : days) === 1 ? 'alarms_overview_count_24h' : 'alarms_overview_count',
+              {
+                shown: filteredRows.length,
+                total: rows.length,
+                days: loadedDays > 0 ? loadedDays : days,
+              },
+            )}
+            {chunkProgress && (
+              <span className="alarms-overview-progress" data-testid="alarms-progress">
+                <Spinner size="sm" animation="border" />
+                {t('alarms_overview_loading_chunks', chunkProgress)}
+              </span>
+            )}
           </small>
         </div>
         <div
@@ -724,7 +746,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           >
             {DAY_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {t('alarms_overview_days', { count: option })}
+                {option === 1 ? t('alarms_overview_last_24h') : t('alarms_overview_days', { count: option })}
               </option>
             ))}
           </Form.Select>

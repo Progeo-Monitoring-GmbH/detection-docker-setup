@@ -139,6 +139,32 @@ def test_alarm_overview_and_summary_include_the_project_databases_alarms(staff_c
 
 @WITH_PROJECT_DBS
 @LOCMEM_CACHE
+def test_the_alarm_overview_comes_in_chunks_of_project_databases(staff_client, world, monkeypatch):
+    from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
+
+    # A second database: a location whose project has none stays in the account's.
+    other = f.make_location(world["account"], project_id=PROJECT + 7, name="Ohne Projektdatenbank")
+    other_alarm = f.make_alarm(f.make_device(other), triggered_ago=datetime.timedelta(hours=2))
+    # One database per chunk.
+    monkeypatch.setattr(AlarmViewSet, "CHUNK_DATABASES", 1)
+    with SPLIT:
+        whole = staff_client.get("/v1/alarm/?days=2").json()
+        first = staff_client.get("/v1/alarm/?days=2&chunk=0").json()
+        chunks = [first] + [staff_client.get(f"/v1/alarm/?days=2&chunk={index}").json()
+                            for index in range(1, first["chunks"])]
+        beyond = staff_client.get(f"/v1/alarm/?days=2&chunk={first['chunks']}")
+
+    assert "chunks" not in whole  # without ?chunk= all at once, as before
+    assert first["chunk"] == 0 and first["chunks"] >= 2
+    assert sorted(alarm["id"] for chunk in chunks for alarm in chunk["alarms"]) == _ids(whole["alarms"])
+    chunked = [alarm for chunk in chunks for alarm in chunk["alarms"]]
+    assert world["project_alarm"].pk in _ids(chunked)
+    assert other_alarm.pk in _ids(chunked)
+    assert beyond.status_code == 400
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
 def test_the_map_lists_only_its_fields_with_the_newest_measurement_per_database(staff_client, world):
     location = world["location"]
     ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(latitude=50.5, longitude=7.5)
