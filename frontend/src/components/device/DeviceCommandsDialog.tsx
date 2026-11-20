@@ -51,7 +51,7 @@ type CommandDevice = { id: number; location: number | null; raw_hash: string; di
 
 /** What waits for its ConfirmDialog: everything that changes the controller, or drops a queued command. */
 type Ask =
-  | { kind: 'restart' | 'maintenance' | 'send-update' | 'send-params' }
+  | { kind: 'restart' | 'send-update' | 'send-params' }
   | { kind: 'cancel-command'; command: DeviceCommand };
 
 /** A set_params row: one of SET_PARAMS and one of its option values. */
@@ -60,12 +60,13 @@ type ParamRow = { key: string; value: number };
 const paramSpec = (key: string) => SET_PARAMS.find((spec) => spec.key === key) ?? SET_PARAMS[0];
 const paramRow = (key: string): ParamRow => ({ key, value: paramSpec(key).options[0].value });
 
-// One click queues these; set_params and update have their own forms.
-const SIMPLE_COMMANDS = ['identify', 'measure', 'get_config', 'maintenance', 'normal', 'restart'];
+// One click queues these; set_params and update have their own forms. (maintenance /
+// normal are outdated - no buttons; old ones still show by name in the history.)
+const SIMPLE_COMMANDS = ['identify', 'measure', 'get_config', 'restart'];
 // logs: one command per hour of the day (the controller sends that hour's log).
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 // One-click commands asked first (a ConfirmDialog) - they interrupt the controller's work.
-const CONFIRM_COMMANDS = new Set(['restart', 'maintenance']);
+const CONFIRM_COMMANDS = new Set(['restart']);
 const OPEN_STATUSES = new Set(['pending', 'sent']);
 const REFRESH_MS = 5000;
 const DEFAULT_CONFIG_PATH = 'config/device_config.lua';
@@ -267,7 +268,6 @@ const DeviceCommandsDialog = ({
   const askTexts = (pending: Ask) => {
     switch (pending.kind) {
       case 'restart':
-      case 'maintenance':
         return {
           title: t(`device_commands_confirm_${pending.kind}_title`),
           message: t(`device_commands_confirm_${pending.kind}`, { device: deviceName }),
@@ -387,7 +387,7 @@ const DeviceCommandsDialog = ({
                         disabled={busy !== null}
                         onClick={() =>
                           CONFIRM_COMMANDS.has(command)
-                            ? setAsk({ kind: command as 'restart' | 'maintenance' })
+                            ? setAsk({ kind: 'restart' })
                             : queue(command)
                         }
                         testId={childTestId(testId, 'command')}

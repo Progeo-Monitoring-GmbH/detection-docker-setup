@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useParams, useSearchParams } from 'react-router';
 import { useSnackbar } from 'notistack';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
@@ -352,7 +352,8 @@ const BackupView = () => {
       name: t('backup_col_name'),
       selector: (row) => row.name,
       sortable: true,
-      grow: 2,
+      grow: 3,
+      minWidth: '260px',
       wrap: true,
       cell: (row) => (
         <button
@@ -371,7 +372,8 @@ const BackupView = () => {
       name: t('backup_col_project'),
       selector: (row) => projectLabel(t, row.project, row.project_name, row.database),
       sortable: true,
-      grow: 1,
+      grow: 2,
+      minWidth: '200px',
       wrap: true,
     },
     {
@@ -379,13 +381,13 @@ const BackupView = () => {
       selector: (row) => row.created_at || '',
       sortable: true,
       cell: (row) => <span>{formatDate(row.created_at)}</span>,
-      width: '190px',
+      width: '150px',
     },
     {
       name: t('backup_col_size'),
       selector: (row) => row.size || '',
       sortable: true,
-      width: '110px',
+      width: '90px',
     },
     {
       name: t('backup_col_compressed'),
@@ -398,7 +400,7 @@ const BackupView = () => {
             : t('backup_compressed_no')}
         </span>
       ),
-      width: '160px',
+      width: '125px',
     },
     {
       name: t('backup_col_actions'),
@@ -424,7 +426,7 @@ const BackupView = () => {
           )}
         </div>
       ),
-      width: '260px',
+      width: '180px',
     },
   ];
 
@@ -595,22 +597,28 @@ const BackupView = () => {
             : t('backup_delete_one_confirm_title')
         }
         message={
-          rowConfirm
-            ? t(
-                rowConfirm.action === 'restore' ? 'backup_restore_confirm_body' : 'backup_delete_one_confirm_body',
-                {
-                  name: rowConfirm.backup.name,
-                  date: formatDate(rowConfirm.backup.created_at),
-                  size: rowConfirm.backup.size || '–',
-                  target: projectLabel(
-                    t,
-                    rowConfirm.backup.project,
-                    rowConfirm.backup.project_name,
-                    rowConfirm.backup.database,
-                  ),
-                },
-              )
-            : ''
+          rowConfirm ? (
+            // The backup's name, date, size and database in bold - what the user has to check.
+            <Trans
+              i18nKey={
+                rowConfirm.action === 'restore' ? 'backup_restore_confirm_body' : 'backup_delete_one_confirm_body'
+              }
+              values={{
+                name: rowConfirm.backup.name,
+                date: formatDate(rowConfirm.backup.created_at),
+                size: rowConfirm.backup.size || '–',
+                target: projectLabel(
+                  t,
+                  rowConfirm.backup.project,
+                  rowConfirm.backup.project_name,
+                  rowConfirm.backup.database,
+                ),
+              }}
+              components={{ strong: <strong /> }}
+            />
+          ) : (
+            ''
+          )
         }
         confirmLabel={rowConfirm?.action === 'restore' ? t('backup_restore_confirm_yes') : t('backup_confirm_yes')}
         cancelLabel={t('backup_confirm_cancel')}

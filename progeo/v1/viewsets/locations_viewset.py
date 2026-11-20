@@ -1396,6 +1396,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         "hardware": device.hardware,
                         "type": device.type,
                         "display_name": device.display_name,
+                        # Which device a name is for: its precise model and hash
+                        # (several "lht65" of one location look alike otherwise).
+                        "model": device_overview.device_model(device.hardware),
+                        "raw_hash": device.raw_hash,
                     }
                     for device in queryset
                 ]

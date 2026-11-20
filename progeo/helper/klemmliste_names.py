@@ -86,10 +86,14 @@ def _valid_rows(rows) -> list:
 
 def _mode(targeted, points) -> str:
     """"renumber" when at least half of the rows name an existing point by
-    their number and some of those points are not at their input yet."""
+    their number and some of those points are not at their input yet - and
+    no number repeats: a plan label names one point, while names like "A1"
+    may repeat - then MUX/PIN alone decide."""
     labelled = [(row, target) for row, target in targeted if name_number(row["sensor"]) in points]
     moving = [row for row, target in labelled if name_number(row["sensor"]) != target]
-    return "renumber" if moving and len(labelled) * 2 >= len(targeted) else "name"
+    numbers = [number for row, _target in targeted if (number := name_number(row["sensor"])) is not None]
+    unique = len(set(numbers)) == len(numbers)
+    return "renumber" if moving and unique and len(labelled) * 2 >= len(targeted) else "name"
 
 
 def device_label(device) -> str:

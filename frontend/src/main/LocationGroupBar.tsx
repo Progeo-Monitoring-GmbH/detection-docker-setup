@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import {
   showRequestError,
@@ -62,6 +63,8 @@ const LocationGroupBar = ({
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  // Dissolving is merging undone: the same permission as the overview's merge button.
+  const canMerge = usePermissions().hasPermission('module_locations_mergable');
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
@@ -166,7 +169,7 @@ const LocationGroupBar = ({
           );
         })}
       </div>
-      {state?.canDissolve && (
+      {canMerge && state?.canDissolve && (
         <button
           type="button"
           className="location-group-dissolve"

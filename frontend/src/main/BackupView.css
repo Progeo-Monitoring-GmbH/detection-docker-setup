@@ -126,7 +126,9 @@
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;
-  word-break: break-all;
+  font-weight: 600;
+  /* Break only where it has to (a very long name on a phone), not mid-word in a wide column. */
+  overflow-wrap: anywhere;
 }
 
 .backup-name--busy {

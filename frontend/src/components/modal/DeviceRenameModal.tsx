@@ -14,6 +14,9 @@ type DeviceName = {
   hardware: string | null;
   type: string | null;
   display_name: string;
+  /** The precise model ("smartex dm") - null for hardware no known model names. */
+  model?: string | null;
+  raw_hash?: string | null;
 };
 
 type DeviceRenameModalProps = {
@@ -50,7 +53,7 @@ const DeviceRenameModal = ({ show, locationId, onClose, onSaved }: DeviceRenameM
         setNames(Object.fromEntries(list.map((device) => [device.id, device.name])));
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load devices', error);
+        showRequestError(enqueueSnackbar, t('device_rename_load_failed'), error);
         onClose();
       },
     );
@@ -75,7 +78,7 @@ const DeviceRenameModal = ({ show, locationId, onClose, onSaved }: DeviceRenameM
         onClose();
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not rename devices', error);
+        showRequestError(enqueueSnackbar, t('device_rename_failed'), error);
         setSaving(false);
       },
     );
@@ -99,13 +102,17 @@ const DeviceRenameModal = ({ show, locationId, onClose, onSaved }: DeviceRenameM
           <Form onSubmit={(event) => event.preventDefault()} data-testid="device-rename-form">
             {devices.map((device) => (
               <Form.Group key={device.id} className="mb-3" controlId={`device-name-${device.id}`}>
+                {/* Which device: its model in bold, its hash beside - several of one model look alike. */}
                 <Form.Label className="device-rename-label">
-                  {device.hardware || device.type || `#${device.id}`}
+                  <strong className="device-rename-model">
+                    {device.model || device.hardware || device.type || t('device_rename_device')}
+                  </strong>
+                  <span className="device-rename-hash">{device.raw_hash || `#${device.id}`}</span>
                 </Form.Label>
                 <Form.Control
                   value={names[device.id] ?? ''}
                   maxLength={50}
-                  placeholder={device.hardware ?? ''}
+                  placeholder={device.model || device.hardware || ''}
                   {...repeatedTestId('device-rename-input', device.id)}
                   onChange={(event) =>
                     setNames((current) => ({ ...current, [device.id]: event.target.value }))

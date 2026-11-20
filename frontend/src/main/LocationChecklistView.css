@@ -184,5 +184,6 @@
 
 .checklist-airtable-new {
   color: var(--bs-success-text-emphasis);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }

@@ -4,3 +4,15 @@
 .form-select.alarms-overview-window {
   width: auto;
 }
+
+/* Status column: the acknowledge button as wide as its label (not the
+   column), the "acknowledged by ... · date" line wraps instead of being cut. */
+.btn.alarms-row-acknowledge {
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.alarms-row-acknowledged-by {
+  white-space: normal;
+  line-height: 1.3;
+}

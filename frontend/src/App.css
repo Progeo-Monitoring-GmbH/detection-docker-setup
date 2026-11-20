@@ -52,6 +52,13 @@
   padding: 0;
 }
 
+/* -- dialogs of the default size: up to half the screen (Bootstrap's 500px wraps
+   names and texts) - lg / xl / sm set their own width on .modal-dialog. "body"
+   for specificity: Bootstrap's CSS loads after this file. ----------------------- */
+body .modal {
+  --bs-modal-width: max(500px, 50vw);
+}
+
 /* -- phones: the large dialogs (user, permissions, approvals) on the whole
    screen - the small confirmations stay dialogs. ------------------------------ */
 @media (max-width: 640px) {

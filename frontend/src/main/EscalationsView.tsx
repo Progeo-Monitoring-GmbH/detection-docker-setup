@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
-import { ArrowRepeat, CheckCircle, ChatLeftText } from 'react-bootstrap-icons';
+import { ArrowRepeat, CheckCircle, ChatLeftText, Search, XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -10,6 +10,8 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import { matchesSearchWords, searchWords } from '../components/ui/kit/tableSearch';
+import { foldSearchText } from '../components/location/locationSearch';
 import { formatDate } from './dateFormat';
 import EscalationStatusBadge from './EscalationStatusBadge';
 import {
@@ -30,6 +32,21 @@ import { statusViewPath } from './statusViewState';
 
 type StateFilter = 'open' | 'closed' | 'all';
 
+/** The text the list's filter field searches: title, project, object, people, status. */
+const escalationSearchText = (escalation: Escalation, statusLabel: string) =>
+  foldSearchText(
+    [
+      escalation.title,
+      escalation.project_id,
+      escalation.location_name,
+      escalation.assigned_to_name,
+      escalation.created_by_name,
+      statusLabel,
+    ]
+      .filter((part) => part != null && part !== '')
+      .join('\n'),
+  );
+
 /**
  * Escalations (sidebar: Alle Objekte > Escalations) - for staff: every
  * escalation of every project, filtered by state; the selected one
@@ -48,6 +65,7 @@ const EscalationsView = () => {
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const [filter, setFilter] = useState<StateFilter>('open');
+  const [query, setQuery] = useState('');
   const [list, setList] = useState<Escalation[] | null>(null);
   const [detail, setDetail] = useState<Escalation | null>(null);
   const [staff, setStaff] = useState<StaffUser[]>([]);
@@ -153,8 +171,46 @@ const EscalationsView = () => {
             </div>
           }
         >
+          <div className="progeo-table-search escalations-search">
+            <Search aria-hidden size={13} className="progeo-table-search-icon" />
+            <input
+              type="search"
+              value={query}
+              placeholder={t('escalation_search')}
+              aria-label={t('escalation_search')}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setQuery('');
+                }
+              }}
+              className="progeo-table-search-input"
+              data-testid="escalations-search"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label={t('escalation_search_clear')}
+                title={t('escalation_search_clear')}
+                className="progeo-table-search-clear"
+              >
+                <XLg size={10} />
+              </button>
+            )}
+          </div>
           <EscalationList
-            list={list}
+            list={
+              list && searchWords(query).length
+                ? list.filter((escalation) =>
+                    matchesSearchWords(
+                      escalationSearchText(escalation, t(statusKey(escalation.status))),
+                      searchWords(query),
+                    ),
+                  )
+                : list
+            }
+            filtered={searchWords(query).length > 0}
             selectedId={selectedId}
             onSelect={(escalation) => navigate(escalationPath(escalation.id))}
           />
@@ -185,10 +241,13 @@ const EscalationsView = () => {
 
 const EscalationList = ({
   list,
+  filtered,
   selectedId,
   onSelect,
 }: {
   list: Escalation[] | null;
+  /** A search narrows the list: "no match" instead of "no escalations". */
+  filtered: boolean;
   selectedId: number | null;
   onSelect: (escalation: Escalation) => void;
 }) => {
@@ -209,7 +268,7 @@ const EscalationList = ({
         className="text-muted small py-3"
         data-testid="escalations-list-empty"
       >
-        {t('escalation_none')}
+        {filtered ? t('escalation_search_none') : t('escalation_none')}
       </div>
     );
   }
@@ -362,35 +421,42 @@ const EscalationDetail = ({
       <EscalationProtocol entries={escalation.entries ?? []} />
 
       {isOpen ? (
-        <div
-          className="mt-3 d-flex flex-column gap-2"
-          data-testid="escalation-detail-actions"
-        >
-          <Form.Control
-            as="textarea"
-            rows={3}
-            value={message}
-            maxLength={5000}
-            placeholder={t('escalation_message_placeholder')}
-            aria-label={t('escalation_message_placeholder')}
-            onChange={(event) => setMessage(event.target.value)}
-            data-testid="escalation-message"
-          />
-          <div className="d-flex flex-wrap align-items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => act('comment')}
-              disabled={busy || !message.trim()}
-              data-testid="escalation-comment"
-            >
-              <ChatLeftText className="me-1" />
-              {t('escalation_comment')}
-            </Button>
-            <span className="vr mx-1" />
+        // Three groups, each control next to its own button: the message and
+        // "Comment", the changes (status, assignee) as labelled rows, closing
+        // apart at the bottom. The message goes with whichever action is used.
+        <div className="escalation-actions" data-testid="escalation-detail-actions">
+          <div className="escalation-actions-compose">
+            <Form.Control
+              as="textarea"
+              rows={3}
+              value={message}
+              maxLength={5000}
+              placeholder={t('escalation_message_placeholder')}
+              aria-label={t('escalation_message_placeholder')}
+              onChange={(event) => setMessage(event.target.value)}
+              data-testid="escalation-message"
+            />
+            <div className="escalation-actions-compose-foot">
+              <span className="small text-muted">{t('escalation_message_hint')}</span>
+              <Button
+                size="sm"
+                onClick={() => act('comment')}
+                disabled={busy || !message.trim()}
+                data-testid="escalation-comment"
+              >
+                <ChatLeftText className="me-1" />
+                {t('escalation_comment')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="escalation-actions-grid">
+            <label className="escalation-actions-label" htmlFor="escalation-status-select">
+              {t('escalation_status')}
+            </label>
             <Form.Select
+              id="escalation-status-select"
               size="sm"
-              className="escalations-select"
-              aria-label={t('escalation_status')}
               value={status}
               onChange={(event) =>
                 setStatus(event.target.value as EscalationStatus)
@@ -412,11 +478,13 @@ const EscalationDetail = ({
             >
               {t('escalation_set_status')}
             </Button>
-            <span className="vr mx-1" />
+
+            <label className="escalation-actions-label" htmlFor="escalation-assignee-select">
+              {t('escalation_assignee')}
+            </label>
             <Form.Select
+              id="escalation-assignee-select"
               size="sm"
-              className="escalations-select"
-              aria-label={t('escalation_assignee')}
               value={assignee}
               onChange={(event) => setAssignee(event.target.value)}
               data-testid="escalation-assignee-select"
@@ -443,10 +511,12 @@ const EscalationDetail = ({
             >
               {t('escalation_assign')}
             </Button>
+          </div>
+
+          <div className="escalation-actions-close">
             <Button
               size="sm"
               variant="outline-danger"
-              className="ms-auto"
               onClick={() => setAskClose(true)}
               disabled={busy}
               data-testid="escalation-close"
@@ -455,7 +525,6 @@ const EscalationDetail = ({
               {t('escalation_close')}
             </Button>
           </div>
-          <div className="small text-muted">{t('escalation_message_hint')}</div>
         </div>
       ) : (
         <div

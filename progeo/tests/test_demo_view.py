@@ -463,6 +463,9 @@ def test_device_rename_sends_only_changes(api_client, demo):
     api_client.force_authenticate(admin)
     devices = api_client.get(url).json()["devices"]
     assert len(devices) == 4
+    # Every device says which one it is - not just its hardware name.
+    assert all(device["raw_hash"] for device in devices)
+    assert all("model" in device for device in devices)
 
     first, second = devices[0], devices[1]
     response = api_client.post(url, {"devices": [{"id": first["id"], "name": " Neu "}]}, format="json")

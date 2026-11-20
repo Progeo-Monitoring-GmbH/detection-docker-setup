@@ -1,7 +1,20 @@
 /* The device rename dialog (DeviceRenameModal.tsx). */
 
-/* The device's hardware name above its name field. */
+/* Which device a name field is for: model (bold) and hash above it. */
 .form-label.device-rename-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12.5px;
   color: #8b8383;
+}
+
+.device-rename-model {
+  color: var(--progeo-blue);
+  font-weight: 600;
+}
+
+.device-rename-hash {
+  font-family: var(--bs-font-monospace);
+  font-size: 11.5px;
 }

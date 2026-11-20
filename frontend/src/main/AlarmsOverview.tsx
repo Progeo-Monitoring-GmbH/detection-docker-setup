@@ -477,7 +477,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       name: t('alarms_overview_col_id'),
       selector: (row) => row.id,
       sortable: true,
-      width: '90px',
+      width: '64px',
     },
     {
       id: 'location',
@@ -490,14 +490,16 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
               flags={flagsOf(loc.id)}
               testKey={`alarm-${row.id}-${loc.id ?? ''}`}
             />
-            {`${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`}
+            <strong>{loc.name || t('alarms_overview_unnamed')}</strong>
+            {` (${loc.project_id ?? loc.id})`}
           </span>
         ) : (
           '-'
         );
       },
       sortable: true,
-      grow: 1.4,
+      grow: 2,
+      minWidth: '200px',
       wrap: true,
     },
     {
@@ -505,7 +507,8 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       name: t('alarm_field_device'),
       cell: (row) => row.device?.display_name || row.device?.raw_hash || '-',
       sortable: true,
-      grow: 1.2,
+      grow: 1,
+      minWidth: '120px',
       wrap: true,
     },
     {
@@ -520,20 +523,20 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         }
         return pairs.map((pair) => `#${pair.sensor_id ?? '-'}`).join(', ');
       },
-      width: '160px',
+      width: '90px',
       wrap: true,
     },
     {
       id: 'threshold',
       name: t('alarm_field_threshold'),
       selector: (row) => row.threshold ?? '-',
-      width: '110px',
+      width: '100px',
     },
     {
       id: 'max-value',
       name: t('alarm_field_max_value'),
-      selector: (row) => row.max_value ?? '-',
-      width: '110px',
+      cell: (row) => <strong>{row.max_value ?? '-'}</strong>,
+      width: '100px',
     },
     {
       id: 'triggered',
@@ -543,7 +546,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         return ms != null ? formatDate(ms) : row.triggered_at || '-';
       },
       sortable: true,
-      width: '180px',
+      width: '145px',
       wrap: true,
     },
     {
@@ -551,7 +554,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       name: t('alarm_field_active_for'),
       cell: (row) => formatDuration(alarmActiveDuration(row)),
       sortable: true,
-      width: '140px',
+      width: '105px',
     },
     {
       id: 'status',
@@ -579,9 +582,9 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
                 {t(status.labelKey)}
               </Badge>
             </div>
-            {acknowledged && (
+            {acknowledged ? (
               <small
-                className="text-muted"
+                className="alarms-row-acknowledged-by text-muted"
                 {...repeatedTestId('alarms-row-acknowledged-by', alarmKey(row))}
               >
                 {t('alarms_overview_acknowledged_by', {
@@ -595,47 +598,38 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
                     })()
                   : '-'}
               </small>
+            ) : (
+              // Not yet acknowledged: the button right under its status (an
+              // acknowledged one says so above - no disabled "Acknowledged" button).
+              <Button
+                size="sm"
+                variant="success"
+                className="alarms-row-acknowledge"
+                disabled={acknowledgingId === alarmKey(row)}
+                title={t('alarms_overview_acknowledge_hint')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  acknowledgeAlarm(row);
+                }}
+                {...repeatedTestId('alarms-acknowledge', alarmKey(row))}
+              >
+                {acknowledgingId === alarmKey(row) ? (
+                  <Spinner size="sm" animation="border" />
+                ) : (
+                  <Check2Circle className="me-1" />
+                )}
+                {t('ui_quittieren')}
+              </Button>
             )}
           </div>
         );
       },
+      wrap: true,
       // Phones: the status shares the row with the object only.
-      width: phone ? undefined : '260px',
-    },
-    {
-      id: 'actions',
-      name: t('alarms_overview_col_actions'),
-      width: '150px',
-      cell: (row) => {
-        const acknowledged = row.status === 1;
-        return (
-          <Button
-            size="sm"
-            variant={acknowledged ? 'outline-success' : 'success'}
-            disabled={acknowledged || acknowledgingId === alarmKey(row)}
-            title={
-              acknowledged
-                ? t('alarms_overview_already_acknowledged')
-                : t('alarms_overview_acknowledge_hint')
-            }
-            onClick={(event) => {
-              event.stopPropagation();
-              acknowledgeAlarm(row);
-            }}
-            {...repeatedTestId('alarms-acknowledge', alarmKey(row))}
-          >
-            {acknowledgingId === alarmKey(row) ? (
-              <Spinner size="sm" animation="border" />
-            ) : (
-              <Check2Circle className="me-1" />
-            )}
-            {acknowledged ? t('ui_quittiert') : t('ui_quittieren')}
-          </Button>
-        );
-      },
+      width: phone ? undefined : '220px',
     },
   ];
-  // Phones: object and status in the row, the rest (and the acknowledge button) under it.
+  // Phones: object and status (with the acknowledge button) in the row, the rest under it.
   const { columns, expandable } = useMobileColumns(allColumns, [
     'location',
     'status',

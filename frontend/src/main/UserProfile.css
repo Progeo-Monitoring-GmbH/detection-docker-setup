@@ -118,11 +118,12 @@
   color: var(--progeo-blue);
 }
 
+/* Stacked buttons as wide as the widest one ("Request access" and "Change
+   password" end at the same line): one max-content column, items stretched. */
 .profile-actions {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
   gap: 8px;
-  align-items: flex-start;
 }
 
 /* The access / 2FA actions: real buttons with an icon, not text links. */

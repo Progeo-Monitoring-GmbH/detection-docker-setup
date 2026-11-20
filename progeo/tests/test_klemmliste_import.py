@@ -182,6 +182,21 @@ def test_points_already_numbered_by_input_are_only_named(location):
     assert [(c["sensor_order"], c["new"]) for c in preview["changes"]] == [(5, "D_5")]
 
 
+def test_names_repeating_their_number_are_no_plan_labels(location):
+    for order in range(1, 30):
+        _point(location, order, f"dm {order}")
+    names = [f"A{n}" for n in range(1, 11)] + ["A1", "A2", "A3"] + [f"A{n}" for n in range(1, 14)]
+    rows = [{"sensor": name, "mux": (index // 16) + 1, "pin": index % 16 + 1, "position": index + 1}
+            for index, name in enumerate(names)]
+
+    preview = klemmliste_names.preview(f.DB, location, rows)
+
+    assert preview["mode"] == "name"
+    assert preview["moves"] == [] and preview["conflicts"] == []
+    named = {c["sensor_order"]: c["new"] for c in preview["changes"]}
+    assert (named[10], named[11], named[14], named[26]) == ("A10", "A1", "A1", "A13")
+
+
 @pytest.mark.parametrize("name, number", [("D_124", 124), ("dm 007", 7), ("Rampe 3a", 3), ("Nordwand", None)])
 def test_name_number(name, number):
     assert klemmliste_names.name_number(name) == number

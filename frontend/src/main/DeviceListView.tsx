@@ -81,8 +81,6 @@ type Filter = 'all' | 'online' | 'offline' | 'project';
 
 const GREEN = '#3F7A1C';
 
-const HASH_KINDS: HashKind[] = ['project', 'mac', 'legacy'];
-
 /** The colours per tone: .device-list-chip--<tone> in DeviceListView.css. */
 type ChipTone = 'neutral' | 'ok' | 'danger' | 'info';
 
@@ -107,36 +105,6 @@ const Chip = ({
 
 /** The status dot of a chip - its colour comes from the chip's tone. */
 const Dot = () => <span className="device-list-dot" />;
-
-/** One count with a bar relative to the location's device total. */
-const CountBar = ({
-  label,
-  count,
-  total,
-  hint,
-  testKey,
-}: {
-  label: string;
-  count: number;
-  total: number;
-  hint?: string;
-  /** data-test-key of the bar and its value (src/testIds.ts). */
-  testKey: string;
-}) => (
-  <div
-    title={hint}
-    className={count ? 'device-list-count' : 'device-list-count device-list-count--empty'}
-    {...repeatedTestId('device-list-hash-count', testKey)}
-  >
-    <div className="device-list-count-head">
-      <span className="device-list-count-label">{label}</span>
-      <span className="device-list-count-value" {...repeatedTestId('device-list-hash-count-value', testKey)}>{count}</span>
-    </div>
-    <div className="device-list-count-bar">
-      <div className="device-list-count-fill" style={{ width: total ? `${(count / total) * 100}%` : 0 }} />
-    </div>
-  </div>
-);
 
 const muted = <span className="device-list-muted">–</span>;
 
@@ -562,13 +530,6 @@ const DeviceListView = () => {
         </span>
       ),
     },
-    {
-      id: 'ip',
-      name: t('devices_col_ip'),
-      sortable: true,
-      selector: (device) => device.ip ?? '',
-      cell: (device) => <span className="font-monospace">{device.ip || muted}</span>,
-    },
     ...(isStaff
       ? [
           {
@@ -772,21 +733,6 @@ const DeviceListView = () => {
         <>
           <KpiStrip tiles={kpiTiles} testId="device-list-kpis" />
 
-          <PanelCard title={t('devices_hashes')} testId="device-list-hashes">
-            <div className="device-list-counts">
-              {HASH_KINDS.map((kind) => (
-                <CountBar
-                  key={kind}
-                  testKey={kind}
-                  label={t(`devices_hash_${kind}`, { example: projectExample })}
-                  count={stats.hash_kinds[kind]}
-                  total={stats.total}
-                />
-              ))}
-            </div>
-            <div className="device-list-hint">{t('devices_online_hint')}</div>
-          </PanelCard>
-
           <PanelCard
             testId="device-list-devices"
             title={t('devices_list', { name: overview?.location.name || `#${overview?.location.id}` })}
@@ -824,6 +770,7 @@ const DeviceListView = () => {
                 }}
               />
             )}
+            <div className="device-list-hint">{t('devices_online_hint')}</div>
           </PanelCard>
         </>
       )}

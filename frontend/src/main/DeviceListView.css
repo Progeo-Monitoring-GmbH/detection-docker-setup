@@ -89,49 +89,6 @@
   background: #8b8383;
 }
 
-/* -- hash-kind counts --------------------------------------------------------- */
-
-.device-list-counts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px 24px;
-}
-
-.device-list-count-head {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12.5px;
-  margin-bottom: 4px;
-}
-
-.device-list-count-label {
-  color: var(--progeo-blue);
-}
-
-.device-list-count-value {
-  font-weight: 600;
-  color: var(--progeo-blue);
-}
-
-.device-list-count--empty .device-list-count-label,
-.device-list-count--empty .device-list-count-value {
-  color: #8b8383;
-}
-
-.device-list-count-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--progeo-track);
-  overflow: hidden;
-}
-
-/* The width (share of the location's devices) is set inline. */
-.device-list-count-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--progeo-blue);
-}
-
 /* -- table cells ---------------------------------------------------------------- */
 
 .device-list-device {
