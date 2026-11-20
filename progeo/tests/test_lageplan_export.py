@@ -92,7 +92,10 @@ def test_command_without_lageplans_fails(plan_dir):
 
 def test_admin_download(api_client, plan_dir):
     _plan(plan_dir, "new.png", 4)
-    api_client.force_authenticate(user=f.make_user(perms=("module_admin_enabled",)))
+    api_client.force_authenticate(user=f.make_user(
+        staff=True,
+        perms=("module_admin_panel", "module_admin_lageplan_export"),
+    ))
 
     response = api_client.get("/v1/status/admin/lageplan_export/?days=3")
 
@@ -107,6 +110,9 @@ def test_admin_download_needs_admin_and_files(api_client, plan_dir):
     api_client.force_authenticate(user=f.make_user())
     assert api_client.get("/v1/status/admin/lageplan_export/").status_code == 403
 
-    api_client.force_authenticate(user=f.make_user(perms=("module_admin_enabled",)))
+    api_client.force_authenticate(user=f.make_user(
+        staff=True,
+        perms=("module_admin_panel", "module_admin_lageplan_export"),
+    ))
     assert api_client.get("/v1/status/admin/lageplan_export/").status_code == 404
     assert api_client.get("/v1/status/admin/lageplan_export/?days=x").status_code == 400

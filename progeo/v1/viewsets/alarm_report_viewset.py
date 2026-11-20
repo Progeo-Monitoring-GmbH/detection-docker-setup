@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
-from progeo.decorator import require_module_permissions
+from progeo.decorator import require_held_permissions, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.location_access import is_account_member, is_staff_admin
 from progeo.v1.models import AlarmDailyReport
@@ -36,7 +36,7 @@ class AlarmReportViewSet(ProgeoModalViewSet):
             return account
         return user.accounts.order_by("id").first()
 
-    @require_module_permissions("module_measurements_enabled")
+    @require_held_permissions("module_reports_enabled")
     def list(self, request, *args, **kwargs):
         # Keep the response bounded for navigation/graphs. Optional ?date=
         # filters to a single day (used by the report detail view).
@@ -65,11 +65,11 @@ class AlarmReportViewSet(ProgeoModalViewSet):
             "count": len(serializer.data),
         })
 
-    @require_module_permissions("module_measurements_enabled")
+    @require_held_permissions("module_reports_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super().retrieve(request, *args, pk=pk, no_cache=True, **kwargs)
 
-    @require_module_permissions("module_measurements_enabled")
+    @require_held_permissions("module_reports_enabled")
     @action(detail=False, url_path="compare", methods=["GET"])
     def compare(self, request, *args, **kwargs):
         """
@@ -112,6 +112,7 @@ class AlarmReportViewSet(ProgeoModalViewSet):
         })
 
     @require_module_permissions("module_measurements_enabled", "module_admin_enabled")
+    @require_held_permissions("module_reports_enabled")
     @action(detail=False, url_path="generate", methods=["POST"])
     def generate(self, request, *args, **kwargs):
         """

@@ -10,9 +10,9 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
+from progeo.decorator import require_staff_permissions
 from progeo.helper import screen_review as review
 from progeo.helper.basics import RequestSuccess
-from progeo.helper.location_access import is_staff_admin
 from progeo.v1.models import ScreenReviewMark, ScreenReviewNote
 
 
@@ -45,31 +45,24 @@ class ScreenReviewViewSet(viewsets.ViewSet):
     lookup_field = "run"
     lookup_value_regex = r"\d{4}-\d{2}-\d{2}_\d{6}"
 
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        self._staff = is_staff_admin(request.user)
-
-    def _forbidden(self):
-        return None if self._staff else _failed("staff only", 403)
-
+    @require_staff_permissions("module_admin_screen_review")
     def list(self, request, *args, **kwargs):
         from progeo.helper import screen_review_fetch as fetch
 
-        return self._forbidden() or RequestSuccess({
+        return RequestSuccess({
             "runs": review.list_runs(),
             # No screenshots of its own: the gallery offers "Fetch from staging".
             "can_capture": fetch.capture_available(),
             "can_fetch": fetch.fetch_enabled(),
         })
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=False, methods=["GET", "POST"], url_path="fetch")
     def fetch(self, request, *args, **kwargs):
         """The runs from the staging server: GET the state of the last fetch,
         POST starts one in the background (one at a time)."""
         from progeo.helper import screen_review_fetch as fetch
 
-        if (denied := self._forbidden()) is not None:
-            return denied
         if request.method == "GET":
             return RequestSuccess({"enabled": fetch.fetch_enabled(), "state": fetch.state()})
         if not fetch.fetch_enabled():
@@ -86,9 +79,8 @@ class ScreenReviewViewSet(viewsets.ViewSet):
             fetch.run_fetch()
         return RequestSuccess({"enabled": True, "state": fetch.state()})
 
+    @require_staff_permissions("module_admin_screen_review")
     def retrieve(self, request, run=None, *args, **kwargs):
-        if (denied := self._forbidden()) is not None:
-            return denied
         try:
             images = review.run_images(run)
         except review.ReviewError as exc:
@@ -100,6 +92,7 @@ class ScreenReviewViewSet(viewsets.ViewSet):
             "reviewed": [review.mark_payload(mark) for mark in marks],
         })
 
+    @require_staff_permissions("module_admin_screen_review")
     def destroy(self, request, run=None, *args, **kwargs):
         if not getattr(request.user, "is_superuser", False):
             return _failed("Superuser access required", 403)
@@ -112,10 +105,9 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         shutil.rmtree(folder)
         return RequestSuccess({"deleted": run})
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["GET"], url_path=r"image/(?P<file>[A-Za-z0-9.\-]+)")
     def image(self, request, run=None, file=None, *args, **kwargs):
-        if (denied := self._forbidden()) is not None:
-            return denied
         try:
             path = review.image_path(run, file)
         except review.ReviewError as exc:
@@ -125,10 +117,9 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         response["Cache-Control"] = "private, max-age=86400"
         return response
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["GET"], url_path="export")
     def export(self, request, run=None, *args, **kwargs):
-        if (denied := self._forbidden()) is not None:
-            return denied
         try:
             content = review.export_zip(run)
         except review.ReviewError as exc:
@@ -137,10 +128,9 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         response["Content-Disposition"] = f'attachment; filename="screen-review-{run}.zip"'
         return response
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["POST"], url_path="notes")
     def notes(self, request, run=None, *args, **kwargs):
-        if (denied := self._forbidden()) is not None:
-            return denied
         try:
             fields = review.clean_note(request.data, run)
         except review.ReviewError as exc:
@@ -148,10 +138,9 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         note = ScreenReviewNote.objects.create(run=run, author=request.user, **fields)
         return RequestSuccess({"note": review.note_payload(note)})
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["PATCH", "DELETE"], url_path=r"notes/(?P<note_id>\d+)")
     def note(self, request, run=None, note_id=None, *args, **kwargs):
-        if (denied := self._forbidden()) is not None:
-            return denied
         note = ScreenReviewNote.objects.filter(run=run, pk=int(note_id)).select_related("author").first()
         if note is None:
             return _failed("Note not found", 404)
@@ -169,11 +158,10 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         note.save()
         return RequestSuccess({"note": review.note_payload(note)})
 
+    @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["POST"], url_path="reviewed")
     def reviewed(self, request, run=None, *args, **kwargs):
         """A screenshot marked as reviewed (or not any more) - for the whole team."""
-        if (denied := self._forbidden()) is not None:
-            return denied
         data = request.data if isinstance(request.data, dict) else {}
         image = data.get("image")
         try:

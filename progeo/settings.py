@@ -173,6 +173,12 @@ PASSWORD_RESET_MINUTES = parse_int(os.getenv("PASSWORD_RESET_MINUTES"), 30)
 # 15 minutes (helper/login_throttle.py).
 LOGIN_MAX_FAILURES_PER_NAME = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_NAME"), 10)
 LOGIN_MAX_FAILURES_PER_IP = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_IP"), 50)
+# Before that, per login name: this many failures are free, then the next
+# attempt waits BASE seconds since the last failure, doubling per further
+# failure up to MAX (2, 4, 8, ... 300 s).
+LOGIN_BACKOFF_FREE_FAILURES = parse_int(os.getenv("LOGIN_BACKOFF_FREE_FAILURES"), 3)
+LOGIN_BACKOFF_BASE_SECONDS = parse_int(os.getenv("LOGIN_BACKOFF_BASE_SECONDS"), 2)
+LOGIN_BACKOFF_MAX_SECONDS = parse_int(os.getenv("LOGIN_BACKOFF_MAX_SECONDS"), 300)
 # DRF tokens of /auth/login/ (ExpiringTokenAuthentication); 0 = no expiry.
 DRF_TOKEN_MAX_AGE_DAYS = parse_int(os.getenv("DRF_TOKEN_MAX_AGE_DAYS"), 30)
 # JWT refresh tokens of /api/token/ (rotated on every refresh): how long a
@@ -667,6 +673,10 @@ STAGING_IMPORT_GPG_KEY_FILES = [
 STAGING_IMPORT_GPG_PASSPHRASE = os.getenv("STAGING_IMPORT_GPG_PASSPHRASE", "")
 # STAGING server: cronjobs/staging-import.sh restores each new bundle at night. Off by default.
 STAGING_AUTO_IMPORT = parse_boolean(os.getenv("STAGING_AUTO_IMPORT"))
+# STAGING server: password of the UI tests' demo people (helper/e2e.py,
+# `demo_account --e2e`) - empty = they can't log in and the /v1/e2e/ endpoints
+# are off. Ignored where STAGING_REMOTE_HOST is set (the live server).
+E2E_DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "")
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]

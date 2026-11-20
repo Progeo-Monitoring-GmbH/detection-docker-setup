@@ -32,6 +32,7 @@ from progeo.decorator import (
     calc_runtime,
     require_held_permissions,
     require_module_permissions,
+    require_staff_permissions,
 )
 from progeo.helper import cad_import, dm_transfer, lageplan_edit, plan_detect
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
@@ -319,6 +320,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return tail_file(path, lines)
 
     @calc_runtime
+    @require_staff_permissions("module_admin_panel")
     @require_module_permissions("module_admin_enabled")
     @require_held_permissions("module_admin_storage")
     @action(detail=False, url_path="admin/storage_info", methods=["GET"])
@@ -352,6 +354,7 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_staff_permissions("module_admin_panel")
     @require_module_permissions("module_admin_enabled")
     @require_held_permissions("module_admin_logs")
     @action(detail=False, url_path="admin/log_files", methods=["GET"])
@@ -384,6 +387,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({"files": summary})
 
     @calc_runtime
+    @require_staff_permissions("module_admin_panel")
     @require_module_permissions("module_admin_enabled")
     @require_held_permissions("module_admin_lageplan_export")
     @action(detail=False, url_path="admin/lageplan_export", methods=["GET"])

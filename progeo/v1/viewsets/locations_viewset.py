@@ -41,6 +41,7 @@ from progeo.decorator import (
     holds_permission,
     permission_denied_response,
     require_module_permissions,
+    require_staff_permissions,
 )
 from progeo.helper import (
     cad_import,
@@ -3404,6 +3405,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     # Projects the project search answers at most.
     PROJECT_SEARCH_LIMIT = 20
 
+    @require_staff_permissions("module_admin_staff_enabled")
     @action(detail=False, url_path="project-search", methods=["GET"])
     def project_search(self, request, *args, **kwargs):
         """Staff: the projects matching `?q=` over every account (not only
@@ -3417,8 +3419,6 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
         from progeo.helper.demo import DEMO_ACCOUNT_HASH
 
-        if not _is_staff_admin(getattr(request, "user", None)):
-            return RequestFailed({"reason": "Staff access required"})
         query = (request.query_params.get("q") or "").strip()
         if not query:
             return RequestSuccess({"projects": []})

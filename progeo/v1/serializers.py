@@ -926,13 +926,20 @@ class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         # TokenObtainPairSerializer.validate with the 2FA step between the
         # password check and the tokens: no token exists before the code is right.
+        from progeo.helper import login_throttle
         from progeo.helper.two_factor import check_login_code
 
-        data = TokenObtainSerializer.validate(self, attrs)
         request = self.context.get("request")
+        try:
+            data = TokenObtainSerializer.validate(self, attrs)
+        except exceptions.AuthenticationFailed:
+            # Refused unchecked (too many failures): 429 with the seconds to wait.
+            login_throttle.raise_if_throttled(request)
+            raise
         otp = request.data.get("otp") if request is not None and hasattr(request.data, "get") else None
         error = check_login_code(self.user, otp, request)
         if error:
+            login_throttle.raise_if_throttled(request)
             raise TwoFactorRequired(error)
         refresh = self.get_token(self.user)
         data["refresh"] = str(refresh)

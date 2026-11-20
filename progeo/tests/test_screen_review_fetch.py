@@ -35,6 +35,9 @@ class FakeSFTP:
         return [SimpleNamespace(filename=name, st_mode=os.stat(folder / name).st_mode)
                 for name in sorted(os.listdir(folder))]
 
+    def normalize(self, remote):
+        return "/home/progeo"
+
     def get(self, remote, local):
         self.gets.append(remote)
         shutil.copyfile(self._path(remote), local)
@@ -71,7 +74,9 @@ def staging(settings, tmp_path, monkeypatch):
 
 @pytest.fixture
 def staff(api_client):
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_screen_review",))
+    )
 
 
 def test_the_missing_runs_come_from_the_staging_checkout(staging):
@@ -130,4 +135,68 @@ def test_only_staff_fetch(api_client, staging):
     api_client.force_authenticate(user=f.make_user())
 
     assert api_client.post("/v1/screen-review/fetch/").status_code == 403
+
+
+def test_check_lists_the_runs_and_downloads_nothing(staging):
+    found = fetch.check()
+
+    assert found["remote"] == [LOCAL_RUN, STAGING_RUN] and found["local"] == [LOCAL_RUN]
+    assert found["home"] == "/home/progeo" and staging.sftp.gets == []
+
+
+def test_an_unexpected_error_does_not_leave_the_fetch_running(staging, monkeypatch):
+    # A crash outside FetchError used to keep "running" for a day - the button stayed blocked.
+    def crash(runs=None):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(fetch, "fetch_runs", crash)
+
+    with pytest.raises(PermissionError):
+        fetch.run_fetch()
+
+    assert fetch.state()["status"] == "failed" and "Permission denied" in fetch.state()["error"]
+    assert not fetch.is_running()
+
+
+def test_an_unreadable_key_file_is_named(settings, tmp_path, monkeypatch):
+    # Celery runs as progeo, the cron job's backup transfer as root: a root-only
+    # key file worked there and failed here with a bare PermissionError.
+    import paramiko
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from progeo.helper import backup_transfer
+
+    key = tmp_path / "id_ed25519"
+    key.write_text("x")
+    settings.STAGING_REMOTE_HOST = "staging.progeo.com"
+    settings.STAGING_REMOTE_KEY_FILE = str(key)
+    settings.STAGING_REMOTE_HOST_KEY = Ed25519PrivateKey.generate().public_key().public_bytes(
+        serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH).decode()
+
+    def denied(path):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(paramiko.PKey, "from_path", staticmethod(denied))
+
+    with pytest.raises(backup_transfer.TransferError, match=r"id_ed25519 can't be read as .*progeo = DOCKER_UID"):
+        backup_transfer.connect(backup_transfer.Target.of("staging"))
+    with pytest.raises(fetch.FetchError, match="can't be read"):
+        fetch._connect()
+
+
+def test_the_command_checks_and_fetches(staging):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("fetch_screen_reviews", "--check", stdout=out)
+    assert f"{STAGING_RUN}  missing" in out.getvalue() and f"{LOCAL_RUN}  here already" in out.getvalue()
+    assert not (staging.local / STAGING_RUN).exists()
+
+    out = StringIO()
+    call_command("fetch_screen_reviews", "--run", STAGING_RUN, stdout=out)
+    assert "fetched 1 run(s)" in out.getvalue() and (staging.local / STAGING_RUN / "manifest.json").exists()
+    assert fetch.state()["status"] == "done"
 

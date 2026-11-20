@@ -3,6 +3,7 @@ import { Spinner } from 'react-bootstrap';
 import { CheckLg, ChevronDown, ChevronRight } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import SeverityBadge from '../components/ui/kit/SeverityBadge';
@@ -76,6 +77,11 @@ const ComputedSuspicionPanel = ({
 }: ComputedSuspicionPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // The point whose pending alarms wait for the confirmation to be acknowledged.
+  const [ackTarget, setAckTarget] = useState<{
+    point: ComputedSuspicionPoint;
+    letter: string;
+  } | null>(null);
 
   const body = () => {
     if (denied) {
@@ -120,7 +126,9 @@ const ComputedSuspicionPanel = ({
             sensors={sensorList(point.sensor_ids, sensorLabel)}
             expanded={expanded.has(point.id)}
             onToggle={() => setExpanded((prev) => toggledSet(prev, point.id))}
-            onAcknowledge={() => onAcknowledge(point)}
+            onAcknowledge={() =>
+              setAckTarget({ point, letter: pointLetter(index) })
+            }
             acknowledging={acknowledging.has(point.id)}
             readOnly={readOnly}
             sensorLabel={sensorLabel}
@@ -139,6 +147,26 @@ const ComputedSuspicionPanel = ({
         {t('suspicion_computed_hint')}
       </div>
       {body()}
+      <ConfirmDialog
+        testId="computed-suspicion-acknowledge-dialog"
+        show={ackTarget !== null}
+        title={t('acknowledge_alarms_title')}
+        message={t('acknowledge_alarms_point_message', {
+          count: ackTarget?.point.pending_ack_alarm_ids.length ?? 0,
+          letter: ackTarget?.letter ?? '',
+          sensors: ackTarget?.point.sensor_ids.length ?? 0,
+        })}
+        confirmLabel={t('ui_quittieren')}
+        cancelLabel={t('acknowledge_alarms_cancel')}
+        danger={false}
+        onCancel={() => setAckTarget(null)}
+        onConfirm={() => {
+          if (ackTarget) {
+            onAcknowledge(ackTarget.point);
+          }
+          setAckTarget(null);
+        }}
+      />
     </PanelCard>
   );
 };

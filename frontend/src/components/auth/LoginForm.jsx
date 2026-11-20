@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,10 @@ import AuthPage, { AuthLinks, authButtonClass } from './AuthPage';
  * Users with 2FA get a second step: the password was right, now the code
  * from the authenticator app (or a recovery code) - email and password
  * are sent again with it (the form keeps their values meanwhile).
+ *
+ * After too many failed attempts the backend refuses the next ones for a
+ * growing wait (429, main/loginThrottle.ts): the form counts it down and
+ * keeps the submit button disabled meanwhile.
  */
 const LoginForm = () => {
   const [searchParams] = useSearchParams();
@@ -25,22 +29,53 @@ const LoginForm = () => {
   const [showPasswd, setShowPasswd] = useState(false);
   // null: credentials; 'otp_required'/'otp_invalid': the 2FA step.
   const [otpStep, setOtpStep] = useState(null);
+  // Wrong email/password (or the login failed otherwise).
+  const [failed, setFailed] = useState(false);
+  // Too many failed attempts: seconds until the next may be sent.
+  const [retryAfter, setRetryAfter] = useState(0);
   const auth = useAuth();
   const { t } = useTranslation();
 
+  useEffect(() => {
+    if (retryAfter <= 0) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setRetryAfter((left) => left - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [retryAfter]);
+
+  const throttled = retryAfter > 0;
+  const busy = formState.isSubmitting || throttled;
+
   const onSubmit = async (data) => {
+    setFailed(false);
     const forward = searchParams.get('forward') || '/v1/0/overview';
     const outcome = await auth.loginAction(
       otpStep ? data : { username: data.username, password: data.password },
       forward,
     );
-    if (outcome === 'otp_required' || outcome === 'otp_invalid') {
+    if (outcome?.retryAfter) {
+      // Refused unchecked - the step (credentials or code) stays.
+      setRetryAfter(outcome.retryAfter);
+    } else if (outcome === 'otp_required' || outcome === 'otp_invalid') {
       setOtpStep(outcome);
       resetField('otp');
     } else {
       setOtpStep(null);
+      setFailed(outcome === 'failed');
     }
   };
+
+  const throttledNotice = throttled && (
+    <p
+      className="auth-error"
+      role="alert"
+      data-testid="login-throttled"
+      data-retry-after={retryAfter}
+    >
+      {t('login_throttled', { seconds: retryAfter })}
+    </p>
+  );
 
   const backToCredentials = () => {
     setOtpStep(null);
@@ -71,15 +106,16 @@ const LoginForm = () => {
               {...register('otp')}
             />
           </label>
-          {otpStep === 'otp_invalid' && (
+          {otpStep === 'otp_invalid' && !throttled && (
             <p className="auth-error" data-testid="login-otp-error">
               {t('login_otp_invalid')}
             </p>
           )}
+          {throttledNotice}
           <button
             type="submit"
-            disabled={formState.isSubmitting}
-            className={authButtonClass(formState.isSubmitting)}
+            disabled={busy}
+            className={authButtonClass(busy)}
             data-testid="login-otp-submit"
           >
             {t('login_otp_submit')}
@@ -153,10 +189,17 @@ const LoginForm = () => {
           </span>
         </label>
 
+        {failed && !throttled && (
+          <p className="auth-error" role="alert" data-testid="login-error">
+            {t('login_failed')}
+          </p>
+        )}
+        {throttledNotice}
+
         <button
           type="submit"
-          disabled={formState.isSubmitting}
-          className={authButtonClass(formState.isSubmitting)}
+          disabled={busy}
+          className={authButtonClass(busy)}
           data-testid="login-submit"
         >
           {t('login_submit')}

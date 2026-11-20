@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
@@ -37,6 +38,29 @@ export const parseNr = (value: string): number | null => {
     return null;
   }
   return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+};
+
+/**
+ * The rows of an import file ({"data": [...]} as the export writes it, or a
+ * plain array) and how many of each model ("ProgeoLocation: 1, ProgeoDevice: 4") -
+ * told in the confirmation before anything is sent.
+ */
+export const importSummary = (payload: unknown): { rows: number; summary: string } => {
+  const rows =
+    payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as { data?: unknown }).data : payload;
+  if (!Array.isArray(rows)) {
+    return { rows: 0, summary: '' };
+  }
+  const perModel = new Map<string, number>();
+  for (const row of rows) {
+    const clazz = row && typeof row === 'object' ? (row as { clazz?: unknown }).clazz : null;
+    const name = typeof clazz === 'string' && clazz ? clazz : '?';
+    perModel.set(name, (perModel.get(name) ?? 0) + 1);
+  }
+  return {
+    rows: rows.length,
+    summary: [...perModel].map(([name, count]) => `${name}: ${count}`).join(', '),
+  };
 };
 
 /** Wait this long after the last keystroke before asking the backend. */
@@ -187,6 +211,8 @@ const LocationAnlegenView = () => {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  // A read import file waiting for the confirmation (its rows counted per model).
+  const [pendingImport, setPendingImport] = useState<{ file: string; payload: unknown; summary: string; rows: number } | null>(null);
   const [nrHint, setNrHint] = useState<NrHint>({ kind: 'empty' });
   const [nrSuggestion, setNrSuggestion] = useState<number | null>(null);
 
@@ -305,11 +331,11 @@ const LocationAnlegenView = () => {
     );
   };
 
-  const importData = (files: FileList | null) => {
+  /** Reads the picked file and counts its rows - sent only after the confirmation. */
+  const readImport = (files: FileList | null) => {
     if (!files || files.length === 0) {
       return;
     }
-    setImporting(true);
     setImportMsg(null);
     const file = files[0];
     const reader = new FileReader();
@@ -319,26 +345,36 @@ const LocationAnlegenView = () => {
         payload = JSON.parse(String(reader.result));
       } catch {
         showErrorBar(enqueueSnackbar, 'File is not valid JSON');
-        setImporting(false);
         return;
       }
-      void axiosConfig.perform_post(
-        auth,
-        '/v1/data/import/',
-        payload,
-        (response) => {
-          const created = response?.data?.created ?? 0;
-          const updated = response?.data?.updated ?? 0;
-          setImportMsg(t('anlegen_import_done', { created, updated }));
-          setImporting(false);
-        },
-        (error) => {
-          showRequestError(enqueueSnackbar, 'Could not import data', error);
-          setImporting(false);
-        },
-      );
+      const { rows, summary } = importSummary(payload);
+      setPendingImport({ file: file.name, payload, rows, summary });
     };
     reader.readAsText(file);
+  };
+
+  const importData = () => {
+    if (!pendingImport) {
+      return;
+    }
+    const { payload } = pendingImport;
+    setPendingImport(null);
+    setImporting(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/data/import/',
+      payload,
+      (response) => {
+        const created = response?.data?.created ?? 0;
+        const updated = response?.data?.updated ?? 0;
+        setImportMsg(t('anlegen_import_done', { created, updated }));
+        setImporting(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not import data', error);
+        setImporting(false);
+      },
+    );
   };
 
   const optionalLabel = `(${t('access_optional')})`;
@@ -460,12 +496,15 @@ const LocationAnlegenView = () => {
       <div className="anlegen-actions" data-testid="anlegen-actions">
         <PillButton label={t('anlegen_create')} onClick={create} disabled={creating} testId="anlegen-create" />
         <span className="anlegen-required-note">{t('anlegen_required_note')}</span>
-        <label className="anlegen-import">
+        <label className="anlegen-import" data-testid="anlegen-import">
           <span>{importing ? '…' : t('anlegen_import_data')}</span>
           <input
             type="file"
             accept="application/json"
-            onChange={(event) => importData(event.target.files)}
+            onChange={(event) => {
+              readImport(event.target.files);
+              event.target.value = '';
+            }}
             className="anlegen-file-input"
             data-testid="anlegen-import-input"
           />
@@ -482,6 +521,20 @@ const LocationAnlegenView = () => {
         />
         {importMsg && <span className="anlegen-import-msg" data-testid="anlegen-import-message">{importMsg}</span>}
       </div>
+      <ConfirmDialog
+        show={pendingImport !== null}
+        title={t('anlegen_import_data')}
+        message={t('anlegen_import_confirm', {
+          file: pendingImport?.file ?? '',
+          count: pendingImport?.rows ?? 0,
+          summary: pendingImport?.summary || '-',
+        })}
+        confirmLabel={t('anlegen_import_data')}
+        cancelLabel={t('anlegen_import_cancel')}
+        onConfirm={importData}
+        onCancel={() => setPendingImport(null)}
+        testId="anlegen-import-dialog"
+      />
     </div>
   );
 };

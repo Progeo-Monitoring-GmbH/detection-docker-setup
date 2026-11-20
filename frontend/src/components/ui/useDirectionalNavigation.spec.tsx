@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useRef } from 'react';
+import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -7,6 +7,7 @@ import {
   swipeDirection,
   useKeyNavigation,
   useSwipeNavigation,
+  useTouchSwipe,
   type Direction,
 } from './useDirectionalNavigation';
 
@@ -42,6 +43,19 @@ describe('keyAction', () => {
     dialog.className = 'modal show';
     document.body.appendChild(dialog);
     expect(keyAction(key({ key: 'ArrowLeft' }))).toBeNull();
+    dialog.remove();
+  });
+
+  it('in a dialog: its own keys - only a dialog over it takes them', () => {
+    const dialog = document.createElement('div');
+    dialog.className = 'modal show';
+    document.body.appendChild(dialog);
+    expect(keyAction(key({ key: 'ArrowLeft' }), true)).toBe('left');
+    const confirm = document.createElement('div');
+    confirm.className = 'modal show';
+    document.body.appendChild(confirm);
+    expect(keyAction(key({ key: 'ArrowLeft' }), true)).toBeNull();
+    confirm.remove();
     dialog.remove();
   });
 });
@@ -134,5 +148,53 @@ describe('the hooks', () => {
     pointer('pointerup', 150, 'mouse');
 
     expect(swipes).toEqual([['right', 'card-2']]);
+  });
+
+  it('touch swipes: tells whether the strip under the finger scrolled; two fingers are none', () => {
+    const swipes: [Direction, boolean][] = [];
+    const Viewer = () => {
+      const [element, setElement] = useState<HTMLDivElement | null>(null);
+      useTouchSwipe(element, (direction, { scrolled }) =>
+        swipes.push([direction, scrolled]),
+      );
+      return (
+        <div ref={setElement}>
+          <div id="strip">
+            <span id="part" />
+          </div>
+        </div>
+      );
+    };
+    act(() => root.render(<Viewer />));
+    const strip = container.querySelector<HTMLElement>('#strip')!;
+    // Wider than shown (jsdom lays nothing out).
+    Object.defineProperty(strip, 'scrollWidth', { value: 800 });
+    Object.defineProperty(strip, 'clientWidth', { value: 300 });
+    const part = container.querySelector('#part')!;
+    const touchEvent = (type: string, x: number, fingers = 1) => {
+      const event = new Event(type, { bubbles: true }) as TouchEvent;
+      const point = { clientX: x, clientY: 100 };
+      Object.assign(event, {
+        touches: type === 'touchend' ? [] : Array(fingers).fill(point),
+        changedTouches: [point],
+      });
+      part.dispatchEvent(event);
+    };
+
+    // At the strip's end: a step on.
+    touchEvent('touchstart', 300);
+    touchEvent('touchend', 150);
+    // The strip scrolled with the finger: no step.
+    touchEvent('touchstart', 300);
+    strip.scrollLeft = 120;
+    touchEvent('touchend', 150);
+    // A pinch.
+    touchEvent('touchstart', 300, 2);
+    touchEvent('touchend', 150);
+
+    expect(swipes).toEqual([
+      ['right', false],
+      ['right', true],
+    ]);
   });
 });

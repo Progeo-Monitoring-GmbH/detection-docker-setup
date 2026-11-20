@@ -12,6 +12,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { repeatedTestId } from '../testIds';
 import './StaffAdmin.css';
 
@@ -101,6 +102,10 @@ const StaffMessaging = () => {
   const [state, setState] = useState<MessagingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Asked first: releasing the brake, or a suppression to lift.
+  const [ask, setAsk] = useState<
+    { kind: 'breaker' } | { kind: 'suppression'; suppression: Suppression } | null
+  >(null);
 
   // `loading` is only the first load's spinner - a refresh keeps the shown state.
   const fetchState = useCallback(() => {
@@ -148,29 +153,17 @@ const StaffMessaging = () => {
     );
   };
 
-  const resetBreaker = () => {
-    if (window.confirm(t('staff_messaging_breaker_reset_confirm'))) {
-      post(
-        '/api/auth-support/staff/messaging/breaker/reset/',
-        t('staff_messaging_breaker_reset_done'),
-      );
-    }
-  };
+  const resetBreaker = () =>
+    post(
+      '/api/auth-support/staff/messaging/breaker/reset/',
+      t('staff_messaging_breaker_reset_done'),
+    );
 
-  const deleteSuppression = (suppression: Suppression) => {
-    if (
-      window.confirm(
-        t('staff_messaging_suppression_delete_confirm', {
-          address: suppression.address,
-        }),
-      )
-    ) {
-      post(
-        `/api/auth-support/staff/messaging/suppressions/${suppression.id}/delete/`,
-        t('staff_messaging_suppression_deleted'),
-      );
-    }
-  };
+  const deleteSuppression = (suppression: Suppression) =>
+    post(
+      `/api/auth-support/staff/messaging/suppressions/${suppression.id}/delete/`,
+      t('staff_messaging_suppression_deleted'),
+    );
 
   const columns = useMemo<TableColumn<OutboundMessage>[]>(
     () => [
@@ -306,7 +299,7 @@ const StaffMessaging = () => {
               variant="danger"
               size="sm"
               disabled={busy}
-              onClick={resetBreaker}
+              onClick={() => setAsk({ kind: 'breaker' })}
               data-testid="staff-messaging-breaker-reset"
             >
               {t('staff_messaging_breaker_reset')}
@@ -398,7 +391,7 @@ const StaffMessaging = () => {
                       title={t('staff_messaging_suppression_delete')}
                       aria-label={t('staff_messaging_suppression_delete')}
                       disabled={busy}
-                      onClick={() => deleteSuppression(suppression)}
+                      onClick={() => setAsk({ kind: 'suppression', suppression })}
                       {...repeatedTestId('staff-messaging-suppression-delete', suppression.id)}
                     >
                       <Trash size={14} />
@@ -410,6 +403,46 @@ const StaffMessaging = () => {
           </Table>
         )}
       </Card.Body>
+
+      <ConfirmDialog
+        show={ask !== null}
+        title={
+          ask?.kind === 'suppression'
+            ? t('staff_messaging_suppression_delete_confirm_title')
+            : t('staff_messaging_breaker_reset_confirm_title')
+        }
+        message={
+          ask?.kind === 'suppression'
+            ? t('staff_messaging_suppression_delete_confirm', {
+                address: ask.suppression.address,
+                reason: ask.suppression.reason || '-',
+                bounces: ask.suppression.bounce_count,
+              })
+            : t('staff_messaging_breaker_reset_confirm', {
+                reason: state.breaker.reason || '-',
+              })
+        }
+        confirmLabel={
+          ask?.kind === 'suppression'
+            ? t('staff_messaging_suppression_delete')
+            : t('staff_messaging_breaker_reset')
+        }
+        cancelLabel={t('staff_cancel')}
+        onConfirm={() => {
+          if (ask?.kind === 'suppression') {
+            deleteSuppression(ask.suppression);
+          } else if (ask) {
+            resetBreaker();
+          }
+          setAsk(null);
+        }}
+        onCancel={() => setAsk(null)}
+        testId={
+          ask?.kind === 'suppression'
+            ? 'staff-messaging-suppression-delete-dialog'
+            : 'staff-messaging-breaker-reset-dialog'
+        }
+      />
     </Card>
   );
 };

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, CheckLg } from 'react-bootstrap-icons';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
@@ -43,6 +44,8 @@ const VerdachtsstellenPanel = ({
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showResolved, setShowResolved] = useState(false);
+  // The cluster whose pending alarms wait for the confirmation to be acknowledged.
+  const [ackTarget, setAckTarget] = useState<VerdachtsstelleCluster | null>(null);
   const { open, resolved } = splitResolved(clusters);
 
   const rows = (list: VerdachtsstelleCluster[]) =>
@@ -55,7 +58,7 @@ const VerdachtsstellenPanel = ({
         disabled={disabledOf?.(cluster.sensor_id) ?? false}
         expanded={expanded.has(cluster.id)}
         onToggle={() => setExpanded((prev) => toggledSet(prev, cluster.id))}
-        onAcknowledge={() => onAcknowledge(cluster)}
+        onAcknowledge={() => setAckTarget(cluster)}
         acknowledging={acknowledging.has(cluster.id)}
         readOnly={readOnly}
         t={t}
@@ -100,6 +103,25 @@ const VerdachtsstellenPanel = ({
           )}
         </>
       )}
+      <ConfirmDialog
+        testId="verdachtsstelle-acknowledge-dialog"
+        show={ackTarget !== null}
+        title={t('acknowledge_alarms_title')}
+        message={t('acknowledge_alarms_verdachtsstelle_message', {
+          count: ackTarget?.pending_ack_alarm_ids.length ?? 0,
+          sensor: ackTarget ? sensorLabel(ackTarget.sensor_id) : '',
+        })}
+        confirmLabel={t('ui_quittieren')}
+        cancelLabel={t('acknowledge_alarms_cancel')}
+        danger={false}
+        onCancel={() => setAckTarget(null)}
+        onConfirm={() => {
+          if (ackTarget) {
+            onAcknowledge(ackTarget);
+          }
+          setAckTarget(null);
+        }}
+      />
     </PanelCard>
   );
 };

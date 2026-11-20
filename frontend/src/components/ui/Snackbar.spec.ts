@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import i18n from '../../i18n.jsx';
 import {
   errorReason,
+  permissionDeniedMessage,
   showErrorBar,
   showInfoBar,
   showRequestError,
   showSuccessBar,
+  withoutErrorToasts,
 } from './Snackbar.jsx';
 
 describe('errorReason', () => {
@@ -78,5 +81,45 @@ describe('snackbar helpers', () => {
     const enqueue = vi.fn();
     showRequestError(enqueue, 'Oops', undefined);
     expect(enqueue).toHaveBeenCalledWith('Oops: undefined', { variant: 'error' });
+  });
+});
+
+describe('403 helpers', () => {
+  const forbidden = (data: unknown) => ({ message: 'x', response: { status: 403, data } });
+
+  it('permissionDeniedMessage names a meaningful reason, else the generic text', () => {
+    expect(permissionDeniedMessage(forbidden({ reason: 'Staff access required' }))).toBe(
+      i18n.t('permission_denied_reason', { reason: 'Staff access required' }),
+    );
+    expect(permissionDeniedMessage(forbidden({ reason: 'Missing required permissions' }))).toBe(
+      i18n.t('permission_denied'),
+    );
+    expect(permissionDeniedMessage(forbidden(null))).toBe(i18n.t('permission_denied'));
+    expect(permissionDeniedMessage(undefined)).toBe(i18n.t('permission_denied'));
+  });
+
+  it('withoutErrorToasts silences only the error toasts inside it and returns its result', () => {
+    const enqueue = vi.fn();
+    const result = withoutErrorToasts(() => {
+      showRequestError(enqueue, 'Could not load', new Error('x'));
+      showSuccessBar(enqueue, 'Saved');
+      return 42;
+    });
+    expect(result).toBe(42);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith('Saved', { variant: 'success' });
+    showErrorBar(enqueue, 'Failed');
+    expect(enqueue).toHaveBeenLastCalledWith('Failed', { variant: 'error' });
+  });
+
+  it('withoutErrorToasts unmutes even when the callback throws', () => {
+    const enqueue = vi.fn();
+    expect(() =>
+      withoutErrorToasts(() => {
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    showErrorBar(enqueue, 'Failed');
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 });

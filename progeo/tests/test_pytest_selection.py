@@ -61,7 +61,7 @@ def test_image_root_pytest_configuration_initializes_django_before_conftest(pyte
     pytester.path.joinpath("progeo", "tests").mkdir(parents=True)
 
     result = pytester.runpytest_subprocess(
-        "-p", "django", "-p", "pytest_cov", "-p", "pytest_html.plugin", "-p", "pytest_metadata.plugin",
+        "-p", "django", "-p", "pytest_cov",
         "--ds=smoke_settings", "--collect-only", "-q", "test_smoke.py",
     )
 

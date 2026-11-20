@@ -44,7 +44,12 @@ def run(uploads):
 
 @pytest.fixture
 def staff(api_client):
-    user = f.make_user(staff=True, first_name="Jonas", last_name="Weber")
+    user = f.make_user(
+        staff=True,
+        first_name="Jonas",
+        last_name="Weber",
+        perms=("module_admin_screen_review",),
+    )
     api_client.force_authenticate(user=user)
     return user
 
@@ -103,6 +108,12 @@ def test_customers_see_no_screens(api_client, run):
 
     assert api_client.get("/v1/screen-review/").status_code == 403
     assert api_client.get(f"{URL}image/mobile-user-login.png/").status_code == 403
+
+
+def test_staff_without_screen_review_permission_is_denied(api_client, run):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    assert api_client.get("/v1/screen-review/").status_code == 403
 
 
 def _note(api_client, **fields):
@@ -263,7 +274,9 @@ def test_screenshots_are_marked_reviewed_for_the_team(api_client, run, staff):
     marked = api_client.post(url, {"image": "mobile-user-login.png", "reviewed": True}, format="json").json()
     assert marked["reviewed"]["reviewed_by_name"] == "Jonas Weber"
     # Twice: still one mark, the first reviewer's.
-    api_client.force_authenticate(user=f.make_user(staff=True))
+    api_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_screen_review",))
+    )
     api_client.post(url, {"image": "mobile-user-login.png", "reviewed": True}, format="json")
     body = api_client.get(URL).json()
     assert [(mark["image"], mark["reviewed_by_name"]) for mark in body["reviewed"]] == [

@@ -105,17 +105,35 @@ describe('ComputedSuspicionPanel', () => {
     ).toBe('B');
   });
 
-  it('acknowledges a point from its details', () => {
+  it('acknowledges a point from its details - after the confirmation, which counts its alarms', () => {
     const onAcknowledge = renderPanel();
 
     act(() => byTestId('computed-suspicion-toggle', 'computed-3')?.click());
     act(() =>
       byTestId('computed-suspicion-acknowledge', 'computed-3')?.click(),
     );
+    const dialog = byTestId('computed-suspicion-acknowledge-dialog');
+    expect(dialog?.textContent).toContain('acknowledge_alarms_point_message:1');
+    expect(onAcknowledge).not.toHaveBeenCalled();
 
+    act(() => byTestId('computed-suspicion-acknowledge-dialog-confirm')?.click());
     expect(onAcknowledge).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'computed-3' }),
     );
+    expect(byTestId('computed-suspicion-acknowledge-dialog')).toBeNull();
+  });
+
+  it('acknowledges nothing when the confirmation is cancelled', () => {
+    const onAcknowledge = renderPanel();
+
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')?.click());
+    act(() =>
+      byTestId('computed-suspicion-acknowledge', 'computed-3')?.click(),
+    );
+    act(() => byTestId('computed-suspicion-acknowledge-dialog-cancel')?.click());
+
+    expect(onAcknowledge).not.toHaveBeenCalled();
+    expect(byTestId('computed-suspicion-acknowledge-dialog')).toBeNull();
   });
 
   it('offers nothing to acknowledge without pending alarms, and nothing in the demo', () => {

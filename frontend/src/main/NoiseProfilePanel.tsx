@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Button, Card, Collapse, Spinner } from 'react-bootstrap';
 import { XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PillSelect from '../components/ui/kit/PillSelect';
 import { formatDate } from './dateFormat';
 import './NoiseProfile.css';
@@ -196,6 +197,8 @@ const NoiseProfilePanel = ({
   // Minimized until opened - the measurements above come first. An edit
   // (a new or changed profile) opens it: the editor must be seen.
   const [open, setOpen] = useState(false);
+  // The profile whose delete waits for the confirmation.
+  const [deleting, setDeleting] = useState<NoiseProfile | null>(null);
   const editing = draftName != null;
   useEffect(() => {
     if (editing) {
@@ -340,11 +343,7 @@ const NoiseProfilePanel = ({
                     className={BUTTON_CLASS}
                     disabled={busy || editing}
                     data-testid="noise-profile-delete"
-                    onClick={() => {
-                      if (window.confirm(t('noise_profile_delete_confirm', { name: selected.name }))) {
-                        onDelete(selected);
-                      }
-                    }}
+                    onClick={() => setDeleting(selected)}
                   >
                     {t('noise_profile_delete')}
                   </Button>
@@ -450,6 +449,24 @@ const NoiseProfilePanel = ({
           </Card.Body>
         </div>
       </Collapse>
+      <ConfirmDialog
+        show={deleting !== null}
+        title={t('noise_profile_delete_title')}
+        message={t(
+          deleting?.is_active ? 'noise_profile_delete_message_active' : 'noise_profile_delete_message',
+          { name: deleting?.name ?? '' },
+        )}
+        confirmLabel={t('noise_profile_delete')}
+        cancelLabel={t('noise_profile_delete_cancel')}
+        onConfirm={() => {
+          if (deleting) {
+            onDelete(deleting);
+          }
+          setDeleting(null);
+        }}
+        onCancel={() => setDeleting(null)}
+        testId="noise-profile-delete-dialog"
+      />
     </Card>
   );
 };

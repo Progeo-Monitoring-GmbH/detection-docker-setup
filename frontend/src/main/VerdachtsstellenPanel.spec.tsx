@@ -50,7 +50,7 @@ afterEach(() => {
   container.remove();
 });
 
-const render = (clusters: VerdachtsstelleCluster[]) =>
+const render = (clusters: VerdachtsstelleCluster[], onAcknowledge: (cluster: VerdachtsstelleCluster) => void = () => undefined) =>
   act(() =>
     root.render(
       <VerdachtsstellenPanel
@@ -59,7 +59,7 @@ const render = (clusters: VerdachtsstelleCluster[]) =>
         sensorLabel={(sensor) => `Sensor ${sensor}`}
         metersOf={() => null}
         acknowledging={new Set()}
-        onAcknowledge={() => undefined}
+        onAcknowledge={onAcknowledge}
         readOnly={false}
       />,
     ),
@@ -93,5 +93,25 @@ describe('VerdachtsstellenPanel', () => {
     render([cluster('a', 1, 'neu')]);
     expect(byTestId('verdachtsstellen-resolved')).toBeNull();
     expect(byTestId('verdachtsstellen-view-all')).toBeNull();
+  });
+
+  it('acknowledges the pending alarms of a cluster only after the confirmation, which counts them', () => {
+    const onAcknowledge = vi.fn();
+    render([{ ...cluster('a', 1, 'neu'), pending_ack_alarm_ids: [5, 6] }], onAcknowledge);
+    const click = (id: string) =>
+      act(() => (container.querySelector(`[data-testid="${id}"][data-test-key="a"], [data-testid="${id}"]:not([data-test-key])`) as HTMLButtonElement).click());
+
+    click('verdachtsstelle-toggle');
+    click('verdachtsstelle-acknowledge');
+    expect(byTestId('verdachtsstelle-acknowledge-dialog')?.textContent).toContain(
+      'acknowledge_alarms_verdachtsstelle_message:2',
+    );
+    click('verdachtsstelle-acknowledge-dialog-cancel');
+    expect(byTestId('verdachtsstelle-acknowledge-dialog')).toBeNull();
+    expect(onAcknowledge).not.toHaveBeenCalled();
+
+    click('verdachtsstelle-acknowledge');
+    click('verdachtsstelle-acknowledge-dialog-confirm');
+    expect(onAcknowledge).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
   });
 });

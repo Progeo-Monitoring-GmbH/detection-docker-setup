@@ -62,7 +62,7 @@ const isRunning = (container: DockerContainer) => container.status === 'running'
  * Developer -> Docker: the host's containers (GET /api/docker/status/,
  * refreshed every REFRESH_MS and after each action) with start / stop,
  * restart, remove (stopped containers only) and their logs (the last lines,
- * with timestamps). Restart and remove ask first. Staff only - the backend
+ * with timestamps). Stop, restart and remove ask first. Staff only - the backend
  * also requires module_docker_enabled.
  */
 const DockerStatusView = () => {
@@ -77,7 +77,7 @@ const DockerStatusView = () => {
   const [refreshing, setRefreshing] = useState(false);
   // Container id -> its running action (its buttons are disabled meanwhile).
   const [busy, setBusy] = useState<Record<string, Action>>({});
-  const [confirm, setConfirm] = useState<{ container: DockerContainer; action: 'restart' | 'remove' } | null>(null);
+  const [confirm, setConfirm] = useState<{ container: DockerContainer; action: 'stop' | 'restart' | 'remove' } | null>(null);
   const [logs, setLogs] = useState<{ container: DockerContainer; text: string | null; tail: number } | null>(null);
   const logRef = useRef<HTMLPreElement | null>(null);
 
@@ -237,7 +237,8 @@ const DockerStatusView = () => {
                 title={t(`docker_action_${startStop}`)}
                 aria-label={t(`docker_action_${startStop}`)}
                 disabled={Boolean(action)}
-                onClick={() => run(container, startStop)}
+                // Stopping takes its service down - asked first; starting is not.
+                onClick={() => (running ? setConfirm({ container, action: 'stop' }) : run(container, 'start'))}
                 className="progeo-icon-button"
                 {...repeatedTestId('docker-container-start-stop', container.id)}
               >
@@ -336,7 +337,7 @@ const DockerStatusView = () => {
         message={confirm ? t(`docker_confirm_${confirm.action}_message`, { name: confirm.container.name }) : ''}
         confirmLabel={confirm ? t(`docker_action_${confirm.action}`) : ''}
         cancelLabel={t('docker_cancel')}
-        danger={confirm?.action === 'remove'}
+        danger={confirm?.action !== 'restart'}
         testId="docker-confirm"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {

@@ -217,6 +217,18 @@ def parse_host_key(value, setting="BACKUP_REMOTE_HOST_KEY"):
     raise TransferError(f"{setting} needs the key type and key, e.g. \"ssh-ed25519 AAAA...\"")
 
 
+def current_user():
+    """"progeo (uid 1000)" - who this process runs as."""
+    import getpass
+
+    uid = getattr(os, "geteuid", lambda: None)()
+    try:
+        name = getpass.getuser()
+    except Exception:  # noqa: BLE001 - no name for the uid in the container
+        name = "?"
+    return name if uid is None else f"{name} (uid {uid})"
+
+
 def connect(target=None):
     """An open (SSHClient, SFTPClient) to the target's server (default: the backup server)."""
     import paramiko
@@ -235,7 +247,16 @@ def connect(target=None):
     credentials = {}
     key_file = target.key_file
     if key_file and os.path.isfile(key_file):
-        credentials["pkey"] = paramiko.PKey.from_path(key_file)
+        try:
+            credentials["pkey"] = paramiko.PKey.from_path(key_file)
+        except PermissionError as exc:
+            # The cron jobs run as root, celery and the web app as progeo (DOCKER_UID).
+            raise TransferError(
+                f"The key file {key_file} can't be read as {current_user()} - it must be readable "
+                f"by the user that connects (celery: progeo = DOCKER_UID; cron: root)"
+            ) from exc
+        except (OSError, paramiko.SSHException) as exc:
+            raise TransferError(f"The key file {key_file} can't be loaded: {exc}") from exc
     elif target.password:
         credentials["password"] = target.password
     else:

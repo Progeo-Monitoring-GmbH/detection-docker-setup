@@ -158,7 +158,11 @@ def test_pending_user_logs_in_per_jwt_only(client):
 
 def test_approval_opens_the_portal(client):
     tokens = _request_and_verify(client)
-    staff = f.make_user(staff=True, email="staff@progeo.com")
+    staff = f.make_user(
+        staff=True,
+        email="staff@progeo.com",
+        perms=("module_admin_staff_enabled",),
+    )
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     staff_client = APIClient()
     staff_client.force_authenticate(user=staff)
@@ -181,7 +185,9 @@ def test_approval_makes_the_user_a_member_of_the_chosen_accounts(client):
     _request_and_verify(client)
     first, second = f.make_account(name="Kunde Eins"), f.make_account(name="Kunde Zwei")
     staff_client = APIClient()
-    staff_client.force_authenticate(user=f.make_user(staff=True))
+    staff_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_staff_enabled",))
+    )
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     url = f"/api/auth-support/staff/access-requests/{request.pk}/approve/"
 
@@ -199,7 +205,9 @@ def test_staff_search_projects_by_number_name_or_city(client):
     f.make_location(account, project_id=847102, name="Lager", city="Neu-Ulm")
     f.make_location(account, project_id=999847, name="Werk Ost", city="Bonn")
     staff_client = APIClient()
-    staff_client.force_authenticate(user=f.make_user(staff=True))
+    staff_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_staff_enabled",))
+    )
 
     def search(query):
         return [row["project_id"] for row in staff_client.get("/v1/location/project-search/", {"q": query}).json()
@@ -214,12 +222,14 @@ def test_staff_search_projects_by_number_name_or_city(client):
                    "locations": 1}
     customer = APIClient()
     customer.force_authenticate(user=f.make_user(perms=("module_locations_enabled",)))
-    assert customer.get("/v1/location/project-search/", {"q": "847"}).json()["reason"] == "Staff access required"
+    response = customer.get("/v1/location/project-search/", {"q": "847"})
+    assert response.status_code == 403
+    assert response.json()["reason"] == "Staff access required"
 
 
 def test_rejection_deactivates_the_user(client):
     _request_and_verify(client)
-    staff = f.make_user(staff=True)
+    staff = f.make_user(staff=True, perms=("module_admin_staff_enabled",))
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     staff_client = APIClient()
     staff_client.force_authenticate(user=staff)
@@ -274,7 +284,9 @@ def test_staff_choose_the_language_of_the_approval_and_the_user(client):
     _request_and_verify(client)
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     staff_client = APIClient()
-    staff_client.force_authenticate(user=f.make_user(staff=True))
+    staff_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_staff_enabled",))
+    )
     listed = staff_client.get("/api/auth-support/staff/access-requests/").data["requests"]
     assert listed[0]["language"] == "de"  # the form sent none
 
@@ -293,7 +305,9 @@ def test_rejection_mail_in_the_chosen_language(client):
     _request_and_verify(client)
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     staff_client = APIClient()
-    staff_client.force_authenticate(user=f.make_user(staff=True))
+    staff_client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_staff_enabled",))
+    )
 
     staff_client.post(f"/api/auth-support/staff/access-requests/{request.pk}/reject/", {"language": "en"},
                       format="json")
@@ -307,6 +321,13 @@ def test_staff_endpoints_need_staff(client):
 
     assert client.get("/api/auth-support/staff/access-requests/").status_code == 400
     assert client.get("/api/auth-support/staff/messaging/").status_code == 400
+
+    client.force_authenticate(user=f.make_user(staff=True))
+    access_requests = client.get("/api/auth-support/staff/access-requests/")
+    messaging = client.get("/api/auth-support/staff/messaging/")
+    assert access_requests.status_code == messaging.status_code == 403
+    assert access_requests.data["missing_permissions"] == ["module_admin_staff_enabled"]
+    assert messaging.data["missing_permissions"] == ["module_admin_staff_enabled"]
 
 
 def test_cleanup_deletes_old_unconfirmed_and_rejected_requests(client):

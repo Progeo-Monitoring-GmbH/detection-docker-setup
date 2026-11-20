@@ -33,6 +33,8 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_locations_enabled", "Can access locations module"),
     ("module_locations_edit", "Can edit locations module"),
     ("module_locations_delete", "Can delete locations module"),
+    ("module_locations_django_edit", "Can edit locations in Django"),
+    ("module_locations_django_delete", "Can delete locations in Django"),
     ("module_devices_enabled", "Can access devices module"),
     ("module_devices_edit", "Can edit devices module"),
     ("module_devices_delete", "Can delete devices module"),
@@ -44,6 +46,10 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_backup_delete", "Can delete backup module"),
     ("module_docker_enabled", "Can access Docker module"),
     ("module_admin_enabled", "Can access admin module"),
+    ("module_admin_staff_enabled", "Can access staff management"),
+    ("module_admin_insights", "Can access insights module"),
+    ("module_admin_screen_review", "Can access screen review"),
+    ("module_admin_panel", "Can access admin panel"),
     ("module_testsuite_enabled", "Can access testsuite module"),
     ("module_profile_mail_edit", "Can edit profile mail module"),
     ("module_notifications_enabled", "Can access notifications module"),
@@ -68,6 +74,10 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_user_disability", "Can deactivate and reactivate users"),
     ("module_user_erasability", "Can delete users"),
     ("module_user_revokable", "Can revoke the access of users"),
+    ("module_user_copy_permissions", "Can copy user permissions"),
+    ("module_escalations_enabled", "Can access escalations module"),
+    ("module_reports_enabled", "Can access reports module"),
+    ("module_alarms_enabled", "Can access alarms module"),
 )
 
 # Held for real - staff included (holds_permission): the buttons they unlock

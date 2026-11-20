@@ -95,6 +95,37 @@ def require_held_permissions(*permission_codes):
     return _decorator
 
 
+def staff_permissions_denied(user, *permission_codes):
+    """403 response unless an active staff user holds each required code."""
+    if not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
+        return Response({"success": False, "reason": "Authentication required"},
+                        status=status.HTTP_401_UNAUTHORIZED)
+    if not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)):
+        return Response({"success": False, "reason": "Staff access required"},
+                        status=status.HTTP_403_FORBIDDEN)
+    missing = missing_held_permissions(user, *permission_codes)
+    return permission_denied_response(missing) if missing else None
+
+
+def require_staff_permissions(*permission_codes):
+    """Require a staff role and held module permissions, including for staff."""
+    def _decorator(wrapped_function):
+        @wraps(wrapped_function)
+        def _wrapper(*args, **kwargs):
+            request = _extract_request(args)
+            if request is None:
+                raise RuntimeError("require_staff_permissions could not resolve request argument")
+            denied = staff_permissions_denied(getattr(request, "user", None), *permission_codes)
+            if denied is not None:
+                return denied
+            return wrapped_function(*args, **kwargs)
+
+        _wrapper.required_staff_permissions = permission_codes
+        return _wrapper
+
+    return _decorator
+
+
 def permission_denied_response(missing_permissions) -> Response:
     """403 Response shaped like the one require_module_permissions returns."""
     return Response(

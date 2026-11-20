@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
-from progeo.decorator import require_module_permissions
+from progeo.decorator import require_held_permissions, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
@@ -58,7 +58,7 @@ class AlarmViewSet(ProgeoModalViewSet):
     def _locations_by_db(request, account, location_ids=None):
         return visible_locations_by_db(request.user, account, location_ids)
 
-    @require_module_permissions("module_measurements_enabled")
+    @require_held_permissions("module_alarms_enabled")
     def list(self, request, *args, **kwargs):
         cache_key, _cache = search_cache(request)
         if not kwargs.get("no_cache", False) and _cache:

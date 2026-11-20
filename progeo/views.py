@@ -3,10 +3,12 @@ from django.http import HttpResponse
 from django.views import View
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from progeo.authentication import is_expired_drf_token
+from progeo.helper import login_throttle
 from progeo.helper.basics import dlog
 from progeo.helper.two_factor import check_login_code, is_required
 from progeo.v1.serializers import TwoFactorRequired
@@ -19,11 +21,17 @@ class ExtendedObtainAuthToken(ObtainAuthToken):
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError:
+            # Refused unchecked (too many failures): 429 like /api/token/.
+            login_throttle.raise_if_throttled(request)
+            raise
         user = serializer.validated_data['user']
         # Same 2FA step as /api/token/ (ProgeoTokenObtainPairSerializer).
         error = check_login_code(user, request.data.get("otp"), request)
         if error:
+            login_throttle.raise_if_throttled(request)
             raise TwoFactorRequired(error)
         # login(request, user)   # TODO fix later
         token, _created = Token.objects.get_or_create(user=user)

@@ -15,6 +15,14 @@
   flex-wrap: wrap;
 }
 
+.status-admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+
 .status-request {
   display: flex;
   align-items: center;

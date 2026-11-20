@@ -68,3 +68,17 @@
     flex: 1 1 100%;
   }
 }
+
+/* The location answered 403/404 (another account's, or no access): this
+   notice instead of the tab. */
+.portal-no-access {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 640px;
+}
+
+.portal-no-access .portal-no-access-home {
+  margin-top: 6px;
+}

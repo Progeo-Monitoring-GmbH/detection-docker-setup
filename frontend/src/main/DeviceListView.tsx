@@ -290,6 +290,7 @@ const DeviceListView = () => {
       auth,
       // ?location=: device ids are only unique within one project database.
       `/v1/device/${target.id}/delete/${target.location ? `?location=${target.location}` : ''}`,
+      {},
       () => {
         showSuccessBar(enqueueSnackbar, t('devices_deleted'));
         setDeleting(false);

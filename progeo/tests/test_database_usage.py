@@ -45,7 +45,7 @@ def test_a_chunk_with_naive_measurement_times(databases, monkeypatch, settings):
     naive = datetime.datetime.now() - datetime.timedelta(hours=1)
     monkeypatch.setattr(usage, "map_databases", lambda work, names: [(2, naive, None)] + [(0, None, None)] * 2)
     client = APIClient()
-    client.force_authenticate(user=f.make_user(staff=True))
+    client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_insights",)))
     build = client.get(URL, {"plan": 1, "refresh": 1}).json()["build"]
 
     response = client.get(URL, {"build": build, "chunk": 0})
@@ -88,7 +88,7 @@ def _get(user, **params):
 
 
 def test_every_database_with_its_status(databases):
-    response = _get(f.make_user(staff=True))
+    response = _get(f.make_user(staff=True, perms=("module_admin_insights",)))
 
     assert response.status_code == 200, response.content
     body = response.json()
@@ -117,7 +117,7 @@ def test_the_activity_of_a_database_is_counted_in_it(monkeypatch):
 
 
 def test_the_answer_is_cached_until_refreshed(databases, monkeypatch):
-    staff = f.make_user(staff=True)
+    staff = f.make_user(staff=True, perms=("module_admin_insights",))
     first = _get(staff).json()
     monkeypatch.setattr(usage, "existing_project_aliases", lambda refresh=False: [])
 
@@ -130,7 +130,7 @@ def test_the_answer_is_cached_until_refreshed(databases, monkeypatch):
 def test_the_page_builds_it_chunk_by_chunk(databases, monkeypatch):
     monkeypatch.setattr(usage, "CHUNK_DATABASES", 2)
     client = APIClient()
-    client.force_authenticate(user=f.make_user(staff=True))
+    client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_insights",)))
 
     plan = client.get(URL, {"plan": 1, "refresh": 1}).json()
     assert plan["cached"] is False and (plan["databases"], plan["chunks"]) == (3, 2)
@@ -154,7 +154,7 @@ def test_the_page_builds_it_chunk_by_chunk(databases, monkeypatch):
 
 def test_unknown_builds_and_chunks_are_refused(databases):
     client = APIClient()
-    client.force_authenticate(user=f.make_user(staff=True))
+    client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_insights",)))
 
     assert client.get(URL, {"build": "nope", "chunk": 0}).json()["build_missing"] is True
     build = client.get(URL, {"plan": 1, "refresh": 1}).json()["build"]
@@ -164,3 +164,4 @@ def test_unknown_builds_and_chunks_are_refused(databases):
 
 def test_staff_only(databases):
     assert _get(f.make_user()).status_code == 403
+    assert _get(f.make_user(staff=True)).status_code == 403

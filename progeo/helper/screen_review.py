@@ -7,11 +7,18 @@ mocked data) and the review comments on them (ScreenReviewNote,
 A run is a folder media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/ with pc/ and mobile/
 and a manifest.json the capture writes:
 
-    {"run", "created", "images": [{"file", "device", "role", "action", "path",
-     "viewport": [w, h], "width", "height", "errors": [...]}]}
+    {"run", "created", "images": [{"file", "device", "role", "language", "action",
+     "path", "url", "modal", "viewport": [w, h], "width", "height", "errors": [...]}],
+     "failures": [{"file", ..., "modal", "url", "reason"}]}
 
-File names: {pc|mobile}-{user|staff}-{de|en}-{action}.png (runs before
-the languages: without {de|en} - German, the only language then).
+`url` is the address (path and query) the screenshot was taken on, `modal`
+for a dialog its {name, testId, path, scenario, steps} (frontend/e2e/
+screenshots/routes.mjs), `failures` the dialogs that did not open. Runs
+before the dialogs have neither: their `path` is their url.
+
+File names: {pc|mobile}-{user|staff}-{de|en}-{action}.png, a dialog on that
+page {...}-{action}--{dialog}.png (runs before the languages: without
+{de|en} - German, the only language then).
 
 export_zip() gives the commented screenshots (arrows and areas drawn in,
 numbered) and a PROMPT.md - what to change on which screen, for whoever (or
@@ -29,7 +36,10 @@ from django.conf import settings
 from django.utils import timezone
 
 RUN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
-IMAGE_RE = re.compile(r"^(pc|mobile)-(user|staff)-(?:(de|en)-)?([a-z0-9][a-z0-9-]{0,120})\.png$")
+IMAGE_RE = re.compile(
+    r"^(pc|mobile)-(user|staff)-(?:(de|en)-)?"
+    r"([a-z0-9][a-z0-9-]{0,120}?)(?:--([a-z0-9][a-z0-9-]{0,120}))?\.png$"
+)
 DEVICES = ("pc", "mobile")
 ROLES = ("user", "staff")
 LANGUAGES = ("de", "en")
@@ -133,12 +143,74 @@ def run_dir(run: str) -> Path:
 
 
 def parse_image_name(name: str):
-    """(device, role, language, action) of a screenshot's file name - None if it isn't one."""
+    """(device, role, language, action, modal) of a screenshot's file name -
+    modal: the dialog's name, None for the page itself. None if it isn't one."""
     match = IMAGE_RE.match(name or "")
     if not match:
         return None
-    device, role, language, action = match.groups()
-    return device, role, language or DEFAULT_LANGUAGE, action
+    device, role, language, action, modal = match.groups()
+    return device, role, language or DEFAULT_LANGUAGE, action, modal
+
+
+STEP_VERBS = ("click", "check", "uncheck", "hover", "fill", "select", "upload", "press", "wait")
+
+
+def _text(value, limit=300):
+    return value[:limit] if isinstance(value, str) else None
+
+
+def _clean_step(step):
+    """A step of a dialog's way to open, as the manifest has it - only its known fields."""
+    if not isinstance(step, dict) or step.get("do") not in STEP_VERBS:
+        return None
+    cleaned = {"do": step["do"]}
+    for name in ("testId", "key", "css", "value", "device"):
+        if _text(step.get(name)) is not None:
+            cleaned[name] = _text(step[name])
+    if isinstance(step.get("ms"), (int, float)) and not isinstance(step.get("ms"), bool):
+        cleaned["ms"] = step["ms"]
+    if isinstance(step.get("file"), dict) and _text(step["file"].get("name")):
+        cleaned["file"] = _text(step["file"]["name"])
+    return cleaned
+
+
+def _clean_modal(entry, name):
+    """The dialog of a screenshot: {name, testId, path, scenario, steps} - from
+    the manifest, or only its name (from the file name) without one."""
+    if name is None:
+        return None
+    modal = entry.get("modal") if isinstance(entry.get("modal"), dict) else {}
+    steps = modal.get("steps") if isinstance(modal.get("steps"), list) else []
+    return {
+        "name": name,
+        "testId": _text(modal.get("testId")),
+        "path": _text(modal.get("path"), 500),
+        "scenario": _text(modal.get("scenario")),
+        "steps": [step for step in (_clean_step(step) for step in steps[:30]) if step],
+    }
+
+
+def step_text(step: dict) -> str:
+    """A step readable: `click [data-testid="x"][data-test-key="2"]` - as in PROMPT.md."""
+    verb = step.get("do", "?")
+    if verb == "wait":
+        return f"wait {step.get('ms', 0)} ms"
+    if verb == "press":
+        return f"press {step.get('value', '')}"
+    if step.get("css"):
+        target = step["css"]
+    else:
+        target = f'[data-testid="{step.get("testId", "")}"]'
+        if step.get("key") is not None:
+            target += f'[data-test-key="{step["key"]}"]'
+    text = f"{verb} {target}"
+    if verb in ("fill", "select") and step.get("value") is not None:
+        text += f' = "{step["value"]}"'
+    if verb == "upload" and step.get("file"):
+        text += f" ({step['file']})"
+    if step.get("device"):
+        text += f" (on {step['device']} only)"
+    return text
 
 
 def image_path(run: str, name: str) -> Path:
@@ -162,20 +234,26 @@ def _size(path: Path):
         return None, None
 
 
+def _manifest(folder: Path) -> dict:
+    manifest = folder / "manifest.json"
+    if not manifest.is_file():
+        return {}
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def run_images(run: str) -> list:
     """The screenshots of a run - from its manifest, completed by the files
     found (a run cut short has no manifest)."""
     folder = run_dir(run)
     listed = {}
-    manifest = folder / "manifest.json"
-    if manifest.is_file():
-        try:
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        for entry in data.get("images", []) if isinstance(data, dict) else []:
-            if isinstance(entry, dict) and parse_image_name(entry.get("file", "")):
-                listed[entry["file"]] = entry
+    data = _manifest(folder)
+    for entry in data.get("images", []) if isinstance(data.get("images"), list) else []:
+        if isinstance(entry, dict) and parse_image_name(entry.get("file", "")):
+            listed[entry["file"]] = entry
     images = []
     for device in DEVICES:
         for path in sorted((folder / device).glob("*.png")):
@@ -188,11 +266,34 @@ def run_images(run: str) -> list:
             images.append({
                 "file": path.name, "device": parsed[0], "role": parsed[1], "language": parsed[2],
                 "action": parsed[3],
-                "path": entry.get("path"), "viewport": entry.get("viewport"),
+                "path": entry.get("path"),
+                # Where it was taken - runs before the dialogs: the route's path.
+                "url": _text(entry.get("url"), 500) or entry.get("path"),
+                "modal": _clean_modal(entry, parsed[4]),
+                "viewport": entry.get("viewport"),
                 "width": entry.get("width"), "height": entry.get("height"),
                 "errors": [str(error)[:300] for error in entry.get("errors", [])][:5],
             })
     return images
+
+
+def run_failures(run: str) -> list:
+    """The screenshots of a run that could not be taken (manifest `failures`):
+    {file, device, role, language, action, url, modal, reason} - dialogs that
+    did not open, pages that did not load. Runs before the dialogs: []."""
+    data = _manifest(run_dir(run))
+    failures = []
+    for entry in data.get("failures", []) if isinstance(data.get("failures"), list) else []:
+        parsed = parse_image_name(entry.get("file", "")) if isinstance(entry, dict) else None
+        if parsed is None:
+            continue
+        failures.append({
+            "file": entry["file"], "device": parsed[0], "role": parsed[1], "language": parsed[2],
+            "action": parsed[3], "url": _text(entry.get("url"), 500) or _text(entry.get("path"), 500),
+            "modal": _clean_modal(entry, parsed[4]),
+            "reason": _text(entry.get("reason"), 500) or "",
+        })
+    return failures[:500]
 
 
 def list_runs() -> list:
@@ -359,6 +460,8 @@ def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
         " (its route), what to do and where."),
         "",
         "- The commented screenshots are in `screens/` - every comment is drawn in and numbered.",
+        ("- Each screen names its URL (open it in the portal) - a dialog also how it is opened on that page:"
+        " the steps by `data-testid` (`data-test-key` for repeated elements), then the dialog's own test id."),
         ("- Coordinates are pixels of the full-page screenshot = CSS pixels of the page at that viewport,"
         " x from the left, y from the top of the page (not of the window)."),
         ("- Actions: **move** (arrow from the element to its new place), **select** (the element meant),"
@@ -373,10 +476,23 @@ def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
     for image in commented:
         viewport = image.get("viewport") or []
         size = f"{viewport[0]}×{viewport[1]}" if len(viewport) == 2 else image["device"]
+        modal = image.get("modal")
         lines += [
             f"## {image['file']}",
             "",
             f"- Route: `{image.get('path') or '?'}`",
+            f"- URL: `{image.get('url') or image.get('path') or '?'}`",
+        ]
+        if modal:
+            dialog = f"- Dialog: **{modal['name']}**"
+            if modal.get("testId"):
+                dialog += f' (`[data-testid="{modal["testId"]}"]`)'
+            lines.append(dialog)
+            if modal.get("steps"):
+                lines.append("- Opened by: " + " → ".join(f"`{step_text(step)}`" for step in modal["steps"]))
+            if modal.get("scenario"):
+                lines.append(f"- Mocked data variant: `{modal['scenario']}`")
+        lines += [
             f"- Device: {image['device']} ({size}) · user: {image['role']} · language: {image['language']}",
             f"- Image: `screens/{image['file']}` ({image.get('width')}×{image.get('height')} px)",
         ]

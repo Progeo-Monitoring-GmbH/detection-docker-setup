@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { downloadBlob } from '../download';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PillButton from '../components/ui/kit/PillButton';
 import DeviceRenameModal from '../components/modal/DeviceRenameModal';
 import ClimateChart, {
@@ -149,11 +150,12 @@ const LocationClimatePanels = ({
 
   const isSuperuser = !demo && flags.isSuperuser;
   const [busy, setBusy] = useState(false);
+  // The confirmations: deleting every measurement, importing a read file.
+  const [cleanOpen, setCleanOpen] = useState(false);
+  const [pendingImport, setPendingImport] = useState<{ file: string; rows: number; payload: unknown } | null>(null);
 
   const cleanMeasurements = () => {
-    if (!window.confirm(t('measurements_clean_confirm'))) {
-      return;
-    }
+    setCleanOpen(false);
     setBusy(true);
     void axiosConfig.perform_post(
       auth,
@@ -194,11 +196,12 @@ const LocationClimatePanels = ({
     );
   };
 
-  const importMeasurements = (files: FileList | null) => {
+  /** Reads the picked file - the import is sent only after the confirmation. */
+  const readImport = (files: FileList | null) => {
     if (!files || files.length === 0) {
       return;
     }
-    setBusy(true);
+    const file = files[0];
     const reader = new FileReader();
     reader.onload = () => {
       let payload: unknown;
@@ -206,31 +209,44 @@ const LocationClimatePanels = ({
         payload = JSON.parse(String(reader.result));
       } catch {
         showErrorBar(enqueueSnackbar, 'File is not valid JSON');
-        setBusy(false);
         return;
       }
-      void axiosConfig.perform_post(
-        auth,
-        `/v1/location/${locationId}/measurements/import/`,
-        payload,
-        (response) => {
-          showSuccessBar(
-            enqueueSnackbar,
-            t('anlegen_import_done', {
-              created: response?.data?.created ?? 0,
-              updated: response?.data?.updated ?? 0,
-            }),
-          );
-          setBusy(false);
-          loadClimate();
-        },
-        (error) => {
-          showRequestError(enqueueSnackbar, 'Could not import measurements', error);
-          setBusy(false);
-        },
-      );
+      const rows =
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? (payload as { data?: unknown }).data
+          : payload;
+      setPendingImport({ file: file.name, rows: Array.isArray(rows) ? rows.length : 0, payload });
     };
-    reader.readAsText(files[0]);
+    reader.readAsText(file);
+  };
+
+  const importMeasurements = () => {
+    if (!pendingImport) {
+      return;
+    }
+    const { payload } = pendingImport;
+    setPendingImport(null);
+    setBusy(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/measurements/import/`,
+      payload,
+      (response) => {
+        showSuccessBar(
+          enqueueSnackbar,
+          t('anlegen_import_done', {
+            created: response?.data?.created ?? 0,
+            updated: response?.data?.updated ?? 0,
+          }),
+        );
+        setBusy(false);
+        loadClimate();
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not import measurements', error);
+        setBusy(false);
+      },
+    );
   };
 
   const body = (metric: ClimateMetric, axisTitle: string, unit: string) =>
@@ -309,7 +325,7 @@ const LocationClimatePanels = ({
                 className="climate-file-input"
                 data-testid={childTestId(testId, 'import-file')}
                 onChange={(event) => {
-                  importMeasurements(event.target.files);
+                  readImport(event.target.files);
                   event.target.value = '';
                 }}
               />
@@ -318,7 +334,7 @@ const LocationClimatePanels = ({
                 variant="ghost"
                 label={t('measurements_clean')}
                 disabled={busy}
-                onClick={cleanMeasurements}
+                onClick={() => setCleanOpen(true)}
               />
             </div>
           )}
@@ -355,6 +371,26 @@ const LocationClimatePanels = ({
           onSaved={loadClimate}
         />
       )}
+      <ConfirmDialog
+        show={cleanOpen}
+        title={t('measurements_clean')}
+        message={t('measurements_clean_confirm')}
+        confirmLabel={t('measurements_clean')}
+        cancelLabel={t('measurements_cancel')}
+        onConfirm={cleanMeasurements}
+        onCancel={() => setCleanOpen(false)}
+        testId={childTestId(testId, 'clean-dialog')}
+      />
+      <ConfirmDialog
+        show={pendingImport !== null}
+        title={t('measurements_import')}
+        message={t('measurements_import_confirm', { file: pendingImport?.file ?? '', count: pendingImport?.rows ?? 0 })}
+        confirmLabel={t('measurements_import')}
+        cancelLabel={t('measurements_cancel')}
+        onConfirm={importMeasurements}
+        onCancel={() => setPendingImport(null)}
+        testId={childTestId(testId, 'import-dialog')}
+      />
     </div>
   );
 };

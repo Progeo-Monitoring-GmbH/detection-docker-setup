@@ -6,7 +6,10 @@ gallery's "Fetch from staging" downloads the runs it doesn't have yet.
 Over SSH with the staging connection the live server already has
 (STAGING_REMOTE_*: host, user, the key in ./secrets/backup, the pinned host
 key - helper/backup_transfer.connect), file by file over SFTP - scp's
-protocol, without needing the scp binary in the backend image.
+protocol, without needing the scp binary in the backend image. The fetch runs
+in celery, as progeo (DOCKER_UID) - unlike the backup transfer (cron, root),
+so the key file must be readable by that user. Debug it on the server with
+`manage.py fetch_screen_reviews --check`, run as that user (docker exec -u progeo).
 
 The paths differ between the servers: the staging checkout is
 /home/progeo/detection-docker-setup, the live one /home/progeo. SFTP starts
@@ -85,6 +88,8 @@ def _connect():
         return connect(Target.of("staging"))
     except TransferError as exc:
         raise FetchError(str(exc)) from exc
+    except OSError as exc:
+        raise FetchError(f"Connecting to the staging server failed: {exc}") from exc
 
 
 def _remote_runs(sftp, base) -> list:
@@ -157,14 +162,38 @@ def fetch_runs(runs=None) -> dict:
     return {"runs": fetched, "files": files, "skipped": skipped}
 
 
-def run_fetch():
+def check() -> dict:
+    """Connect and list, download nothing (`manage.py fetch_screen_reviews --check`):
+    {"home": the login's directory, "base": the runs' folder (relative to it),
+    "remote": the run names there, "local": those this server has already}."""
+    base = remote_root().rstrip("/")
+    client, sftp = _connect()
+    try:
+        try:
+            home = sftp.normalize(".")
+        except OSError:
+            home = "?"
+        remote = _remote_runs(sftp, base)
+    finally:
+        sftp.close()
+        client.close()
+    local_root = screen_review.root()
+    return {"home": home, "base": base, "remote": remote,
+            "local": [run for run in remote if (local_root / run).is_dir()]}
+
+
+def run_fetch(runs=None):
     """The background job (tasks.fetch_screen_reviews_task): fetch and keep the outcome."""
     _set_state(status="running", runs=[], files=0)
     try:
-        result = fetch_runs()
+        result = fetch_runs(runs)
     except FetchError as exc:
         elog(f"[screen_review] fetch from staging failed: {exc}")
         _set_state(status="failed", error=str(exc))
         return {"error": str(exc)}
+    except Exception as exc:
+        # Never left at "running": that blocks the button for STATE_TTL.
+        _set_state(status="failed", error=f"{type(exc).__name__}: {exc}")
+        raise
     _set_state(status="done", runs=result["runs"], files=result["files"], skipped=len(result["skipped"]))
     return result

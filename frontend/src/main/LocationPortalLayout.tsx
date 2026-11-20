@@ -1,11 +1,14 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { Outlet, useParams } from 'react-router';
-import { Spinner } from 'react-bootstrap';
+import { Link, Outlet, useParams } from 'react-router';
+import { Alert, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showRequestError } from '../components/ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+} from '../components/ui/Snackbar.jsx';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 import EscalationBanner from './EscalationBanner';
@@ -39,8 +42,12 @@ const LocationPortalLayout = () => {
 
   const [location, setLocation] = useState<LocationDetail | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
+  // The location answered 403/404: another account's, or outside the user's
+  // access - one notice instead of tabs that load nothing.
+  const [noAccess, setNoAccess] = useState(false);
 
   useEffect(() => {
+    setNoAccess(false);
     if (!id) {
       setLocation(null);
       setLoading(false);
@@ -56,7 +63,17 @@ const LocationPortalLayout = () => {
         setLoading(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load location', error);
+        const status = error?.response?.status;
+        if (status === 404) {
+          // Not among the user's locations (the backend can't tell "not
+          // there" from "not yours").
+          setNoAccess(true);
+          showErrorBar(enqueueSnackbar, t('location_no_access'));
+        } else {
+          // A 403's toast comes from axiosConfig (this one stays silent).
+          setNoAccess(status === 403);
+          showRequestError(enqueueSnackbar, 'Could not load location', error);
+        }
         setLoading(false);
       },
     );
@@ -147,6 +164,22 @@ const LocationPortalLayout = () => {
           >
             <Spinner animation="border" className="me-2" />
           </div>
+        ) : noAccess ? (
+          <Alert
+            variant="warning"
+            className="portal-no-access"
+            data-testid="location-no-access"
+          >
+            <div className="fw-semibold">{t('location_no_access')}</div>
+            <div className="small">{t('location_no_access_hint')}</div>
+            <Link
+              to="/"
+              className="btn btn-outline-secondary btn-sm portal-no-access-home"
+              data-testid="location-no-access-home"
+            >
+              {t('location_no_access_home')}
+            </Link>
+          </Alert>
         ) : (
           <Outlet
             context={

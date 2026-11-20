@@ -6,6 +6,8 @@ import {
   ChatLeftText,
   CheckCircle,
   CheckCircleFill,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExclamationTriangle,
   Trash,
@@ -24,6 +26,7 @@ import useIsMobile from '../components/ui/useIsMobile';
 import {
   useKeyNavigation,
   useSwipeNavigation,
+  useTouchSwipe,
 } from '../components/ui/useDirectionalNavigation';
 import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
@@ -234,12 +237,20 @@ const ScreenCard = ({
   );
 };
 
-/** The screenshot large, with the drawing tools and its comments. */
+/**
+ * The screenshot large, with the drawing tools and its comments - and a
+ * pager over the gallery's screenshots (keys ←/→, swipes, the header's
+ * arrows): `position` its place in the filtered list (index -1: no longer
+ * in it), `onStep` to the previous (-1) or next (1) one.
+ */
 const ScreenEditor = ({
   run,
   image,
   notes,
   cache,
+  position,
+  canStep,
+  onStep,
   onClose,
   onNotes,
 }: {
@@ -247,13 +258,18 @@ const ScreenEditor = ({
   image: ScreenImage;
   notes: ScreenNote[];
   cache: Map<string, string>;
+  position: { index: number; total: number };
+  canStep: (step: -1 | 1) => boolean;
+  onStep: (step: -1 | 1) => void;
   onClose: () => void;
   onNotes: (update: (notes: ScreenNote[]) => ScreenNote[]) => void;
 }) => {
   const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const touch = useIsMobile('(pointer: coarse)');
   const src = useScreenshotSrc(cache, run, image.file, true);
+  const [imageElement, setImageElement] = useState<HTMLDivElement | null>(null);
   const [tool, setTool] = useState<Tool | null>(null);
   const [draft, setDraft] = useState<DraftShape | null>(null);
   // The form: a new shape (draft, done) or a note picked to change.
@@ -262,6 +278,8 @@ const ScreenEditor = ({
   const [action, setAction] = useState<NoteAction>('select');
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  // The comment whose delete waits for its ConfirmDialog.
+  const [askDelete, setAskDelete] = useState<ScreenNote | null>(null);
   // The parts' size: at most the window's height; at first only as tall as
   // lets two parts stand side by side (an arrow can run from one to the
   // next) - the size slider enlarges them.
@@ -290,6 +308,43 @@ const ScreenEditor = ({
     setEditingId(null);
     setComment('');
   };
+
+  // Another screenshot (paged on): no tool, draft or form of the last one.
+  const [shownFile, setShownFile] = useState(image.file);
+  if (shownFile !== image.file) {
+    setShownFile(image.file);
+    setTool(null);
+    setAskDelete(null);
+    resetForm();
+  }
+  // ... and from its start - the dialog stays, its scroll positions too.
+  useEffect(() => {
+    imageElement?.querySelector('.stitched')?.scrollTo({ left: 0 });
+    imageElement?.closest('.modal-body')?.scrollTo({ top: 0 });
+  }, [image.file, imageElement]);
+
+  // Paging on drops a comment being written: not while one is.
+  const unsaved = draft !== null || formOpen || askDelete !== null;
+  const step = (direction: -1 | 1) => {
+    if (!unsaved && canStep(direction)) {
+      onStep(direction);
+      announceKey('screens-editor-step');
+    }
+  };
+  useKeyNavigation({ left: () => step(-1), right: () => step(1) }, !unsaved, {
+    inDialog: true,
+  });
+  // A swipe across the screenshot - once its parts are scrolled to that
+  // end (the strip scrolls first). Not while drawing: that is a drag too.
+  useTouchSwipe(
+    imageElement,
+    (direction, { scrolled }) => {
+      if (!scrolled && (direction === 'left' || direction === 'right')) {
+        step(direction === 'right' ? 1 : -1);
+      }
+    },
+    !unsaved && tool === null,
+  );
 
   const pickTool = (next: Tool) => {
     resetForm();
@@ -390,9 +445,45 @@ const ScreenEditor = ({
           <span className="screen-card-path">{image.path}</span>
           <ImageBadges image={image} notes={notes.length} />
         </Modal.Title>
+        <div
+          className="screen-editor-pager"
+          title={unsaved ? t('screens_step_unsaved') : undefined}
+        >
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            onClick={() => step(-1)}
+            disabled={unsaved || !canStep(-1)}
+            aria-label={t('screens_previous')}
+            title={t('screens_previous')}
+            data-testid="screen-editor-previous"
+          >
+            <ChevronLeft />
+          </Button>
+          <span
+            className="small text-muted"
+            data-testid="screen-editor-position"
+          >
+            {t('screens_position', {
+              number: position.index >= 0 ? position.index + 1 : '–',
+              total: position.total,
+            })}
+          </span>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            onClick={() => step(1)}
+            disabled={unsaved || !canStep(1)}
+            aria-label={t('screens_next')}
+            title={t('screens_next')}
+            data-testid="screen-editor-next"
+          >
+            <ChevronRight />
+          </Button>
+        </div>
       </Modal.Header>
       <Modal.Body className="screen-editor">
-        <div className="screen-editor-image">
+        <div className="screen-editor-image" ref={setImageElement}>
           {!src && (
             <div className="screen-editor-loading">
               <Spinner animation="border" size="sm" />
@@ -454,6 +545,25 @@ const ScreenEditor = ({
             <div className="small text-muted">
               {t(`screens_tool_hint_${tool}`)}
             </div>
+          )}
+          {touch ? (
+            <div className="small text-muted">
+              {t('screens_editor_swipe_hint')}
+            </div>
+          ) : (
+            <KeyHints
+              title={t('screens_keys_title')}
+              active={!unsaved}
+              inactiveNote={t('screens_step_unsaved')}
+              hints={[
+                {
+                  id: 'screens-editor-step',
+                  keys: ['←/→'],
+                  label: t('screens_key_step'),
+                },
+                { keys: ['Esc'], label: t('screens_key_close') },
+              ]}
+            />
           )}
 
           {formOpen && (
@@ -554,7 +664,7 @@ const ScreenEditor = ({
                   <button
                     type="button"
                     className="screen-note-delete"
-                    onClick={() => remove(note.id)}
+                    onClick={() => setAskDelete(note)}
                     title={t('screens_delete_note')}
                     aria-label={t('screens_delete_note')}
                     data-testid="screen-note-delete"
@@ -566,6 +676,30 @@ const ScreenEditor = ({
             </ol>
           )}
         </aside>
+        {/* Inside the modal, so it stands above it. */}
+        <ConfirmDialog
+          show={askDelete !== null}
+          title={t('screens_delete_note')}
+          message={
+            askDelete
+              ? t('screens_delete_note_confirm', {
+                  number: notes.findIndex((note) => note.id === askDelete.id) + 1,
+                  comment: askDelete.comment || '-',
+                  screen: image.action,
+                })
+              : ''
+          }
+          confirmLabel={t('screens_delete_note')}
+          cancelLabel={t('screens_cancel')}
+          onConfirm={() => {
+            if (askDelete) {
+              remove(askDelete.id);
+            }
+            setAskDelete(null);
+          }}
+          onCancel={() => setAskDelete(null)}
+          testId="screen-note-delete-dialog"
+        />
       </Modal.Body>
     </Modal>
   );
@@ -783,7 +917,7 @@ const ScreenReviewView = () => {
             toggleReviewed(currentImage.file);
           }
         },
-        enter: () => currentImage && setOpenFile(currentImage.file),
+        enter: () => currentImage && openAt(cursorIndex),
       },
     },
     Boolean(shownDetail) && openFile === null && images.length > 0,
@@ -822,6 +956,34 @@ const ScreenReviewView = () => {
   const openImage =
     shownDetail?.images.find((image) => image.file === openFile) ?? null;
   const noteCount = shownDetail?.notes.length ?? 0;
+
+  // The opened screenshot is the cursor's too - paging in it moves the
+  // cursor, the gallery stands there once it is closed.
+  const openAt = (index: number) => {
+    const image = images[index];
+    if (!image) {
+      return;
+    }
+    setCursor((current) => ({
+      file: image.file,
+      part: current.file === image.file ? current.part : 0,
+      index,
+    }));
+    setOpenFile(image.file);
+  };
+  const openIndex = images.findIndex((image) => image.file === openFile);
+  // Gone from the list (e.g. its last comment deleted under "Only
+  // commented"): on from the one now at its place.
+  const stepTarget = (step: -1 | 1) =>
+    openIndex >= 0
+      ? openIndex + step
+      : step > 0
+        ? cursor.index
+        : cursor.index - 1;
+  const stepOpen = (step: -1 | 1) => {
+    scrollToCursor.current = true;
+    openAt(stepTarget(step));
+  };
 
   const updateNotes =
     (file: string) => (update: (notes: ScreenNote[]) => ScreenNote[]) =>
@@ -1065,7 +1227,7 @@ const ScreenReviewView = () => {
               cache={cache}
               activePart={index === cursorIndex ? cursorPart : null}
               reviewed={reviewedMarks.get(image.file) ?? null}
-              onOpen={() => setOpenFile(image.file)}
+              onOpen={() => openAt(index)}
               onSelectPart={(part) =>
                 setCursor({ file: image.file, part, index })
               }
@@ -1081,6 +1243,9 @@ const ScreenReviewView = () => {
           image={openImage}
           notes={notes.get(openImage.file) ?? []}
           cache={cache}
+          position={{ index: openIndex, total: images.length }}
+          canStep={(step) => images[stepTarget(step)] != null}
+          onStep={stepOpen}
           onClose={() => setOpenFile(null)}
           onNotes={updateNotes(openImage.file)}
         />

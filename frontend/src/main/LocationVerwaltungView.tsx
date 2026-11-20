@@ -18,6 +18,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
@@ -178,6 +179,9 @@ const LocationVerwaltungView = () => {
 
   const [permsFor, setPermsFor] = useState<VerwaltungRow | null>(null);
   const [rules, setRules] = useState<AccessRule[]>([]);
+  // The rule whose revoke waits for the confirmation.
+  const [revokeTarget, setRevokeTarget] = useState<AccessRule | null>(null);
+  const [revoking, setRevoking] = useState(false);
   const [accessUsers, setAccessUsers] = useState<AccessUser[]>([]);
   const [permsLoading, setPermsLoading] = useState(false);
   const [newUserId, setNewUserId] = useState('');
@@ -397,10 +401,12 @@ const LocationVerwaltungView = () => {
     );
   };
 
-  const removeRule = (rule: AccessRule) => {
-    if (!permsFor) {
+  const removeRule = () => {
+    if (!permsFor || !revokeTarget) {
       return;
     }
+    const rule = revokeTarget;
+    setRevoking(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${permsFor.id}/access/delete/`,
@@ -408,9 +414,12 @@ const LocationVerwaltungView = () => {
       () => {
         setRules((prev) => prev.filter((r) => r.id !== rule.id));
         showSuccessBar(enqueueSnackbar, t('rechte_removed'));
+        setRevoking(false);
+        setRevokeTarget(null);
       },
       (error) => {
         showRequestError(enqueueSnackbar, 'Could not remove access', error);
+        setRevoking(false);
       },
     );
   };
@@ -833,7 +842,7 @@ const LocationVerwaltungView = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeRule(rule)}
+                      onClick={() => setRevokeTarget(rule)}
                       className="location-verwaltung-revoke"
                       {...repeatedTestId(
                         'verwaltung-permissions-revoke',
@@ -922,6 +931,21 @@ const LocationVerwaltungView = () => {
           </div>
         </div>
       )}
+      {/* After the permissions dialog: it stacks above it (z-index 80 over 75). */}
+      <ConfirmDialog
+        testId="verwaltung-permissions-revoke-dialog"
+        show={revokeTarget !== null}
+        title={t('rechte_revoke_title')}
+        message={t('rechte_revoke_object_message', {
+          name: revokeTarget ? revokeTarget.user_name || revokeTarget.user_email || `#${revokeTarget.user}` : '',
+          object: permsFor ? [permsFor.nr, permsFor.name].filter(Boolean).join(' ') : '',
+        })}
+        confirmLabel={t('rechte_revoke')}
+        cancelLabel={t('rechte_cancel')}
+        confirming={revoking}
+        onCancel={() => setRevokeTarget(null)}
+        onConfirm={removeRule}
+      />
     </div>
   );
 };

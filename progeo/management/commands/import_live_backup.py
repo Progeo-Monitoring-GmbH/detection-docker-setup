@@ -8,7 +8,7 @@ from django.core.management import CommandError, call_command
 
 from progeo.helper.backup_import import bundles, unpack
 from progeo.helper.backup_transfer import TransferError, clean_old_dumps
-from progeo.helper.basics import ilog
+from progeo.helper.basics import ilog, wlog
 from progeo.management.commands._base import BaseCommand
 
 STATUS_FILE = "staging_import.json"
@@ -92,6 +92,20 @@ class Command(BaseCommand):
             raise
         if options["apply"]:
             _write_status(ok=True, bundle=name, error="", imported=name, seconds=round(time.monotonic() - started))
+            self._reapply_e2e()
+
+    def _reapply_e2e(self):
+        """The live data has no UI-test accounts (helper/e2e.py): give the
+        demo people their test password and roles back. Never fails the import."""
+        from progeo.helper import e2e
+
+        if not e2e.enabled():
+            return
+        try:
+            call_command("demo_account", "--e2e", stdout=self.stdout, stderr=self.stderr)
+        except Exception as exc:  # noqa: BLE001 - the import itself succeeded
+            wlog(f"[import_live_backup] UI-test accounts not re-applied: {exc}")
+            self.stderr.write(f"UI-test accounts not re-applied: {exc}")
 
     def _pending(self, names):
         """The newest bundle if there is one to import - else exits with NOTHING_PENDING."""

@@ -21,6 +21,7 @@ from progeo.helper.demo import (
     DEMO_USERNAME,
     demo_email,
 )
+from progeo.helper import e2e
 from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import (
@@ -273,13 +274,12 @@ LORAWAN_SENSORS = {
 
 # People of the demo (usernames start with DEMO_PEOPLE_PREFIX; no password, no
 # permissions - nobody can log in as them). "member": account members, they
-# see every demo location, `rule` their notification rule there. "single:<kind>":
-# access to that one location only. "partner": members of the demo partner
-# account the demo user belongs to as well (the Rechte tab no longer offers
-# them for picking - people are invited by email address).
+# see every demo location, `rule` their notification rule there (none: no
+# notifications). "single:<kind>": access to that one location only.
 DEMO_PEOPLE_PREFIX = "demo."
-DEMO_PARTNER_HASH = "demo-partner-account"
-DEMO_PARTNER_NAME = "Demo Partner"
+# The former "Demo Partner" account: its people are members of the demo
+# account now; every run merges it away if it is still there (_merge_account).
+LEGACY_PARTNER_HASH = "demo-partner-account"
 _ALARM = ProgeoAccess.NotifiTypes.ALARM
 _ALARM_TIMEOUT = ProgeoAccess.NotifiTypes.ALARM | ProgeoAccess.NotifiTypes.TIMEOUT
 DEMO_PEOPLE = [
@@ -289,10 +289,10 @@ DEMO_PEOPLE = [
     ("jonas.weber", "Jonas", "Weber", "+49 160 9876541", "single:smartex_dm", ProgeoAccess.NotifiTrans.SMS, _ALARM),
     ("sabine.krueger", "Sabine", "Krüger", "+49 160 9876542", "single:smartex_is", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
     ("lukas.hoffmann", "Lukas", "Hoffmann", None, "single:lorawan", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
-    ("laura.fischer", "Laura", "Fischer", "+49 171 5550101", "partner", None, None),
-    ("paul.wagner", "Paul", "Wagner", None, "partner", None, None),
-    ("mia.becker", "Mia", "Becker", "+49 171 5550103", "partner", None, None),
-    ("felix.schulz", "Felix", "Schulz", None, "partner", None, None),
+    ("laura.fischer", "Laura", "Fischer", "+49 171 5550101", "member", None, None),
+    ("paul.wagner", "Paul", "Wagner", None, "member", None, None),
+    ("mia.becker", "Mia", "Becker", "+49 171 5550103", "member", None, None),
+    ("felix.schulz", "Felix", "Schulz", None, "member", None, None),
 ]
 
 def _zone_points(zones):
@@ -478,8 +478,8 @@ class Command(BaseCommand):
         "LoRaWAN: 4 climate sensors, smartex® mx-PEEL: 32 sensors, mx-va: 47 sensors in 7 fields on two "
         "parking levels, mx-al: 24 sensors in 4 bays, io: 19 named sensors on two floors, vt: 11 sensors), "
         "each with drawn Lageplans (one per view), measure points on them, measurements of the "
-        "last 3 months and the alarms they raise, plus a few demo people (colleagues, single-access "
-        "users, partners to grant access to). The locations live in a separate database "
+        "last 3 months and the alarms they raise, plus a few demo people (account members, "
+        "single-access users). The locations live in a separate database "
         "(default: settings.DEMO_DATABASE, 'demo'), so the demo never touches real customer data.\n"
         "Re-running resets the demo locations and shifts the timestamps to 'now'; account, user "
         "and the active demo link stay, so links handed out keep working.\n"
@@ -490,6 +490,8 @@ class Command(BaseCommand):
         "  python manage.py demo_account --new-link --label 'Messe Hannover'\n"
         "  python manage.py demo_account --rotate-token\n"
         "  python manage.py demo_account --links\n"
+        "  python manage.py demo_account --merge-account testing\n"
+        "  python manage.py demo_account --e2e\n"
         "  python manage.py demo_account --delete"
     )
 
@@ -529,6 +531,22 @@ class Command(BaseCommand):
             help="Only list every demo link with its status and how often it was opened.",
         )
         parser.add_argument(
+            "--merge-account",
+            action="append",
+            dest="merge_accounts",
+            metavar="ID_OR_NAME",
+            help="Merge another account into the demo account (repeatable): its members join the demo "
+            "account, then it is deleted. Refused while it still owns locations, links, backups, ... "
+            "(they would be deleted with it). The old 'Demo Partner' account is merged on every run.",
+        )
+        parser.add_argument(
+            "--e2e",
+            action="store_true",
+            help="Only (re)apply the UI tests' accounts (helper/e2e.py): password E2E_DEMO_PASSWORD and "
+            "the role permissions for some demo people, the outsider user and the target location. "
+            "Staging only; a full run does it, too, when E2E_DEMO_PASSWORD is set.",
+        )
+        parser.add_argument(
             "--days",
             type=int,
             default=HISTORY_DAYS,
@@ -550,6 +568,12 @@ class Command(BaseCommand):
             return
         if options["label"]:
             raise CommandError("--label only goes with --new-link or --rotate-token.")
+        if options["e2e"]:
+            if not e2e.enabled():
+                raise CommandError("E2E_DEMO_PASSWORD is not set (or this is the live server: STAGING_REMOTE_HOST).")
+            if not e2e.apply_roles(self.stdout):
+                raise CommandError("No demo yet - run 'manage.py demo_account' first.")
+            return
         db = options["database"]
         if db == "default" or is_project_alias(db):
             raise CommandError(f"The demo data must not live in '{db}' (default or a project database).")
@@ -559,6 +583,9 @@ class Command(BaseCommand):
             raise CommandError(f"Unknown database '{db}'. Configured: {', '.join(connections.databases)}")
         if options["days"] < 1:
             raise CommandError("--days must be at least 1.")
+        if options["merge_accounts"] and options["delete"]:
+            raise CommandError("--merge-account doesn't go with --delete.")
+        merges = [_find_account(value) for value in options["merge_accounts"] or ()]
 
         with transaction.atomic(using="default"), transaction.atomic(using=db):
             account = Account.objects.using("default").filter(raw_hash=DEMO_ACCOUNT_HASH).first()
@@ -581,10 +608,16 @@ class Command(BaseCommand):
             now = timezone.now().replace(minute=0, second=0, microsecond=0)
             hours = options["days"] * 24
             created = [self._create_location(account, db, spec, rng, now, hours) for spec in LOCATIONS]
-            self._ensure_people(account, user, db, dict(zip((spec["kind"] for spec in LOCATIONS), created)))
+            self._ensure_people(account, db, dict(zip((spec["kind"] for spec in LOCATIONS), created)))
+            legacy = Account.objects.using("default").filter(raw_hash=LEGACY_PARTNER_HASH).first()
+            for other in ([legacy] if legacy else []) + merges:
+                self._merge_account(account, other, db)
         # The demo projects are the demo user's favorites (FavoriteViewSet) -
         # recreated under new ids, so the cached favorites bar is stale.
         forget_favorites(user.pk)
+        # The demo people lost their password above (_ensure_people): the UI
+        # tests' accounts get theirs back on staging.
+        e2e.apply_roles(self.stdout)
 
         summary = ", ".join(f"{spec['kind']}={location.pk}" for spec, location in zip(LOCATIONS, created))
         self.stdout.write(
@@ -657,14 +690,46 @@ class Command(BaseCommand):
             else:
                 raise CommandError(f"Could not find an account pk that is free in '{db}'.")
 
-        if account.db_name != db:
-            account.db_name = db
+        if (account.db_name, account.name) != (db, DEMO_ACCOUNT_NAME):
+            # Same pk, same links: the former "Demo" is renamed in place.
+            account.db_name, account.name = db, DEMO_ACCOUNT_NAME
             account.save(using="default")
-        if not _same_database(db) and not Account.objects.using(db).filter(pk=account.pk).exists():
-            Account.objects.using(db).create(
-                pk=account.pk, raw_hash=DEMO_ACCOUNT_HASH, name=DEMO_ACCOUNT_NAME, db_name=db
+        if not _same_database(db):
+            Account.objects.using(db).update_or_create(
+                pk=account.pk, defaults={"raw_hash": DEMO_ACCOUNT_HASH, "name": DEMO_ACCOUNT_NAME, "db_name": db}
             )
         return account
+
+    def _merge_account(self, account, other, db):
+        """`other`'s members join the demo account, then `other` is deleted:
+        in "default" (the project databases follow through the mirror,
+        helper/project_db_signals.py), and its copy in the demo database or in
+        its own database, if there is one. Refused while anything besides its
+        memberships would be deleted with it."""
+        if other.pk == account.pk:
+            raise CommandError(f"'{other.name}' (#{other.pk}) is the demo account itself.")
+        aliases = ["default"]
+        for alias in (db, other.db_name):
+            if alias in connections.databases and alias not in aliases and not _same_database(alias):
+                aliases.append(alias)
+        deletions = {alias: _account_deletion(other, alias) for alias in aliases}
+        owned = {alias: along for alias, (_collector, along) in deletions.items() if along}
+        if owned:
+            details = "; ".join(f"{alias}: {', '.join(f'{n} {label}' for label, n in along.items())}"
+                                for alias, along in owned.items())
+            raise CommandError(
+                f"'{other.name}' (#{other.pk}) still owns rows that would be deleted with it - {details}. "
+                "Move or delete them first."
+            )
+        members = list(other.users.all())
+        account.users.add(*members)
+        for alias, (collector, _along) in deletions.items():
+            if collector is not None:
+                with transaction.atomic(using=alias):
+                    collector.delete()
+        names = ", ".join(sorted(member.username for member in members)) or "-"
+        self.stdout.write(f"Merged '{other.name}' (#{other.pk}) into {DEMO_ACCOUNT_NAME}: "
+                          f"{len(members)} member(s) moved ({names}).")
 
     def _ensure_user(self, account):
         """A non-staff user that is a member of the demo account and holds the
@@ -697,19 +762,11 @@ class Command(BaseCommand):
         account.users.add(user)
         return user
 
-    def _ensure_people(self, account, demo_user, db, locations):
+    def _ensure_people(self, account, db, locations):
         """DEMO_PEOPLE: users in "default" (where logins and memberships
         live), mirrored into the demo database - its ProgeoAccess rows
         reference them there - plus their access/notification rules, which
         went with the old locations."""
-        partner, _ = Account.objects.using("default").get_or_create(
-            raw_hash=DEMO_PARTNER_HASH, defaults={"name": DEMO_PARTNER_NAME, "db_name": db}
-        )
-        if partner.db_name != db:
-            partner.db_name = db
-            partner.save(using="default")
-        partner.users.add(demo_user)
-
         rules = []
         for name, first, last, mobile, role, transport, notify in DEMO_PEOPLE:
             username = f"{DEMO_PEOPLE_PREFIX}{name}"
@@ -727,13 +784,10 @@ class Command(BaseCommand):
                 UserProfile.objects.using("default").filter(user_id=person.pk).delete()
 
             account.users.remove(person)
-            partner.users.remove(person)
             if role == "member":
                 account.users.add(person)
-                targets = list(locations.values())
-            elif role == "partner":
-                partner.users.add(person)
-                targets = []
+                # Members see every location anyway; the rule is only their notifications.
+                targets = list(locations.values()) if transport is not None else []
             else:
                 targets = [locations[role.split(":", 1)[1]]]
 
@@ -1594,6 +1648,45 @@ def _draw_lorawan(plan):
     plan.text(1280, 300, "Gebaeudeschnitt", size=22)
     plan.text(1280, 332, "LoRaWAN-Klimasensoren S1-S4", size=15, fill=INK_SOFT)
     return (x1, y2), meters_per_pixel
+
+
+def _find_account(value):
+    """The account of --merge-account: by id, or by its exact name if that is unique."""
+    accounts = Account.objects.using("default")
+    found = list(accounts.filter(pk=int(value)) if str(value).isdigit() else accounts.filter(name=value))
+    if not found:
+        raise CommandError(f"No account '{value}'.")
+    if len(found) > 1:
+        raise CommandError(f"Several accounts are called '{value}' ({', '.join(f'#{a.pk}' for a in found)}) - "
+                           "give the id.")
+    return found[0]
+
+
+def _account_deletion(account, alias):
+    """(collector that deletes `account`'s row in `alias`, {model label: rows}
+    that would go along besides its memberships). (None, {}) when `alias` has
+    no copy of it - pks drift apart between databases, so the hash must match."""
+    from django.db.models.deletion import Collector
+
+    from progeo.helper.project_db_signals import _ProjectDbCollector
+
+    rows = list(Account.objects.using(alias).filter(pk=account.pk, raw_hash=account.raw_hash))
+    if not rows:
+        return None, {}
+    # Elsewhere only the project tables: "default"-only ones don't exist there.
+    collector = Collector(using=alias) if alias == "default" else _ProjectDbCollector(alias)
+    collector.collect(rows)
+    memberships = Account.users.through
+    along = {}
+    for model, instances in collector.data.items():
+        if model not in (Account, memberships) and instances:
+            along[model._meta.label] = along.get(model._meta.label, 0) + len(instances)
+    for queryset in collector.fast_deletes:
+        if queryset.model is not memberships:
+            count = queryset.count()
+            if count:
+                along[queryset.model._meta.label] = along.get(queryset.model._meta.label, 0) + count
+    return collector, along
 
 
 def _same_database(db):

@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
+from progeo.decorator import staff_permissions_denied
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import ProgeoEscalation, ProgeoEscalationEntry, ProgeoLocation
 from progeo.v1.serializers import ProgeoEscalationSerializer, user_label
@@ -30,10 +31,6 @@ Kind = ProgeoEscalationEntry.Kind
 def _failed(reason, status_code):
     """Like RequestFailed (always 400), with another status code."""
     return Response({"success": False, "reason": reason}, status=status_code)
-
-
-def _is_staff_admin(user) -> bool:
-    return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
 
 def _staff_users():
@@ -134,13 +131,10 @@ class EscalationViewSet(viewsets.ViewSet):
 
     @staticmethod
     def _denied(request, superuser=False):
-        """A failure response unless the user is staff (or superuser, when required)."""
-        user = request.user
-        allowed = getattr(user, "is_superuser", False) if superuser else _is_staff_admin(user)
-        if allowed:
-            return None
-        reason = "Superuser access required" if superuser else "Staff access required"
-        return _failed(reason, 403)
+        """A failure response unless the user may access escalations."""
+        if superuser:
+            return None if getattr(request.user, "is_superuser", False) else _failed("Superuser access required", 403)
+        return staff_permissions_denied(request.user, "module_escalations_enabled")
 
     @staticmethod
     def _queryset():

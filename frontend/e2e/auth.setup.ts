@@ -1,10 +1,16 @@
-import { expect, test as setup } from '@playwright/test';
+import fs from 'node:fs';
+import { test as setup } from '@playwright/test';
+import { apiCall, INFO_FILE, LOGGED_OUT, logIn, roleState, ROLES, STAFF_STATE, type E2EInfo } from './roles';
 
 /**
- * Logs the test user in once and stores the session (tokens and the privacy
- * choice live in localStorage) for every test - playwright.config.ts.
+ * Logs every test user in once and stores the sessions (tokens and the
+ * privacy choice live in localStorage) - playwright.config.ts, e2e/roles.ts:
+ *   - the staff user E2E_USERNAME / E2E_PASSWORD (e2e/.auth/user.json),
+ *   - the ids of the demo test accounts (/v1/e2e/info/, staff only),
+ *   - with E2E_DEMO_PASSWORD: the demo roles (e2e/.auth/<role>.json).
+ * A role that can't log in gets an empty session; its tests skip.
  */
-const AUTH_FILE = 'e2e/.auth/user.json';
+setup.describe.configure({ mode: 'serial' });
 
 setup('log in', async ({ page }) => {
   const username = process.env.E2E_USERNAME;
@@ -12,21 +18,35 @@ setup('log in', async ({ page }) => {
   if (!username || !password) {
     throw new Error('Set E2E_USERNAME and E2E_PASSWORD (a test user without 2FA) - see e2e/README.md');
   }
-
-  await page.goto('/login');
-  // The privacy banner covers the page until a choice is made.
-  const banner = page.getByTestId('cookie-banner');
-  if (await banner.isVisible().catch(() => false)) {
-    await page.getByTestId('cookie-banner-reject').click();
-  }
-
-  await page.getByTestId('login-username').fill(username);
-  await page.getByTestId('login-password').fill(password);
-  await page.getByTestId('login-submit').click();
-
-  if (await page.getByTestId('login-otp-form').isVisible({ timeout: 2_000 }).catch(() => false)) {
-    throw new Error('The test user has 2FA - use one without (e2e/README.md)');
-  }
-  await expect(page).not.toHaveURL(/\/login/);
-  await page.context().storageState({ path: AUTH_FILE });
+  await logIn(page, username, password);
+  await page.context().storageState({ path: STAFF_STATE });
 });
+
+setup('e2e info', async ({ request, baseURL }) => {
+  const response = await apiCall(request, baseURL, 'GET', '/v1/e2e/info/', STAFF_STATE);
+  const info = response.ok() ? ((await response.json()) as E2EInfo) : null;
+  if (!info) {
+    console.warn(`/v1/e2e/info/ answered ${response.status()} - E2E_DEMO_PASSWORD set on the server? The role tests skip.`);
+  }
+  fs.writeFileSync(INFO_FILE, JSON.stringify(info || {}, null, 2));
+});
+
+for (const role of ROLES) {
+  setup(`log in as ${role}`, async ({ page }) => {
+    const password = process.env.E2E_DEMO_PASSWORD;
+    let info: E2EInfo | null = null;
+    try {
+      info = JSON.parse(fs.readFileSync(INFO_FILE, 'utf-8'));
+    } catch {
+      info = null;
+    }
+    const email = info?.users?.[role]?.email;
+    if (!password || !email) {
+      fs.writeFileSync(roleState(role), JSON.stringify(LOGGED_OUT));
+      setup.skip(true, 'Set E2E_DEMO_PASSWORD (and on the server) for the role tests - e2e/README.md');
+      return;
+    }
+    await logIn(page, email, password);
+    await page.context().storageState({ path: roleState(role) });
+  });
+}

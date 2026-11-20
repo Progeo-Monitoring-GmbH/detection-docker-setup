@@ -6,6 +6,7 @@ import { useSnackbar } from 'notistack';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
@@ -268,6 +269,7 @@ const EscalationDetail = ({
     escalation.assigned_to?.toString() ?? '',
   );
   const [busy, setBusy] = useState(false);
+  const [askClose, setAskClose] = useState(false);
   const isOpen = escalation.status !== 'closed';
 
   /** An action with the message as its protocol text. */
@@ -290,9 +292,8 @@ const EscalationDetail = ({
   };
 
   const close = () => {
-    if (window.confirm(t('escalation_close_confirm'))) {
-      act('close');
-    }
+    setAskClose(false);
+    act('close');
   };
 
   return (
@@ -446,7 +447,7 @@ const EscalationDetail = ({
               size="sm"
               variant="outline-danger"
               className="ms-auto"
-              onClick={close}
+              onClick={() => setAskClose(true)}
               disabled={busy}
               data-testid="escalation-close"
             >
@@ -464,6 +465,20 @@ const EscalationDetail = ({
           {t('escalation_closed_hint')}
         </div>
       )}
+
+      <ConfirmDialog
+        show={askClose}
+        title={t('escalation_close_confirm_title')}
+        message={t('escalation_close_confirm', {
+          title: escalation.title,
+          location: `${escalation.project_id ?? '-'} ${escalation.location_name ?? ''}`.trim(),
+        })}
+        confirmLabel={t('escalation_close')}
+        cancelLabel={t('staff_cancel')}
+        onConfirm={close}
+        onCancel={() => setAskClose(false)}
+        testId="escalation-close-dialog"
+      />
     </PanelCard>
   );
 };

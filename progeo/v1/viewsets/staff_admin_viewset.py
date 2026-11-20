@@ -10,6 +10,7 @@ from django.db import transaction
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from progeo.decorator import staff_permissions_denied
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.tokens import revoke_user_tokens
 from progeo.v1.models import (
@@ -72,7 +73,9 @@ def _refuse_unheld(request, *codes):
 
 def _require_user_admin(request):
     """None for staff and mini admins (the users table), else the refusal."""
-    if _is_staff_admin(request.user) or _is_mini_admin(request.user):
+    if _is_staff_admin(request.user):
+        return staff_permissions_denied(request.user, "module_admin_staff_enabled")
+    if _is_mini_admin(request.user):
         return None
     return RequestFailed({"reason": "Staff access required"})
 
@@ -516,8 +519,9 @@ class StaffUserPasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk=None, *args, **kwargs):
-        if not _is_staff_admin(request.user):
-            return RequestFailed({"reason": "Staff access required"})
+        denied = staff_permissions_denied(request.user, "module_admin_staff_enabled")
+        if denied is not None:
+            return denied
 
         user = User.objects.using(_USER_DB).filter(pk=pk).first()
         if not user:
@@ -538,8 +542,9 @@ class StaffUserDeleteView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk=None, *args, **kwargs):
-        if not _is_staff_admin(request.user):
-            return RequestFailed({"reason": "Staff access required"})
+        denied = staff_permissions_denied(request.user, "module_admin_staff_enabled")
+        if denied is not None:
+            return denied
         if (denied := _refuse_unheld(request, "module_user_erasability")) is not None:
             return denied
 

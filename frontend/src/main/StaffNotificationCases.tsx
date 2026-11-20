@@ -10,6 +10,7 @@ import { Link } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { repeatedTestId } from '../testIds';
 import {
   LocationFlagIcons,
@@ -104,6 +105,8 @@ const StaffNotificationCases = () => {
   const [kind, setKind] = useState<'' | Kind>('');
   const [selected, setSelected] = useState<NotificationCase | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Close case" asks first (a ConfirmDialog inside the case's modal).
+  const [askClose, setAskClose] = useState(false);
   // Cases of a switched-off location (notifications off, marked purgeable):
   // the striped rows of every location table - the store, until it answers
   // the case's own notification switch.
@@ -369,7 +372,15 @@ const StaffNotificationCases = () => {
         />
       </Card.Body>
 
-      <Modal show={selected != null} onHide={() => setSelected(null)} size="lg" data-testid="staff-notifications-detail">
+      <Modal
+        show={selected != null}
+        onHide={() => {
+          setSelected(null);
+          setAskClose(false);
+        }}
+        size="lg"
+        data-testid="staff-notifications-detail"
+      >
         {selected && (
           <>
             <Modal.Header closeButton>
@@ -472,17 +483,29 @@ const StaffNotificationCases = () => {
                   variant="outline-danger"
                   size="sm"
                   disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(t('staff_notifications_close_confirm'))) {
-                      act('close', {}, t('staff_notifications_closed'));
-                    }
-                  }}
+                  onClick={() => setAskClose(true)}
                   data-testid="staff-notifications-close"
                 >
                   {t('staff_notifications_close')}
                 </Button>
               </Modal.Footer>
             )}
+            <ConfirmDialog
+              show={askClose}
+              title={t('staff_notifications_close_confirm_title')}
+              message={t('staff_notifications_close_confirm', {
+                kind: t(`notification_kind_${selected.kind}`),
+                location: `${selected.project_id ?? selected.location_id} ${selected.location_name}`,
+              })}
+              confirmLabel={t('staff_notifications_close')}
+              cancelLabel={t('staff_cancel')}
+              onConfirm={() => {
+                setAskClose(false);
+                act('close', {}, t('staff_notifications_closed'));
+              }}
+              onCancel={() => setAskClose(false)}
+              testId="staff-notifications-close-dialog"
+            />
           </>
         )}
       </Modal>

@@ -199,7 +199,8 @@ def test_permissions_carry_the_tracking_flag(tracking):
 
 def test_summary_is_staff_only():
     assert _client(f.make_user()).get(SUMMARY_URL).status_code == 403
-    assert _client(f.make_user(staff=True)).get(SUMMARY_URL).status_code == 200
+    assert _client(f.make_user(staff=True)).get(SUMMARY_URL).status_code == 403
+    assert _client(f.make_user(staff=True, perms=("module_admin_insights",))).get(SUMMARY_URL).status_code == 200
     assert _client(f.make_user(is_superuser=True)).get(SUMMARY_URL).status_code == 200
 
 
@@ -227,7 +228,9 @@ def test_summary_aggregates(tracking):
         _event(bob, "page", "/alarms/", now - datetime.timedelta(days=40), duration_ms=99_000),
     ])
 
-    body = _client(f.make_user(staff=True)).get(f"{SUMMARY_URL}?days=30").json()
+    body = _client(
+        f.make_user(staff=True, perms=("module_admin_insights",))
+    ).get(f"{SUMMARY_URL}?days=30").json()
 
     assert body["days"] == 30
     assert body["events"] == 10

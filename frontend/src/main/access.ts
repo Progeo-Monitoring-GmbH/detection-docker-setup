@@ -8,8 +8,8 @@ import type { PortalNavItem } from './portalNav';
  * can't be hidden in one place and open in another.
  *
  * This only shapes the UI: anyone can flip the flags in their browser. The
- * backend checks every request itself (is_staff_admin, superuser checks,
- * require_module_permissions).
+ * backend independently enforces the corresponding role and permission
+ * requirements on every request.
  *
  * is_staff and is_superuser are separate roles: STAFF lets both in (the
  * backend's is_staff_admin), SUPERUSER only superusers.
@@ -41,6 +41,8 @@ const anyOf =
   (...rules: AccessRule[]): AccessRule =>
   (access) =>
     rules.some((rule) => rule(access));
+const staffPermission = (code: string): AccessRule =>
+  allOf(STAFF, permission(code));
 
 /**
  * Access of every route below AppLayout/LocationPortalLayout (CoreRoutes),
@@ -53,27 +55,27 @@ export const APP_ROUTE_ACCESS = {
   // Also the device setup (formerly /device/provision/): staff always (like
   // the backend's require_module_permissions), users with the permission.
   '/device/overview': anyOf(STAFF, permission('module_devices_provision')),
-  '/alarms/': SUPERUSER,
-  '/alarms/report/': SUPERUSER,
+  '/alarms/': permission('module_alarms_enabled'),
+  '/alarms/report/': permission('module_reports_enabled'),
   // Only redirects - its targets are guarded.
   '/device/:id/update/': ANY_USER,
   // Opened from the device overview.
   '/device/statistics/': allOf(STAFF, permission('module_devices_enabled')),
   // "Is the location ready?" - the readiness checklist (staff, like its endpoints).
   '/checklist/location/': STAFF,
-  '/admin/panel/': SUPERUSER,
+  '/admin/panel/': staffPermission('module_admin_panel'),
   // Staff only - mini admins manage the people of their objects on the
   // Rechte tab (/location/:id/permissions), not here.
-  '/staff/': STAFF,
+  '/staff/': staffPermission('module_admin_staff_enabled'),
   // Database usage and user activity (main/staff/).
-  '/insights/databases/': STAFF,
-  '/insights/activity/': STAFF,
+  '/insights/databases/': staffPermission('module_admin_insights'),
+  '/insights/activity/': staffPermission('module_admin_insights'),
   // System-wide interface config; the cards check module_interface_* themselves.
   '/interface/': permission('module_interface_enabled'),
-  '/escalations/': STAFF,
+  '/escalations/': staffPermission('module_escalations_enabled'),
   // The screenshots of a build and their review comments (e2e_screenshots).
-  '/review/screens/': STAFF,
-  '/escalations/:id': STAFF,
+  '/review/screens/': staffPermission('module_admin_screen_review'),
+  '/escalations/:id': staffPermission('module_escalations_enabled'),
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
   '/backup/:account/overview/': allOf(
     STAFF,

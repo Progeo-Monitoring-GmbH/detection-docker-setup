@@ -30,11 +30,11 @@ from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from progeo.authentication import login_name
+from progeo.decorator import staff_permissions_denied
 from progeo.helper import access_requests, login_links, outbound, password_reset
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.v1.models import AccessRequest, EmailSuppression, OutboundMessage
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
-from progeo.v1.viewsets.staff_admin_viewset import _is_staff_admin
 
 DB = "default"
 
@@ -269,7 +269,7 @@ class _StaffView(APIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        self.denied = None if _is_staff_admin(request.user) else RequestFailed({"reason": "Staff access required"})
+        self.denied = staff_permissions_denied(request.user, "module_admin_staff_enabled")
 
 
 class StaffAccessRequestListView(_StaffView):

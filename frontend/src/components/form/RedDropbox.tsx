@@ -52,12 +52,20 @@ const RedDropbox = ({
   hint = 'Drag & drop some files here, or click to select files',
   // data-testid of the drop zone; its parts are "<testId>-input", "-progress", "-error", "-preview".
   testId = 'dropzone',
+  // Asks before anything is sent (an upload that replaces data): called with
+  // the picked files, `send` uploads them, `cancel` drops them - picking the
+  // same file again asks again.
+  confirmUpload = undefined as
+    | ((files: File[], send: () => void, cancel: () => void) => void)
+    | undefined,
 }) => {
   const _types = useMemo(() => getAcceptesTypes(accept), [accept]);
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [previews, setPreviews] = useState<IPreview[]>([]);
   const processedUploadRef = useRef('');
+  // The pick whose upload was cancelled in confirmUpload - not asked about again.
+  const declinedRef = useRef<File[] | null>(null);
   const { enqueueSnackbar } = useSnackbar();
 
   const maxBytes = maxSizeMB * 1024 * 1024;
@@ -207,7 +215,7 @@ const RedDropbox = ({
       .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
       .join('|');
     const uploadSignature = `${filesSignature}:${JSON.stringify(payload ?? {})}`;
-    if (processedUploadRef.current === uploadSignature) {
+    if (processedUploadRef.current === uploadSignature || declinedRef.current === acceptedFiles) {
       return;
     }
 
@@ -219,10 +227,21 @@ const RedDropbox = ({
 
     appendPayloadToFormData(formData);
 
-    if (instantFileUpload) {
-      uploadFile(url, formData);
+    const send = () => {
+      if (instantFileUpload) {
+        uploadFile(url, formData);
+      } else {
+        callBackProcessing(formData);
+      }
+    };
+    if (confirmUpload) {
+      const files = acceptedFiles as File[];
+      confirmUpload(files, send, () => {
+        declinedRef.current = files;
+        processedUploadRef.current = '';
+      });
     } else {
-      callBackProcessing(formData);
+      send();
     }
     // Per new files/payload only (processedUploadRef guards repeats): the
     // callbacks and url are new on every parent render.

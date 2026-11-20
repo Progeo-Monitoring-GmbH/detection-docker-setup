@@ -24,7 +24,14 @@ def _codes(user):
 
 @pytest.fixture
 def staff(api_client):
-    user = f.make_user(staff=True, perms=("module_locations_enabled", "module_devices_enabled"))
+    user = f.make_user(
+        staff=True,
+        perms=(
+            "module_admin_staff_enabled",
+            "module_locations_enabled",
+            "module_devices_enabled",
+        ),
+    )
     api_client.force_authenticate(user=user)
     return user
 
@@ -65,6 +72,29 @@ def test_anonymous_is_rejected(api_client):
     assert api_client.get(BASE).status_code in (401, 403)
 
 
+@pytest.mark.parametrize(
+    "method, url",
+    [
+        ("get", BASE),
+        ("post", BASE + "{pk}/password/"),
+        ("post", BASE + "{pk}/delete/"),
+    ],
+)
+def test_staff_without_user_admin_permission_is_refused(api_client, method, url):
+    target = f.make_user()
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = getattr(api_client, method)(
+        url.format(pk=target.pk),
+        {"username": "x", "email": "a@b.de"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert response.json()["missing_permissions"] == ["module_admin_staff_enabled"]
+    assert User.objects.using(f.DB).filter(pk=target.pk).exists()
+
+
 # -- list --------------------------------------------------------------------
 
 def test_list_contains_users_with_permissions_and_grantable_subset(api_client, staff):
@@ -76,6 +106,7 @@ def test_list_contains_users_with_permissions_and_grantable_subset(api_client, s
     # Their own codes (with the button permissions every staff member got,
     # helper/button_permissions.py) - and the mini admin permission, which only staff grant.
     assert body["grantable_codes"] == [
+        "module_admin_staff_enabled",
         "module_devices_enabled", "module_locations_enabled", "module_locations_mergable",
         "module_locations_selectable", "module_mini_admin_enabled", "module_user_add", "module_user_disability",
         "module_user_erasability", "module_user_invitable", "module_user_revokable",
@@ -84,7 +115,8 @@ def test_list_contains_users_with_permissions_and_grantable_subset(api_client, s
     assert row["permissions"]["module_backup_enabled"] is True
     assert row["permissions"]["module_docker_enabled"] is False
     assert row["grantable"] == {
-        "module_devices_enabled": False, "module_locations_enabled": True, "module_mini_admin_enabled": False,
+        "module_admin_staff_enabled": False, "module_devices_enabled": False,
+        "module_locations_enabled": True, "module_mini_admin_enabled": False,
         "module_locations_mergable": False, "module_locations_selectable": False, "module_user_add": False, "module_user_disability": False,
         "module_user_erasability": False, "module_user_invitable": False, "module_user_revokable": False,
     }

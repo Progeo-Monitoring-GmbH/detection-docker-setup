@@ -500,9 +500,9 @@ def test_demo_access_never_searches_the_project_databases(demo, monkeypatch, set
     user = User.objects.using("default").get(username="demo")
     request_account = Account.objects.using("default").get(pk=1)
 
-    # The demo account and the partner account (DEMO_PEOPLE) - nothing else.
-    partner = Account.objects.using("default").get(raw_hash="demo-partner-account")
-    assert [account.pk for account in location_access.user_accounts(user)] == [demo.account_id, partner.pk]
+    # The demo account - nothing else (the former partner account is merged into it).
+    assert not Account.objects.using("default").filter(raw_hash="demo-partner-account").exists()
+    assert [account.pk for account in location_access.user_accounts(user)] == [demo.account_id]
     assert location_access.single_access_location_ids(user, request_account) == set()
     assert location_access.location_q(user, request_account) is not None
 
@@ -768,3 +768,106 @@ def test_links_show_the_visits(api_client, demo):
     out = StringIO()
     call_command("demo_account", "--skip-checks", "--links", stdout=out)
     assert "1 visits" in out.getvalue() and "status 1x" in out.getvalue()
+
+
+# ------------------------------------------------------------------ one demo account
+# "Demo", "Demo Partner" and "testing" were three accounts - now one, "DemoDB".
+
+def test_the_demo_account_is_called_demodb_in_both_databases(demo):
+    from progeo.v1.models import Account
+
+    assert Account.objects.using("default").get(pk=demo.account_id).name == "DemoDB"
+    assert Account.objects.using(settings.DEMO_DATABASE).get(pk=demo.account_id).name == "DemoDB"
+
+
+def test_the_old_demo_account_is_renamed_in_place(api_client, demo):
+    from progeo.v1.models import Account
+
+    Account.objects.using("default").filter(pk=demo.account_id).update(name="Demo")
+    Account.objects.using(settings.DEMO_DATABASE).filter(pk=demo.account_id).update(name="Demo")
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    assert Account.objects.using("default").get(pk=demo.account_id).name == "DemoDB"
+    assert Account.objects.using(settings.DEMO_DATABASE).get(pk=demo.account_id).name == "DemoDB"
+    _login(api_client, demo)  # same account, same link
+
+
+def test_the_partners_are_members_now(demo):
+    from django.contrib.auth.models import User
+
+    from progeo.v1.models import ProgeoAccess
+
+    members = set(demo.account.users.values_list("username", flat=True))
+    assert {"demo", "demo.erika.mustermann", "demo.max.mustermann", "demo.laura.fischer", "demo.paul.wagner",
+            "demo.mia.becker", "demo.felix.schulz"} <= members
+    # Without a rule: no notifications for them.
+    laura = User.objects.using("default").get(username="demo.laura.fischer")
+    assert not ProgeoAccess.objects.using(settings.DEMO_DATABASE).filter(user_id=laura.pk).exists()
+
+
+def test_a_left_over_partner_account_is_merged(demo):
+    from progeo.tests import factories as f
+    from progeo.v1.models import Account
+
+    partner = Account.objects.using("default").create(name="Demo Partner", raw_hash="demo-partner-account",
+                                                      db_name=settings.DEMO_DATABASE)
+    outsider = f.make_user(accounts=[partner])
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    assert not Account.objects.using("default").filter(pk=partner.pk).exists()
+    assert demo.account.users.filter(pk=outsider.pk).exists()
+
+
+def test_merge_account_moves_the_members_and_deletes_it(demo):
+    from io import StringIO
+
+    from progeo.tests import factories as f
+    from progeo.v1.models import Account
+
+    testing = f.make_account(name="testing")
+    tester = f.make_user(accounts=[testing])
+
+    out = StringIO()
+    call_command("demo_account", "--skip-checks", "--merge-account", "testing", *HISTORY, stdout=out)
+
+    assert not Account.objects.using("default").filter(pk=testing.pk).exists()
+    assert demo.account.users.filter(pk=tester.pk).exists()
+    assert f"Merged 'testing' (#{testing.pk}) into DemoDB: 1 member(s)" in out.getvalue()
+    # A re-run keeps them: only the demo people are reset.
+    call_command("demo_account", "--skip-checks", *HISTORY)
+    assert demo.account.users.filter(pk=tester.pk).exists()
+
+
+def test_merge_account_refuses_an_account_that_still_owns_locations(demo):
+    from django.core.management.base import CommandError
+
+    from progeo.tests import factories as f
+    from progeo.v1.models import Account
+
+    testing = f.make_account(name="testing")
+    tester = f.make_user(accounts=[testing])
+    f.make_location(testing)
+
+    with pytest.raises(CommandError, match=r"still owns .*1 progeo\.ProgeoLocation"):
+        call_command("demo_account", "--skip-checks", "--merge-account", str(testing.pk), *HISTORY)
+
+    # Nothing happened: the whole run is one transaction.
+    assert Account.objects.using("default").filter(pk=testing.pk).exists()
+    assert not demo.account.users.filter(pk=tester.pk).exists()
+
+
+def test_merge_account_needs_a_unique_name_and_not_the_demo_itself(demo):
+    from django.core.management.base import CommandError
+
+    from progeo.tests import factories as f
+
+    f.make_account(name="testing")
+    f.make_account(name="testing")
+    with pytest.raises(CommandError, match="Several accounts"):
+        call_command("demo_account", "--skip-checks", "--merge-account", "testing", *HISTORY)
+    with pytest.raises(CommandError, match="demo account itself"):
+        call_command("demo_account", "--skip-checks", "--merge-account", str(demo.account_id), *HISTORY)
+    with pytest.raises(CommandError, match="No account"):
+        call_command("demo_account", "--skip-checks", "--merge-account", "nope", *HISTORY)

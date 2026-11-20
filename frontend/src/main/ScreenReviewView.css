@@ -74,6 +74,16 @@
   font-size: 17px;
 }
 
+/* Previous / next screenshot of the gallery - before the close button. */
+.screen-editor-pager {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 0 auto;
+  white-space: nowrap;
+}
+
 .screen-editor {
   display: flex;
   gap: 16px;

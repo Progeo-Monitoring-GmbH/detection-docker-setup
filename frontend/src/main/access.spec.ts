@@ -40,6 +40,8 @@ describe('APP_ROUTE_ACCESS', () => {
     expect(allowed(PLAIN_WITH_ALL_PERMISSIONS)).toEqual(
       [
         '*',
+        '/alarms/',
+        '/alarms/report/',
         '/device/:id/update/',
         '/device/overview',
         '/location/overview/',
@@ -48,23 +50,38 @@ describe('APP_ROUTE_ACCESS', () => {
     );
   });
 
-  it('opens the staff pages to staff without any module permission', () => {
+  it('only opens staff pages with their matching module permission', () => {
     expect(allowed(STAFF_WITHOUT_PERMISSIONS)).toEqual(
       [
         '*',
         '/checklist/location/',
         '/device/:id/update/',
         '/device/overview',
-        '/escalations/',
-        '/escalations/:id',
-        '/insights/activity/',
-        '/insights/databases/',
-        '/review/screens/',
         '/site-plan/wizard/',
         '/map/',
-        '/staff/',
       ].sort(),
     );
+
+    const staffWithModulePermissions: AccessContext = {
+      isStaff: true,
+      isSuperuser: false,
+      hasPermission: (code) =>
+        [
+          'module_admin_panel',
+          'module_admin_staff_enabled',
+          'module_admin_insights',
+          'module_admin_screen_review',
+          'module_escalations_enabled',
+        ].includes(code),
+    };
+    const visible = allowed(staffWithModulePermissions);
+    expect(visible).toContain('/admin/panel/');
+    expect(visible).toContain('/staff/');
+    expect(visible).toContain('/insights/activity/');
+    expect(visible).toContain('/insights/databases/');
+    expect(visible).toContain('/review/screens/');
+    expect(visible).toContain('/escalations/');
+    expect(visible).toContain('/escalations/:id');
   });
 
   it('opens every page to a superuser', () => {

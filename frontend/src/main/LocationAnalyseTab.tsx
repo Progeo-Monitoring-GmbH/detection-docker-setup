@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router';
+import { useOutletContext, useSearchParams } from 'react-router';
 import { planFromParams } from './planParam';
-import { Button, Card, Collapse, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -12,17 +11,16 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import usePermissions from '../../hooks/usePermissions';
-import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import {
   type HeatProfile,
   heatProfileQuery,
   type SensorHeatmapResponse,
 } from '../components/device/sensorHeatmapTypes';
-import MeasurementSamplesCompareChart, {
+import {
   type MeasurementCompareRow,
   toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
-import FrameSlider, { frameAt } from '../components/device/FrameSlider';
+import { frameAt } from '../components/device/FrameSlider';
 import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
@@ -39,29 +37,13 @@ import {
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
-import PillSelect from '../components/ui/kit/PillSelect';
-import {
-  MEAN_WINDOWS,
-  smoothHeatmap,
-  smoothMeasurements,
-} from './analyseSmoothing';
+import { smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import {
-  Archive,
-  Funnel,
-  Magic,
-  ToggleOff,
-  ToggleOn,
-  XLg,
-} from 'react-bootstrap-icons';
+import { Funnel } from 'react-bootstrap-icons';
 import { getBackendUrl } from '../backendUrl';
 import { usePreloadLageplanImages } from '../components/device/useLageplanImage';
-import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
-import { formatDate } from './dateFormat';
-import PlotHelp from '../components/ui/PlotHelp';
 import { announceKey, type KeyHint } from '../components/ui/KeyHints';
-import UsageHelp from '../components/ui/UsageHelp';
 import { downloadBlob } from '../download';
 import NoiseProfilePanel, {
   type NoiseViewState,
@@ -100,16 +82,13 @@ import {
   type MeasurementsLoad,
   withLoad,
 } from './analyseCache';
-import {
-  FullscreenButton,
-  FullscreenFrame,
-  useFullscreen,
-} from '../components/ui/kit/Fullscreen';
+import { useFullscreen } from '../components/ui/kit/Fullscreen';
+import AnalyseActions, { type ArchiveDialogState } from './AnalyseActions';
+import AnalyseFrameControl from './AnalyseFrameControl';
+import AnalyseHeatmapCard from './AnalyseHeatmapCard';
+import AnalyseMeasurementsCard from './AnalyseMeasurementsCard';
 
-/** The resolutions offered: most measurements per period, spread evenly
- * over it by the backend (?days=&limit=, at most 2000). */
-const RESOLUTIONS = [300, 600, 1000, 2000] as const;
-const DEFAULT_RESOLUTION = RESOLUTIONS[0];
+const DEFAULT_RESOLUTION = 300;
 
 /** Staff: the selected sensors' history (second plot) - the last 3 months,
  * in as many measurements as the backend gives (its limit). */
@@ -118,10 +97,6 @@ const MAX_HISTORY_MEASUREMENTS = 2000;
 
 type AnalyseDevice = { id: number; display_name: string };
 
-/** Where the frame slider sticks while the page scrolls (px from the top) -
- * on mobile below the sticky navigation bar. */
-const STICKY_TOP = 0;
-const STICKY_TOP_MOBILE = 60;
 const MOBILE_WIDTH = 860;
 
 /** Frame steps of the arrow keys: ←/→ one frame, ↑/↓ ten. */
@@ -1345,10 +1320,9 @@ const LocationAnalyseTab = () => {
   // Staff: the measurements of the picked span (S + drag, the band under the
   // frame slider) archived - only staff see them then (ProgeoMeasurement.archived)
   // - or restored. Of the shown device or of every device of the location.
-  const [archiveDialog, setArchiveDialog] = useState<{
-    allDevices: boolean;
-    archive: boolean;
-  } | null>(null);
+  const [archiveDialog, setArchiveDialog] = useState<ArchiveDialogState | null>(
+    null,
+  );
   const [archiveCounts, setArchiveCounts] = useState<{
     key: string;
     total: number;
@@ -1561,320 +1535,70 @@ const LocationAnalyseTab = () => {
     t('usage_tip_frames'),
   ];
 
-  // The period, its resolution and the averaging - in the frame slider
-  // (LoRaWAN: only the period).
-  const rangeControl = (
-    <div className="d-flex flex-wrap align-items-center gap-2">
-      <SegmentedControl
-        testId="analyse-range"
-        options={rangeOptions.map((value) => ({
-          value,
-          label: t(timeRangeLabelKey(value)),
-        }))}
-        value={range}
-        onChange={(value) => {
-          setSelectedRange(value as TimeRange);
-          setFrameTime(null);
-        }}
-      />
-      {!isLorawan && (
-        <>
-          <PillSelect
-            testId="analyse-resolution"
-            label={t('analyse_resolution')}
-            title={t('analyse_resolution_hint')}
-            options={RESOLUTIONS.map((value) => ({
-              value: String(value),
-              label: t('analyse_resolution_option', { count: value }),
-            }))}
-            value={String(resolution)}
-            onChange={(value) => setResolution(Number(value))}
-          />
-          <PillSelect
-            testId="analyse-mean"
-            label={t('analyse_mean')}
-            title={t('analyse_mean_hint')}
-            options={MEAN_WINDOWS.map((value) => ({
-              value: String(value),
-              label:
-                value === 1
-                  ? t('analyse_mean_off')
-                  : t('analyse_mean_option', { count: value }),
-            }))}
-            value={String(meanWindow)}
-            onChange={(value) => setMeanWindow(Number(value))}
-          />
-          <PillSelect
-            testId="analyse-compare-select"
-            label={t('analyse_compare')}
-            title={
-              compareOptions.length
-                ? t('analyse_compare_hint')
-                : t('analyse_compare_unavailable')
-            }
-            options={[
-              { value: '', label: t('analyse_compare_none') },
-              ...compareOptions.map((offset) => ({
-                value: String(offset.days),
-                label: t(`analyse_compare_${offset.key}`),
-              })),
-            ]}
-            value={compare ? String(compare.days) : ''}
-            onChange={(value) => setCompareDays(value ? Number(value) : null)}
-          />
-          {compare && (
-            <Button
-              size="sm"
-              variant="outline-secondary"
-              className="d-inline-flex align-items-center gap-1 py-0 analyse-compare-end"
-              onClick={() => setCompareDays(null)}
-              data-testid="analyse-compare-end"
-            >
-              <XLg size={11} />
-              {t('analyse_compare_end')}
-            </Button>
-          )}
-        </>
-      )}
-      {!isLorawan && loading && (heatmap || measurements.length > 0) && (
-        <Spinner
-          size="sm"
-          animation="border"
-          className="text-muted"
-          data-testid="analyse-range-loading"
-        />
-      )}
-      {noiseBadge}
-      {frameSeconds.length > 0 && (
-        <span className="ms-auto">
-          <UsageHelp
-            id="analyse-usage-help"
-            hints={pageKeyHints}
-            tips={pageTips}
-            testId="analyse-usage-help"
-          />
-        </span>
-      )}
-    </div>
-  );
-
   return (
     <div
       className="d-flex flex-column gap-4"
       data-testid="page-location-analyse"
     >
-      <div
-        className="d-flex flex-wrap align-items-center gap-3"
-        data-testid="analyse-toolbar"
-      >
-        <button
-          type="button"
-          className="btn btn-outline-secondary btn-sm"
-          onClick={exportCsv}
-          data-testid="analyse-export-csv"
-        >
-          {t('analyse_export_csv')}
-        </button>
-        {offerNoiseProfiles && (
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            title={t('analyse_export_csv_raw_hint')}
-            data-testid="analyse-export-csv-raw"
-            onClick={() => {
-              void openResponseInNewTab(
-                auth,
-                `/v1/location/${locationId}/export_csv/?raw=1`,
-              );
-              setExportMsg(t('analyse_export_csv_done'));
-            }}
-          >
-            {t('analyse_export_csv_raw')}
-          </button>
-        )}
-        <button
-          type="button"
-          className="btn btn-outline-secondary btn-sm"
-          onClick={exportPdf}
-          disabled={exportingPdf}
-          data-testid="analyse-export-pdf"
-        >
-          {exportingPdf && (
-            <Spinner size="sm" animation="border" className="me-2" />
-          )}
-          {t('analyse_export_pdf')}
-        </button>
-        {offerNoiseProfiles && (
-          // Staff: the span is picked like a noise profile's (S + drag).
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
-            title={
-              profileRange
-                ? t('analyse_archive_hint')
-                : t('analyse_archive_pick_span')
-            }
-            disabled={!profileRange}
-            onClick={() =>
-              setArchiveDialog({ allDevices: false, archive: true })
-            }
-            data-testid="analyse-archive"
-          >
-            <Archive size={13} aria-hidden="true" />
-            {t('analyse_archive')}
-          </button>
-        )}
-        {exportMsg && (
-          <span
-            className="text-success small"
-            data-testid="analyse-export-message"
-          >
-            {exportMsg}
-          </span>
-        )}
-      </div>
-
-      <ConfirmDialog
-        testId="analyse-sensor-disable-dialog"
-        show={confirmDisable}
-        title={t('analyse_sensors_disable_confirm_title')}
-        message={t('analyse_sensors_disable_confirm', {
-          count: selectedEnabled.length,
-          sensors: selectedEnabled.map((pair) => pair + 1).join(', '),
-        })}
-        confirmLabel={t('analyse_sensors_disable_confirm_button')}
-        cancelLabel={t('heat_limit_cancel')}
-        onConfirm={() => switchSensors(true)}
-        onCancel={() => setConfirmDisable(false)}
-        confirming={switchingSensors}
-        danger
+      <AnalyseActions
+        offerNoiseProfiles={offerNoiseProfiles}
+        exportMessage={exportMsg}
+        exportingPdf={exportingPdf}
+        onExportCsv={exportCsv}
+        onExportRawCsv={() => {
+          void openResponseInNewTab(
+            auth,
+            `/v1/location/${locationId}/export_csv/?raw=1`,
+          );
+          setExportMsg(t('analyse_export_csv_done'));
+        }}
+        onExportPdf={exportPdf}
+        onOpenArchive={() =>
+          setArchiveDialog({ allDevices: false, archive: true })
+        }
+        profileRange={profileRange}
+        confirmDisable={confirmDisable}
+        onConfirmDisableChange={setConfirmDisable}
+        selectedEnabled={selectedEnabled}
+        switchingSensors={switchingSensors}
+        onSwitchSensors={switchSensors}
+        archiveDialog={archiveDialog}
+        onArchiveDialogChange={setArchiveDialog}
+        archiveCounts={archiveCountsShown}
+        shownDevice={shownDevice}
+        shownDeviceName={shownDeviceName}
+        archiving={archiving}
+        onApplyArchive={applyArchive}
       />
 
-      <ConfirmDialog
-        testId="analyse-archive-dialog"
-        show={archiveDialog !== null && profileRange !== null}
-        title={t('analyse_archive')}
-        message={
-          archiveDialog && profileRange ? (
-            <div className="d-flex flex-column gap-2">
-              <div data-testid="analyse-archive-span">
-                {t('analyse_archive_span', {
-                  from: formatDate(profileRange.from),
-                  to: formatDate(profileRange.to),
-                })}
-              </div>
-              <div>
-                {shownDevice != null && (
-                  <Form.Check
-                    type="radio"
-                    id="analyse-archive-device"
-                    data-testid="analyse-archive-scope-device"
-                    name="analyse-archive-scope"
-                    label={t('analyse_archive_scope_device', {
-                      device: shownDeviceName ?? shownDevice,
-                    })}
-                    checked={!archiveDialog.allDevices}
-                    onChange={() =>
-                      setArchiveDialog({ ...archiveDialog, allDevices: false })
-                    }
-                  />
-                )}
-                <Form.Check
-                  type="radio"
-                  id="analyse-archive-all"
-                  data-testid="analyse-archive-scope-all"
-                  name="analyse-archive-scope"
-                  label={t('analyse_archive_scope_all')}
-                  checked={archiveDialog.allDevices || shownDevice == null}
-                  onChange={() =>
-                    setArchiveDialog({ ...archiveDialog, allDevices: true })
-                  }
-                />
-              </div>
-              <div>
-                <Form.Check
-                  type="radio"
-                  id="analyse-archive-archive"
-                  data-testid="analyse-archive-action-archive"
-                  name="analyse-archive-action"
-                  label={t('analyse_archive_action_archive')}
-                  checked={archiveDialog.archive}
-                  onChange={() =>
-                    setArchiveDialog({ ...archiveDialog, archive: true })
-                  }
-                />
-                <Form.Check
-                  type="radio"
-                  id="analyse-archive-restore"
-                  data-testid="analyse-archive-action-restore"
-                  name="analyse-archive-action"
-                  label={t('analyse_archive_action_restore')}
-                  checked={!archiveDialog.archive}
-                  onChange={() =>
-                    setArchiveDialog({ ...archiveDialog, archive: false })
-                  }
-                />
-              </div>
-              <div
-                className="fw-semibold analyse-archive-counts"
-                data-testid="analyse-archive-counts"
-              >
-                {archiveCountsShown ? (
-                  t('analyse_archive_counts', {
-                    total: archiveCountsShown.total,
-                    archived: archiveCountsShown.archived,
-                  })
-                ) : (
-                  <Spinner
-                    size="sm"
-                    animation="border"
-                    className="text-muted"
-                  />
-                )}
-              </div>
-            </div>
-          ) : null
-        }
-        confirmLabel={
-          archiveDialog?.archive === false
-            ? t('analyse_archive_restore')
-            : t('analyse_archive_confirm')
-        }
-        cancelLabel={t('location_edit_cancel')}
-        danger={archiveDialog?.archive !== false}
-        confirming={archiving}
-        onCancel={() => setArchiveDialog(null)}
-        onConfirm={applyArchive}
+      <AnalyseFrameControl
+        mobile={mobile}
+        isLorawan={isLorawan}
+        rangeOptions={rangeOptions}
+        range={range}
+        onRangeChange={(value) => {
+          setSelectedRange(value);
+          setFrameTime(null);
+        }}
+        resolution={resolution}
+        onResolutionChange={setResolution}
+        meanWindow={meanWindow}
+        onMeanWindowChange={setMeanWindow}
+        compareOptions={compareOptions}
+        compare={compare}
+        onCompareChange={setCompareDays}
+        loading={loading}
+        hasLoadedData={Boolean(heatmap || measurements.length > 0)}
+        noiseBadge={noiseBadge}
+        frameSeconds={frameSeconds}
+        frameIndex={frameIndex}
+        onTimeChange={setFrameTime}
+        chartZoom={chartZoom}
+        selection={offerNoiseProfiles ? profileRange : null}
+        onSelectionChange={offerNoiseProfiles ? setProfileRange : undefined}
+        keyHints={pageKeyHints}
+        tips={pageTips}
       />
-
-      {/* One slider for the heatmap and the charts (also LoRaWAN's), with
-          the period it covers - kept on top while the page scrolls down. */}
-      <div
-        data-testid="analyse-frame-slider"
-        className="px-3 analyse-frame-slider"
-        style={{ top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP }}
-      >
-        {frameSeconds.length > 0 ? (
-          <FrameSlider
-            id="analyse-frame"
-            timestamps={frameSeconds}
-            index={frameIndex}
-            onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
-            visibleRange={isLorawan ? null : chartZoom}
-            toolbar={rangeControl}
-            selection={offerNoiseProfiles ? profileRange : null}
-            onSelectionChange={offerNoiseProfiles ? setProfileRange : undefined}
-            selectionLabel={t('noise_profile_range_band')}
-          />
-        ) : (
-          <div
-            className="d-flex flex-wrap align-items-center gap-2 py-3"
-            data-testid="analyse-range-toolbar"
-          >
-            {rangeControl}
-          </div>
-        )}
-      </div>
 
       {isLorawan ? (
         <>
@@ -1902,117 +1626,30 @@ const LocationAnalyseTab = () => {
         </>
       ) : (
         <>
-          <FullscreenFrame state={heatmapFullscreen}>
-            <Card className="border-0 shadow-sm" data-testid="analyse-heatmap">
-              <Card.Header className="bg-transparent border-0 pt-2 pb-0">
-                <Button
-                  variant="link"
-                  className="p-0 text-decoration-none fw-semibold analyse-heatmap-toggle"
-                  aria-expanded={heatmapOpen}
-                  aria-controls="analyse-heatmap"
-                  onClick={() => setHeatmapOpen((open) => !open)}
-                  data-testid="analyse-heatmap-toggle"
-                >
-                  <span className="me-2">{heatmapOpen ? '▾' : '▸'}</span>
-                  {t('analyse_heatmap_title')}
-                </Button>
-                {compare && (
-                  <span
-                    className="ms-2 small text-muted"
-                    data-testid="analyse-heatmap-change"
-                  >
-                    {t('analyse_heatmap_change', { label: compareLabel })}
-                  </span>
-                )}
-                <PlotHelp
-                  topic="heatmap"
-                  className="ms-2 align-middle"
-                  testId="analyse-heatmap-help"
-                />
-                {heatmapOpen && (
-                  <span className="ms-2 align-middle">
-                    <FullscreenButton
-                      state={heatmapFullscreen}
-                      testId="analyse-heatmap-fullscreen"
-                    />
-                  </span>
-                )}
-                {heatmapLoading && (
-                  <Spinner
-                    size="sm"
-                    animation="border"
-                    className="ms-2 text-muted"
-                    data-testid="analyse-heatmap-loading"
-                  />
-                )}
-                {isStaff && (
-                  // Staff: straight to the Lageplan wizard - this location and the shown plan.
-                  <Link
-                    to={`/site-plan/wizard/?location=${locationId}${planId != null ? `&plan=${planId}` : ''}`}
-                    className="analyse-wizard-link float-end"
-                    title={t('analyse_open_wizard_hint')}
-                    data-testid="analyse-open-wizard"
-                  >
-                    <Magic className="analyse-wizard-link-icon" aria-hidden />
-                    <span>{t('analyse_open_wizard')}</span>
-                  </Link>
-                )}
-              </Card.Header>
-              <Collapse in={heatmapOpen}>
-                <div id="analyse-heatmap" data-testid="analyse-heatmap-body">
-                  <Card.Body className="pt-0 px-2 pb-2">
-                    {/* Only before there is any heatmap - another plan loads with
-                      the shown one kept in place (busy), so nothing jumps. */}
-                    {heatmapLoading && !shownHeatmap ? (
-                      <>
-                        {planSwitcher && (
-                          <div className="d-flex px-2 pt-2">{planSwitcher}</div>
-                        )}
-                        <div
-                          className="d-flex justify-content-center align-items-center py-5 text-muted"
-                          data-testid="analyse-heatmap-plan-loading"
-                        >
-                          <Spinner animation="border" className="me-2" />{' '}
-                          {t('ui_loading')}
-                        </div>
-                      </>
-                    ) : (
-                      // smartex® dm too: the heat field with its band lines.
-                      <SensorHeatmap2D
-                        response={changeHeatmap ?? shownHeatmap}
-                        heatTitle={
-                          changeHeatmap ? t('heatmap_change') : undefined
-                        }
-                        forceNormalize={changeHeatmap != null}
-                        onAreaSelect={selectPlanArea}
-                        selectedPositions={selectedPositions}
-                        focusedPosition={focusedPosition}
-                        fitPlan
-                        hideChrome
-                        time={frameTime}
-                        onTimeChange={setFrameTime}
-                        hideFrameSlider
-                        onSensorClick={selectPlanSensor}
-                        profile={heatProfile}
-                        onProfileChange={setHeatProfile}
-                        profileLoading={heatmapLoading}
-                        // While another plan loads: the plan the shown data belongs
-                        // to - its image must not show the old plan's sensors.
-                        planId={
-                          switchingPlan
-                            ? (shownHeatmap?.lageplan ?? null)
-                            : planId
-                        }
-                        onPlanChange={pickPlan}
-                        busy={switchingPlan}
-                        toolbarStart={planSwitcher}
-                      />
-                    )}
-                  </Card.Body>
-                </div>
-              </Collapse>
-            </Card>
-          </FullscreenFrame>
+          <AnalyseHeatmapCard
+            locationId={locationId}
+            planId={planId}
+            isStaff={isStaff}
+            state={heatmapFullscreen}
+            heatmapLoading={heatmapLoading}
+            heatmapOpen={heatmapOpen}
+            onToggleOpen={() => setHeatmapOpen((open) => !open)}
+            compare={compare != null}
+            compareLabel={compareLabel}
+            shownHeatmap={shownHeatmap}
+            changeHeatmap={changeHeatmap}
+            switchingPlan={switchingPlan}
+            planSwitcher={planSwitcher}
+            selectedPositions={selectedPositions}
+            focusedPosition={focusedPosition}
+            onAreaSelect={selectPlanArea}
+            onSensorClick={selectPlanSensor}
+            time={frameTime}
+            onTimeChange={setFrameTime}
+            profile={heatProfile}
+            onProfileChange={setHeatProfile}
+            onPlanChange={pickPlan}
+          />
 
           {compare && (
             <MeasurementComparePlot
@@ -2032,128 +1669,37 @@ const LocationAnalyseTab = () => {
 
           {noisePanel}
 
-          <Card
-            className="border-0 shadow-sm p-2"
-            data-testid="analyse-measurements"
-          >
-            <Card.Body>
-              <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
-                <h5 className="mb-0">{t('analyse_measurements_title')}</h5>
-                {devices.length > 1 && (
-                  <Form.Select
-                    size="sm"
-                    aria-label={t('analyse_device')}
-                    title={t('analyse_device')}
-                    value={shownDevice ?? ''}
-                    onChange={(event) =>
-                      setPickedDevice({
-                        locationId,
-                        id: Number(event.target.value),
-                      })
-                    }
-                    className="analyse-device-select"
-                    data-testid="analyse-device-select"
-                  >
-                    {devices.map((device) => (
-                      <option key={device.id} value={device.id}>
-                        {device.display_name}
-                      </option>
-                    ))}
-                  </Form.Select>
-                )}
-                {canSwitchSensors && sensors.length > 0 && (
-                  <div
-                    className="d-flex flex-wrap gap-2"
-                    data-testid="analyse-sensor-switch"
-                  >
-                    {selectedEnabled.length > 0 && (
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        disabled={switchingSensors}
-                        onClick={() => setConfirmDisable(true)}
-                        title={t('analyse_sensors_disable_title')}
-                        data-testid="analyse-sensor-disable"
-                      >
-                        <ToggleOff className="me-1" />
-                        {t('analyse_sensors_disable', {
-                          count: selectedEnabled.length,
-                        })}
-                      </Button>
-                    )}
-                    {selectedDisabled.length > 0 && (
-                      <Button
-                        size="sm"
-                        variant="outline-success"
-                        disabled={switchingSensors}
-                        onClick={() => switchSensors(false)}
-                        title={t('analyse_sensors_enable_title')}
-                        data-testid="analyse-sensor-enable"
-                      >
-                        <ToggleOn className="me-1" />
-                        {t('analyse_sensors_enable', {
-                          count: selectedDisabled.length,
-                        })}
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-              {measurementTotal > measurements.length && (
-                <div
-                  className="text-muted small mb-2"
-                  data-testid="analyse-measurements-spread"
-                >
-                  {t('analyse_spread', {
-                    count: measurements.length,
-                    total: measurementTotal,
-                  })}
-                </div>
-              )}
-              {measurementsLoading && measurements.length === 0 ? (
-                <div
-                  className="d-flex justify-content-center align-items-center py-5 text-muted"
-                  data-testid="analyse-measurements-loading"
-                >
-                  <Spinner animation="border" className="me-2" />{' '}
-                  {t('ui_loading')}
-                </div>
-              ) : measurements.length === 0 ? (
-                <div
-                  className="text-muted py-4 text-center"
-                  data-testid="analyse-measurements-empty"
-                >
-                  {t('analyse_no_measurements')}
-                </div>
-              ) : (
-                <MeasurementSamplesCompareChart
-                  rows={shownMeasurements}
-                  frameSlider
-                  hideFrameSlider
-                  onVisibleRangeChange={setChartZoom}
-                  sliderPlayKey={false}
-                  hideChrome
-                  time={frameTime}
-                  onTimeChange={setFrameTime}
-                  sensors={sensors}
-                  onSensorsChange={changeSensors}
-                  sensorHistoryRows={
-                    offerSensorHistory ? shownSensorHistory : null
-                  }
-                  onToggleSensorHistory={
-                    offerSensorHistory ? toggleSensorHistory : null
-                  }
-                  isLoadingSensorHistory={sensorHistoryLoading}
-                  threshold={alarmThreshold}
-                  sensorThresholds={sensorThresholds}
-                  disabledSensors={disabledSensors}
-                  maskLines={maskLines}
-                  selectedRange={offerNoiseProfiles ? profileRange : null}
-                  onRangeSelect={offerNoiseProfiles ? setProfileRange : null}
-                />
-              )}
-            </Card.Body>
-          </Card>
+          <AnalyseMeasurementsCard
+            devices={devices}
+            shownDevice={shownDevice}
+            onDeviceChange={(id) => setPickedDevice({ locationId, id })}
+            canSwitchSensors={canSwitchSensors}
+            sensors={sensors}
+            selectedEnabled={selectedEnabled}
+            selectedDisabled={selectedDisabled}
+            switchingSensors={switchingSensors}
+            onRequestDisable={() => setConfirmDisable(true)}
+            onEnable={() => switchSensors(false)}
+            measurementTotal={measurementTotal}
+            measurements={measurements}
+            measurementsLoading={measurementsLoading}
+            shownMeasurements={shownMeasurements}
+            onChartZoom={setChartZoom}
+            frameTime={frameTime}
+            onFrameTimeChange={setFrameTime}
+            onSensorsChange={changeSensors}
+            offerSensorHistory={offerSensorHistory}
+            shownSensorHistory={shownSensorHistory}
+            sensorHistoryLoading={sensorHistoryLoading}
+            onToggleSensorHistory={toggleSensorHistory}
+            threshold={alarmThreshold}
+            sensorThresholds={sensorThresholds}
+            disabledSensors={disabledSensors}
+            maskLines={maskLines}
+            offerNoiseProfiles={offerNoiseProfiles}
+            profileRange={profileRange}
+            onProfileRangeChange={setProfileRange}
+          />
         </>
       )}
     </div>

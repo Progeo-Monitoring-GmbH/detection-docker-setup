@@ -85,6 +85,8 @@ const BackupView = () => {
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // A row's restore / delete, asked first: a restore overwrites a database.
+  const [rowConfirm, setRowConfirm] = useState<{ action: 'restore' | 'delete'; backup: BackupRow } | null>(null);
   const [selectedRows, setSelectedRows] = useState<BackupRow[]>([]);
   const [clearSelectionToggle, setClearSelectionToggle] = useState(false);
   const [projects, setProjects] = useState<BackupProjectOption[]>([]);
@@ -404,7 +406,7 @@ const BackupView = () => {
         <div className="backup-row-actions">
           <button
             type="button"
-            onClick={() => restoreBackup(row)}
+            onClick={() => setRowConfirm({ action: 'restore', backup: row })}
             disabled={isBulkBusy || busyAction === `restore-${row.id}`}
             className="backup-small-button"
             {...repeatedTestId('backup-restore', row.id)}
@@ -414,7 +416,7 @@ const BackupView = () => {
           {canDelete && (
             <DeleteIconButton
               label={t('backup_delete')}
-              onClick={() => deleteBackup(row)}
+              onClick={() => setRowConfirm({ action: 'delete', backup: row })}
               disabled={isBulkBusy || busyAction === `delete-${row.id}`}
               testId="backup-delete"
               testKey={row.id}
@@ -583,6 +585,43 @@ const BackupView = () => {
         onCancel={() => setConfirmOpen(false)}
         confirming={isBulkBusy}
         testId="backup-delete-confirm"
+      />
+
+      <ConfirmDialog
+        show={rowConfirm !== null}
+        title={
+          rowConfirm?.action === 'restore'
+            ? t('backup_restore_confirm_title')
+            : t('backup_delete_one_confirm_title')
+        }
+        message={
+          rowConfirm
+            ? t(
+                rowConfirm.action === 'restore' ? 'backup_restore_confirm_body' : 'backup_delete_one_confirm_body',
+                {
+                  name: rowConfirm.backup.name,
+                  date: formatDate(rowConfirm.backup.created_at),
+                  size: rowConfirm.backup.size || '–',
+                  target: projectLabel(
+                    t,
+                    rowConfirm.backup.project,
+                    rowConfirm.backup.project_name,
+                    rowConfirm.backup.database,
+                  ),
+                },
+              )
+            : ''
+        }
+        confirmLabel={rowConfirm?.action === 'restore' ? t('backup_restore_confirm_yes') : t('backup_confirm_yes')}
+        cancelLabel={t('backup_confirm_cancel')}
+        onConfirm={() => {
+          if (rowConfirm) {
+            (rowConfirm.action === 'restore' ? restoreBackup : deleteBackup)(rowConfirm.backup);
+          }
+          setRowConfirm(null);
+        }}
+        onCancel={() => setRowConfirm(null)}
+        testId={rowConfirm?.action === 'restore' ? 'backup-restore-dialog' : 'backup-delete-dialog'}
       />
     </div>
   );

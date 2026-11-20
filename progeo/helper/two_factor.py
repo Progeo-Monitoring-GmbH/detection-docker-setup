@@ -261,7 +261,10 @@ def check_login_code(user, code, request=None):
     if not _normalize_code(code):
         return "otp_required"
     name = user.username
-    if login_throttle.is_locked(name, request):
+    wait = login_throttle.retry_after(name, request)
+    if wait:
+        # The token endpoints answer the mark with 429 (raise_if_throttled).
+        login_throttle.mark(request, wait)
         return "otp_invalid"
     if verify(user, code):
         return None

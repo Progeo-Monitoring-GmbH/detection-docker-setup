@@ -70,6 +70,11 @@ describe('Toast', () => {
     expect(closeSnackbar).toHaveBeenCalledWith(7);
   });
 
+  it('names its variant for tests (error toasts: [data-variant="error"])', () => {
+    expect(render({ variant: 'error' }).toast.dataset.variant).toBe('error');
+    expect(render({ variant: 'success' }).toast.dataset.variant).toBe('success');
+  });
+
   it('takes the duration of the call', () => {
     const { progress } = render({ autoHideDuration: 1200 });
     expect(progress?.style.animationDuration).toBe('1200ms');

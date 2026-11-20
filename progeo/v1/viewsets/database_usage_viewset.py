@@ -1,13 +1,12 @@
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
+from progeo.decorator import staff_permissions_denied
 from progeo.helper import database_usage as usage
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.helper.location_access import is_staff_admin
 
 
 class DatabaseUsageViewSet(viewsets.ViewSet):
@@ -26,8 +25,8 @@ class DatabaseUsageViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
-        if not is_staff_admin(request.user):
-            return Response({"success": False, "reason": "staff only"}, status=403)
+        if denied := staff_permissions_denied(request.user, "module_admin_insights"):
+            return denied
         params = request.query_params
 
         def flag(name):

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Form, Spinner } from 'react-bootstrap';
+import { Button, Form, Spinner } from 'react-bootstrap';
+import { PencilSquare, Trash } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useSearchParams } from 'react-router';
 import { planFromParams } from './planParam';
@@ -68,7 +69,7 @@ import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
-import { staffFlags } from './access';
+import { useAccess } from './access';
 import { parseStatusAt, rangeContaining } from './statusAt';
 import {
   clearStatusView,
@@ -121,9 +122,13 @@ type RequestableDevice = {
 const LocationStatusHeader = ({
   locationId,
   canRequestMeasurement,
+  canEditInDjango,
+  canDeleteInDjango,
 }: {
   locationId: number;
   canRequestMeasurement: boolean;
+  canEditInDjango: boolean;
+  canDeleteInDjango: boolean;
 }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -204,12 +209,44 @@ const LocationStatusHeader = ({
 
   // Name, project, product and address are in the portal's title
   // (LocationPortalLayout) - here only "request measurement".
-  if (!canRequestMeasurement || devices.length === 0) {
+  if (
+    (!canRequestMeasurement || devices.length === 0) &&
+    !canEditInDjango &&
+    !canDeleteInDjango
+  ) {
     return null;
   }
 
   return (
     <div className="status-header" data-testid="status-header">
+      {(canEditInDjango || canDeleteInDjango) && (
+        <div className="status-admin-actions">
+          {canEditInDjango && (
+            <Button
+              as="a"
+              size="sm"
+              variant="outline-primary"
+              href={`/aadmin/progeo/progeolocation/${locationId}/change/`}
+              data-testid="status-django-edit"
+            >
+              <PencilSquare className="me-1" />
+              {t('status_edit_location_django')}
+            </Button>
+          )}
+          {canDeleteInDjango && (
+            <Button
+              as="a"
+              size="sm"
+              variant="outline-danger"
+              href={`/aadmin/progeo/progeolocation/${locationId}/delete/`}
+              data-testid="status-django-delete"
+            >
+              <Trash className="me-1" />
+              {t('status_delete_location_django')}
+            </Button>
+          )}
+        </div>
+      )}
       {canRequestMeasurement && devices.length > 0 && (
         <div className="status-request" data-testid="status-request">
           {devices.length > 1 && (
@@ -363,11 +400,20 @@ const LocationStatusView = ({
 }: LocationStatusViewProps) => {
   const auth = useAuth();
   const { t } = useTranslation();
+  const { hasPermission, isStaffOrSuperuser } = useAccess();
   // The demo user sees the regular portal, but no actions with real side
   // effects (a measurement request reaches the devices).
   const readOnlyDemo = demo || isDemoUser(auth.user);
   // Battery charts are device maintenance - staff (and superusers) only.
-  const isStaff = !demo && staffFlags(auth?.user).isStaffOrSuperuser;
+  const isStaff = !demo && isStaffOrSuperuser;
+  const canEditInDjango =
+    !readOnlyDemo &&
+    isStaffOrSuperuser &&
+    hasPermission('module_locations_django_edit');
+  const canDeleteInDjango =
+    !readOnlyDemo &&
+    isStaffOrSuperuser &&
+    hasPermission('module_locations_django_delete');
 
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
   // The range of both views - the plan's frames and the Zeitreihe.
@@ -642,6 +688,8 @@ const LocationStatusView = ({
       <LocationStatusHeader
         locationId={locationId}
         canRequestMeasurement={!isLorawan && !readOnlyDemo}
+        canEditInDjango={canEditInDjango}
+        canDeleteInDjango={canDeleteInDjango}
       />
 
       {isLorawan ? (

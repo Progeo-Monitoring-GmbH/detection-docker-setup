@@ -403,7 +403,10 @@ def test_failed_logins_lock_the_name(client, settings):
         assert _login(client, user, password="falsch").status_code == 401
     response = _login(client, user)
 
-    assert response.status_code == 401
+    # Refused unchecked, with the seconds left of the window (login_throttle).
+    assert response.status_code == 429
+    assert response.json()["code"] == "login_throttled"
+    assert 0 < response.json()["retry_after"] <= login_throttle.WINDOW_SECONDS
     login_throttle.clear_failures(user.email)
     assert _login(client, user).status_code == 200
 
@@ -719,7 +722,9 @@ def test_approve_with_projects(client):
     project_id = 860000 + int(timezone.now().timestamp()) % 9999
     location = f.make_location(f.make_account(), project_id=project_id)
     request, user = _pending_request()
-    client.force_authenticate(user=f.make_user(staff=True))
+    client.force_authenticate(
+        user=f.make_user(staff=True, perms=("module_admin_staff_enabled",))
+    )
     url = f"/api/auth-support/staff/access-requests/{request.pk}/approve/"
 
     response = client.post(url, {"project_ids": f"{project_id}, 999998"}, format="json")

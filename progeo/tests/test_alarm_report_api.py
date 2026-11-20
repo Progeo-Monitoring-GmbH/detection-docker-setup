@@ -10,7 +10,8 @@ import pytest
 from progeo.tests import factories as f
 from progeo.v1.models import AlarmDailyReport
 
-PERM = "module_measurements_enabled"
+REPORT_PERMISSION = "module_reports_enabled"
+MEASUREMENTS_PERMISSION = "module_measurements_enabled"
 
 
 def _report(account, day, **fields):
@@ -24,7 +25,10 @@ def world():
     for day, total in (("2031-03-01", 1), ("2031-03-02", 2), ("2031-03-03", 3)):
         _report(account, day, total_count=total, hourly=[{"hour": 1, "count": total}])
     _report(other_account, "2031-03-02", total_count=99)
-    member = f.make_user(perms=(PERM,), accounts=[account])
+    member = f.make_user(
+        perms=(REPORT_PERMISSION, MEASUREMENTS_PERMISSION),
+        accounts=[account],
+    )
     return account, other_account, member
 
 
@@ -36,14 +40,27 @@ def _list(api_client, **params):
 
 # -- list --------------------------------------------------------------------
 
-def test_list_requires_measurements_permission(api_client, world):
+def test_list_requires_reports_permission(api_client, world):
     account, _other, _member = world
-    api_client.force_authenticate(user=f.make_user(accounts=[account]))
+    api_client.force_authenticate(
+        user=f.make_user(perms=(MEASUREMENTS_PERMISSION,), accounts=[account])
+    )
 
     response = api_client.get("/v1/alarm-report/")
 
     assert response.status_code == 403
-    assert response.json()["missing_permissions"] == [PERM]
+    assert response.json()["missing_permissions"] == [REPORT_PERMISSION]
+
+
+def test_staff_also_needs_reports_permission(api_client):
+    api_client.force_authenticate(
+        user=f.make_user(staff=True, perms=(MEASUREMENTS_PERMISSION,))
+    )
+
+    response = api_client.get("/v1/alarm-report/")
+
+    assert response.status_code == 403
+    assert response.json()["missing_permissions"] == [REPORT_PERMISSION]
 
 
 def test_member_sees_own_reports_newest_first(api_client, world):
@@ -61,7 +78,7 @@ def test_member_sees_own_reports_newest_first(api_client, world):
 
 def test_single_access_user_gets_no_reports(api_client, world):
     account, _other, _member = world
-    single = f.make_user(perms=(PERM,))
+    single = f.make_user(perms=(REPORT_PERMISSION,))
     f.make_access(f.make_location(account), single)
     api_client.force_authenticate(user=single)
 
@@ -69,7 +86,7 @@ def test_single_access_user_gets_no_reports(api_client, world):
 
 
 def test_user_without_any_account_gets_no_reports(api_client, world):
-    api_client.force_authenticate(user=f.make_user(perms=(PERM,)))
+    api_client.force_authenticate(user=f.make_user(perms=(REPORT_PERMISSION,)))
 
     assert _list(api_client)["count"] == 0
 
@@ -167,7 +184,7 @@ def test_compare_validation(api_client, world, params, reason):
 
 def test_compare_for_single_access_user_finds_no_account(api_client, world):
     account, _other, _member = world
-    single = f.make_user(perms=(PERM,))
+    single = f.make_user(perms=(REPORT_PERMISSION,))
     f.make_access(f.make_location(account), single)
     api_client.force_authenticate(user=single)
 

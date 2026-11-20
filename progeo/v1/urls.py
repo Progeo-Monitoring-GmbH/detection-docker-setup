@@ -10,6 +10,7 @@ from progeo.v1.viewsets.database_usage_viewset import DatabaseUsageViewSet
 from progeo.v1.viewsets.demo_viewset import DemoViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
 from progeo.v1.viewsets.escalation_viewset import EscalationViewSet
+from progeo.v1.viewsets.e2e_viewset import E2EInfoView, E2ENotificationLinkView
 from progeo.v1.viewsets.favorite_viewset import FavoriteViewSet
 from progeo.v1.viewsets.firmware_viewset import (
     FirmwareBundleUploadView,
@@ -110,4 +111,7 @@ urlpatterns = [
     # Flash bundle uploads (release.sh); nginx serves them at /firmware/.
     re_path(r'^firmware/bundles/$', FirmwareBundleUploadView.as_view(), name='firmware_bundle_upload'),
     re_path(r'^firmware/channels/(?P<channel>[^/]+)/$', FirmwareChannelUploadView.as_view(), name='firmware_channel_upload'),
+    # UI tests on staging (helper/e2e.py) - 404 unless E2E_DEMO_PASSWORD is set.
+    re_path(r'^e2e/info/$', E2EInfoView.as_view(), name='e2e_info'),
+    re_path(r'^e2e/notification-link/$', E2ENotificationLinkView.as_view(), name='e2e_notification_link'),
 ]

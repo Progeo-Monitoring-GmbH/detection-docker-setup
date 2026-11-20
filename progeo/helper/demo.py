@@ -6,7 +6,9 @@ import os
 from django.conf import settings
 
 DEMO_ACCOUNT_HASH = "demo-account"
-DEMO_ACCOUNT_NAME = "Demo"
+# The one demo account - "Demo", "Demo Partner" and "testing" were merged into
+# it (demo_account, LEGACY_PARTNER_HASH / --merge-account).
+DEMO_ACCOUNT_NAME = "DemoDB"
 DEMO_USERNAME = "demo"
 # Demo users' mail addresses: always in a domain we control - an
 # example.com / invented address could reach someone else's mailbox.

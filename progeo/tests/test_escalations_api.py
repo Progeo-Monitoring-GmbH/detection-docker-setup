@@ -13,7 +13,12 @@ def world(api_client):
     account = f.make_account()
     location = f.make_location(account, project_id=4711, name="Halle Nord")
     superuser = f.make_user(is_superuser=True)
-    staff = f.make_user(staff=True, first_name="Stefanie", last_name="Staff")
+    staff = f.make_user(
+        staff=True,
+        first_name="Stefanie",
+        last_name="Staff",
+        perms=("module_escalations_enabled",),
+    )
     api_client.force_authenticate(user=superuser)
     return {"account": account, "location": location, "superuser": superuser, "staff": staff}
 
@@ -82,6 +87,12 @@ def test_staff_opens_and_works_on_escalations(api_client, world):
     assert status_entry.data == {"from": "open", "to": "in_progress"}
     assert status_entry.text == "Pumpe läuft"
     assert status_entry.author_id == world["staff"].pk
+
+
+def test_staff_without_escalations_permission_is_denied(api_client, world):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    assert api_client.get(URL).status_code == 403
 
 
 def test_a_closed_escalation_takes_no_more_changes(api_client, world):

@@ -32,8 +32,12 @@ class CaseInsensitiveEmailBackend(ModelBackend):
 
         from progeo.helper import login_throttle
 
-        if login_throttle.is_locked(username, request):
-            # PermissionDenied ends the backend chain (see below).
+        wait = login_throttle.retry_after(username, request)
+        if wait:
+            # Refused unchecked and uncounted. PermissionDenied ends the
+            # backend chain (see below); the token endpoints answer the mark
+            # with 429 (login_throttle.raise_if_throttled).
+            login_throttle.mark(request, wait)
             raise PermissionDenied("Too many failed logins")
 
         user = (

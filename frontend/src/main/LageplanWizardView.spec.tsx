@@ -31,7 +31,14 @@ vi.mock('../../hooks/usePermissions', () => ({ default: () => hooks.permissions 
 // The heavy parts of the steps - not what this is about.
 vi.mock('../components/ui/ImageCanvasStage.tsx', () => ({ default: () => null }));
 vi.mock('../components/device/HeatLimitationStage', () => ({ default: () => null }));
-vi.mock('../components/form/CadUploadDropbox.tsx', () => ({ default: () => null }));
+// The dropboxes' props by test id - the points import asks through confirmUpload.
+const dropboxes = vi.hoisted(() => new Map<string, Record<string, unknown>>());
+vi.mock('../components/form/CadUploadDropbox.tsx', () => ({
+  default: (props: Record<string, unknown>) => {
+    dropboxes.set(String(props.testId), props);
+    return null;
+  },
+}));
 vi.mock('../components/form/RedDropbox.tsx', () => ({ default: () => null }));
 vi.mock('./LageplanKlemmliste', () => ({ default: () => null }));
 
@@ -97,5 +104,31 @@ describe('LageplanWizardView anchors', () => {
     expect(current.search).toBe('?location=7');
     expect(container.querySelectorAll('.lageplan-step--target')).toHaveLength(0);
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+describe('LageplanWizardView points import', () => {
+  it('asks before an import replaces the points - Cancel drops the file, Import sends it', async () => {
+    await render('/site-plan/wizard/?location=7');
+    const confirmUpload = dropboxes.get('lageplan-wizard-import-cad')?.confirmUpload as (
+      files: File[],
+      send: () => void,
+      cancel: () => void,
+    ) => void;
+    expect(confirmUpload).toBeTypeOf('function');
+    const byTestId = (id: string) => document.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`);
+
+    const send = vi.fn();
+    const cancel = vi.fn();
+    act(() => confirmUpload([new File(['0 0'], 'plan.dxf')], send, cancel));
+    expect(byTestId('lageplan-wizard-import-dialog')?.textContent).toContain('lageplan_wizard_import');
+    act(() => byTestId('lageplan-wizard-import-dialog-cancel')!.click());
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(byTestId('lageplan-wizard-import-dialog')).toBeNull();
+
+    act(() => confirmUpload([new File(['0 0'], 'plan.dxf')], send, cancel));
+    act(() => byTestId('lageplan-wizard-import-dialog-confirm')!.click());
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

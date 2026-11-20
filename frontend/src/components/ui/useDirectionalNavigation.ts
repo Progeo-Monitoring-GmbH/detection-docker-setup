@@ -24,8 +24,12 @@ const ARROWS: Record<string, Direction> = {
   ArrowDown: 'down',
 };
 
-/** Typing in a field, or a dialog over the page: the keys are not ours. */
-const keysBelongElsewhere = (event: KeyboardEvent) => {
+/**
+ * Typing in a field, or a dialog over the page: the keys are not ours.
+ * `inDialog`: the handlers belong to a dialog themselves - only a further
+ * dialog over it (e.g. a confirmation) takes the keys.
+ */
+const keysBelongElsewhere = (event: KeyboardEvent, inDialog: boolean) => {
   if (event.ctrlKey || event.metaKey || event.altKey) {
     return true;
   }
@@ -39,13 +43,16 @@ const keysBelongElsewhere = (event: KeyboardEvent) => {
   }
   return (
     typeof document !== 'undefined' &&
-    document.querySelector('.modal.show') !== null
+    document.querySelectorAll('.modal.show').length > (inDialog ? 1 : 0)
   );
 };
 
 /** The action a key press asks for: a direction, another key ("r", "enter") or null. */
-export const keyAction = (event: KeyboardEvent): Direction | string | null => {
-  if (keysBelongElsewhere(event)) {
+export const keyAction = (
+  event: KeyboardEvent,
+  inDialog = false,
+): Direction | string | null => {
+  if (keysBelongElsewhere(event, inDialog)) {
     return null;
   }
   return (
@@ -56,10 +63,14 @@ export const keyAction = (event: KeyboardEvent): Direction | string | null => {
   );
 };
 
-/** Arrow keys (and `handlers.keys`) on the whole page while `enabled`. */
+/**
+ * Arrow keys (and `handlers.keys`) on the whole page while `enabled`;
+ * `inDialog`: for a dialog's own navigation (see keysBelongElsewhere).
+ */
 export const useKeyNavigation = (
   handlers: NavigationHandlers,
   enabled = true,
+  { inDialog = false }: { inDialog?: boolean } = {},
 ) => {
   // The latest handlers - the listener is registered once.
   const latest = useRef(handlers);
@@ -71,7 +82,7 @@ export const useKeyNavigation = (
       return undefined;
     }
     const onKey = (event: KeyboardEvent) => {
-      const action = keyAction(event);
+      const action = keyAction(event, inDialog);
       if (action == null) {
         return;
       }
@@ -87,7 +98,7 @@ export const useKeyNavigation = (
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enabled]);
+  }, [enabled, inDialog]);
 };
 
 const ARROWS_BY_DIRECTION: Record<Direction, true> = {
@@ -182,4 +193,106 @@ export const useSwipeNavigation = (
       element.removeEventListener('pointercancel', cancel);
     };
   }, [ref, enabled]);
+};
+
+/**
+ * Where an element stands scrolled - within its range: Safari's rubber band
+ * at an end reports positions beyond it for a moment, that is no scrolling.
+ */
+const scrolledX = (node: Element) =>
+  Math.min(Math.max(node.scrollLeft, 0), node.scrollWidth - node.clientWidth);
+const scrolledY = (node: Element) =>
+  Math.min(Math.max(node.scrollTop, 0), node.scrollHeight - node.clientHeight);
+
+/** Where an element and its ancestors (up to `root`) stand scrolled. */
+const scrollPositions = (from: Element | null, root: Element) => {
+  const positions: [Element, number, number][] = [];
+  for (let node = from; node; node = node.parentElement) {
+    positions.push([node, scrolledX(node), scrolledY(node)]);
+    if (node === root) {
+      break;
+    }
+  }
+  return positions;
+};
+
+/**
+ * Swipes of one finger on `element` through touch events - unlike pointer
+ * events they still end here when the browser scrolled with the finger.
+ * `onSwipe(direction, { target, scrolled })`: `scrolled` - something under
+ * the finger (up to `element`) scrolled that way, e.g. a strip of parts
+ * not yet at its end; a swipe at the end is a step on (like a photo pager).
+ */
+export const useTouchSwipe = (
+  element: HTMLElement | null,
+  onSwipe: (
+    direction: Direction,
+    swipe: { target: Element | null; scrolled: boolean },
+  ) => void,
+  enabled = true,
+) => {
+  const latest = useRef(onSwipe);
+  useEffect(() => {
+    latest.current = onSwipe;
+  });
+  useEffect(() => {
+    if (!element || !enabled) {
+      return undefined;
+    }
+    let start: {
+      x: number;
+      y: number;
+      target: Element | null;
+      positions: [Element, number, number][];
+    } | null = null;
+    const begin = (event: TouchEvent) => {
+      // A second finger (pinch) is no swipe.
+      if (event.touches.length !== 1) {
+        start = null;
+        return;
+      }
+      const touch = event.touches[0];
+      const target = event.target as Element | null;
+      start = {
+        x: touch.clientX,
+        y: touch.clientY,
+        target,
+        positions: scrollPositions(target, element),
+      };
+    };
+    const end = (event: TouchEvent) => {
+      const touch = event.changedTouches[0];
+      if (!start || !touch || event.touches.length > 0) {
+        start = null;
+        return;
+      }
+      const direction = swipeDirection(
+        touch.clientX - start.x,
+        touch.clientY - start.y,
+      );
+      const { target, positions } = start;
+      start = null;
+      if (!direction) {
+        return;
+      }
+      const horizontal = direction === 'left' || direction === 'right';
+      const scrolled = positions.some(([node, left, top]) =>
+        horizontal
+          ? Math.abs(scrolledX(node) - left) > 1
+          : Math.abs(scrolledY(node) - top) > 1,
+      );
+      latest.current(direction, { target, scrolled });
+    };
+    const cancel = () => {
+      start = null;
+    };
+    element.addEventListener('touchstart', begin, { passive: true });
+    element.addEventListener('touchend', end);
+    element.addEventListener('touchcancel', cancel);
+    return () => {
+      element.removeEventListener('touchstart', begin);
+      element.removeEventListener('touchend', end);
+      element.removeEventListener('touchcancel', cancel);
+    };
+  }, [element, enabled]);
 };

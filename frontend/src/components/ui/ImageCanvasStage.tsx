@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowCounterclockwise, Magic } from 'react-bootstrap-icons';
+import { useTranslation } from 'react-i18next';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { canvasFont } from '../../styles/fonts';
@@ -384,6 +385,7 @@ const ImageCanvasStage = ({
     | { busy: false; error: string }
     | null
   >(null);
+  const { t } = useTranslation();
   // Image edit (C / X) or removing points (D): the mode, the selected area
   // (two corners in image pixels), whether it is being dragged, and the
   // request applying it.
@@ -2618,7 +2620,16 @@ const ImageCanvasStage = ({
                 ? `${POINT_ACTIONS[pointSelect].name}: ${selectedIds.length} ${pointNoun}(s) selected`
                 : 'Fill the selected area white'
           }
-          detail={selectingPoints && selectedIds.length === 0 ? `No ${pointNoun} in the selection - drag again.` : 'Esc cancels.'}
+          detail={
+            selectingPoints && selectedIds.length === 0
+              ? `No ${pointNoun} in the selection - drag again.`
+              : // Removing points and editing the image (a new file, the old one deleted) cannot be undone.
+                selectingPoints
+                ? pointSelect === 'remove'
+                  ? t('image_canvas_remove_irreversible')
+                  : 'Esc cancels.'
+                : t('image_canvas_edit_irreversible')
+          }
           actions={[
             { label: 'Cancel', variant: 'secondary', disabled: editBusy, onClick: leaveEdit, testId: childTestId(testId, 'apply-cancel') },
             {

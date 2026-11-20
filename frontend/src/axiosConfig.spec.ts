@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios, { type AxiosResponse } from 'axios';
-import axiosConfig from './axiosConfig';
 import type { AuthContextType } from '../hooks/CoreAuthProvider';
 
-const makeAuth = (location = '/location/5/status') =>
-  ({ navigate: vi.fn(), location }) as unknown as AuthContextType & {
+// The toasts axiosConfig shows itself (notistack's global enqueueSnackbar).
+const { enqueueSnackbar } = vi.hoisted(() => ({ enqueueSnackbar: vi.fn() }));
+vi.mock('notistack', () => ({ enqueueSnackbar }));
+
+const { default: axiosConfig, PERMISSION_DENIED_TOAST_KEY } = await import('./axiosConfig');
+const { showRequestError } = await import('./components/ui/Snackbar.jsx');
+const { default: i18n } = await import('./i18n.jsx');
+
+const makeAuth = (location = '/location/5/status', user: unknown = {}) =>
+  ({ navigate: vi.fn(), location, user }) as unknown as AuthContextType & {
     navigate: ReturnType<typeof vi.fn>;
   };
 
@@ -16,6 +23,7 @@ const httpError = (status: number) =>
   });
 
 beforeEach(() => {
+  enqueueSnackbar.mockReset();
   localStorage.clear();
   delete axiosConfig.holder.defaults.headers.common['Authorization'];
 });
@@ -61,8 +69,8 @@ describe('perform_get', () => {
     expect(auth.navigate).not.toHaveBeenCalled();
   });
 
-  it.each([401, 403])('redirects to the login page with a forward on %i', async (status) => {
-    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(httpError(status));
+  it('redirects to the login page with a forward on 401', async () => {
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(httpError(401));
     const onError = vi.fn();
     const auth = makeAuth('/location/5/status');
 
@@ -70,6 +78,7 @@ describe('perform_get', () => {
 
     expect(onError).toHaveBeenCalledTimes(1);
     expect(auth.navigate).toHaveBeenCalledWith('/login?forward=/location/5/status');
+    expect(enqueueSnackbar).not.toHaveBeenCalled();
   });
 
   it('sends a user who has to set up 2FA to that setup instead of the login', async () => {
@@ -85,6 +94,7 @@ describe('perform_get', () => {
     expect(onError).toHaveBeenCalledWith(error);
     expect(auth.navigate).toHaveBeenCalledTimes(1);
     expect(auth.navigate).toHaveBeenCalledWith('/account/two-factor');
+    expect(enqueueSnackbar).not.toHaveBeenCalled();
   });
 
   it('sends a user whose account awaits review to the review panel, not the login', async () => {
@@ -103,6 +113,7 @@ describe('perform_get', () => {
     expect(elsewhere.navigate).toHaveBeenCalledWith('/access/review');
     // Already there: no loop through the login page.
     expect(onPanel.navigate).not.toHaveBeenCalled();
+    expect(enqueueSnackbar).not.toHaveBeenCalled();
   });
 
   it('does not throw on 401 when no auth context is given', async () => {
@@ -158,6 +169,122 @@ describe('perform_get', () => {
     await axiosConfig.perform_get(makeAuth(), '/x', vi.fn());
 
     expect(axiosConfig.holder.defaults.headers.common['Authorization']).toBeUndefined();
+  });
+});
+
+describe('403 - logged in, but not allowed', () => {
+  const forbidden = (data: Record<string, unknown> = { success: false, reason: 'Missing required permissions' }) =>
+    Object.assign(new Error('Request failed with status code 403'), { response: { status: 403, data } });
+
+  it('keeps the user on the page and shows one error toast', async () => {
+    const error = forbidden();
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(error);
+    const onError = vi.fn();
+    const auth = makeAuth('/location/5/status');
+
+    await axiosConfig.perform_get(auth, '/v1/thing/', vi.fn(), onError);
+
+    expect(onError).toHaveBeenCalledWith(error);
+    expect(auth.navigate).not.toHaveBeenCalled();
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
+    expect(enqueueSnackbar).toHaveBeenCalledWith(i18n.t('permission_denied'), {
+      variant: 'error',
+      key: PERMISSION_DENIED_TOAST_KEY,
+      preventDuplicate: true,
+    });
+  });
+
+  it("leaves out the caller's own error toast - one toast per refusal", async () => {
+    vi.spyOn(axiosConfig.holder, 'patch').mockRejectedValue(forbidden());
+    const callerEnqueue = vi.fn();
+
+    await axiosConfig.perform_patch(makeAuth(), '/v1/thing/1/', {}, vi.fn(), (error) =>
+      showRequestError(callerEnqueue, 'Could not save', error),
+    );
+
+    expect(callerEnqueue).not.toHaveBeenCalled();
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
+    // Muted only while the 403's callback runs.
+    showRequestError(callerEnqueue, 'Could not save', new Error('boom'));
+    expect(callerEnqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses one toast key, so parallel refusals collapse into one toast', async () => {
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(forbidden());
+
+    await Promise.all([
+      axiosConfig.perform_get(makeAuth(), '/a', vi.fn(), vi.fn()),
+      axiosConfig.perform_get(makeAuth(), '/b', vi.fn(), vi.fn()),
+    ]);
+
+    const keys = enqueueSnackbar.mock.calls.map(([, options]) => options.key);
+    expect(keys).toEqual([PERMISSION_DENIED_TOAST_KEY, PERMISSION_DENIED_TOAST_KEY]);
+    expect(enqueueSnackbar.mock.calls.every(([, options]) => options.preventDuplicate)).toBe(true);
+  });
+
+  it("names the server's reason when it says something", async () => {
+    vi.spyOn(axiosConfig.holder, 'post').mockRejectedValue(forbidden({ reason: 'Staff access required' }));
+
+    await axiosConfig.perform_post(makeAuth(), '/x', {}, vi.fn(), vi.fn());
+
+    expect(enqueueSnackbar.mock.calls[0][0]).toBe(
+      i18n.t('permission_denied_reason', { reason: 'Staff access required' }),
+    );
+    expect(enqueueSnackbar.mock.calls[0][0]).toContain('Staff access required');
+  });
+
+  it.each([{}, { detail: 'You do not have permission to perform this action.' }, { reason: '  ' }])(
+    'falls back to the generic text for %o',
+    async (data) => {
+      vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(forbidden(data));
+
+      await axiosConfig.perform_get(makeAuth(), '/x', vi.fn(), vi.fn());
+
+      expect(enqueueSnackbar.mock.calls[0][0]).toBe(i18n.t('permission_denied'));
+    },
+  );
+
+  it('toasts with the default callback too, and without an auth context', async () => {
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(forbidden());
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await axiosConfig.perform_get(undefined as unknown as AuthContextType, '/x', vi.fn());
+
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a demo user's 403 to the caller (no toast, no login)", async () => {
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(forbidden());
+    const onError = vi.fn();
+    const auth = makeAuth('/location/5/status', { is_demo: true });
+
+    await axiosConfig.perform_get(auth, '/x', vi.fn(), onError);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(auth.navigate).not.toHaveBeenCalled();
+    expect(enqueueSnackbar).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the read-only demo', { demo_read_only: true }, 'demo_read_only'],
+    ['impersonation', { impersonation: true }, 'impersonation_blocked'],
+  ])('keeps the hint for a write refused by %s', async (_name, data, key) => {
+    vi.spyOn(axiosConfig.holder, 'post').mockRejectedValue(forbidden(data));
+    const callerEnqueue = vi.fn();
+    const auth = makeAuth();
+
+    // With its own callback: the caller's toast, nothing from here.
+    await axiosConfig.perform_post(auth, '/x', {}, vi.fn(), (error) =>
+      showRequestError(callerEnqueue, 'Could not save', error),
+    );
+    expect(callerEnqueue).toHaveBeenCalledTimes(1);
+    expect(enqueueSnackbar).not.toHaveBeenCalled();
+
+    // Without one: the info hint.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await axiosConfig.perform_post(auth, '/x', {}, vi.fn());
+    expect(enqueueSnackbar).toHaveBeenCalledWith(i18n.t(key), { variant: 'info' });
+    expect(auth.navigate).not.toHaveBeenCalled();
   });
 });
 
@@ -255,7 +382,7 @@ describe('perform_patch', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it('calls the error callback and redirects on 403', async () => {
+  it('calls the error callback on 403 and stays on the page', async () => {
     vi.spyOn(axiosConfig.holder, 'patch').mockRejectedValue(httpError(403));
     const onError = vi.fn();
     const auth = makeAuth('/a');
@@ -263,6 +390,7 @@ describe('perform_patch', () => {
     await axiosConfig.perform_patch(auth, '/v1/thing/1/', {}, vi.fn(), onError);
 
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(auth.navigate).toHaveBeenCalledWith('/login?forward=/a');
+    expect(auth.navigate).not.toHaveBeenCalled();
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
   });
 });

@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.hoisted(() => ({ answers: {} as Record<string, unknown> }));
+const api = vi.hoisted(() => ({ answers: {} as Record<string, unknown>, post: vi.fn() }));
 
 vi.mock('../axiosConfig', () => ({
   default: {
     perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void) =>
       ok({ data: api.answers[url.split('?')[0]] ?? {} }),
-    perform_post: () => undefined,
+    perform_post: (_auth: unknown, url: string, body: unknown) => api.post(url, body),
   },
 }));
 vi.mock('../../hooks/CoreAuthProvider', () => ({ useAuth: () => ({}) }));
@@ -71,8 +71,10 @@ beforeEach(() => {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver;
+  api.post.mockClear();
   api.answers = {
     '/v1/notification-case/': { cases: [CASE(1, true), CASE(2, false), CASE(3, null)] },
+    '/v1/notification-case/2/': { case: { ...CASE(2, false), events: [] } },
     '/v1/notification-case/summary/': {
       counts: { offline: { open: 3 }, alarm: {} },
       resolved_last_day: {},
@@ -114,5 +116,32 @@ describe('StaffNotificationCases', () => {
     const icons = [...container.querySelectorAll('[data-testid="location-flag-icons"]')];
     expect(icons.map((icon) => icon.getAttribute('data-test-key'))).toEqual(['case-1']);
     expect(container.querySelector('[data-testid="staff-notifications-legend"]')).not.toBeNull();
+  });
+
+  it('closes a case only after its confirmation', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <StaffNotificationCases />
+        </MemoryRouter>,
+      );
+    });
+    // The case's modal (a portal in <body>).
+    // DataTable reacts to clicks on its cells (data-tag="allowRowEvents").
+    const cell = [...rowOf(4702).querySelectorAll<HTMLElement>('[data-tag="allowRowEvents"]')].pop()!;
+    await act(async () => cell.click());
+    const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+    await act(async () => byTestId('staff-notifications-close')!.click());
+
+    const dialog = byTestId('staff-notifications-close-dialog');
+    expect(dialog?.textContent).toContain('staff_notifications_close_confirm');
+    expect(api.post).not.toHaveBeenCalled();
+    await act(async () => byTestId('staff-notifications-close-dialog-cancel')!.click());
+    expect(byTestId('staff-notifications-close-dialog')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+
+    await act(async () => byTestId('staff-notifications-close')!.click());
+    await act(async () => byTestId('staff-notifications-close-dialog-confirm')!.click());
+    expect(api.post).toHaveBeenCalledWith('/v1/notification-case/2/close/', {});
   });
 });

@@ -369,6 +369,18 @@ class ProgeoLocationAdmin(MultiDBModelAdmin):
     search_fields = ("name", "=project_id", "city", "address")
     ordering = ("name",)
 
+    def has_change_permission(self, request, obj=None):
+        return (
+            request.user.has_perm("progeo.module_locations_django_edit")
+            or super().has_change_permission(request, obj)
+        )
+
+    def has_delete_permission(self, request, obj=None):
+        return (
+            request.user.has_perm("progeo.module_locations_django_delete")
+            or super().has_delete_permission(request, obj)
+        )
+
 class ProgeoDeviceAdmin(MultiDBModelAdmin):
     pass
 

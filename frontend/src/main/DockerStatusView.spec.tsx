@@ -95,6 +95,7 @@ const render = () =>
 const byLabel = (label: string, index = 0) =>
   document.querySelectorAll<HTMLButtonElement>(`[aria-label="${label}"]`)[index];
 const click = (element: Element) => act(() => (element as HTMLElement).click());
+const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
 describe('DockerStatusView', () => {
   it('lists the containers with their status', () => {
@@ -105,9 +106,18 @@ describe('DockerStatusView', () => {
     expect(container.textContent).toContain('docker_running_count:{"running":1,"total":2}');
   });
 
-  it('stops a running and starts a stopped container - then reloads the list', () => {
+  it('stops a running container after asking, starts a stopped one right away - then reloads the list', () => {
     render();
     click(byLabel('docker_action_stop'));
+    // Stopping takes the service down: asked first, nothing sent yet.
+    expect(api.post).not.toHaveBeenCalled();
+    expect(byTestId('docker-confirm')!.textContent).toContain('docker_confirm_stop_message:{"name":"web"}');
+    click(byTestId('docker-confirm-cancel')!);
+    expect(byTestId('docker-confirm')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+
+    click(byLabel('docker_action_stop'));
+    click(byTestId('docker-confirm-confirm')!);
     expect(api.post).toHaveBeenCalledWith('/api/docker/stop/', { container_id: 'aaaaaaaaaaaa1111' });
     click(byLabel('docker_action_start'));
     expect(api.post).toHaveBeenCalledWith('/api/docker/start/', { container_id: 'bbbbbbbbbbbb2222' });
@@ -128,6 +138,7 @@ describe('DockerStatusView', () => {
     });
     render();
     click(byLabel('docker_action_stop'));
+    click(byTestId('docker-confirm-confirm')!);
     const calls = hooks.snackbar.enqueueSnackbar.mock.calls;
     const [message, options] = calls[calls.length - 1];
     expect(message).toContain('Container not found');

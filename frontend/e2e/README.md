@@ -11,6 +11,7 @@ npm run e2e:install          # once: downloads Chromium for Playwright
 export E2E_USERNAME=...      # email address of a test user WITHOUT 2FA (login is by email only)
 export E2E_PASSWORD=...
 export E2E_LOCATION_ID=3031  # optional: a location the user sees (location pages)
+export E2E_DEMO_PASSWORD=... # the demo test users (see "Test users on staging")
 npm run e2e                  # all tests, headless
 npm run e2e:ui               # Playwright's UI mode: pick, watch and debug tests
 ```
@@ -22,6 +23,48 @@ Without `E2E_BASE_URL` the tests run against the local dev server
 `e2e/auth.setup.ts` logs in once and stores the session in `e2e/.auth/`
 (git-ignored). The tests reuse it. The report of the last run is in
 `e2e/report/` (`npx playwright show-report e2e/report`).
+
+### Test users on staging
+
+Besides the staff user (`E2E_USERNAME`), the permission, unsubscribe and
+media tests log in as people of the **demo account**, so nothing a test does
+touches customer data (`e2e/roles.ts`, backend `progeo/helper/e2e.py`):
+
+| role | demo person | rights |
+| --- | --- | --- |
+| `customer` | `demo.erika.mustermann@progeo.com` | account member, a customer's usual rights (no edit/delete/revoke/invite) |
+| `single` | `demo.jonas.weber@progeo.com` | access to the smartex dm demo location (9001) only |
+| `subscriber` | `demo.max.mustermann@progeo.com` | account member with alarm mails (unsubscribe test) |
+
+Set it up once on staging:
+
+```bash
+# .env of staging: E2E_DEMO_PASSWORD=<a long random password>, restart the backend
+docker exec -it progeo-backend python manage.py demo_account --e2e   # or a full demo_account run
+```
+
+The nightly staging import (`import_live_backup`) re-applies it. Where the
+tests run, set the same `E2E_DEMO_PASSWORD`. `e2e/auth.setup.ts` then logs
+every role in and fetches the ids it needs from `/v1/e2e/info/` (staff only,
+404 without `E2E_DEMO_PASSWORD` on the server). Without it the role tests skip.
+Optional: `E2E_SUPERUSER_USERNAME` / `E2E_SUPERUSER_PASSWORD` (a superuser
+without 2FA) for the backup-download check, `E2E_API_URL` when the API isn't
+on the frontend's origin.
+
+### What the tests check
+
+- `permissions.e2e.ts` - users without a right try it (revoke, another
+  user's password, edit/delete a location, another account's location, a
+  location outside their scope): the server refuses (403/404, also checked on
+  the API) and the app shows an error toast and keeps the page. Hidden buttons
+  are shown with `grantInBrowser()` (only the browser believes the right).
+- `unsubscribe.e2e.ts` - the unsubscribe link of an alarm mail, with the
+  subscription checked before and after (and switched on again).
+- `media.e2e.ts` - `/media/` needs a login, backups a superuser.
+- `login-throttle.e2e.ts` - failed logins make the wait grow.
+- `destructive-*.e2e.ts` - every destructive button asks first and explains
+  the consequences (`expectConfirmGuard()`); the requests are blocked
+  (`blockDestructive()`), the confirm button is never clicked.
 
 New tests go in `e2e/*.e2e.ts` and import `test` and `expect` from
 `./fixtures`. `e2e/smoke.e2e.ts` is a starting point. Vitest does not pick

@@ -141,6 +141,24 @@ def test_summary_requires_permission(api_client, world):
     assert api_client.get("/v1/alarm/location_summary/").status_code == 403
 
 
+def test_global_alarm_list_requires_alarms_permission(api_client, world):
+    account, _location, _other, device, member = world
+    f.make_alarm(device, triggered_ago=f.minutes(30))
+    api_client.force_authenticate(user=member)
+
+    denied = api_client.get("/v1/alarm/")
+    assert denied.status_code == 403
+    assert denied.json()["missing_permissions"] == ["module_alarms_enabled"]
+
+    alarm_user = f.make_user(
+        perms=(*MEASURE, *NOTIFY, "module_alarms_enabled"),
+        accounts=[account],
+    )
+    api_client.force_authenticate(user=alarm_user)
+    allowed = api_client.get("/v1/alarm/")
+    assert allowed.status_code == 200, allowed.content
+
+
 # -- active ------------------------------------------------------------------
 
 def _active(api_client):

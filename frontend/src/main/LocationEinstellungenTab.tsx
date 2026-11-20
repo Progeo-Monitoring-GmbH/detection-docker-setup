@@ -10,6 +10,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillButton from '../components/ui/kit/PillButton';
@@ -223,6 +224,9 @@ const LocationEinstellungenTab = () => {
   const [addStaffId, setAddStaffId] = useState('');
   const [addEmail, setAddEmail] = useState('');
   const [addingEmail, setAddingEmail] = useState(false);
+  // The Objektleitung whose access waits for the confirmation to be revoked.
+  const [removeTarget, setRemoveTarget] = useState<AccessRule | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const loadStaffAccess = useCallback(() => {
     setStaffLoading(true);
@@ -306,14 +310,24 @@ const LocationEinstellungenTab = () => {
     );
   };
 
-  const removeStaff = (rule: AccessRule) => {
+  const removeStaff = () => {
+    if (!removeTarget) {
+      return;
+    }
+    const rule = removeTarget;
+    setRemoving(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/delete/`,
       { id: rule.id },
-      () => setStaffRules((prev) => prev.filter((r) => r.id !== rule.id)),
+      () => {
+        setStaffRules((prev) => prev.filter((r) => r.id !== rule.id));
+        setRemoving(false);
+        setRemoveTarget(null);
+      },
       (error) => {
         showRequestError(enqueueSnackbar, 'Could not remove staff', error);
+        setRemoving(false);
       },
     );
   };
@@ -512,7 +526,7 @@ const LocationEinstellungenTab = () => {
                       testKey={String(rule.id)}
                       variant="ghost"
                       label={t('rechte_revoke')}
-                      onClick={() => removeStaff(rule)}
+                      onClick={() => setRemoveTarget(rule)}
                     />
                   )}
                 </div>
@@ -574,6 +588,19 @@ const LocationEinstellungenTab = () => {
           )}
         </div>
       </PanelCard>
+      <ConfirmDialog
+        testId="einstell-staff-remove-dialog"
+        show={removeTarget !== null}
+        title={t('rechte_revoke_title')}
+        message={t('rechte_revoke_message', {
+          name: removeTarget ? removeTarget.user_name || removeTarget.user_email || '' : '',
+        })}
+        confirmLabel={t('rechte_revoke')}
+        cancelLabel={t('rechte_cancel')}
+        confirming={removing}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={removeStaff}
+      />
     </div>
   );
 };

@@ -7,6 +7,10 @@ import Cookies from 'js-cookie';
 import { enqueueSnackbar } from 'notistack';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { getBackendBaseUrl } from './backendUrl';
+import {
+  permissionDeniedMessage,
+  withoutErrorToasts,
+} from './components/ui/Snackbar.jsx';
 import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isImpersonationBlockedError } from './main/impersonation';
@@ -42,6 +46,22 @@ const normalizeBackendUrl = (rawUrl?: string) => {
   }
   return rawUrl;
 };
+
+/** notistack key of the "no permission" toast - one at a time (testable via data-test-key). */
+export const PERMISSION_DENIED_TOAST_KEY = 'permission-denied';
+
+/**
+ * A 403 for a missing right - not one of the special 403s (2FA setup,
+ * pending review, read-only demo, impersonation) and not for a demo user
+ * (a page the demo doesn't offer: their handling stays the caller's).
+ */
+const isRefused = (error, auth: AuthContextType | undefined) =>
+  error?.response?.status === 403 &&
+  !isDemoReadOnlyError(error) &&
+  !isImpersonationBlockedError(error) &&
+  !isTwoFactorSetupError(error) &&
+  !isPendingReviewError(error) &&
+  !isDemoUser(auth?.user);
 
 export interface IConfig {
   token?: string;
@@ -123,12 +143,17 @@ export default class axiosConfig {
   }
 
   /**
-   * Runs a request; on 401/403 the user is sent to the login page (demo
-   * users: their demo link) - a 403 because 2FA has to be set up first goes
-   * to that setup instead, one because the account still waits for review
-   * to the "being reviewed" panel. A write refused because of the read-only demo
-   * is no auth problem - the caller's error handling runs (errorReason()
-   * explains it), callers without one get a hint here.
+   * Runs a request; on 401 the user is sent to the login page (demo users:
+   * their demo link). A 403 means "logged in, but not allowed": the user
+   * stays on the page and gets one error toast (permissionDeniedMessage) -
+   * the caller's error callback still runs, its own error toasts are left
+   * out (withoutErrorToasts), and the fixed key collapses the 403s of
+   * parallel requests into that one toast. Special 403s: 2FA still to set
+   * up goes to that setup, an account waiting for review to the "being
+   * reviewed" panel, a write refused by the read-only demo or while
+   * impersonating runs the caller's error handling (errorReason() explains
+   * it; callers without one get a hint here), and demo users keep just the
+   * caller's handling.
    */
   private static async handle(
     auth: AuthContextType | undefined,
@@ -139,6 +164,15 @@ export default class axiosConfig {
     return await request.then(
       (response) => callBackSuccess(response),
       (error) => {
+        if (isRefused(error, auth)) {
+          enqueueSnackbar(permissionDeniedMessage(error), {
+            variant: 'error',
+            key: PERMISSION_DENIED_TOAST_KEY,
+            preventDuplicate: true,
+          });
+          withoutErrorToasts(() => callBackError(error));
+          return;
+        }
         callBackError(error);
         if (isDemoReadOnlyError(error)) {
           if (callBackError === defaultErrorCallback) {
@@ -169,12 +203,10 @@ export default class axiosConfig {
           }
           return;
         }
-        // Demo users only log in again (via their link) on an expired session -
-        // a 403 is a page the demo doesn't offer, and the link wouldn't help.
-        const status = error?.response?.status;
-        const relogin =
-          status === 401 || (status === 403 && !isDemoUser(auth?.user));
-        if (relogin && auth) {
+        // Only an expired/missing login sends the user to the login page (demo
+        // users: their link) - a 403 is a missing right, logging in again
+        // wouldn't change it (see isRefused above).
+        if (error?.response?.status === 401 && auth) {
           auth.navigate(loginPathFor(auth.user, auth.location));
         }
       },

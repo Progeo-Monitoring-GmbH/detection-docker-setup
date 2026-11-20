@@ -5,13 +5,16 @@ grant_button_permissions gave them to everyone who could act before."""
 from io import StringIO
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.test import RequestFactory
 
 from progeo.helper.button_permissions import implied_permissions
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import fake_smtp  # noqa: F401
-from progeo.v1.models import ProgeoAccess
+from progeo.v1.admin import ProgeoLocationAdmin
+from progeo.v1.models import ProgeoAccess, ProgeoLocation
 
 pytestmark = pytest.mark.usefixtures("fake_smtp")
 
@@ -22,7 +25,8 @@ CUSTOMER_ADMIN = ("module_locations_enabled", "module_locations_edit", *NOTIF)
 
 def _staff_without(*codes):
     """A staff member holding every button permission but `codes`."""
-    held = [code for code in implied_permissions((), staff=True) if code not in codes]
+    held = ["module_admin_staff_enabled"]
+    held.extend(code for code in implied_permissions((), staff=True) if code not in codes)
     return f.make_user(staff=True, perms=held, implied=False, email=f"{f.unique('staff')}@progeo.com")
 
 
@@ -127,30 +131,38 @@ def test_merging_needs_module_locations_mergable(api_client):
 def test_each_admin_panel_section_needs_its_permission(api_client, url, code):
     others = [other for other in ("module_admin_storage", "module_admin_logs", "module_admin_lageplan_export")
               if other != code]
-    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_enabled", *others),
-                                                   implied=False))
+    api_client.force_authenticate(user=f.make_user(
+        staff=True,
+        perms=("module_admin_enabled", "module_admin_panel", *others),
+        implied=False,
+    ))
 
     response = api_client.get(url)
 
     assert response.status_code == 403 and response.json()["missing_permissions"] == [code]
 
 
-# ---------------------------------------------------------------------------- the grants
+def test_admin_panel_requires_its_staff_permission(api_client):
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_admin_storage",), implied=False))
 
-def test_the_grants_keep_what_everyone_could_do(django_capture_on_commit_callbacks):
-    staff = f.make_user(staff=True, implied=False)
-    customer_admin = f.make_user(perms=CUSTOMER_ADMIN, implied=False)
-    admin_panel = f.make_user(perms=("module_admin_enabled",), implied=False)
-    viewer = f.make_user(perms=("module_locations_enabled",), implied=False)
-    out = StringIO()
+    response = api_client.get("/v1/status/admin/storage_info/")
 
-    with django_capture_on_commit_callbacks(execute=True):
-        call_command("grant_button_permissions", stdout=out)
-        call_command("grant_button_permissions", stdout=StringIO())  # again: nothing more
+    assert response.status_code == 403
+    assert response.json()["missing_permissions"] == ["module_admin_panel"]
 
-    assert {"module_user_add", "module_user_erasability", "module_locations_mergable"} <= _codes(staff)
-    assert {"module_user_invitable", "module_user_revokable"} <= _codes(customer_admin)
-    assert "module_user_erasability" not in _codes(customer_admin)
-    assert {"module_admin_storage", "module_admin_logs", "module_admin_lageplan_export"} <= _codes(admin_panel)
-    assert _codes(viewer) == {"module_locations_enabled"}
-    assert "module_user_add:" in out.getvalue()
+
+@pytest.mark.parametrize(
+    ("permission", "change", "delete"),
+    [
+        ("module_locations_django_edit", True, False),
+        ("module_locations_django_delete", False, True),
+    ],
+)
+def test_location_django_admin_uses_the_action_permissions(permission, change, delete):
+    user = f.make_user(staff=True, perms=(permission,))
+    request = RequestFactory().get("/")
+    request.user = user
+    model_admin = ProgeoLocationAdmin(ProgeoLocation, AdminSite())
+
+    assert model_admin.has_change_permission(request) is change
+    assert model_admin.has_delete_permission(request) is delete

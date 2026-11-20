@@ -9,6 +9,7 @@ import { plotTheme } from '../../styles/plotTheme';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import { childTestId } from '../../testIds';
 import HeatLimitationCopyPicker from './HeatLimitationCopyPicker';
+import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import FloatingActionBar from '../ui/kit/FloatingActionBar';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { centroid, MIN_AREA_POINTS, nearestEdge, toPlanPoint, toWorldPoint, type Point } from './heatLimitations';
@@ -216,11 +217,8 @@ export const useHeatLimitationEditor = ({
     },
     copyAreas,
     replaceAreas,
-    remove: (area: HeatLimitation) => {
-      if (window.confirm(t('heat_limit_delete_confirm', { name: area.name || t('heat_limit_unnamed') }))) {
-        post('delete/', { id: area.id }, t('heat_limit_deleted'));
-      }
-    },
+    /** Deletes the area - asked first by HeatLimitationBar's confirmation. */
+    remove: (area: HeatLimitation) => post('delete/', { id: area.id }, t('heat_limit_deleted')),
   };
 };
 
@@ -242,6 +240,8 @@ export const HeatLimitationBar = ({
 }) => {
   const { t } = useTranslation();
   const [copyOpen, setCopyOpen] = useState(false);
+  // The area whose delete waits for the confirmation.
+  const [deleting, setDeleting] = useState<HeatLimitation | null>(null);
   if (!editor.canEdit) {
     return null;
   }
@@ -354,7 +354,7 @@ export const HeatLimitationBar = ({
               className="p-0 px-1 text-danger"
               title={t('heat_limit_delete')}
               aria-label={t('heat_limit_delete')}
-              onClick={() => editor.remove(area)}
+              onClick={() => setDeleting(area)}
               disabled={busy}
               data-testid={childTestId(testId, 'delete')}
               data-test-key={area.id}
@@ -371,6 +371,24 @@ export const HeatLimitationBar = ({
           testId={childTestId(testId, 'copy-dialog')}
         />
       )}
+      <ConfirmDialog
+        show={deleting !== null}
+        title={t('heat_limit_delete_title')}
+        message={t('heat_limit_delete_confirm', {
+          name: deleting?.name || t('heat_limit_unnamed'),
+          count: deleting?.points.length ?? 0,
+        })}
+        confirmLabel={t('heat_limit_delete')}
+        cancelLabel={t('heat_limit_cancel')}
+        onConfirm={() => {
+          if (deleting) {
+            editor.remove(deleting);
+          }
+          setDeleting(null);
+        }}
+        onCancel={() => setDeleting(null)}
+        testId={childTestId(testId, 'delete-dialog')}
+      />
     </>
   );
 };

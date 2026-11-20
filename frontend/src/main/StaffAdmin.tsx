@@ -39,8 +39,14 @@ import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
 import StaffNotificationCases from './StaffNotificationCases';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { staffFlags, useAccess } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
+import {
+  applyPermissionPreset,
+  PERMISSION_GROUPS,
+  selectedPermissionPreset,
+} from './staffPermissions';
 import {
   AccountBoxes,
   AccountLegend,
@@ -205,11 +211,17 @@ const UserFormModal = ({
   const [sendInvite, setSendInvite] = useState(false);
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
   const [accountId, setAccountId] = useState('');
+  // Asked first (a ConfirmDialog inside this modal): a new password, or
+  // saving with "active" switched off - the payload waits meanwhile.
+  const [ask, setAsk] = useState<
+    { kind: 'password' } | { kind: 'deactivate'; payload: Record<string, unknown> } | null
+  >(null);
 
   useEffect(() => {
     if (!show) {
       return;
     }
+    setAsk(null);
     setUsername(user?.username || '');
     setEmail(user?.email || '');
     setPassword('');
@@ -229,6 +241,9 @@ const UserFormModal = ({
   }, [show, user, grantableCodes]);
 
   const togglePermission = (code: string) => {
+    if (!grantableCodes.includes(code)) {
+      return;
+    }
     setSelectedPerms((current) =>
       current.includes(code)
         ? current.filter((item) => item !== code)
@@ -255,11 +270,28 @@ const UserFormModal = ({
       }
       payload.send_invite = sendInvite;
     }
+    if (!isNew && canDisable && user?.is_active && !isActive) {
+      setAsk({ kind: 'deactivate', payload });
+      return;
+    }
     onSave(payload);
   };
 
+  const groupedPermissionDefs = PERMISSION_GROUPS.map((group) => ({
+    ...group,
+    definitions: permissionDefs.filter((def) =>
+      group.permissions.includes(def.code),
+    ),
+  }));
+  const groupedCodes = new Set(
+    PERMISSION_GROUPS.flatMap((group) => group.permissions),
+  );
+  const ungroupedDefinitions = permissionDefs.filter(
+    (def) => !groupedCodes.has(def.code),
+  );
+
   return (
-    <Modal show={show} onHide={onHide} centered size="lg" data-testid={testId}>
+    <Modal show={show} onHide={onHide} centered size="xl" data-testid={testId}>
       <Modal.Header closeButton>
         <Modal.Title>{title}</Modal.Title>
       </Modal.Header>
@@ -352,34 +384,130 @@ const UserFormModal = ({
             )}
           </div>
 
-          <Form.Label className="d-block">
+          <Form.Label className="d-block mb-1">
             {t('staff_field_permissions')}{' '}
             <small className="text-muted">
               {t('staff_field_permissions_hint')}
             </small>
           </Form.Label>
           <div
-            className="border rounded p-2 mb-2 staff-permissions-box"
+            className="staff-permissions-box mb-2"
             data-testid={childTestId(testId, 'permissions')}
           >
             {permissionDefs.length === 0 && (
               <small className="text-muted">{t('staff_no_permissions')}</small>
             )}
-            {permissionDefs.map((def) => {
-              const grantable = grantableCodes.includes(def.code);
-              return (
-                <Form.Check
-                  key={def.code}
-                  type="switch"
-                  id={`perm-${def.code}`}
-                  label={`${def.label} (${def.code})`}
-                  disabled={!grantable}
-                  checked={selectedPerms.includes(def.code)}
-                  onChange={() => togglePermission(def.code)}
-                  {...repeatedTestId(`${testId}-permission`, def.code)}
-                />
-              );
-            })}
+            <div className="row g-2">
+              {groupedPermissionDefs.map((group) => {
+                const selectedLabels = group.definitions
+                  .filter((def) => selectedPerms.includes(def.code))
+                  .map((def) => def.label);
+                const preset = selectedPermissionPreset(
+                  selectedPerms,
+                  group,
+                  grantableCodes,
+                );
+                return (
+                  <div className="col-12 col-md-6" key={group.id}>
+                    <section
+                      className={`staff-permission-group staff-permission-group--${group.id}`}
+                      data-testid={childTestId(
+                        testId,
+                        `permission-group-${group.id}`,
+                      )}
+                    >
+                      <div className="d-flex align-items-center justify-content-between gap-2">
+                        <strong>{t(group.labelKey)}</strong>
+                        <Form.Select
+                          size="sm"
+                          aria-label={t('staff_permission_preset_label', {
+                            group: t(group.labelKey),
+                          })}
+                          value={preset}
+                          onChange={(event) =>
+                            setSelectedPerms((current) =>
+                              applyPermissionPreset(
+                                current,
+                                group,
+                                event.target.value,
+                                grantableCodes,
+                              ),
+                            )
+                          }
+                          data-testid={childTestId(
+                            testId,
+                            `permission-preset-${group.id}`,
+                          )}
+                        >
+                          {preset === 'custom' && (
+                            <option value="custom">
+                              {t('staff_permission_custom')}
+                            </option>
+                          )}
+                          {Object.keys(group.presets).map((presetKey) => (
+                            <option key={presetKey} value={presetKey}>
+                              {t(`staff_permission_preset_${presetKey}`)}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      </div>
+                      <div
+                        className="staff-permission-summary"
+                        title={selectedLabels.join(', ')}
+                      >
+                        {selectedLabels.length
+                          ? selectedLabels.join(', ')
+                          : t('staff_permissions_none')}
+                      </div>
+                      <details className="staff-permission-details">
+                        <summary>{t('staff_permission_customize')}</summary>
+                        <div className="staff-permission-options">
+                          {group.definitions.map((def) => {
+                            const grantable = grantableCodes.includes(def.code);
+                            return (
+                              <Form.Check
+                                key={def.code}
+                                type="checkbox"
+                                id={`perm-${def.code}`}
+                                label={def.label}
+                                disabled={!grantable}
+                                checked={selectedPerms.includes(def.code)}
+                                onChange={() => togglePermission(def.code)}
+                                {...repeatedTestId(
+                                  `${testId}-permission`,
+                                  def.code,
+                                )}
+                              />
+                            );
+                          })}
+                        </div>
+                      </details>
+                    </section>
+                  </div>
+                );
+              })}
+              {ungroupedDefinitions.length > 0 && (
+                <div className="col-12 col-md-6">
+                  <section className="staff-permission-group staff-permission-group--other">
+                    <strong>{t('staff_permission_group_other')}</strong>
+                    <div className="staff-permission-options">
+                      {ungroupedDefinitions.map((def) => (
+                        <Form.Check
+                          key={def.code}
+                          type="checkbox"
+                          id={`perm-${def.code}`}
+                          label={def.label}
+                          disabled={!grantableCodes.includes(def.code)}
+                          checked={selectedPerms.includes(def.code)}
+                          onChange={() => togglePermission(def.code)}
+                          {...repeatedTestId(`${testId}-permission`, def.code)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              )}
+            </div>
           </div>
           {grantableCodes.length === 0 && (
             <small className="text-muted">
@@ -396,7 +524,7 @@ const UserFormModal = ({
             </small>
             <Button
               variant="outline-warning"
-              onClick={() => onGeneratePassword(user)}
+              onClick={() => setAsk({ kind: 'password' })}
               data-testid={childTestId(testId, 'generate-password')}
             >
               <Key className="me-1" />
@@ -420,8 +548,85 @@ const UserFormModal = ({
           {t('staff_save')}
         </Button>
       </Modal.Footer>
+      {/* Inside the modal: above it, and its focus trap leaves the buttons usable. */}
+      <ConfirmDialog
+        show={ask !== null && user !== null}
+        title={
+          ask?.kind === 'deactivate'
+            ? t('staff_deactivate_confirm_title')
+            : t('staff_password_confirm_title')
+        }
+        message={
+          ask?.kind === 'deactivate'
+            ? t('staff_deactivate_confirm_body', { username: user?.username ?? '' })
+            : t('staff_password_confirm_body', { username: user?.username ?? '' })
+        }
+        confirmLabel={
+          ask?.kind === 'deactivate'
+            ? t('staff_deactivate_confirm_yes')
+            : t('staff_password_confirm_yes')
+        }
+        cancelLabel={t('staff_cancel')}
+        onConfirm={() => {
+          if (ask?.kind === 'deactivate') {
+            onSave(ask.payload);
+          } else if (ask?.kind === 'password' && user && onGeneratePassword) {
+            onGeneratePassword(user);
+          }
+          setAsk(null);
+        }}
+        onCancel={() => setAsk(null)}
+        testId={
+          ask?.kind === 'deactivate'
+            ? 'staff-user-deactivate-dialog'
+            : 'staff-user-password-dialog'
+        }
+      />
     </Modal>
   );
+};
+
+/** The row actions that ask first - their ConfirmDialog ("staff-user-<action>-dialog"). */
+type UserAction =
+  | 'password'
+  | 'invite'
+  | 'reset-two-factor'
+  | 'impersonate'
+  | 'delete';
+const USER_ACTIONS: Record<
+  UserAction,
+  { title: string; message: string; confirm: string; danger: boolean }
+> = {
+  password: {
+    title: 'staff_password_confirm_title',
+    message: 'staff_password_confirm_body',
+    confirm: 'staff_password_confirm_yes',
+    danger: true,
+  },
+  invite: {
+    title: 'staff_invite_confirm_title',
+    message: 'staff_invite_confirm',
+    confirm: 'staff_send_invite',
+    danger: false,
+  },
+  'reset-two-factor': {
+    title: 'staff_reset_two_factor_confirm_title',
+    message: 'staff_reset_two_factor_confirm',
+    confirm: 'staff_reset_two_factor',
+    danger: true,
+  },
+  impersonate: {
+    title: 'staff_impersonate_confirm_title',
+    message: 'staff_impersonate_confirm',
+    confirm: 'staff_impersonate',
+    danger: false,
+  },
+  delete: {
+    title: 'staff_delete_confirm_title',
+    message: 'staff_delete_confirm',
+    confirm: 'staff_delete_user',
+    danger: true,
+  },
 };
 
 const PasswordResultModal = ({
@@ -489,6 +694,11 @@ const StaffAdmin = () => {
   const [passwordResult, setPasswordResult] = useState<{
     username: string;
     password: string;
+  } | null>(null);
+  // A row action waiting for its ConfirmDialog (USER_ACTIONS).
+  const [pending, setPending] = useState<{
+    kind: UserAction;
+    user: StaffUser;
   } | null>(null);
 
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -614,16 +824,6 @@ const StaffAdmin = () => {
   };
 
   const handleInvite = (user: StaffUser) => {
-    if (
-      !window.confirm(
-        t('staff_invite_confirm', {
-          username: user.username,
-          email: user.email,
-        }),
-      )
-    ) {
-      return;
-    }
     setBusyId(user.id);
     void axiosConfig.perform_post(
       auth,
@@ -642,13 +842,6 @@ const StaffAdmin = () => {
 
   // Lost phone: the user sets up 2FA again; all their logins end.
   const handleResetTwoFactor = (user: StaffUser) => {
-    if (
-      !window.confirm(
-        t('staff_reset_two_factor_confirm', { username: user.username }),
-      )
-    ) {
-      return;
-    }
     setBusyId(user.id);
     void axiosConfig.perform_post(
       auth,
@@ -675,13 +868,6 @@ const StaffAdmin = () => {
 
   // Superusers only: see the portal as this user (no password, no 2FA).
   const handleImpersonate = (user: StaffUser) => {
-    if (
-      !window.confirm(
-        t('staff_impersonate_confirm', { username: user.username }),
-      )
-    ) {
-      return;
-    }
     setBusyId(user.id);
     void axiosConfig.perform_post(
       auth,
@@ -755,7 +941,11 @@ const StaffAdmin = () => {
         user.two_factor_enabled ? t('staff_badge_two_factor') : '',
         user.logged_in ? t('staff_filter_logged_in') : '',
         ...permissions,
-        ...permissions.map(permissionLabel),
+        ...permissions.map(
+          (code) =>
+            response.all_permission_defs.find((def) => def.code === code)
+              ?.label ?? permissionLabel(code),
+        ),
         ...(user.accounts ?? []).map((account) => account.name),
         user.date_joined ? formatDate(user.date_joined) : '',
         user.last_login ? formatDate(user.last_login) : '',
@@ -765,14 +955,9 @@ const StaffAdmin = () => {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [response.users, filters, roleLabel, t]);
+  }, [response.users, response.all_permission_defs, filters, roleLabel, t]);
 
   const handleDelete = (user: StaffUser) => {
-    if (
-      !window.confirm(t('staff_delete_confirm', { username: user.username }))
-    ) {
-      return;
-    }
     setBusyId(user.id);
     void axiosConfig.perform_post(
       auth,
@@ -925,7 +1110,8 @@ const StaffAdmin = () => {
             >
               {enabled.slice(0, 3).map((code) => (
                 <Badge key={code} bg="info" pill text="dark">
-                  {permissionLabel(code)}
+                  {response.all_permission_defs.find((def) => def.code === code)
+                    ?.label ?? permissionLabel(code)}
                 </Badge>
               ))}
               {enabled.length > 3 && (
@@ -974,7 +1160,7 @@ const StaffAdmin = () => {
                 title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
                 aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
                 disabled={busyId === row.id}
-                onClick={() => handleGeneratePassword(row)}
+                onClick={() => setPending({ kind: 'password', user: row })}
                 {...repeatedTestId('staff-user-generate-password', row.id)}
               >
                 <Key size={14} />
@@ -995,7 +1181,7 @@ const StaffAdmin = () => {
                     : t('staff_send_invite_no_email')
                 }
                 disabled={busyId === row.id || !row.email || !row.is_active}
-                onClick={() => handleInvite(row)}
+                onClick={() => setPending({ kind: 'invite', user: row })}
                 {...repeatedTestId('staff-user-invite', row.id)}
               >
                 <Envelope size={14} />
@@ -1008,7 +1194,9 @@ const StaffAdmin = () => {
                 title={t('staff_reset_two_factor')}
                 aria-label={t('staff_reset_two_factor')}
                 disabled={busyId === row.id}
-                onClick={() => handleResetTwoFactor(row)}
+                onClick={() =>
+                  setPending({ kind: 'reset-two-factor', user: row })
+                }
                 {...repeatedTestId('staff-user-reset-two-factor', row.id)}
               >
                 <ShieldX size={14} />
@@ -1021,7 +1209,7 @@ const StaffAdmin = () => {
                 title={t('staff_impersonate')}
                 aria-label={t('staff_impersonate')}
                 disabled={busyId === row.id}
-                onClick={() => handleImpersonate(row)}
+                onClick={() => setPending({ kind: 'impersonate', user: row })}
                 {...repeatedTestId('staff-user-impersonate', row.id)}
               >
                 <Incognito size={14} />
@@ -1034,7 +1222,7 @@ const StaffAdmin = () => {
                 title={t('staff_delete_user')}
                 aria-label={t('staff_delete_user')}
                 disabled={busyId === row.id}
-                onClick={() => handleDelete(row)}
+                onClick={() => setPending({ kind: 'delete', user: row })}
                 {...repeatedTestId('staff-user-delete', row.id)}
               >
                 <Trash size={14} />
@@ -1052,6 +1240,7 @@ const StaffAdmin = () => {
       isSuperuser,
       isStaff,
       accountColorOf,
+      response.all_permission_defs,
       canInviteUser,
       canDeleteUser,
     ],
@@ -1289,6 +1478,37 @@ const StaffAdmin = () => {
         staffFields={isStaff}
         canDisable={canDisableUser}
         testId="staff-user-edit-dialog"
+      />
+
+      <ConfirmDialog
+        show={pending !== null}
+        title={pending ? t(USER_ACTIONS[pending.kind].title) : ''}
+        message={
+          pending
+            ? t(USER_ACTIONS[pending.kind].message, {
+                username: pending.user.username,
+                email: pending.user.email || '-',
+              })
+            : ''
+        }
+        confirmLabel={pending ? t(USER_ACTIONS[pending.kind].confirm) : ''}
+        cancelLabel={t('staff_cancel')}
+        danger={pending ? USER_ACTIONS[pending.kind].danger : true}
+        onConfirm={() => {
+          if (pending) {
+            const run = {
+              password: handleGeneratePassword,
+              invite: handleInvite,
+              'reset-two-factor': handleResetTwoFactor,
+              impersonate: handleImpersonate,
+              delete: handleDelete,
+            }[pending.kind];
+            run(pending.user);
+          }
+          setPending(null);
+        }}
+        onCancel={() => setPending(null)}
+        testId={`staff-user-${pending?.kind ?? 'action'}-dialog`}
       />
 
       <PasswordResultModal

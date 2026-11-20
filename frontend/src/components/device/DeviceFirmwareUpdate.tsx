@@ -5,6 +5,7 @@ import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import PillButton from '../ui/kit/PillButton';
 // Section title, select and row are shared with the dialog it sits in.
 import './DeviceCommandsDialog.css';
@@ -45,11 +46,14 @@ const REFRESH_MS = 5000;
  */
 const DeviceFirmwareUpdate = ({
   deviceId,
+  deviceName,
   query,
   onChanged,
   testId = 'device-firmware',
 }: {
   deviceId: number;
+  /** Named in the confirmation. */
+  deviceName: string;
   query: string;
   onChanged: () => void;
   /** data-testid of the section; its parts are "<testId>-current", "-target", "-start", ... */
@@ -188,11 +192,11 @@ const DeviceFirmwareUpdate = ({
               ))}
             </select>
             <PillButton
-              variant={confirming ? 'solid' : 'accent'}
+              variant="accent"
               icon={busy ? <Spinner animation="border" size="sm" /> : undefined}
-              label={confirming ? t('device_firmware_confirm', { bundle: target }) : t('device_firmware_start')}
+              label={t('device_firmware_start')}
               disabled={busy || !target}
-              onClick={() => (confirming ? start() : setConfirming(true))}
+              onClick={() => setConfirming(true)}
               testId={childTestId(testId, 'start')}
             />
           </div>
@@ -211,6 +215,16 @@ const DeviceFirmwareUpdate = ({
         </ul>
       )}
       <div className="device-firmware-hint">{t('device_firmware_hint')}</div>
+      <ConfirmDialog
+        show={confirming}
+        title={t('device_firmware_confirm_title')}
+        message={t('device_firmware_confirm', { device: deviceName, current: data.current ?? '?', bundle: target })}
+        confirmLabel={t('device_firmware_start')}
+        cancelLabel={t('devices_cancel')}
+        onConfirm={start}
+        onCancel={() => setConfirming(false)}
+        testId={childTestId(testId, 'start-dialog')}
+      />
     </div>
   );
 };

@@ -59,6 +59,7 @@ const Toast = forwardRef<HTMLDivElement, CustomContentProps>(
           className="progeo-toast"
           data-testid="toast"
           data-test-key={String(id)}
+          data-variant={variant}
           style={{ '--toast-color': COLOR[variant] } as CSSProperties}
           onClick={close}
           title={t('toast_click_to_close')}

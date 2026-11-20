@@ -346,15 +346,574 @@ const scoreboard = () => ({
   now: iso(NOW),
 });
 
+// -- data the dialogs (routes.mjs `modals`) need ----------------------------------
+
+/** A stand-in QR code (a grey square). */
+const QR_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg==';
+
+/** GET /v1/location/<id>/access/: members (Rechte) and rules (Einstellungen, Verwaltung). */
+const locationAccess = () => ({
+  access: [
+    {
+      id: 11,
+      user: 1,
+      user_name: 'Jonas Weber',
+      user_email: 'staff.weber@progeo.com',
+      is_staff: true,
+      objektleitung: true,
+      transport: 1,
+      type: 1,
+    },
+    {
+      id: 12,
+      user: 7,
+      user_name: 'Tom Becker',
+      user_email: 't.becker@progeo.com',
+      is_staff: false,
+      objektleitung: false,
+      transport: 1,
+      type: 1,
+    },
+  ],
+  members: [
+    {
+      user_id: 2,
+      username: 'kunde.mueller',
+      full_name: 'Maria Müller',
+      email: 'kunde.mueller@progeo.com',
+      mobile: null,
+      messenger: null,
+      last_login: iso(NOW - 5 * HOUR),
+      access: 'account',
+      single: false,
+      rule: null,
+    },
+    {
+      user_id: 7,
+      username: 't.becker',
+      full_name: 'Tom Becker',
+      email: 't.becker@progeo.com',
+      mobile: null,
+      messenger: null,
+      last_login: iso(NOW - 30 * HOUR),
+      access: 'single',
+      single: true,
+      rule: { id: 12, user: 7, transport: 1, type: 1, objektleitung: false },
+    },
+  ],
+  users: [],
+  staff_users: [],
+  can_invite: true,
+});
+
+/** The device of location #1 (device list, test measurements, commands). */
+const device = {
+  id: 1,
+  location: 1,
+  raw_hash: '4700-01',
+  display_name: 'smartex dm Keller',
+  type: 'smartbox',
+  model: 'smartex dm',
+  hardware: 'smartbox v3',
+  version: '3.4.1',
+  mac: 'A4:CF:12:9B:00:01',
+  last_measurement_at: iso(NOW - HOUR),
+  last_seen_at: iso(NOW - 0.2 * HOUR),
+  online: true,
+  hash_kind: 'project',
+  ip: null,
+  ping: null,
+  notify_on_measurements: false,
+};
+
+/** Hourly measurements of location #1: EP and WP of 12 sensors each. */
+const measurements = Array.from({ length: 48 }, (_, index) => ({
+  id: 9000 + index,
+  device: 1,
+  last_fetched: iso(NOW - (48 - index) * HOUR),
+  samples: Array.from(
+    { length: SENSORS * 2 },
+    (_, sensor) =>
+      Math.round((30 + (sensor % SENSORS) * 5 + 8 * Math.sin(index / 5 + sensor)) * 10) /
+      10,
+  ),
+}));
+
+const notificationCase = {
+  id: 1,
+  kind: 'offline',
+  state: 'open',
+  phase: 'notified',
+  stage: 1,
+  stages: 3,
+  location_id: 1,
+  project_id: 4700,
+  location_name: locations[0].name,
+  opened_at: iso(NOW - 26 * HOUR),
+  last_contact_at: iso(NOW - 20 * HOUR),
+  next_contact_at: iso(NOW + 4 * HOUR),
+  muted: false,
+  muted_until: null,
+  unreachable_since: null,
+  acknowledged_at: null,
+  escalation_id: null,
+  resolved_at: null,
+  resolution: '',
+  back_since: null,
+  devices: [
+    {
+      id: '4700-01',
+      label: 'smartex dm Keller',
+      last_seen: iso(NOW - 27 * HOUR),
+      back_since: null,
+    },
+  ],
+  alarm_count: 0,
+  notified: ['kunde.mueller@progeo.com'],
+  notifications_disabled: false,
+};
+
+const statisticsDevice = {
+  id: 1,
+  database: 'progeo_4700',
+  raw_hash: '4700-01',
+  display_name: 'smartex dm Keller',
+  type: 'smartbox',
+  hardware: 'smartbox v3',
+  chip_id: 'A1B2C3',
+  device_ip: null,
+  location_id: 1,
+  location_name: locations[0].name,
+  project_id: 4700,
+  last_measurement_at: iso(NOW - HOUR),
+  measured_24h: true,
+  missing_points: false,
+  dead: false,
+};
+const deviceStatistics = () => ({
+  cached: true,
+  generated_at: iso(NOW - HOUR),
+  totals: {
+    devices: 2,
+    locations: 1,
+    with_chip_id: 2,
+    without_chip_id: 0,
+    measured_24h: 2,
+    not_measured_24h: 0,
+    missing_points: 0,
+    dead: 0,
+    unused_locations: 0,
+    locations_missing_points: 0,
+    locations_without_gps: 0,
+  },
+  by_type: [{ type: 'smartbox', label: 'smartex dm', count: 2 }],
+  devices: {
+    by_type: {
+      smartbox: [
+        statisticsDevice,
+        { ...statisticsDevice, id: 2, raw_hash: '4700-02', display_name: 'smartex dm Halle' },
+      ],
+    },
+    with_chip_id: [],
+    without_chip_id: [],
+    measured_24h: [],
+    not_measured_24h: [],
+    missing_points: [],
+    dead: [],
+  },
+  locations: {},
+});
+
+/** A screen review run (the review page itself and its dialogs). */
+const REVIEW_RUN = '2026-11-20_120000';
+const reviewImage = {
+  file: 'pc-user-de-login.png',
+  device: 'pc',
+  role: 'user',
+  language: 'de',
+  action: 'login',
+  path: '/login',
+  url: '/login',
+  modal: null,
+  viewport: [1440, 900],
+  width: 1200,
+  height: 800,
+  errors: [],
+};
+
+/**
+ * Variants of the data for one dialog's screenshot (routes.mjs `scenario`) -
+ * the pages themselves keep the usual answers.
+ */
+export const SCENARIOS = {
+  /** StaffMessaging: the circuit breaker stopped the SMS. */
+  'breaker-tripped': { breaker: { tripped: true, tripped_at: iso(NOW - 2 * HOUR), reason: 'sms_per_hour' } },
+};
+
 /** The answer to an API request: a JSON body, or undefined (unmocked - {}). */
-export const mockAnswer = (method, url, role, language = 'de') => {
+export const mockAnswer = (
+  method,
+  url,
+  role,
+  language = 'de',
+  scenario = null,
+) => {
   const { pathname, searchParams } = new URL(url);
   const persona = PERSONAS[role] ?? PERSONAS.user;
+  const variant = (scenario && SCENARIOS[scenario]) || {};
   const ids = (searchParams.get('ids') || '')
     .split(',')
     .filter(Boolean)
     .map(Number);
   const path = pathname.replace(/\/+$/, '/');
+
+  // -- dialogs' data (before the general answers below) ----------------------------
+  if (/\/location\/\d+\/access\/$/.test(path)) {
+    return locationAccess();
+  }
+  if (/\/location\/\d+\/test_notification\/$/.test(path)) {
+    return {
+      recipients: [
+        {
+          user_id: 2,
+          name: 'Maria Müller',
+          mail: 'kunde.mueller@progeo.com',
+          mobile: null,
+          messenger: null,
+          kanal: 'E-Mail',
+        },
+      ],
+    };
+  }
+  if (/\/location\/\d+\/readiness\/airtable\/$/.test(path)) {
+    return {
+      airtable: {
+        status: 'preview',
+        project_id: 4700,
+        fields: ['address'],
+        changes: [
+          {
+            field: 'address',
+            old: { value: 'Industriestraße 1', label: 'Industriestraße 1' },
+            new: { value: 'Industriestraße 1a', label: 'Industriestraße 1a' },
+          },
+        ],
+      },
+    };
+  }
+  if (/\/location\/\d+\/measurements\/archive\/$/.test(path)) {
+    return { total: 168, archived: 12 };
+  }
+  if (/\/location\/\d+\/measurements\/$/.test(path)) {
+    return {
+      measurements,
+      total: measurements.length,
+      devices: [{ id: 1, display_name: device.display_name }],
+      device: 1,
+    };
+  }
+  if (/\/location\/\d+\/noise-profiles\/suggest\/$/.test(path)) {
+    return {
+      mask_e: Array(SENSORS).fill(0),
+      mask_w: Array(SENSORS).fill(0),
+      source_from: iso(NOW - 7 * 24 * HOUR),
+      source_to: iso(NOW),
+      source_count: 168,
+    };
+  }
+  if (/\/location\/\d+\/noise-profiles\/$/.test(path)) {
+    return {
+      profiles: [
+        {
+          id: 5,
+          device: 1,
+          name: 'Grundrauschen Oktober',
+          mask_e: Array(SENSORS).fill(2),
+          mask_w: Array(SENSORS).fill(3),
+          sum_e: 24,
+          sum_w: 36,
+          source_from: iso(NOW - 40 * 24 * HOUR),
+          source_to: iso(NOW - 33 * 24 * HOUR),
+          source_count: 168,
+          is_active: false,
+          activated_at: null,
+          created: iso(NOW - 30 * 24 * HOUR),
+          updated: iso(NOW - 30 * 24 * HOUR),
+          created_by: 'staff.weber',
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/status/location_devices/')) {
+    return {
+      location: { id: 1, project_id: 4700, name: locations[0].name },
+      devices: [device],
+      stats: {
+        total: 1,
+        online: 1,
+        offline: 0,
+        never_seen: 0,
+        hash_kinds: { project: 1, mac: 0, legacy: 0 },
+        ping: null,
+      },
+      pinged: false,
+    };
+  }
+  if (path.endsWith('/device/provision/test-measurements/')) {
+    return {
+      measurements: [
+        {
+          id: 1,
+          time: iso(NOW - 0.5 * HOUR),
+          count: 16,
+          max: 120,
+          pairs: Array.from({ length: 16 }, (_, index) => [20 + index * 6, 18 + index * 6]),
+          check: {
+            status: 'ok',
+            rising: 16,
+            start: 0,
+            end: 15,
+            mux: 1,
+            noise: 0,
+            noise_sensors: 0,
+            quality: 98,
+            outliers: [],
+            reasons: [],
+          },
+          png: null,
+        },
+      ],
+      expected_rising: 16,
+      sensor_count: 16,
+      mux_count: 1,
+      pending_commands: [],
+      last_command_poll: iso(NOW - 0.1 * HOUR),
+    };
+  }
+  if (/\/device\/\d+\/commands\/$/.test(path)) {
+    return {
+      commands: [
+        {
+          id: 1,
+          command: 'identify',
+          status: 'success',
+          created: iso(NOW - 3 * HOUR),
+          updated: iso(NOW - 3 * HOUR),
+          created_by: 'staff.weber',
+          result: 'ok',
+        },
+      ],
+      available: [
+        'identify',
+        'measure',
+        'get_config',
+        'maintenance',
+        'normal',
+        'restart',
+        'set_params',
+        'update',
+      ].map((command) => ({ command, superuser_only: command === 'update', allowed: true })),
+      pending_ttl_hours: 24,
+      result_ttl_days: 7,
+      last_command_poll: iso(NOW - 0.1 * HOUR),
+    };
+  }
+  if (path.endsWith('/status/device_statistics/')) {
+    return deviceStatistics();
+  }
+  if (path.endsWith('/status/measure_points/')) {
+    return {
+      lageplans: [
+        {
+          id: 100,
+          name: 'Hauptgebäude',
+          url: 'media/uploads/lageplan/plan-100.png',
+          location_id: 1,
+          is_active: true,
+          offset_x: 0,
+          offset_y: 0,
+          scale_x: 1,
+          scale_y: 1,
+          flip_x: false,
+          flip_y: false,
+          meters_per_pixel: 0.05,
+          heat_limitations: [],
+        },
+      ],
+      points: sensorPoints.map((point, index) => ({
+        id: index + 1,
+        device: 1,
+        sensor_order: point.pos,
+        nx: point.x,
+        ny: point.y,
+        lageplan: 100,
+      })),
+      devices: [
+        {
+          id: 1,
+          raw_hash: '4700-01',
+          hardware: 'smartbox v3',
+          type: 'smartbox',
+          mac: device.mac,
+          first_sensor_order: 1,
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/database-usage/')) {
+    return {
+      cached: true,
+      generated_at: iso(NOW - HOUR),
+      stale_days: 30,
+      split_enabled: true,
+      default: { database: 'default', size_bytes: 52428800 },
+      databases: [
+        {
+          database: 'progeo_4700',
+          project: 4700,
+          name: locations[0].name,
+          size_bytes: 73400320,
+          devices: 2,
+          measurements: 4820,
+          stats_at: iso(NOW - HOUR),
+          last_measurement_at: iso(NOW - HOUR),
+          status: 'active',
+          error: null,
+        },
+        {
+          database: 'progeo_4799',
+          project: 4799,
+          name: 'Altprojekt Lager Süd',
+          size_bytes: 1048576,
+          devices: 0,
+          measurements: 0,
+          stats_at: iso(NOW - HOUR),
+          last_measurement_at: null,
+          status: 'no_devices',
+          error: null,
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/docker/status/')) {
+    return {
+      container: [
+        {
+          id: 'a1b2c3d4e5f60001',
+          name: 'progeo-backend',
+          status: 'running',
+          image: 'progeo/backend:latest',
+          started_at: iso(NOW - 50 * HOUR),
+          health: 'healthy',
+        },
+        {
+          id: 'a1b2c3d4e5f60002',
+          name: 'progeo-worker-old',
+          status: 'exited',
+          image: 'progeo/worker:latest',
+          started_at: null,
+          health: null,
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/docker/logs/')) {
+    return {
+      logs: Array.from(
+        { length: 30 },
+        (_, index) =>
+          `${iso(NOW - (30 - index) * 60000)} [INFO] worker ${index % 3}: request handled in ${20 + index} ms`,
+      ).join('\n'),
+    };
+  }
+  if (/\/staff\/users\/\d+\/password\/$/.test(path)) {
+    return { username: 'nutzer2', new_password: 'Kx7-mPq2-Lr9w' };
+  }
+  if (path.endsWith('/staff/access-requests/')) {
+    return {
+      requests: [
+        {
+          id: 1,
+          status: 'pending',
+          first_name: 'Eva',
+          last_name: 'Schmidt',
+          company: 'Bau GmbH',
+          email: 'eva.schmidt@progeo.com',
+          phone: '',
+          project: '4700',
+          message: 'Ich bin die neue Objektleitung.',
+          created: iso(NOW - 20 * HOUR),
+          verified_at: iso(NOW - 19 * HOUR),
+          reviewed_at: null,
+          reviewed_by: null,
+          review_note: '',
+          user_id: 20,
+          language: 'de',
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/location/accounts/')) {
+    return { accounts: [{ id: 1, name: 'Kunde A' }, { id: 2, name: 'Kunde B' }] };
+  }
+  if (path.endsWith('/location/project-search/')) {
+    return { projects: [] };
+  }
+  if (/\/notification-case\/\d+\/$/.test(path)) {
+    return {
+      case: {
+        ...notificationCase,
+        events: [
+          {
+            id: 1,
+            kind: 'notified',
+            created: iso(NOW - 20 * HOUR),
+            text: 'E-Mail an kunde.mueller@progeo.com',
+            data: {},
+          },
+        ],
+      },
+    };
+  }
+  if (path.endsWith('/user/2fa/')) {
+    return {
+      enabled: persona.is_staff,
+      required: persona.is_staff,
+      recovery_codes_left: persona.is_staff ? 8 : 0,
+      has_usable_password: true,
+    };
+  }
+  if (path.endsWith('/screen-review/')) {
+    return {
+      runs: [{ run: REVIEW_RUN, created: iso(NOW - 2 * HOUR), images: 1, notes: 1 }],
+      can_capture: true,
+      can_fetch: false,
+    };
+  }
+  if (path.endsWith(`/screen-review/${REVIEW_RUN}/`)) {
+    return {
+      run: REVIEW_RUN,
+      images: [reviewImage],
+      notes: [
+        {
+          id: 1,
+          run: REVIEW_RUN,
+          image: reviewImage.file,
+          kind: 'area',
+          action: 'bigger',
+          comment: 'Anmeldeknopf größer',
+          geometry: { x: 480, y: 420, w: 240, h: 60 },
+          author: 1,
+          author_name: 'Jonas Weber',
+          created: iso(NOW - HOUR),
+          updated: iso(NOW - HOUR),
+        },
+      ],
+      reviewed: [],
+      failures: [],
+    };
+  }
 
   if (path.endsWith('/module-permissions/')) {
     const permissions = Object.fromEntries(
@@ -375,7 +934,11 @@ export const mockAnswer = (method, url, role, language = 'de') => {
     return scoreboard();
   }
   if (path.endsWith('/location-selection/group/')) {
-    return locationGroup();
+    // Only #1, #2 (the parts) and #40 (the merged project) are a group.
+    const of = Number(searchParams.get('location')) || 1;
+    return [1, 2, 40].includes(of)
+      ? locationGroup()
+      : { group: null, can_dissolve: false };
   }
   if (path.endsWith('/location-selection/users/')) {
     return {
@@ -470,24 +1033,12 @@ export const mockAnswer = (method, url, role, language = 'de') => {
       next: iso(NOW + HOUR),
     };
   }
-  if (/\/location\/\d+\/access\/$/.test(path)) {
-    return {
-      access: [],
-      members: [
-        {
-          id: 2,
-          username: 'kunde.mueller',
-          email: 'kunde@progeo.com',
-          objektleitung: true,
-        },
-      ],
-      users: [],
-      staff_users: [],
-      can_invite: true,
-    };
-  }
   if (/\/location\/\d+\/$/.test(path)) {
-    return detail;
+    // #1 in full; another one (e.g. #3 - no escalation, no merged project) as itself.
+    const id = Number(path.match(/\/location\/(\d+)\/$/)[1]);
+    return id === 1 || !locations[id - 1]
+      ? detail
+      : { ...detail, ...locations[id - 1] };
   }
   if (
     path.endsWith('/alarm/clusters/') ||
@@ -513,7 +1064,9 @@ export const mockAnswer = (method, url, role, language = 'de') => {
     return { escalation };
   }
   if (path.endsWith('/escalation/')) {
-    return { escalations: [escalation] };
+    // The open escalation is #1's - another location has none.
+    const of = Number(searchParams.get('location'));
+    return { escalations: of && of !== 1 ? [] : [escalation] };
   }
   if (path.includes('/staff/users/')) {
     return {
@@ -523,9 +1076,6 @@ export const mockAnswer = (method, url, role, language = 'de') => {
       admin_accounts: [],
       users: staffUsers,
     };
-  }
-  if (path.endsWith('/staff/access-requests/')) {
-    return { requests: [] };
   }
   if (path.endsWith('/favorite/')) {
     return { favorites: [] };
@@ -556,14 +1106,20 @@ export const mockAnswer = (method, url, role, language = 'de') => {
     };
   }
   if (path.endsWith('/notification-case/')) {
-    return { cases: [] };
+    return {
+      cases: searchParams.get('state') === 'resolved' ? [] : [notificationCase],
+    };
   }
   if (path.endsWith('/staff/messaging/')) {
     return {
       mailing_enabled: true,
       sms_dry_run: true,
       messenger_dry_run: false,
-      breaker: { tripped: false, tripped_at: null, reason: null },
+      breaker: variant.breaker ?? {
+        tripped: false,
+        tripped_at: null,
+        reason: null,
+      },
       limits: { mail_per_hour: 200, sms_per_hour: 50, sms_per_day: 300 },
       counts: {
         mail_last_hour: 12,
@@ -573,7 +1129,16 @@ export const mockAnswer = (method, url, role, language = 'de') => {
         messenger_today: 9,
       },
       messages: [],
-      suppressions: [],
+      suppressions: [
+        {
+          id: 1,
+          address: 'alt.kunde@progeo.com',
+          reason: 'hard bounce',
+          bounce_count: 3,
+          last_bounce_at: iso(NOW - 4 * 24 * HOUR),
+          created: iso(NOW - 9 * 24 * HOUR),
+        },
+      ],
     };
   }
   if (path.endsWith('/activity/messaging/')) {
@@ -619,6 +1184,26 @@ export const mockAnswer = (method, url, role, language = 'de') => {
       // The profile's language wins in the top bar - the run's one.
       language,
       language_saved: true,
+      // The messenger is offered (the notification channel's "Matrix" choice
+      // and its setup dialog) - not connected yet.
+      matrix: {
+        user_id: `@${persona.username}:chat.progeo.com`,
+        homeserver: 'https://chat.progeo.com',
+        connected_at: null,
+        primary: false,
+        apps: {
+          element_x: { link: 'https://chat.progeo.com/app/element', qr: QR_PNG },
+          fluffychat: { link: 'https://chat.progeo.com/app/fluffychat', qr: QR_PNG },
+        },
+        download: {
+          link: 'https://chat.progeo.com/download',
+          qr: QR_PNG,
+          stores: {
+            ios: 'https://chat.progeo.com/download/ios',
+            android: 'https://chat.progeo.com/download/android',
+          },
+        },
+      },
     };
   }
   if (path.endsWith('/location/project-types/')) {
@@ -628,9 +1213,6 @@ export const mockAnswer = (method, url, role, language = 'de') => {
         { value: 2, label: 'smartex® mx-PEEL' },
       ],
     };
-  }
-  if (path.endsWith('/screen-review/')) {
-    return { runs: [] };
   }
   return undefined;
 };

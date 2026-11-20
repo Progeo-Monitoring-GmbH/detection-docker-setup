@@ -132,6 +132,32 @@ describe('NoiseProfilePanel', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('deletes a profile only after the confirmation - which says when it is the active one', () => {
+    const onDelete = vi.fn();
+    const renderWith = (active: boolean) =>
+      act(() =>
+        root.render(
+          <NoiseProfilePanel {...panelProps} profiles={[{ ...PROFILE, is_active: active }]} onDelete={onDelete} />,
+        ),
+      );
+    const byTestId = (id: string) => container.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`);
+    renderWith(false);
+    act(() => byTestId('noise-profile-toggle')!.click());
+
+    act(() => byTestId('noise-profile-delete')!.click());
+    expect(byTestId('noise-profile-delete-dialog')!.textContent).toContain('noise_profile_delete_message');
+    expect(byTestId('noise-profile-delete-dialog')!.textContent).not.toContain('noise_profile_delete_message_active');
+    act(() => byTestId('noise-profile-delete-dialog-cancel')!.click());
+    expect(byTestId('noise-profile-delete-dialog')).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
+
+    renderWith(true);
+    act(() => byTestId('noise-profile-delete')!.click());
+    expect(byTestId('noise-profile-delete-dialog')!.textContent).toContain('noise_profile_delete_message_active');
+    act(() => byTestId('noise-profile-delete-dialog-confirm')!.click());
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: PROFILE.id }));
+  });
+
   it('picks the last 7 / 30 days up to now as the span - and marks the picked one', () => {
     const now = Date.UTC(2026, 10, 6, 12);
     vi.spyOn(Date, 'now').mockReturnValue(now);

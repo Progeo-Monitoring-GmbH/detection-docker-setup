@@ -1,336 +1,67 @@
-import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation as useRouterLocation, useNavigate, useSearchParams } from 'react-router';
-import { WIZARD_ANCHORS, type WizardStep } from './lageplanWizardAnchors';
-import { Badge, Button, Spinner } from 'react-bootstrap';
-import { CheckLg, ChevronLeft, ChevronRight, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
-import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
+import {
+  useLocation as useRouterLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router';
+import { Spinner } from 'react-bootstrap';
 import { enqueueSnackbar } from 'notistack';
-import RedDropbox from '../components/form/RedDropbox.tsx';
-import LocationPicker, {
-  type PickableLocation,
-} from '../components/location/LocationPicker';
 import ImageCanvasStage, {
-  type PlacedSensor,
   type PlanScaleValues,
 } from '../components/ui/ImageCanvasStage.tsx';
-import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
-import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
-import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
-import PanelCard from '../components/ui/kit/PanelCard';
 import LageplanKlemmliste from './LageplanKlemmliste';
 import DmTransferStep from './DmTransferStep';
 import PillButton from '../components/ui/kit/PillButton';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
-import type { HeatLimitation, SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
+import type { HeatLimitation } from '../components/device/sensorHeatmapTypes';
 import HeatLimitationStage from '../components/device/HeatLimitationStage';
 import { staffFlags } from './access';
 import { isLorawanProject, planVisualization } from './projectType';
 import '../components/ui/kit/kit.css';
 import './LageplanWizard.css';
-import { formatDate } from './dateFormat';
-import { repeatedTestId } from '../testIds';
-
-type ImportedCad = {
-  location_id: number;
-  /** The plan the points went onto. */
-  lageplan_id?: number | null;
-  /** Points imported - `points` lists all of the location. */
-  stored: number;
-  points: Array<Record<string, unknown>>;
-  /** Sensor numbers also used on another plan. */
-  warning?: string | null;
-};
-
-type WizardDevice = {
-  id: number;
-  mac?: string | null;
-  hardware?: string | null;
-  type?: string | null;
-  raw_hash?: string | null;
-  /** sensor_order of the device's pair 1 (ProgeoDevice.first_sensor_order). */
-  first_sensor_order?: number | null;
-};
-
-/** Step 2: the sensors from..to (sensor_order, '' = open) of one device. */
-type DeviceRange = { deviceId: number | null; from: string; to: string };
-
-/** A Lageplan of the location (ProgeoLageplanSerializer). */
-type WizardLageplan = SensorHeatmapLageplanData & { id: number };
-
-type MeasurePointsResponse = {
-  points?: Array<Record<string, unknown>>;
-  // ?with_lageplan=1: every Lageplan of the location, active ones first.
-  lageplans?: WizardLageplan[] | null;
-  // ?with_devices=1: the devices a point can be assigned to.
-  devices?: WizardDevice[];
-};
-
-/** A location of /v1/location/min/ (ProgeoLocationMinSerializer). The
- * measure_points endpoints address it by project id (their location_id). */
-type WizardLocation = PickableLocation & {
-  project_id: number;
-  project_type?: number | null;
-};
-
-/** A hand-placed sensor and the Lageplan it was placed on (null: none yet,
- * shown on the main plan - see belongsTo). */
-type WizardSensor = PlacedSensor & { lageplanId: number | null };
-
-type PointSource = 'cad' | 'json' | 'txt' | 'manual';
-
-const POINT_SOURCES: Array<{ value: PointSource; label: string }> = [
-  { value: 'cad', label: 'CAD (DWG/DXF)' },
-  { value: 'json', label: 'JSON' },
-  { value: 'txt', label: 'TXT' },
-  { value: 'manual', label: 'Manually set sensors' },
-];
-
-
-/** A measure point's normalized position after its plan turned by 90
- * degrees - as the backend turns the stored ones (lageplan_edit.rotated_point). */
-const rotatedPoint = (nx: number, ny: number, flipY: boolean, clockwise: boolean): [number, number] => {
-  const v = flipY ? 1 - ny : ny;
-  const [nextNx, nextV] = clockwise ? [1 - v, nx] : [v, 1 - nx];
-  return [nextNx, flipY ? 1 - nextV : nextV];
-};
-
-const getFileExt = (name: string) => name.split('.').pop()?.toLowerCase() ?? '';
-
-/** Devices are shown by their MAC; without one by hardware name / hash. */
-const deviceLabel = (device: WizardDevice) =>
-  device.mac || device.hardware || device.raw_hash || `#${device.id}`;
-
-const planLabel = (plan: WizardLageplan) =>
-  plan.name || plan.url?.split('/').pop() || `Lageplan #${plan.id}`;
-
-/** Whether the plan's points were moved/scaled away from the defaults (the
- * vertical flip is one - new plans start flipped). */
-const isAligned = (plan: WizardLageplan) =>
-  Boolean(plan.offset_x || plan.offset_y) ||
-  (plan.scale_x ?? 1) !== 1 ||
-  (plan.scale_y ?? 1) !== 1;
-
-/** How many of the points belong to each device. */
-const pointsPerDevice = (points: Array<Record<string, unknown>>) => {
-  const counts = new Map<number, number>();
-  points.forEach((point) => {
-    if (point.device != null) {
-      const deviceId = Number(point.device);
-      counts.set(deviceId, (counts.get(deviceId) ?? 0) + 1);
-    }
-  });
-  return counts;
-};
-
-/** The hand-placed sensors among stored points (in sensor order): one point
- * per device - imported points connected to their device are many per device. */
-const placedFromPoints = (
-  points: Array<Record<string, unknown>>,
-  devices: WizardDevice[],
-): WizardSensor[] => {
-  const counts = pointsPerDevice(points);
-  return points
-    .filter((point) => point.device != null && counts.get(Number(point.device)) === 1)
-    .sort((a, b) => Number(a.sensor_order) - Number(b.sensor_order))
-    .map((point) => {
-      const deviceId = Number(point.device);
-      const device = devices.find((candidate) => candidate.id === deviceId);
-      return {
-        deviceId,
-        label: device ? deviceLabel(device) : `#${deviceId}`,
-        nx: Number(point.nx),
-        ny: Number(point.ny),
-        lageplanId: point.lageplan == null ? null : Number(point.lageplan),
-      };
-    });
-};
-
-/** The devices imported points get connected to: as the stored imported
- * points are (each device's first sensor to its last), else all on the
- * location's only device. */
-const defaultDeviceRanges = (
-  points: Array<Record<string, unknown>>,
-  devices: WizardDevice[],
-): DeviceRange[] => {
-  const imported = [...pointsPerDevice(points)]
-    .filter(([deviceId, count]) => count > 1 && devices.some((device) => device.id === deviceId))
-    .map(([deviceId]) => {
-      const orders = points
-        .filter((point) => Number(point.device) === deviceId)
-        .map((point) => Number(point.sensor_order));
-      const device = devices.find((candidate) => candidate.id === deviceId);
-      return {
-        deviceId,
-        from: String(device?.first_sensor_order ?? Math.min(...orders)),
-        to: String(Math.max(...orders)),
-      };
-    })
-    .sort((a, b) => Number(a.from) - Number(b.from));
-  if (imported.length) {
-    // The last device takes every sensor from its first on.
-    imported[imported.length - 1].to = '';
-    return imported;
-  }
-  return devices.length === 1 ? [{ deviceId: devices[0].id, from: '1', to: '' }] : [];
-};
-
-/** Why the ranges can't be imported, or null. */
-const rangesProblem = (ranges: DeviceRange[]): string | null => {
-  const used = ranges.filter((range) => range.deviceId != null);
-  if (new Set(used.map((range) => range.deviceId)).size !== used.length) {
-    return 'Each device only once - its pair 1 is the first sensor of its range.';
-  }
-  const parsed = used
-    .map((range) => ({
-      from: range.from.trim() ? Number(range.from) : 1,
-      to: range.to.trim() ? Number(range.to) : Infinity,
-    }))
-    .sort((a, b) => a.from - b.from);
-  if (parsed.some((range) => !Number.isInteger(range.from) || range.from < 1 || range.to < range.from)) {
-    return 'The sensors of a device run from 1 up (from <= to).';
-  }
-  if (parsed.some((range, index) => index > 0 && parsed[index - 1].to >= range.from)) {
-    return 'The ranges of two devices overlap.';
-  }
-  return null;
-};
-
-const requestReason = (requestError: unknown) =>
-  (requestError as { response?: { data?: { reason?: string } } })?.response
-    ?.data?.reason ?? (requestError as Error).message;
+import {
+  Notice,
+  StepCard,
+  TargetStepContext,
+  LageplanWizardDialogs,
+} from './LageplanWizardComponents';
+import {
+  LageplanDeviceStep,
+  LageplanLocationStep,
+  LageplanPlansStep,
+} from './LageplanWizardSetupSteps';
+import {
+  LageplanManualSensorPlacement,
+  LageplanPointsStep,
+} from './LageplanWizardPointSteps';
+import {
+  defaultDeviceRanges,
+  deviceLabel,
+  type DeviceRange,
+  type ImportedCad,
+  type MeasurePoint,
+  type MeasurePointsResponse,
+  planLabel,
+  placedFromPoints,
+  type PointSource,
+  rangesProblem,
+  requestReason,
+  rotatedPoint,
+  type WizardConfirmAction,
+  type WizardDevice,
+  type WizardLageplan,
+  type WizardLocation,
+  type WizardSensor,
+} from './lageplanWizardUtils';
 
 /** A toast once something is stored - failures stay in the wizard's notice.
  * The same message twice at once (the alignment, stored by itself while
  * the sliders move) shows once. */
 const toastSaved = (message: string) =>
   enqueueSnackbar(message, { variant: 'success', preventDuplicate: true });
-
-// -- building blocks ----------------------------------------------------------
-
-const Notice = ({
-  tone = 'info',
-  children,
-  testId,
-}: {
-  tone?: 'info' | 'warning' | 'danger' | 'success';
-  children: React.ReactNode;
-  /** data-testid of the notice. */
-  testId?: string;
-}) => (
-  <div className={`lageplan-notice lageplan-notice--${tone}`} data-testid={testId}>
-    {children}
-  </div>
-);
-
-/** A tile's state chip - grey, or `main` (blue) / `active` (green). */
-const Chip = ({ children, variant }: { children: React.ReactNode; variant?: 'main' | 'active' }) => (
-  <span className={variant ? `lageplan-chip lageplan-chip--${variant}` : 'lageplan-chip'}>{children}</span>
-);
-
-// The step a link asked for (#wizard-...) - marked by its StepCard.
-const TargetStepContext = React.createContext<string | null>(null);
-
-const StepCard = ({
-  number,
-  step,
-  title,
-  done,
-  actions,
-  children,
-}: {
-  number: number;
-  /** Its anchor (lageplanWizardAnchors.ts) - links open the wizard here. */
-  step: WizardStep;
-  title: string;
-  done?: boolean;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-}) => {
-  const targeted = React.useContext(TargetStepContext) === WIZARD_ANCHORS[step];
-  return (
-    <PanelCard
-      id={WIZARD_ANCHORS[step]}
-      className={targeted ? 'lageplan-step--target' : undefined}
-      title={
-        <span className="lageplan-step-title">
-          <span className={done ? 'lageplan-step-number lageplan-step-number--done' : 'lageplan-step-number'}>
-            {done ? <CheckLg size={13} /> : number}
-          </span>
-          {title}
-        </span>
-      }
-      actions={actions}
-      testId={`lageplan-wizard-step-${number}`}
-    >
-      {children}
-    </PanelCard>
-  );
-};
-
-/** A Lageplan image as thumbnail - media needs the Authorization header, so
- * it's fetched as blob (like ImageCanvasStage); PDFs get a placeholder.
- * Mounted with key={url}, so a new image starts from a fresh state. */
-const LageplanThumb = ({ url }: { url?: string | null }) => {
-  const auth = useAuth();
-  // `auth` changes identity with the route - not a reason to load again.
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const isPdf = getFileExt(url ?? '') === 'pdf';
-
-  useEffect(() => {
-    if (!url || isPdf) {
-      return;
-    }
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    void axiosConfig.perform_get(
-      authRef.current,
-      getBackendUrl(url),
-      (response) => {
-        if (cancelled) {
-          return;
-        }
-        objectUrl = URL.createObjectURL(response.data as Blob);
-        setSrc(objectUrl);
-      },
-      () => {
-        if (!cancelled) {
-          setFailed(true);
-        }
-      },
-      { responseType: 'blob' },
-    );
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [url, isPdf]);
-
-  return (
-    <div className="lageplan-thumb">
-      {src ? (
-        <img src={src} alt="" />
-      ) : isPdf ? (
-        <FileEarmarkPdf size={26} />
-      ) : failed || !url ? (
-        'No preview'
-      ) : (
-        <Spinner animation="border" size="sm" />
-      )}
-    </div>
-  );
-};
 
 // -- the wizard ---------------------------------------------------------------
 
@@ -348,9 +79,7 @@ const LageplanWizardView = () => {
   const [locations, setLocations] = useState<WizardLocation[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
   const [cadPayload, setCadPayload] = useState<ImportedCad | null>(null);
-  const [measurePoints, setMeasurePoints] = useState<
-    Array<Record<string, unknown>>
-  >([]);
+  const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
   // Bumped to reload the measure points (e.g. after a JSON import).
@@ -363,11 +92,13 @@ const LageplanWizardView = () => {
   const [addingPlan, setAddingPlan] = useState(false);
   // What the confirm dialog asks about: removing a Lageplan, or clearing
   // every measure point of the location.
-  const [confirmAction, setConfirmAction] = useState<
-    { kind: 'plan'; plan: WizardLageplan } | { kind: 'points' } | null
-  >(null);
+  const [confirmAction, setConfirmAction] =
+    useState<WizardConfirmAction | null>(null);
   // The rename dialog: the plan and the name typed so far.
-  const [renaming, setRenaming] = useState<{ plan: WizardLageplan; name: string } | null>(null);
+  const [renaming, setRenaming] = useState<{
+    plan: WizardLageplan;
+    name: string;
+  } | null>(null);
 
   // Step 4, "Manually set sensors": the location's devices and the points
   // placed on the plans - stored only with "Save manual sensors".
@@ -382,8 +113,11 @@ const LageplanWizardView = () => {
   const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
   // Step 5: measure points cut out (O + drag) - left off every plan until
   // inserted on one (I + click); nothing is stored before.
-  const [cutPoints, setCutPoints] = useState<Array<Record<string, unknown>>>([]);
-  const cutIds = useMemo(() => new Set(cutPoints.map((point) => Number(point.id))), [cutPoints]);
+  const [cutPoints, setCutPoints] = useState<MeasurePoint[]>([]);
+  const cutIds = useMemo(
+    () => new Set(cutPoints.map((point) => Number(point.id))),
+    [cutPoints],
+  );
 
   // ?location=<location pk> (as everywhere else, e.g. from the device
   // overview) preselects the location; the selection is kept there.
@@ -391,7 +125,9 @@ const LageplanWizardView = () => {
   const requestedLocation = Number(searchParams.get('location'));
   // ?plan=<lageplan id> (e.g. from /analyse) preselects that plan of the
   // location - once, with the first plans loaded.
-  const requestedPlan = useRef<number | null>(Number(searchParams.get('plan')) || null);
+  const requestedPlan = useRef<number | null>(
+    Number(searchParams.get('plan')) || null,
+  );
   // Step 7 (heat limitations): staff and superusers, like the backend.
   const staff = staffFlags(auth?.user).isStaffOrSuperuser;
 
@@ -402,7 +138,9 @@ const LageplanWizardView = () => {
   // step wasn't rendered yet), and nothing that rewrites the URL may lose it.
   const { hash, search } = useRouterLocation();
   const navigate = useNavigate();
-  const [targetStep, setTargetStep] = useState<string | null>(() => hash.slice(1) || null);
+  const [targetStep, setTargetStep] = useState<string | null>(
+    () => hash.slice(1) || null,
+  );
   useEffect(() => {
     if (hash.length > 1) {
       setTargetStep(hash.slice(1));
@@ -419,12 +157,18 @@ const LageplanWizardView = () => {
     };
     const scroll = () => {
       if (!stopped) {
-        document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document
+          .getElementById(target)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
-    const timers = [0, 600, 1500].map((delay) => window.setTimeout(scroll, delay));
+    const timers = [0, 600, 1500].map((delay) =>
+      window.setTimeout(scroll, delay),
+    );
     const events = ['wheel', 'touchstart', 'keydown', 'mousedown'] as const;
-    events.forEach((event) => window.addEventListener(event, stop, { passive: true }));
+    events.forEach((event) =>
+      window.addEventListener(event, stop, { passive: true }),
+    );
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer));
       events.forEach((event) => window.removeEventListener(event, stop));
@@ -443,7 +187,10 @@ const LageplanWizardView = () => {
     }
     params.delete('plan');
     if (params.toString() !== new URLSearchParams(search).toString()) {
-      navigate({ search: params.toString() ? `?${params}` : '', hash }, { replace: true });
+      navigate(
+        { search: params.toString() ? `?${params}` : '', hash },
+        { replace: true },
+      );
     }
     setSelectedLocationId(next ? next.project_id : null);
     setPointSource(
@@ -542,7 +289,9 @@ const LageplanWizardView = () => {
           setMeasurePoints(points);
           // Cut points as stored now - gone ones leave the clipboard.
           setCutPoints((current) =>
-            current.flatMap((cut) => points.filter((point) => Number(point.id) === Number(cut.id))),
+            current.flatMap((cut) =>
+              points.filter((point) => Number(point.id) === Number(cut.id)),
+            ),
           );
           setDevices(loadedDevices);
           setPlacedSensors(placed);
@@ -557,13 +306,17 @@ const LageplanWizardView = () => {
           // keep the picked one, else the main (first) one.
           const wanted = requestedPlan.current;
           requestedPlan.current = null;
-          const preselected = wanted != null && loadedPlans.some((plan) => plan.id === wanted) ? wanted : null;
+          const preselected =
+            wanted != null && loadedPlans.some((plan) => plan.id === wanted)
+              ? wanted
+              : null;
           setLageplans(loadedPlans);
-          setSelectedPlanId((current) =>
-            preselected ??
-            (loadedPlans.some((plan) => plan.id === current)
-              ? current
-              : (loadedPlans[0]?.id ?? null)),
+          setSelectedPlanId(
+            (current) =>
+              preselected ??
+              (loadedPlans.some((plan) => plan.id === current)
+                ? current
+                : (loadedPlans[0]?.id ?? null)),
           );
         },
         (fetchError) => {
@@ -598,7 +351,9 @@ const LageplanWizardView = () => {
   );
   const belongsTo = (planRef: unknown, planId: number | null) => {
     const id = planRef == null ? null : Number(planRef);
-    return id !== null && planIds.has(id) ? id === planId : planId === mainPlanId;
+    return id !== null && planIds.has(id)
+      ? id === planId
+      : planId === mainPlanId;
   };
 
   const sourceMeta = useMemo(
@@ -624,7 +379,9 @@ const LageplanWizardView = () => {
 
   const updatePlan = (planId: number, values: Partial<WizardLageplan>) =>
     setLageplans((current) =>
-      current.map((plan) => (plan.id === planId ? { ...plan, ...values } : plan)),
+      current.map((plan) =>
+        plan.id === planId ? { ...plan, ...values } : plan,
+      ),
     );
 
   const selectPlan = (planId: number) => {
@@ -638,7 +395,11 @@ const LageplanWizardView = () => {
     setError('');
     setReloadKey((key) => key + 1);
     const count = Array.isArray(response?.data) ? response.data.length : null;
-    toastSaved(count === null ? 'Measure points imported and saved.' : `${count} measure point(s) imported and saved.`);
+    toastSaved(
+      count === null
+        ? 'Measure points imported and saved.'
+        : `${count} measure point(s) imported and saved.`,
+    );
   };
 
   // DWG/DXF and TXT both go through upload_cad, which returns the stored points.
@@ -665,7 +426,9 @@ const LageplanWizardView = () => {
     flipY: boolean;
   }) => {
     if (selectedLocationId === null || selectedPlanId === null) {
-      setError('Select a location and a Lageplan before storing the alignment.');
+      setError(
+        'Select a location and a Lageplan before storing the alignment.',
+      );
       return;
     }
 
@@ -748,9 +511,13 @@ const LageplanWizardView = () => {
     }
     if (response?.direction === 'cw' || response?.direction === 'ccw') {
       const clockwise = response.direction === 'cw';
-      const turned = (Array.isArray(response.points) ? response.points : []) as Array<Record<string, unknown>>;
+      const turned = (
+        Array.isArray(response.points) ? response.points : []
+      ) as Array<Record<string, unknown>>;
       const byId = new Map(turned.map((point) => [Number(point.id), point]));
-      const merged = measurePoints.map((point) => byId.get(Number(point.id)) ?? point);
+      const merged = measurePoints.map(
+        (point) => byId.get(Number(point.id)) ?? point,
+      );
       setMeasurePoints(merged);
       if (!placementDirty) {
         setPlacedSensors(placedFromPoints(merged, devices));
@@ -762,12 +529,19 @@ const LageplanWizardView = () => {
             if (!belongsTo(sensor.lageplanId, plan.id)) {
               return sensor;
             }
-            const [nx, ny] = rotatedPoint(sensor.nx, sensor.ny, flipY, clockwise);
+            const [nx, ny] = rotatedPoint(
+              sensor.nx,
+              sensor.ny,
+              flipY,
+              clockwise,
+            );
             return { ...sensor, nx, ny };
           }),
         );
       }
-      toastSaved(`Lageplan rotated and saved - ${turned.length} measure point(s) turned with it.`);
+      toastSaved(
+        `Lageplan rotated and saved - ${turned.length} measure point(s) turned with it.`,
+      );
       return;
     }
     toastSaved(
@@ -781,9 +555,13 @@ const LageplanWizardView = () => {
   // leave the list; the rest keep their sensor_order.
   const handlePointsRemoved = (response: Record<string, unknown>) => {
     const removed = new Set(
-      (Array.isArray(response?.point_ids) ? response.point_ids : []).map(Number),
+      (Array.isArray(response?.point_ids) ? response.point_ids : []).map(
+        Number,
+      ),
     );
-    const remaining = measurePoints.filter((point) => !removed.has(Number(point.id)));
+    const remaining = measurePoints.filter(
+      (point) => !removed.has(Number(point.id)),
+    );
     setMeasurePoints(remaining);
     if (!placementDirty) {
       setPlacedSensors(placedFromPoints(remaining, devices));
@@ -794,7 +572,10 @@ const LageplanWizardView = () => {
   // Step 5 cut points out (O + drag): kept here, on every plan, until inserted.
   const handleCut = (points: Array<Record<string, unknown>>) => {
     const ids = new Set(points.map((point) => Number(point.id)));
-    setCutPoints((current) => [...current.filter((point) => !ids.has(Number(point.id))), ...points]);
+    setCutPoints((current) => [
+      ...current.filter((point) => !ids.has(Number(point.id))),
+      ...points,
+    ]);
     enqueueSnackbar(
       `${points.length} measure point(s) cut out - hold I and click on a plan to insert them.`,
       { variant: 'info', preventDuplicate: true },
@@ -803,11 +584,20 @@ const LageplanWizardView = () => {
 
   // Step 5 inserted the cut points (I + click) or aligned a group (L) -
   // measure_points/place answers with the moved points, now on this plan.
-  const handlePointsPlaced = (response: Record<string, unknown>, action: 'insert' | 'align') => {
-    const moved = (Array.isArray(response?.points) ? response.points : []) as Array<Record<string, unknown>>;
+  const handlePointsPlaced = (
+    response: Record<string, unknown>,
+    action: 'insert' | 'align',
+  ) => {
+    const moved = (
+      Array.isArray(response?.points) ? response.points : []
+    ) as Array<Record<string, unknown>>;
     const byId = new Map(moved.map((point) => [Number(point.id), point]));
-    setMeasurePoints((current) => current.map((point) => byId.get(Number(point.id)) ?? point));
-    setCutPoints((current) => current.filter((point) => !byId.has(Number(point.id))));
+    setMeasurePoints((current) =>
+      current.map((point) => byId.get(Number(point.id)) ?? point),
+    );
+    setCutPoints((current) =>
+      current.filter((point) => !byId.has(Number(point.id))),
+    );
     toastSaved(
       action === 'insert'
         ? `${moved.length} measure point(s) inserted on “${planNameOf(selectedPlanId)}” and saved.`
@@ -862,23 +652,25 @@ const LageplanWizardView = () => {
     ),
   };
   const deviceRangesProblem = rangesProblem(deviceRanges);
-  const updateRange = (index: number, values: Partial<DeviceRange>) =>
-    setDeviceRanges((current) =>
-      current.map((range, position) => (position === index ? { ...range, ...values } : range)),
-    );
   const deviceLabels = useMemo(
-    () => Object.fromEntries(devices.map((device) => [device.id, deviceLabel(device)])),
+    () =>
+      Object.fromEntries(
+        devices.map((device) => [device.id, deviceLabel(device)]),
+      ),
     [devices],
   );
   const devicePairStarts = useMemo(
-    () => Object.fromEntries(devices.map((device) => [device.id, device.first_sensor_order ?? 1])),
+    () =>
+      Object.fromEntries(
+        devices.map((device) => [device.id, device.first_sensor_order ?? 1]),
+      ),
     [devices],
   );
-  const connectedCount = (deviceId: number) =>
-    measurePoints.filter((point) => Number(point.device) === deviceId).length;
   // What the canvas shows: the points / sensors of the picked plan.
   const planPoints = measurePoints.filter(
-    (point) => belongsTo(point.lageplan, selectedPlanId) && !cutIds.has(Number(point.id)),
+    (point) =>
+      belongsTo(point.lageplan, selectedPlanId) &&
+      !cutIds.has(Number(point.id)),
   );
   const planSensors = placedSensors.filter((sensor) =>
     belongsTo(sensor.lageplanId, selectedPlanId),
@@ -993,7 +785,9 @@ const LageplanWizardView = () => {
       { location_id: selectedLocationId, lageplan_id: plan.id },
       (response: { data?: { removed_points?: number } }) => {
         setConfirmAction(null);
-        setLageplans((current) => current.filter((existing) => existing.id !== plan.id));
+        setLageplans((current) =>
+          current.filter((existing) => existing.id !== plan.id),
+        );
         setReloadKey((key) => key + 1);
         const removed = response?.data?.removed_points ?? 0;
         toastSaved(
@@ -1002,7 +796,9 @@ const LageplanWizardView = () => {
       },
       (deleteError) => {
         setConfirmAction(null);
-        setError(`Could not remove the Lageplan: ${requestReason(deleteError)}`);
+        setError(
+          `Could not remove the Lageplan: ${requestReason(deleteError)}`,
+        );
         setIsProcessing(false);
       },
     );
@@ -1030,11 +826,15 @@ const LageplanWizardView = () => {
         updatePlan(plan.id, { name: stored });
         setRenaming(null);
         setIsProcessing(false);
-        toastSaved(`Lageplan renamed to “${planLabel({ ...plan, name: stored })}”.`);
+        toastSaved(
+          `Lageplan renamed to “${planLabel({ ...plan, name: stored })}”.`,
+        );
       },
       (renameError) => {
         setRenaming(null);
-        setError(`Could not rename the Lageplan: ${requestReason(renameError)}`);
+        setError(
+          `Could not rename the Lageplan: ${requestReason(renameError)}`,
+        );
         setIsProcessing(false);
       },
     );
@@ -1046,12 +846,19 @@ const LageplanWizardView = () => {
   // here), so they stay where they are shown.
   const movePlan = (index: number, delta: -1 | 1) => {
     const target = index + delta;
-    if (selectedLocationId === null || target < 0 || target >= lageplans.length) {
+    if (
+      selectedLocationId === null ||
+      target < 0 ||
+      target >= lageplans.length
+    ) {
       return;
     }
     const previous = lageplans;
     const reordered = [...previous];
-    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    [reordered[index], reordered[target]] = [
+      reordered[target],
+      reordered[index],
+    ];
     const oldMainId = previous[0]?.id ?? null;
     setLageplans(reordered);
     setIsProcessing(true);
@@ -1059,14 +866,25 @@ const LageplanWizardView = () => {
     void axiosConfig.perform_post(
       auth,
       '/v1/status/measure_points/order_lageplans/',
-      { location_id: selectedLocationId, lageplan_ids: reordered.map((plan) => plan.id) },
+      {
+        location_id: selectedLocationId,
+        lageplan_ids: reordered.map((plan) => plan.id),
+      },
       () => {
         if (oldMainId !== null && reordered[0].id !== oldMainId) {
           setMeasurePoints((current) =>
-            current.map((point) => (point.lageplan == null ? { ...point, lageplan: oldMainId } : point)),
+            current.map((point) =>
+              point.lageplan == null
+                ? { ...point, lageplan: oldMainId }
+                : point,
+            ),
           );
           setPlacedSensors((current) =>
-            current.map((sensor) => (sensor.lageplanId == null ? { ...sensor, lageplanId: oldMainId } : sensor)),
+            current.map((sensor) =>
+              sensor.lageplanId == null
+                ? { ...sensor, lageplanId: oldMainId }
+                : sensor,
+            ),
           );
         }
         setIsProcessing(false);
@@ -1102,7 +920,9 @@ const LageplanWizardView = () => {
       },
       (clearError) => {
         setConfirmAction(null);
-        setError(`Could not clear the measure points: ${requestReason(clearError)}`);
+        setError(
+          `Could not clear the measure points: ${requestReason(clearError)}`,
+        );
         setIsProcessing(false);
       },
     );
@@ -1114,596 +934,94 @@ const LageplanWizardView = () => {
   // -- steps ------------------------------------------------------------------
 
   const renderStepOne = () => (
-    <StepCard number={1} step="location" title="Location" done={!!selectedLocation}>
-      <div className="lageplan-picker">
-        <LocationPicker
-          id="lageplan-location-picker"
-          locations={locations}
-          value={selectedLocationId}
-          valueKey="project_id"
-          onChange={selectLocation}
-          loading={locationLoading}
-          testId="lageplan-wizard-location"
-        />
-      </div>
-
-      {!locations.length && !locationLoading && (
-        <div className="lageplan-spaced">
-          <Notice tone="warning" testId="lageplan-wizard-no-locations">
-            No locations are available yet.
-          </Notice>
-        </div>
-      )}
-    </StepCard>
-  );
-
-  const renderPlanTile = (plan: WizardLageplan, index: number) => {
-    const selected = plan.id === selectedPlanId;
-    const pointCount = pointsOnPlan(plan.id);
-    const updated = plan.last_updated ? new Date(plan.last_updated) : null;
-    return (
-      // The tile's buttons sit next to (not inside) the tile's own button.
-      <div key={plan.id} className="lageplan-tile-wrap" {...repeatedTestId('lageplan-tile', plan.id)}>
-        <button
-          type="button"
-          onClick={() => selectPlan(plan.id)}
-          aria-pressed={selected}
-          className="lageplan-tile"
-          {...repeatedTestId('lageplan-tile-select', plan.id)}
-        >
-          <LageplanThumb key={plan.url ?? ''} url={plan.url} />
-          {selected && (
-            <span className="lageplan-tile-check">
-              <CheckLg size={13} />
-            </span>
-          )}
-          <div className="lageplan-tile-text">
-            <div title={planLabel(plan)} className="lageplan-tile-name">
-              {planLabel(plan)}
-            </div>
-            <div className="lageplan-tile-meta">
-              #{plan.id}
-              {updated && !Number.isNaN(updated.getTime())
-                ? ` · ${formatDate(updated, 'date')}`
-                : ''}
-              {` · ${pointCount} point(s)`}
-            </div>
-            <div className="lageplan-tile-chips">
-              {index === 0 && lageplans.length > 1 && (
-                <span title="The first plan - measure points without a plan show on it">
-                  <Chip variant="main">Main plan</Chip>
-                </span>
-              )}
-              {plan.is_active ? (
-                <Chip variant="active">Active</Chip>
-              ) : (
-                <Chip>Inactive</Chip>
-              )}
-              {isAligned(plan) && <Chip>Aligned</Chip>}
-              {plan.meters_per_pixel ? <Chip>Scale set</Chip> : null}
-            </div>
-          </div>
-        </button>
-        {lageplans.length > 1 && (
-          <span className="lageplan-tile-order">
-            <button
-              type="button"
-              title="Move earlier"
-              aria-label={`Move “${planLabel(plan)}” earlier`}
-              disabled={isProcessing || index === 0}
-              onClick={() => movePlan(index, -1)}
-              {...repeatedTestId('lageplan-tile-move-earlier', plan.id)}
-              className="progeo-icon-button progeo-icon-button--small"
-            >
-              <ChevronLeft size={13} />
-            </button>
-            <span
-              title={`Place ${index + 1} of ${lageplans.length}`}
-              className="lageplan-tile-place"
-              {...repeatedTestId('lageplan-tile-place', plan.id)}
-            >
-              {index + 1}
-            </span>
-            <button
-              type="button"
-              title="Move later"
-              aria-label={`Move “${planLabel(plan)}” later`}
-              disabled={isProcessing || index === lageplans.length - 1}
-              onClick={() => movePlan(index, 1)}
-              {...repeatedTestId('lageplan-tile-move-later', plan.id)}
-              className="progeo-icon-button progeo-icon-button--small"
-            >
-              <ChevronRight size={13} />
-            </button>
-          </span>
-        )}
-        <span className="lageplan-tile-actions">
-          <button
-            type="button"
-            title="Rename Lageplan"
-            aria-label="Rename Lageplan"
-            disabled={isProcessing}
-            onClick={() => setRenaming({ plan, name: plan.name ?? '' })}
-            {...repeatedTestId('lageplan-tile-rename', plan.id)}
-            className="progeo-icon-button"
-          >
-            <PencilSquare size={14} />
-          </button>
-          <DeleteIconButton
-            label="Remove Lageplan"
-            disabled={isProcessing}
-            onClick={() => setConfirmAction({ kind: 'plan', plan })}
-            testId="lageplan-tile-remove"
-            testKey={plan.id}
-          />
-        </span>
-      </div>
-    );
-  };
-
-  const renderPlanUpload = () => (
-    <div className="lageplan-upload" data-testid="lageplan-wizard-plan-upload">
-      <div className="d-flex align-items-start gap-2">
-        <div>
-          <div className="lageplan-upload-title">Add a Lageplan</div>
-          <div className="lageplan-muted lageplan-muted--small">
-            Upload a PNG rendering of the plan - it is added to the existing
-            ones and selected. A PDF export of the CAD plan is rendered as
-            PNG, cropped to the plan.
-          </div>
-        </div>
-        {lageplans.length > 0 && (
-          <div className="ms-auto">
-            <PillButton
-              variant="ghost"
-              label="Cancel"
-              onClick={() => setAddingPlan(false)}
-              testId="lageplan-wizard-plan-upload-cancel"
-            />
-          </div>
-        )}
-      </div>
-      <div className="lageplan-upload-drops">
-        <RedDropbox
-          auth={auth}
-          url="/v1/status/measure_points/upload_png/"
-          accept="image"
-          testId="lageplan-wizard-plan-upload-png"
-          hint="Drop a PNG here, or click to choose"
-          instantFileUpload={true}
-          withPreview={false}
-          payload={{ location_id: selectedLocationId }}
-          callBackProcessing={handleSourceUpload}
-        />
-        <CadUploadDropbox
-          auth={auth}
-          url="/v1/status/measure_points/from_pdf/"
-          accept="pdf"
-          testId="lageplan-wizard-plan-upload-pdf"
-          // Plan PDFs are often larger than the 5 MB default; one Lageplan per PDF.
-          maxSizeMB={50}
-          hint="Drop one or more PDFs here (a Lageplan each), or click to choose"
-          instantFileUpload={true}
-          withPreview={false}
-          payload={{ location_id: selectedLocationId }}
-          callBackProcessing={handleSourceUpload}
-        />
-      </div>
-    </div>
+    <LageplanLocationStep
+      locations={locations}
+      selectedLocationId={selectedLocationId}
+      selectedLocation={selectedLocation}
+      loading={locationLoading}
+      onChange={selectLocation}
+    />
   );
 
   const renderStepTwo = () => (
-    <StepCard
-      number={3}
-      step="plans"
-      title="Lageplan"
-      done={!!sourceMeta?.imageUrl}
-      actions={
-        lageplans.length > 0 && (
-          <span className="lageplan-muted" data-testid="lageplan-wizard-plan-count">
-            {lageplans.length} plan(s) for this location
-          </span>
-        )
-      }
-    >
-      {selectedLocationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-plans-need-location">Select a location in step 1 first.</Notice>
-      ) : (
-        <div className="d-flex flex-column gap-3">
-          {lageplans.length === 0 && !isProcessing && (
-            <Notice testId="lageplan-wizard-no-plans">
-              This location has no Lageplan yet - upload the first one below.
-            </Notice>
-          )}
-          {lageplans.length > 0 && (
-            <div className="lageplan-tiles" data-testid="lageplan-wizard-plans">
-              {lageplans.map((plan, index) => renderPlanTile(plan, index))}
-              {!addingPlan && (
-                <button
-                  type="button"
-                  onClick={() => setAddingPlan(true)}
-                  className="lageplan-tile lageplan-tile--add"
-                  data-testid="lageplan-wizard-add-plan"
-                >
-                  <span className="lageplan-tile-add-icon">
-                    <PlusLg size={15} />
-                  </span>
-                  Add Lageplan
-                </button>
-              )}
-            </div>
-          )}
-          {(addingPlan || lageplans.length === 0) && renderPlanUpload()}
-          {selectedPlan && !selectedPlan.url && (
-            <Notice tone="warning" testId="lageplan-wizard-plan-no-file">
-              The selected Lageplan has no file - pick another one or upload a
-              new plan.
-            </Notice>
-          )}
-        </div>
-      )}
-    </StepCard>
-  );
-
-  const renderManualSensors = () => (
-    <div className="d-flex flex-column gap-3" data-testid="lageplan-wizard-manual-sensors">
-      <div className="lageplan-muted">
-        Select a sensor, then click its position on the plan in step 5. Placed
-        points can be dragged. Nothing is stored until you save.
-      </div>
-
-      {devices.length === 0 ? (
-        <Notice tone="warning" testId="lageplan-wizard-no-devices">
-          No devices are connected to this location.
-        </Notice>
-      ) : (
-        <div className="d-flex flex-wrap gap-2">
-          {devices.map((device) => {
-            const sensorIndex = placedSensors.findIndex(
-              (sensor) => sensor.deviceId === device.id,
-            );
-            const order = sensorIndex + 1;
-            const sensor = sensorIndex >= 0 ? placedSensors[sensorIndex] : null;
-            const elsewhere =
-              sensor !== null && !belongsTo(sensor.lageplanId, selectedPlanId);
-            const active = device.id === activeDeviceId;
-            return (
-              <Button
-                key={device.id}
-                size="sm"
-                variant={
-                  active
-                    ? 'primary'
-                    : elsewhere
-                      ? 'outline-info'
-                      : order
-                        ? 'outline-success'
-                        : 'outline-secondary'
-                }
-                className="d-inline-flex align-items-center gap-1 lageplan-pill-button"
-                title={[
-                  device.hardware,
-                  device.type,
-                  device.raw_hash,
-                  elsewhere && sensor
-                    ? `placed on ${planNameOf(sensor.lageplanId)}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-                onClick={() => setActiveDeviceId(active ? null : device.id)}
-                {...repeatedTestId('lageplan-wizard-sensor-device', device.id)}
-              >
-                {order > 0 && (
-                  <Badge
-                    pill
-                    bg={active ? 'light' : elsewhere ? 'info' : 'success'}
-                    text={active ? 'dark' : undefined}
-                  >
-                    {order}
-                  </Badge>
-                )}
-                <span className="font-monospace">{deviceLabel(device)}</span>
-              </Button>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="d-flex flex-wrap align-items-center gap-2">
-        <span className="lageplan-muted" data-testid="lageplan-wizard-placed-count">
-          {planSensors.length} on this plan · {placedSensors.length} /{' '}
-          {devices.length} placed
-          {placementDirty && ' · unsaved changes'}
-        </span>
-        {activeDevice && placedIds.has(activeDevice.id) && (
-          <DeleteIconButton
-            label={`Remove ${deviceLabel(activeDevice)} from the plan`}
-            onClick={removeActiveSensor}
-            testId="lageplan-wizard-sensor-remove"
-          />
-        )}
-      </div>
-
-      {placementDirty && (
-        // Unsaved placement: floats at the bottom of the window until saved or discarded.
-        <FloatingActionBar
-          message={`${planSensors.length} sensor(s) on this plan - not saved yet`}
-          detail={
-            replacedPointCount > 0
-              ? `Saving replaces the ${replacedPointCount} existing measure point(s) without a sensor.`
-              : 'Placed sensors are only stored with "Save manual sensors".'
-          }
-          tone={replacedPointCount > 0 ? 'warning' : 'primary'}
-          actions={[
-            {
-              label: 'Discard changes',
-              variant: 'secondary',
-              disabled: isProcessing,
-              onClick: discardPlacement,
-              testId: 'lageplan-wizard-placement-discard',
-            },
-            {
-              label: 'Save manual sensors',
-              busy: isProcessing,
-              onClick: () => void handleSaveManualSensors(),
-              testId: 'lageplan-wizard-placement-save',
-            },
-          ]}
-          testId="lageplan-wizard-placement-actions"
-        />
-      )}
-
-      {placementDirty && replacedPointCount > 0 && (
-        <Notice tone="warning" testId="lageplan-wizard-placement-replaces">
-          Saving replaces the {replacedPointCount} existing measure point(s)
-          without a sensor (e.g. from a CAD import).
-        </Notice>
-      )}
-      {!sourceMeta?.imageUrl && (
-        <Notice testId="lageplan-wizard-placement-needs-plan">Select or add a Lageplan in step 3 to place the sensors.</Notice>
-      )}
-    </div>
-  );
-
-  // The devices the imported points are connected to (their measurements
-  // come from them): each takes the sensors from..to, its pair 1 being the
-  // first of them. Without a row the points stay without device.
-  const renderDeviceRanges = () => {
-    const rangeLabel = (text: string) => (
-      <span className="lageplan-muted lageplan-muted--small">{text}</span>
-    );
-    return (
-      <div className="d-flex flex-column gap-2" data-testid="lageplan-wizard-device-ranges">
-        <div className="lageplan-muted lageplan-muted--small">
-          {devices.length === 0
-            ? 'No devices are connected to this location - the points are imported without device.'
-            : 'The sensors imported in step 4 (CAD/JSON/TXT) are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on. Placing sensors manually picks the device per sensor in step 4.'}
-        </div>
-        {deviceRanges.map((range, index) => (
-          // Rows have no id of their own.
-          <div
-            key={index}
-            className="d-flex flex-wrap align-items-center gap-2"
-            {...repeatedTestId('lageplan-wizard-device-range', index)}
-          >
-            <select
-              aria-label="Device"
-              className="form-select form-select-sm lageplan-range-field lageplan-range-field--device"
-              value={range.deviceId ?? ''}
-              {...repeatedTestId('lageplan-wizard-device-range-device', index)}
-              onChange={(event) =>
-                updateRange(index, {
-                  deviceId: event.target.value ? Number(event.target.value) : null,
-                })
-              }
-            >
-              <option value="">choose a device</option>
-              {devices.map((device) => {
-                const connected = connectedCount(device.id);
-                return (
-                  <option key={device.id} value={device.id}>
-                    {device.raw_hash}
-                    {device.hardware ? ` · ${device.hardware}` : ''}
-                    {connected ? ` · ${connected} point(s) now` : ''}
-                  </option>
-                );
-              })}
-            </select>
-            {rangeLabel('sensors')}
-            <input
-              aria-label="First sensor"
-              type="number"
-              min={1}
-              className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
-              placeholder="1"
-              value={range.from}
-              onChange={(event) => updateRange(index, { from: event.target.value })}
-              {...repeatedTestId('lageplan-wizard-device-range-from', index)}
-            />
-            {rangeLabel('to')}
-            <input
-              aria-label="Last sensor"
-              type="number"
-              min={1}
-              className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
-              placeholder="last"
-              value={range.to}
-              onChange={(event) => updateRange(index, { to: event.target.value })}
-              {...repeatedTestId('lageplan-wizard-device-range-to', index)}
-            />
-            <DeleteIconButton
-              label="Remove this device"
-              onClick={() =>
-                setDeviceRanges((current) => current.filter((_range, position) => position !== index))
-              }
-              testId="lageplan-wizard-device-range-remove"
-              testKey={index}
-            />
-          </div>
-        ))}
-        {devices.length > deviceRanges.length && (
-          <div>
-            <PillButton
-              variant="ghost"
-              label={deviceRanges.length ? 'Add another device' : 'Connect a device'}
-              testId="lageplan-wizard-device-range-add"
-              onClick={() =>
-                setDeviceRanges((current) => {
-                  // A new row continues after the last one's range.
-                  const last = current[current.length - 1];
-                  const next = last?.to.trim() ? String(Number(last.to) + 1) : current.length ? '' : '1';
-                  const unused = devices.find((device) => !current.some((range) => range.deviceId === device.id));
-                  return [...current, { deviceId: unused?.id ?? null, from: next, to: '' }];
-                })
-              }
-            />
-          </div>
-        )}
-        {deviceRangesProblem && (
-          <Notice tone="warning" testId="lageplan-wizard-device-ranges-problem">
-            {deviceRangesProblem}
-          </Notice>
-        )}
-      </div>
-    );
-  };
-
-  const renderStepDevice = () => (
-    <StepCard
-      number={2}
-      step="devices"
-      title="Device"
-      done={usedRanges.length > 0 && !deviceRangesProblem}
-      actions={
-        selectedLocationId !== null && (
-          <span className="lageplan-muted" data-testid="lageplan-wizard-device-count">
-            {devices.length} device(s) at this location
-          </span>
-        )
-      }
-    >
-      {selectedLocationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-devices-need-location">Select a location in step 1 first.</Notice>
-      ) : (
-        renderDeviceRanges()
-      )}
-    </StepCard>
-  );
-
-  const renderStepThree = () => (
-    <StepCard
-      number={4}
-      step="points"
-      title="Measure points"
-      done={measurePoints.length > 0 && !placementDirty}
-      actions={
-        selectedLocationId !== null && (
-          <span className="d-flex align-items-center gap-2">
-            <span className="lageplan-muted" data-testid="lageplan-wizard-point-count">
-              {measurePoints.length} measure point(s) stored
-            </span>
-            {measurePoints.length > 0 && (
-              <PillButton
-                variant="ghost"
-                label="Clear measure points"
-                disabled={isProcessing}
-                onClick={() => setConfirmAction({ kind: 'points' })}
-                testId="lageplan-wizard-points-clear"
-              />
-            )}
-          </span>
-        )
-      }
-    >
-      {selectedLocationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-points-need-location">Select a location in step 1 first.</Notice>
-      ) : (
-        <div className="d-flex flex-column gap-3">
-          <div className="lageplan-sources">
-            <div>
-              <SegmentedControl
-                options={POINT_SOURCES}
-                value={pointSource}
-                onChange={(value) => setPointSource(value as PointSource)}
-                testId="lageplan-wizard-point-source"
-              />
-            </div>
-          </div>
-
-          {pointSource !== 'manual' && deviceRangesProblem && (
-            <Notice tone="warning" testId="lageplan-wizard-import-blocked">
-              Fix the device ranges in step 2 before importing.
-            </Notice>
-          )}
-          {/* No import while the device ranges don't fit (see the notice). */}
-          {!deviceRangesProblem && pointSource === 'cad' && (
-            <CadUploadDropbox
-              auth={auth}
-              url={`/v1/status/measure_points/upload_cad/`}
-              accept="cad"
-              testId="lageplan-wizard-import-cad"
-              hint="Drop a DWG/DXF file here, or click to choose"
-              maxSizeMB={100}
-              instantFileUpload={true}
-              withPreview={false}
-              payload={importPayload}
-              callBackProcessing={handleCadUpload}
-            />
-          )}
-          {!deviceRangesProblem && pointSource === 'json' && (
-            <RedDropbox
-              auth={auth}
-              url={`/v1/status/measure_points/from_json/`}
-              accept="json"
-              testId="lageplan-wizard-import-json"
-              hint="Drop a JSON file here, or click to choose"
-              instantFileUpload={true}
-              withPreview={false}
-              payload={importPayload}
-              callBackProcessing={handleJsonUpload}
-            />
-          )}
-          {!deviceRangesProblem && pointSource === 'txt' && (
-            <CadUploadDropbox
-              auth={auth}
-              url={`/v1/status/measure_points/upload_cad/`}
-              accept="text"
-              testId="lageplan-wizard-import-txt"
-              hint="Drop a TXT file here, or click to choose"
-              instantFileUpload={true}
-              withPreview={false}
-              payload={importPayload}
-              callBackProcessing={handleCadUpload}
-            />
-          )}
-          {pointSource === 'manual' && renderManualSensors()}
-
-          {pointSource !== 'manual' && lageplans.length > 1 && selectedPlanId !== null && (
-            <Notice testId="lageplan-wizard-import-target">
-              Imported points go onto “{planNameOf(selectedPlanId)}” and replace
-              the {pointsOnPlan(selectedPlanId)} point(s) on it - the points on
-              the other plans stay.
-            </Notice>
-          )}
-          {cadPayload && pointSource !== 'manual' && (
-            <Notice tone="success" testId="lageplan-wizard-import-done">
-              Import complete: {cadPayload.stored} points stored
-              {cadPayload.lageplan_id != null ? ` on “${planNameOf(cadPayload.lageplan_id)}”` : ''}.
-            </Notice>
-          )}
-          {cadPayload?.warning && pointSource !== 'manual' && (
-            <Notice tone="warning" testId="lageplan-wizard-import-warning">
-              {cadPayload.warning}
-            </Notice>
-          )}
-        </div>
-      )}
-    </StepCard>
+    <LageplanPlansStep
+      locationId={selectedLocationId}
+      hasImage={!!sourceMeta?.imageUrl}
+      plans={lageplans}
+      selectedPlan={selectedPlan}
+      selectedPlanId={selectedPlanId}
+      isProcessing={isProcessing}
+      addingPlan={addingPlan}
+      onAddingPlanChange={setAddingPlan}
+      onSelectPlan={selectPlan}
+      onMovePlan={movePlan}
+      pointsOnPlan={pointsOnPlan}
+      onRenamePlan={(plan) => setRenaming({ plan, name: plan.name ?? '' })}
+      onRemovePlan={(plan) => setConfirmAction({ kind: 'plan', plan })}
+      onSourceUpload={handleSourceUpload}
+    />
   );
 
   const manualPlacement =
     pointSource === 'manual' && selectedLocationId !== null;
+  const manualSensors = (
+    <LageplanManualSensorPlacement
+      devices={devices}
+      placedSensors={placedSensors}
+      selectedPlanId={selectedPlanId}
+      activeDeviceId={activeDeviceId}
+      activeDevice={activeDevice}
+      planSensors={planSensors}
+      placementDirty={placementDirty}
+      isProcessing={isProcessing}
+      replacedPointCount={replacedPointCount}
+      hasPlanImage={Boolean(sourceMeta?.imageUrl)}
+      planNameOf={planNameOf}
+      belongsTo={belongsTo}
+      onActiveDeviceChange={setActiveDeviceId}
+      onRemoveActiveSensor={removeActiveSensor}
+      onDiscardPlacement={discardPlacement}
+      onSaveManualSensors={handleSaveManualSensors}
+    />
+  );
+
+  const renderStepDevice = () => (
+    <LageplanDeviceStep
+      locationId={selectedLocationId}
+      devices={devices}
+      measurePoints={measurePoints}
+      deviceRanges={deviceRanges}
+      onDeviceRangesChange={setDeviceRanges}
+      deviceRangesProblem={deviceRangesProblem}
+    />
+  );
+
+  const renderStepThree = () => (
+    <LageplanPointsStep
+      locationId={selectedLocationId}
+      measurePoints={measurePoints}
+      placementDirty={placementDirty}
+      isProcessing={isProcessing}
+      pointSource={pointSource}
+      onPointSourceChange={setPointSource}
+      deviceRangesProblem={deviceRangesProblem}
+      importPayload={importPayload}
+      onCadUpload={handleCadUpload}
+      onJsonUpload={handleJsonUpload}
+      manualSensors={manualSensors}
+      plans={lageplans}
+      selectedPlanId={selectedPlanId}
+      cadPayload={cadPayload}
+      planNameOf={planNameOf}
+      pointsOnPlan={pointsOnPlan}
+      importReplaces={
+        measurePoints.filter((point) =>
+          belongsTo(point.lageplan, selectedPlanId),
+        ).length
+      }
+      onClear={() => setConfirmAction({ kind: 'points' })}
+    />
+  );
 
   const renderStepFour = () => (
     <StepCard number={5} step="align" title="Align and inspect">
@@ -1730,7 +1048,9 @@ const LageplanWizardView = () => {
           lageplanId={selectedPlanId ?? undefined}
           measurePoints={planPoints}
           // smartex dm: every sensor is a band line (nx/ny -> nx_end/ny_end).
-          lineSensors={planVisualization(selectedLocation?.project_type) === 'lines'}
+          lineSensors={
+            planVisualization(selectedLocation?.project_type) === 'lines'
+          }
           deviceLabels={deviceLabels}
           devicePairStarts={devicePairStarts}
           withSliders={canEditLocation}
@@ -1762,7 +1082,9 @@ const LageplanWizardView = () => {
   );
 
   // Step 6 (optional): the band ends of dm sensors read from the plan.
-  const planBands = planPoints.filter((point) => point.nx_end != null && point.ny_end != null).length;
+  const planBands = planPoints.filter(
+    (point) => point.nx_end != null && point.ny_end != null,
+  ).length;
   const renderStepDmTransfer = () => (
     <StepCard
       number={6}
@@ -1774,7 +1096,9 @@ const LageplanWizardView = () => {
         // Fresh proposals per location and plan.
         key={`${selectedLocationId}-${selectedPlanId}`}
         locationId={selectedLocationId}
-        plan={selectedPlan ? { id: selectedPlan.id, url: selectedPlan.url } : null}
+        plan={
+          selectedPlan ? { id: selectedPlan.id, url: selectedPlan.url } : null
+        }
         pointCount={planPoints.length}
         pointsWithEnd={planBands}
         canEdit={canEditDevices}
@@ -1798,8 +1122,9 @@ const LageplanWizardView = () => {
       ) : (
         <>
           <div className="lageplan-muted mb-2">
-            The heatmap shows heat only inside these areas of “{planLabel(selectedPlan)}” - outside them the
-            plan is dimmed here. Without an area the heat is not limited.
+            The heatmap shows heat only inside these areas of “
+            {planLabel(selectedPlan)}” - outside them the plan is dimmed here.
+            Without an area the heat is not limited.
           </div>
           <HeatLimitationStage
             // A different plan starts with its own view and draft.
@@ -1808,11 +1133,16 @@ const LageplanWizardView = () => {
             plans={lageplans}
             points={
               manualPlacement
-                ? planSensors.map((sensor) => ({ nx: sensor.nx, ny: sensor.ny }))
+                ? planSensors.map((sensor) => ({
+                    nx: sensor.nx,
+                    ny: sensor.ny,
+                  }))
                 : planPoints
             }
             editable={staff}
-            onChange={(planId: number, areas: HeatLimitation[]) => updatePlan(planId, { heat_limitations: areas })}
+            onChange={(planId: number, areas: HeatLimitation[]) =>
+              updatePlan(planId, { heat_limitations: areas })
+            }
             testId="lageplan-wizard-heat-limits"
           />
         </>
@@ -1822,9 +1152,16 @@ const LageplanWizardView = () => {
 
   // Step 8: the MEA documents from Airtable and the Klemmliste's sensor names.
   const renderStepKlemmliste = () => (
-    <StepCard number={8} step="klemmliste" title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}>
+    <StepCard
+      number={8}
+      step="klemmliste"
+      title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}
+    >
       {selectedLocationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-klemmliste-needs-location">
+        <Notice
+          tone="warning"
+          testId="lageplan-wizard-klemmliste-needs-location"
+        >
           Select a location in step 1 first.
         </Notice>
       ) : (
@@ -1858,115 +1195,62 @@ const LageplanWizardView = () => {
 
   return (
     <TargetStepContext.Provider value={targetStep}>
-    <div className="lageplan-wizard" data-testid="page-lageplan-wizard">
-      <div className="lageplan-wizard-head">
-        <div>
-          <div className="lageplan-wizard-title">Lageplan wizard</div>
-          <div className="lageplan-muted">
-            Pick a location, choose or add a Lageplan, set the measure points
-            and align them on the plan.
+      <div className="lageplan-wizard" data-testid="page-lageplan-wizard">
+        <div className="lageplan-wizard-head">
+          <div>
+            <div className="lageplan-wizard-title">Lageplan wizard</div>
+            <div className="lageplan-muted">
+              Pick a location, choose or add a Lageplan, set the measure points
+              and align them on the plan.
+            </div>
+          </div>
+          {isProcessing && (
+            <span
+              className="d-flex align-items-center gap-2 lageplan-muted"
+              data-testid="lageplan-wizard-processing"
+            >
+              <Spinner animation="border" size="sm" />
+              Processing…
+            </span>
+          )}
+          <div className="ms-auto">
+            <PillButton
+              variant="ghost"
+              label="Reset"
+              onClick={() => selectLocation(null)}
+              testId="lageplan-wizard-reset"
+            />
           </div>
         </div>
-        {isProcessing && (
-          <span className="d-flex align-items-center gap-2 lageplan-muted" data-testid="lageplan-wizard-processing">
-            <Spinner animation="border" size="sm" />
-            Processing…
-          </span>
+
+        {error && (
+          <Notice tone="danger" testId="lageplan-wizard-error">
+            {error}
+          </Notice>
         )}
-        <div className="ms-auto">
-          <PillButton
-            variant="ghost"
-            label="Reset"
-            onClick={() => selectLocation(null)}
-            testId="lageplan-wizard-reset"
-          />
-        </div>
+
+        {renderStepOne()}
+        {renderStepDevice()}
+        {renderStepTwo()}
+        {renderStepThree()}
+        {renderStepFour()}
+        {renderStepDmTransfer()}
+        {staff && renderStepHeatLimits()}
+        {renderStepKlemmliste()}
+
+        <LageplanWizardDialogs
+          confirmAction={confirmAction}
+          renaming={renaming}
+          measurePointCount={measurePoints.length}
+          isProcessing={isProcessing}
+          pointsOnPlan={pointsOnPlan}
+          onConfirmActionChange={setConfirmAction}
+          onDeletePlan={deletePlan}
+          onClearMeasurePoints={clearMeasurePoints}
+          onRenamingChange={setRenaming}
+          onRenamePlan={renamePlan}
+        />
       </div>
-
-      {error && (
-        <Notice tone="danger" testId="lageplan-wizard-error">
-          {error}
-        </Notice>
-      )}
-
-      {renderStepOne()}
-      {renderStepDevice()}
-      {renderStepTwo()}
-      {renderStepThree()}
-      {renderStepFour()}
-      {renderStepDmTransfer()}
-      {staff && renderStepHeatLimits()}
-      {renderStepKlemmliste()}
-
-      <ConfirmDialog
-        show={confirmAction !== null}
-        testId="lageplan-wizard-confirm"
-        title={confirmAction?.kind === 'plan' ? 'Remove Lageplan?' : 'Clear measure points?'}
-        message={
-          confirmAction?.kind === 'plan'
-            ? `“${planLabel(confirmAction.plan)}” is removed${
-                pointsOnPlan(confirmAction.plan.id)
-                  ? ` together with its ${pointsOnPlan(confirmAction.plan.id)} measure point(s)`
-                  : ''
-              }. This cannot be undone.`
-            : `All ${measurePoints.length} measure point(s) of this location are removed - on every Lageplan. This cannot be undone.`
-        }
-        confirmLabel={confirmAction?.kind === 'plan' ? 'Remove' : 'Clear'}
-        cancelLabel="Cancel"
-        confirming={isProcessing}
-        onCancel={() => setConfirmAction(null)}
-        onConfirm={() => {
-          if (confirmAction?.kind === 'plan') {
-            deletePlan(confirmAction.plan);
-          } else if (confirmAction?.kind === 'points') {
-            clearMeasurePoints();
-          }
-        }}
-      />
-
-      <ConfirmDialog
-        show={renaming !== null}
-        testId="lageplan-wizard-rename"
-        title="Rename Lageplan"
-        message={
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (renaming) {
-                renamePlan(renaming.plan, renaming.name);
-              }
-            }}
-          >
-            <label htmlFor="lageplan-rename-input" className="form-label lageplan-rename-label">
-              Name (empty: the file name is shown)
-            </label>
-            <input
-              id="lageplan-rename-input"
-              className="form-control"
-              autoFocus
-              maxLength={255}
-              value={renaming?.name ?? ''}
-              placeholder={renaming?.plan.url?.split('/').pop() ?? ''}
-              data-testid="lageplan-wizard-rename-input"
-              disabled={isProcessing}
-              onChange={(event) =>
-                setRenaming((current) => (current ? { ...current, name: event.target.value } : current))
-              }
-            />
-          </form>
-        }
-        confirmLabel="Save"
-        cancelLabel="Cancel"
-        danger={false}
-        confirming={isProcessing}
-        onCancel={() => setRenaming(null)}
-        onConfirm={() => {
-          if (renaming) {
-            renamePlan(renaming.plan, renaming.name);
-          }
-        }}
-      />
-    </div>
     </TargetStepContext.Provider>
   );
 };

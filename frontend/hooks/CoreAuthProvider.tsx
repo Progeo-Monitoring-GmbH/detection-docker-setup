@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { jwtDecode, JwtPayload } from 'jwt-decode';
-import { useSnackbar } from 'notistack';
 import {
   useContext,
   createContext,
@@ -12,8 +11,8 @@ import {
 import { useLocation, useNavigate } from 'react-router';
 import { markLogin, startsNewSession } from '../src/activity/activityTracker';
 import { getBackendBaseUrl } from '../src/backendUrl';
-import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
+import { loginRetryAfter } from '../src/main/loginThrottle';
 import { clearImpersonation } from '../src/main/impersonation';
 import { oidcForwardUrl } from '../src/main/oidcForward';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
@@ -43,8 +42,11 @@ interface AuthCredentials {
   otp?: string;
 }
 
-/** How a login ended: an OtpReason asks the form for the 2FA code. */
-type LoginOutcome = 'ok' | 'failed' | OtpReason;
+/**
+ * How a login ended: an OtpReason asks the form for the 2FA code,
+ * `retryAfter` - too many failed attempts, try again in that many seconds.
+ */
+type LoginOutcome = 'ok' | 'failed' | OtpReason | { retryAfter: number };
 
 interface AuthRefresh {
   isSuccess: boolean;
@@ -125,7 +127,6 @@ const CoreAuthProvider = ({ children }) => {
   const [viewAsUser, setViewAsUserState] = useState(readViewAsUser);
   const location = useLocation();
   const navigate = useNavigate();
-  const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
     if (token) {
@@ -246,10 +247,10 @@ const CoreAuthProvider = ({ children }) => {
           return otp;
         }
         console.error('Login failed!', error);
-        showErrorBar(enqueueSnackbar, 'Login failed!');
-
         await logoutAction(forward);
-        return 'failed';
+        // The login form shows both (login-throttled / login-error).
+        const retryAfter = loginRetryAfter(error);
+        return retryAfter ? { retryAfter } : 'failed';
       }
     },
     [navigate, logoutAction, setViewAsUser], // depends on logoutAction as it is defined below
