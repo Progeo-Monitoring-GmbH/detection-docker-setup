@@ -14,6 +14,7 @@ import { getBackendBaseUrl } from '../src/backendUrl';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
 import { loginRetryAfter } from '../src/main/loginThrottle';
 import { clearImpersonation } from '../src/main/impersonation';
+import { clearOverviewCaches } from '../src/main/overviewCache';
 import { oidcForwardUrl } from '../src/main/oidcForward';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
 import {
@@ -198,6 +199,8 @@ const CoreAuthProvider = ({ children }) => {
         clearStoredTokens();
         clearImpersonation();
         setViewAsUser(false);
+        // The cached locations list names the user's projects - not for the next one at this browser.
+        void clearOverviewCaches();
         // The next user's first answer sets the new baseline (permissionVersion.ts).
         resetPermissionsVersion();
         if (wasDemo) {

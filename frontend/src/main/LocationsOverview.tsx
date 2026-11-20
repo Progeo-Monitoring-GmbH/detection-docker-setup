@@ -43,6 +43,7 @@ import {
 
 import { untaggedRowClick } from './wholeRowClick';
 import { sortLoadedFirst, useChunkedPreload } from './overviewPreload';
+import { overviewCacheKey, readOverviewCache, writeOverviewCache } from './overviewCache';
 import useIsMobile from '../components/ui/useIsMobile';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationsOverview.css';
@@ -59,6 +60,8 @@ type LocationRow = {
   /** ProgeoLocation.PROJECT_TYPE_CHOICES - the product (smartex® dm, ...). */
   project_type?: number | null;
   measurement_count?: number;
+  /** Devices of the location (details) - the "only connected" switch. */
+  device_count?: number | null;
   last_measurement_at?: string | null;
   /** Part of a merged project (helper/location_merge.py): its parent's id. */
   parent_location?: number | null;
@@ -187,37 +190,22 @@ const ROW_CLASSES = {
   none: 'locations-row--none',
 };
 
-/** Query of /v1/location/min/: the search text, only connected locations. */
-const locationsQuery = (search: string, hasDevice: boolean) => {
-  const params = new URLSearchParams();
-  if (search.trim()) {
-    params.set('search', search.trim());
-  }
-  if (hasDevice) {
-    params.set('has_device', '1');
-  }
-  return params.toString();
-};
-
 /**
- * Alarm summaries merged with a new batch for `ids`. The backend only returns
- * an entry for locations that actually have alarms - the rest are backfilled
- * with an explicit zero, so an absent key reliably means "not loaded yet"
- * (the State column's loading-spinner check) rather than "confirmed no alarms".
+ * Alarm summaries with a new batch for `ids`: their old (maybe cached) entries
+ * replaced. The backend only returns an entry for locations that actually have
+ * alarms - the rest of `ids` get an explicit zero, so an absent key reliably
+ * means "not loaded yet" (the loading spinner) rather than "confirmed no alarms".
  */
-const mergeAlarmSummary = (
+export const mergeAlarmSummary = (
   current: Record<string, LocationAlarmSummary>,
   loaded: Record<string, LocationAlarmSummary>,
   ids: number[],
 ) => {
-  const merged = { ...current, ...loaded };
-  const missing = ids.filter((id) => !(String(id) in merged));
-  return {
-    ...merged,
-    ...Object.fromEntries(
-      missing.map((id) => [String(id), { count: 0, active: 0 }]),
-    ),
-  };
+  const next = { ...current };
+  ids.forEach((id) => {
+    next[String(id)] = loaded[String(id)] ?? { count: 0, active: 0 };
+  });
+  return next;
 };
 
 /** Rows with the detail fields of `details` merged in. */
@@ -227,6 +215,44 @@ const mergeDetails = (rows: LocationRow[], details: LocationRow[]) => {
     const detail = detailsById.get(row.id);
     return detail ? { ...row, ...detail } : row;
   });
+};
+
+/**
+ * A fresh /min list over the shown (cached) one: its rows and order, each row
+ * keeping the details it had (state, last measurement) until they are
+ * refreshed too - a reload shows no loading cells for rows it knows.
+ */
+export const refreshRows = (shown: LocationRow[], fresh: LocationRow[]) => {
+  const byId = new Map(shown.map((row) => [row.id, row]));
+  return fresh.map((row) => {
+    const known = byId.get(row.id);
+    return known ? { ...known, ...row } : row;
+  });
+};
+
+/**
+ * "Only objects with connected devices" - filtered here, not by the backend.
+ * A merged project has no devices of its own: it counts when one of its parts
+ * has some. Rows whose devices aren't loaded yet stay (the first load only -
+ * after that the cache knows them), so the table never starts empty.
+ */
+export const connectedRowFilter = (rows: LocationRow[]) => {
+  const partDevices = new Map<number, number>();
+  // Merged projects with a part whose devices aren't loaded yet.
+  const partsPending = new Set<number>();
+  rows.forEach((row) => {
+    if (row.parent_location == null) {
+      return;
+    }
+    if (row.device_count === undefined) {
+      partsPending.add(row.parent_location);
+    } else {
+      partDevices.set(row.parent_location, (partDevices.get(row.parent_location) ?? 0) + (row.device_count ?? 0));
+    }
+  });
+  const ownDevices = (row: LocationRow) => row.device_count === undefined || (row.device_count ?? 0) > 0;
+  return (row: LocationRow) =>
+    ownDevices(row) || (partDevices.get(row.id) ?? 0) > 0 || partsPending.has(row.id);
 };
 
 type LocationState = keyof typeof ROW_CLASSES;
@@ -668,7 +694,8 @@ const LocationsOverview = () => {
   // location goes straight into the LocationDetailView).
   const autoForwarded = useRef(false);
   const [rows, setRows] = useState<LocationRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Until the cache or the fresh list is there.
+  const [loading, setLoading] = useState(true);
   const [alarmSummary, setAlarmSummary] = useState<
     Record<string, LocationAlarmSummary>
   >({});
@@ -717,32 +744,52 @@ const LocationsOverview = () => {
     );
   };
 
-  const fetchLocations = (search = '', hasDevice = false) => {
-    setLoading(true);
+  // The list of this user as last loaded - shown at once on the next visit
+  // or reload, then refreshed (overviewCache.ts).
+  const cacheKey = overviewCacheKey(
+    auth?.user as { user_id?: unknown } | null,
+    Boolean(auth?.viewAsUser),
+  );
+  // The fresh /min list has arrived: from now on the rows are the server's
+  // (a cache read finishing later is ignored), the refresh can start.
+  const [listLoaded, setListLoaded] = useState(false);
+  const listLoadedRef = useRef(false);
+  // Rows whose details were refreshed in this visit (or failed) - the progress.
+  const [refreshed, setRefreshed] = useState<Set<number>>(new Set());
+
+  /** The single-location account goes straight to its location (once). */
+  const forwardSingle = (list: LocationRow[]) => {
+    if (!autoForwarded.current && list.length === 1 && list[0]?.id != null) {
+      autoForwarded.current = true;
+      navigate(`/location/${list[0].id}/status`);
+    }
+  };
+
+  /**
+   * The fast part: the locations (/min - no state, no alarms). Over the
+   * shown rows, which keep their details until the background refresh
+   * (loadChunk) replaces them; the "only connected" switch and the search
+   * filter here, they never reload.
+   */
+  const fetchLocations = () => {
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/min/?${locationsQuery(search, hasDevice)}`,
+      '/v1/location/min/',
       (response) => {
         const next = (response?.data || []) as LocationRow[];
-        // A new list: what was loaded or queued for the old one is dropped.
+        // A new list: what was queued for the old one is dropped.
         preload.reset();
         errorShown.current = false;
-        setAlarmSummary({});
         setFailedDetails(new Set());
         setFailedAlarms(new Set());
-        setRows(next);
+        setRefreshed(new Set());
+        setRows((shown) => refreshRows(shown, next));
+        listLoadedRef.current = true;
+        setListLoaded(true);
         setLoading(false);
-        // Everything in the background - the rows on screen move ahead.
+        // State and alarms in the background - the rows on screen move ahead.
         preload.enqueue(next.map((row) => row.id));
-        // Single-location accounts land directly in the LocationDetailView.
-        if (
-          !autoForwarded.current &&
-          next.length === 1 &&
-          next[0]?.id != null
-        ) {
-          autoForwarded.current = true;
-          navigate(`/location/${next[0].id}/status`);
-        }
+        forwardSingle(next);
       },
       (error) => {
         showRequestError(enqueueSnackbar, t('locations_error_load'), error);
@@ -781,12 +828,15 @@ const LocationsOverview = () => {
             if (missing.length) {
               addFailed(setFailedDetails, missing);
             }
+            addFailed(setRefreshed, ids);
           }
           resolve();
         },
         (error) => {
           if (current()) {
+            // A cached value stays shown; only rows without one get the dash.
             addFailed(setFailedDetails, ids);
+            addFailed(setRefreshed, ids);
             showLoadError(t('locations_error_details'), error);
           }
           resolve();
@@ -820,11 +870,38 @@ const LocationsOverview = () => {
   };
   const preload = useChunkedPreload(loadChunk);
 
+  // Once per user: the cached list at once (when there is one), the fresh
+  // one in parallel - whichever comes first is shown, the cache never
+  // overwrites the server's list.
   useEffect(() => {
-    fetchLocations(searchText, onlyConnected);
-    // Per filter switch only: typing in the search filters the loaded rows.
+    let active = true;
+    void readOverviewCache<LocationRow, LocationAlarmSummary>(cacheKey).then((entry) => {
+      if (!active || !entry || listLoadedRef.current) {
+        return;
+      }
+      setRows(entry.rows);
+      setAlarmSummary(entry.alarmSummary);
+      setLoading(false);
+    });
+    fetchLocations();
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onlyConnected]);
+  }, [cacheKey]);
+
+  // What was loaded goes to the cache - after the fresh list only (never a
+  // cached list written back as new), at most once a second while the
+  // background refresh fills it in.
+  useEffect(() => {
+    if (!listLoaded) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      void writeOverviewCache(cacheKey, rows, alarmSummary);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [cacheKey, listLoaded, rows, alarmSummary]);
 
   const handleRowClick = (row: LocationRow) => {
     navigate(`/location/${row.id}/status`);
@@ -846,9 +923,13 @@ const LocationsOverview = () => {
     );
   }, [rows]);
 
+  // Search and "only connected" filter the loaded rows - no request.
   const filteredRows = useMemo(() => {
-    return listedRows.filter((row) => matchesLocationSearch(row, searchText));
-  }, [listedRows, searchText]);
+    const connected = onlyConnected ? connectedRowFilter(rows) : () => true;
+    return listedRows.filter(
+      (row) => connected(row) && matchesLocationSearch(row, searchText),
+    );
+  }, [rows, listedRows, onlyConnected, searchText]);
 
   const sortedRows = useMemo(
     () =>
@@ -870,17 +951,18 @@ const LocationsOverview = () => {
   }, [sortedRows, currentPage, rowsPerPage]);
   const visibleKey = visibleIds.join(',');
   useEffect(() => {
-    if (visibleIds.length) {
+    // Not for cached rows before the fresh list: its reset would drop them again.
+    if (listLoaded && visibleIds.length) {
       preload.enqueue(visibleIds, true);
     }
     // Per set of visible rows (visibleKey), not per new array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey, preload.enqueue]);
+  }, [visibleKey, listLoaded, preload.enqueue]);
 
-  // How far the background loading is: rows with details (or given up).
-  const preloaded = rows.filter(
-    (row) => row.measurement_count !== undefined || failedDetails.has(row.id),
-  ).length;
+  // How far the background refresh is: rows with fresh details (or given up).
+  const preloaded = listLoaded
+    ? rows.filter((row) => refreshed.has(row.id)).length
+    : 0;
 
   // Staff: switched-off locations striped (grey), purgeable ones red.
   const { flagsOf } = useLocationFlags([
@@ -1081,7 +1163,7 @@ const LocationsOverview = () => {
               className="locations-list-count"
               data-testid="locations-count"
             >
-              {preloaded < rows.length && (
+              {listLoaded && preloaded < rows.length && (
                 <span
                   className="locations-preload"
                   data-testid="locations-preload"
