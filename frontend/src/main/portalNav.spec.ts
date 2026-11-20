@@ -70,7 +70,7 @@ describe('switchLocationPath', () => {
     expect(switchLocationPath(pathname, 7)).toBe(expected);
   });
 
-  it.each(['/location/12/heatplot', '/location/12/alarms/'])(
+  it.each([ '/location/12/alarms/'])(
     'stays on the location page %s',
     (pathname) => {
       expect(switchLocationPath(pathname, 7)).toBe(pathname.replace('12', '7').replace(/\/$/, ''));

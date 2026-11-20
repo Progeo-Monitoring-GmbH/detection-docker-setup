@@ -50,10 +50,7 @@ const PrivacyPolicyPage = React.lazy(
 const ControllerQrCodePrintView = React.lazy(
   () => import('./main/ControllerQrCodePrintView.tsx'),
 );
-const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
-const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
-const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DeveloperView = React.lazy(() => import('./main/DeveloperView.tsx'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
@@ -61,9 +58,7 @@ const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
 const LocationsOverview = React.lazy(() => import('./main/LocationsOverview'));
 const AlarmsOverview = React.lazy(() => import('./main/AlarmsOverview.tsx'));
 const AlarmReportView = React.lazy(() => import('./main/AlarmReportView.tsx'));
-const LocationHeatplotView = React.lazy(
-  () => import('./main/LocationHeatplotView.tsx'),
-);
+
 const LocationPortalLayout = React.lazy(
   () => import('./main/LocationPortalLayout.tsx'),
 );
@@ -214,11 +209,6 @@ const CoreRoutes = () => {
                 </WebSocketProvider>
               }
             />
-            {/* The retired "Dev" tab (frontend diagnostics - the browser's dev tools do it better). */}
-            <Route
-              path="dev/"
-              element={<Navigate to="/developer/" replace />}
-            />
           </Route>
           {/* Their former standalone paths. */}
           <Route
@@ -245,14 +235,6 @@ const CoreRoutes = () => {
           <Route
             path="/alarms/report/"
             element={guard('/alarms/report/', <AlarmReportView />)}
-          />
-          <Route
-            path="/location/:id/heatplot"
-            element={guard('/location/:id/heatplot', <LocationHeatplotView />)}
-          />
-          <Route
-            path="/locations/:id/heatplot"
-            element={guard('/locations/:id/heatplot', <LocationHeatplotView />)}
           />
           {/* Retired: device config moved to /location/:id/settings. */}
           <Route

@@ -55,8 +55,6 @@ export const APP_ROUTE_ACCESS = {
   '/device/overview': anyOf(STAFF, permission('module_devices_provision')),
   '/alarms/': SUPERUSER,
   '/alarms/report/': SUPERUSER,
-  '/location/:id/heatplot': permission('module_measurements_enabled'),
-  '/locations/:id/heatplot': permission('module_measurements_enabled'),
   // Only redirects - its targets are guarded.
   '/device/:id/update/': ANY_USER,
   // Opened from the device overview.
