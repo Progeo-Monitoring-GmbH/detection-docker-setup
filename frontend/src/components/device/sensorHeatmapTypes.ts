@@ -122,4 +122,8 @@ export type SensorHeatmapResponse = {
   sensor_points?: SensorHeatmapPoint[];
   /** The Lageplan ?lageplan= limited the sensors to; null: all of the location. */
   lageplan?: number | null;
+  /** ?latest=1: one frame, every device's newest measurement. */
+  latest?: boolean;
+  /** ?latest=1: per sensor when its device measured it (Unix seconds). */
+  measured?: Record<string, number | null>;
 };

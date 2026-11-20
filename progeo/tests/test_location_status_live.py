@@ -276,3 +276,40 @@ def test_group_names_keep_the_id_spaces_apart():
     assert location_status_group("default", 5) == "location-status.default.5"
     # Own account databases have their own ids - other group.
     assert location_status_group("kunde_db", 5) == "location-status.kunde_db.5"
+
+
+# ---------------------------------------------------------------------------- "Letzte Messung" (?latest=1)
+
+def test_latest_is_every_devices_newest_measurement_as_one_frame(api_client, location, other_location, account):
+    """The sensors can be split over devices (1-2 / 3-4): each device's newest
+    measurement, merged - older ones and other locations left out."""
+    first = f.make_device(location, first_sensor_order=1)
+    second = f.make_device(location, first_sensor_order=3)
+    f.make_measurement(first, pairs=[10, 11])  # older - replaced
+    f.make_measurement(first, pairs=[20, 21])
+    f.make_measurement(second, pairs=[30, 31])
+    f.make_measurement(f.make_device(other_location), pairs=[99, 99])
+    api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.pk}/heatmap/?latest=1").json()
+
+    assert body["latest"] is True
+    assert body["data"] == {"1": [20], "2": [21], "3": [30], "4": [31]}
+    assert len(body["timestamps"]) == 1 and body["timestamps"][0] is not None
+    assert set(body["measured"]) == {"1", "2", "3", "4"}
+    assert body["total"] == 2
+
+
+def test_latest_without_measurements_is_empty(api_client, location, account):
+    f.make_device(location)
+    api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.pk}/heatmap/?latest=1").json()
+
+    assert body["data"] == {} and body["timestamps"] == []
+
+
+def test_an_escalation_keeps_the_latest_range():
+    from progeo.v1.viewsets.escalation_viewset import VIEW_RANGES
+
+    assert "latest" in VIEW_RANGES

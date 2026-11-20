@@ -34,10 +34,12 @@ import VerdachtsstellenPanel from './VerdachtsstellenPanel';
 import {
   availableTimeRanges,
   effectiveTimeRange,
+  isTimeRange,
+  LATEST_RANGE,
+  type StatusRange,
   TIME_RANGE_DAYS,
   timeRangeCandidates,
   timeRangeLabelKey,
-  type TimeRange,
 } from './timeRanges';
 import {
   alarmSpansOf,
@@ -420,8 +422,9 @@ const LocationStatusView = ({
     hasPermission('module_locations_django_delete');
 
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
-  // The range of both views - the plan's frames and the Zeitreihe.
-  const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
+  // The range of both views - the plan's frames and the Zeitreihe; or
+  // "Letzte Messung" (LATEST_RANGE): only every device's newest measurement.
+  const [selectedRange, setSelectedRange] = useState<StatusRange>('7d');
   // Step of the plan's frames, picked in its dropdown; null: the range's default.
   const [pickedStep, setPickedStep] = useState<number | null>(null);
   // "Now" until the data arrives (the parent remounts per location).
@@ -535,8 +538,13 @@ const LocationStatusView = ({
       ),
     [isStaff, measurementRange],
   );
-  const range = effectiveTimeRange(selectedRange, rangeOptions);
-  const rangeDays = TIME_RANGE_DAYS[range];
+  const isLatest = selectedRange === LATEST_RANGE;
+  const range: StatusRange = isLatest
+    ? LATEST_RANGE
+    : effectiveTimeRange(selectedRange, rangeOptions);
+  // The days of what goes with a period (computed suspicion points, battery
+  // chart): the latest measurement goes with the last 24 h.
+  const rangeDays = isTimeRange(range) ? TIME_RANGE_DAYS[range] : TIME_RANGE_DAYS['24h'];
 
   // What the page shows - an escalation created now keeps it (statusViewState.ts).
   useEffect(() => {
@@ -569,19 +577,39 @@ const LocationStatusView = ({
         : historySpecFor(measurementRange, measurementRangeFailed, openedAt),
     [isLorawan, measurementRange, measurementRangeFailed, openedAt],
   );
+  // The whole history is only loaded for a period - "Letzte Messung" needs
+  // one small frame (?latest=1) and reloads just that on new data.
+  const periodSpec = isLatest ? null : historySpec;
   const {
     history,
     loadedAt: historyLoadedAt,
     loading: historyLoading,
     denied: historyDenied,
-  } = useLocationHistory(locationId, demo, historySpec, 'diff', rangeRevision);
+  } = useLocationHistory(locationId, demo, periodSpec, 'diff', rangeRevision);
   const profileHistory = useLocationHistory(
     locationId,
     demo,
-    heatProfile === 'diff' ? null : historySpec,
+    heatProfile === 'diff' ? null : periodSpec,
     heatProfile,
     rangeRevision,
   );
+  const latestSpec = isLatest && !isLorawan ? 'latest' : null;
+  const latest = useLocationHistory(
+    locationId,
+    demo,
+    latestSpec,
+    'diff',
+    liveRevision,
+  );
+  const latestProfile = useLocationHistory(
+    locationId,
+    demo,
+    heatProfile === 'diff' ? null : latestSpec,
+    heatProfile,
+    liveRevision,
+  );
+  const shownLoading = isLatest ? latest.loading : historyLoading;
+  const shownDenied = isLatest ? latest.denied : historyDenied;
   const {
     clusters,
     loading: clustersLoading,
@@ -628,46 +656,56 @@ const LocationStatusView = ({
 
   // The range (the last N days up to when the history arrived), for the
   // plan's frames and the Zeitreihe - cut out of the history, no request.
-  const now = historyLoadedAt ?? openedAt;
+  const now = (isLatest ? latest.loadedAt : historyLoadedAt) ?? openedAt;
   const heatmap = useMemo(
     () =>
-      framesOf(history, {
-        from: now - rangeDays * DAY_MS,
-        to: now,
-        step: heatmapStep,
-      }),
-    [history, now, rangeDays, heatmapStep],
+      isLatest
+        ? latest.history
+        : framesOf(history, {
+            from: now - rangeDays * DAY_MS,
+            to: now,
+            step: heatmapStep,
+          }),
+    [isLatest, latest.history, history, now, rangeDays, heatmapStep],
   );
   // While the picked profile loads, the heat keeps |WP - EP|.
+  const profileSource = isLatest ? latestProfile : profileHistory;
   const profileHistoryShown =
-    heatProfile !== 'diff' && profileHistory.history
-      ? profileHistory.history
+    heatProfile !== 'diff' && profileSource.history
+      ? profileSource.history
       : null;
   const profileHeatmap = useMemo(
     () =>
-      profileHistoryShown
+      profileHistoryShown && !isLatest
         ? framesOf(profileHistoryShown, {
             from: now - rangeDays * DAY_MS,
             to: now,
             step: heatmapStep,
           })
-        : null,
-    [profileHistoryShown, now, rangeDays, heatmapStep],
+        : profileHistoryShown,
+    [isLatest, profileHistoryShown, now, rangeDays, heatmapStep],
   );
+  // "Letzte Messung": the one frame - the tables classify its values.
   const zeitreihe = useMemo(
     () =>
-      seriesOf(
-        history,
-        now - rangeDays * DAY_MS,
-        now,
-        ZEITREIHE_LIMIT,
-        baseStep ?? 30 * 60,
-      ),
-    [baseStep, history, now, rangeDays],
+      isLatest
+        ? latest.history
+        : seriesOf(
+            history,
+            now - rangeDays * DAY_MS,
+            now,
+            ZEITREIHE_LIMIT,
+            baseStep ?? 30 * 60,
+          ),
+    [isLatest, latest.history, baseStep, history, now, rangeDays],
   );
 
   const thresholdValue = location?.alarm_threshold ?? null;
-  const sensorPoints = useMemo(() => history?.sensor_points ?? [], [history]);
+  const shownHistory = isLatest ? latest.history : history;
+  const sensorPoints = useMemo(
+    () => shownHistory?.sensor_points ?? [],
+    [shownHistory],
+  );
   // The placed ProgeoMeasurePoint of a sensor, if any: its name and own
   // threshold override win over the generic label/object default.
   const measurePointOf = useCallback(
@@ -736,7 +774,7 @@ const LocationStatusView = ({
         />
       ) : (
         <>
-          {clustersLoading || historyLoading ? (
+          {clustersLoading || shownLoading ? (
             <Loading />
           ) : (
             !clustersDenied && (
@@ -765,13 +803,13 @@ const LocationStatusView = ({
             />
             <SegmentedControl
               testId="status-range"
-              options={rangeOptions.map((value) => ({
+              options={[LATEST_RANGE, ...rangeOptions].map((value) => ({
                 value,
                 label: t(timeRangeLabelKey(value)),
               }))}
               value={range}
               onChange={(value) => {
-                setSelectedRange(value as TimeRange);
+                setSelectedRange(value as StatusRange);
                 setPickedStep(null);
               }}
             />
@@ -780,7 +818,7 @@ const LocationStatusView = ({
           {statusView === 'zeitreihe' ? (
             <>
               <ZeitreihePanel
-                loading={historyLoading}
+                loading={shownLoading}
                 sensors={zeitreiheSensors}
                 selectedSensorId={selectedSensor}
                 requestedIds={requested.sensors ?? null}
@@ -803,17 +841,18 @@ const LocationStatusView = ({
                   visualization={planVisualization(location?.project_type)}
                   withSensorTable={showsSensorTable(location?.project_type)}
                   threshold={thresholdValue}
-                  denied={historyDenied}
+                  denied={shownDenied}
                   alarmSpans={alarmSpans}
                   profileHeatmap={profileHeatmap}
                   profile={heatProfile}
                   onProfileChange={setHeatProfile}
                   profileLoading={
-                    heatProfile !== 'diff' && profileHistory.loading
+                    heatProfile !== 'diff' && profileSource.loading
                   }
                   focusTime={focusAt}
                   // The step only matters for the animation: beside its start.
                   frameToolbar={
+                    !isLatest &&
                     stepOptions.length > 1 && (
                       <PillSelect
                         testId="status-step"

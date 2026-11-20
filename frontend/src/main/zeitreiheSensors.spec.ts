@@ -114,3 +114,18 @@ describe('selectedFirst', () => {
     expect(selectedFirst(ids, 'x')).toBe(ids);
   });
 });
+
+describe('zeitreiheSensorsOf - "Letzte Messung" (one frame)', () => {
+  it('classifies the latest value of every sensor', () => {
+    const latest = { timestamps: [1_700_000_000], data: { '1': [40], '2': [150], '3': [null] } };
+    const sensors = zeitreiheSensorsOf(latest, (id) => `S${id}`, () => 100);
+
+    // A sensor without a value in the latest measurement is left out.
+    expect(sensors.map((sensor) => sensor.sensorId)).toEqual([1, 2]);
+    const [low, high] = sensors;
+    expect(low).toMatchObject({ min: 40, max: 40, range: 0, triggered: false, silent: true });
+    // Above its threshold: triggered - the plan and the table agree.
+    expect(high).toMatchObject({ max: 150, triggered: true, peakRatio: 1.5 });
+    expect(high.points).toHaveLength(1);
+  });
+});

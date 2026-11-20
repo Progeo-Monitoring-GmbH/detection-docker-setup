@@ -53,7 +53,8 @@ def _text(request, field="text"):
 
 # The status page's settings an escalation keeps (frontend statusViewState.ts).
 VIEW_KINDS = {"roof", "zeitreihe"}
-VIEW_RANGES = {"24h", "7d", "30d", "90d", "180d", "1y", "3y"}
+# "latest": the newest measurement only (the status page's "Letzte Messung").
+VIEW_RANGES = {"latest", "24h", "7d", "30d", "90d", "180d", "1y", "3y"}
 VIEW_PROFILES = {"diff", "wp", "ep", "sum"}
 VIEW_SENSORS_MAX = 100
 VIEW_SENSOR_ID = re.compile(r"^(sensor-\d{1,6}|\d{1,6}:\d{1,4})$")

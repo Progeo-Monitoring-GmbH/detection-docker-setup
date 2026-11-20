@@ -89,3 +89,17 @@ describe('rangeReaches', () => {
     );
   });
 });
+
+describe('"Letzte Messung" (range=latest)', () => {
+  it('is kept in the URL and read back', () => {
+    const params = new URLSearchParams('range=latest&view=roof');
+    expect(parseStatusView(params).range).toBe('latest');
+    expect(parseStatusView(new URLSearchParams('range=latests')).range).toBeUndefined();
+  });
+
+  it('reaches back to no moment - a ?at= link picks a period', () => {
+    const now = Date.now();
+    expect(rangeReaches('latest', now - 1_000, now)).toBe(false);
+    expect(rangeReaches('24h', now - 1_000, now)).toBe(true);
+  });
+});

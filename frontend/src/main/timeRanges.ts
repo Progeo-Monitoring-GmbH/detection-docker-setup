@@ -18,6 +18,15 @@ export const TIME_RANGE_DAYS: Record<TimeRange, number> = {
   '3y': 1095,
 };
 
+/** The status page's "Letzte Messung": only the newest measurement (of every
+ * device) - no period; the plan shows it, the Zeitreihe tables classify it. */
+export const LATEST_RANGE = 'latest' as const;
+/** The ranges of the status page: a period, or the latest measurement. */
+export type StatusRange = TimeRange | typeof LATEST_RANGE;
+
+export const isTimeRange = (value: string): value is TimeRange =>
+  value in TIME_RANGE_DAYS;
+
 /** Every view offers these (as far as the data reaches). */
 export const SHORT_TIME_RANGES: readonly TimeRange[] = ['24h', '7d', '30d'];
 
@@ -55,7 +64,7 @@ export type MeasurementRange = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** i18n key of a range's toggle label. */
-export const timeRangeLabelKey = (range: TimeRange) => `status_range_${range}`;
+export const timeRangeLabelKey = (range: StatusRange) => `status_range_${range}`;
 
 /**
  * The `candidates` to offer, shortest first: the shortest always, every

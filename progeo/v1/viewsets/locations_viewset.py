@@ -2821,6 +2821,12 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         else:
             step = None
 
+        # Or ?latest=1: the newest measurement of every device, as one frame
+        # (the status page's "Letzte Messung") - no window, no step.
+        latest = request.query_params.get("latest") in ("1", "true")
+        if latest:
+            time_from = time_to = days = step = None
+
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
@@ -2843,11 +2849,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return error
         with view:
             return self._heatmap_response(
-                request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan
+                request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan,
+                latest=latest,
             )
 
     def _heatmap_response(
-        self, request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan=None
+        self, request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan=None,
+        latest=False,
     ):
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
         if lageplan is None:
@@ -2862,6 +2870,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             if all(point.device_id for point in points):
                 queryset = queryset.filter(device_id__in={point.device_id for point in points})
         starts = _device_starts(location, db_name)
+        if latest:
+            return self._latest_heatmap_response(location, account, db_name, queryset, starts, profile,
+                                                 sensor_points=_sensor_points_data(points, location, db_name),
+                                                 plan_sensors=plan_sensors, lageplan=lageplan, limit=limit)
         stepped = None
         if step:
             stepped = _step_frames(queryset, time_from, time_to, step, starts, profile)
@@ -2914,6 +2926,48 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "timestamps": timestamps,
             "sensor_points": sensor_points,
             # The plan ?lageplan= picked (None: all of the location's sensors).
+            "lageplan": lageplan.pk if lageplan else None,
+        })
+
+    @staticmethod
+    def _latest_heatmap_response(location, account, db_name, queryset, starts, profile, sensor_points,
+                                 plan_sensors, lageplan, limit):
+        """?latest=1: every device's newest measurement (pk is chronological),
+        merged into one frame - a location's sensors can be split over
+        devices (dm 1-300 / 301-558), each sends its own samples. The frame's
+        time is the newest of them; `measured` names each sensor's own."""
+        # One index lookup per device - not a scan of the location's history.
+        device_ids = ProgeoDevice.objects.using(db_name).filter(location=location).order_by("pk")
+        newest = [
+            measurement
+            for device_id in device_ids.values_list("pk", flat=True)
+            if (measurement := queryset.filter(device_id=device_id).order_by("-pk").first()) is not None
+        ]
+        merged, measured = {}, {}
+        for measurement in sorted(newest, key=lambda row: row.pk):
+            ts = measurement.last_fetched.timestamp() if measurement.last_fetched else None
+            for sensor, value in _sensor_values(measurement, starts, profile).items():
+                merged[sensor] = value
+                measured[sensor] = ts
+        if plan_sensors is not None:
+            merged = {sensor: value for sensor, value in merged.items() if sensor in plan_sensors}
+            measured = {sensor: ts for sensor, ts in measured.items() if sensor in plan_sensors}
+        times = [ts for ts in measured.values() if ts is not None]
+        return RequestSuccess({
+            "location": _location_data(location, account),
+            "limit": limit,
+            "from": None,
+            "to": None,
+            "days": None,
+            "step": None,
+            "profile": profile,
+            "latest": True,
+            "total": len(newest),
+            "data": {sensor: [merged[sensor]] for sensor in sorted(merged)},
+            "timestamps": [max(times)] if merged and times else ([None] if merged else []),
+            # Per sensor: when its device measured it (seconds).
+            "measured": measured,
+            "sensor_points": sensor_points,
             "lageplan": lageplan.pk if lageplan else None,
         })
 

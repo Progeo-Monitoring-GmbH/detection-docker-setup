@@ -2,7 +2,12 @@ import {
   HEAT_PROFILES,
   type HeatProfile,
 } from '../components/device/sensorHeatmapTypes';
-import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
+import {
+  LATEST_RANGE,
+  TIME_RANGE_DAYS,
+  type StatusRange,
+  isTimeRange,
+} from './timeRanges';
 
 /**
  * What the status page of a location shows - its view, period, step, the
@@ -13,7 +18,7 @@ import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
  */
 export type StatusViewState = {
   view?: 'roof' | 'zeitreihe';
-  range?: TimeRange;
+  range?: StatusRange;
   /** The plan's step in seconds (picked in its dropdown). */
   step?: number;
   /** The plan's frame: its time (ISO-8601). */
@@ -138,8 +143,8 @@ export const parseStatusView = (params: URLSearchParams): StatusViewState => {
     state.view = view;
   }
   const range = params.get('range');
-  if (range && range in TIME_RANGE_DAYS) {
-    state.range = range as TimeRange;
+  if (range && (range === LATEST_RANGE || isTimeRange(range))) {
+    state.range = range;
   }
   const step = positiveInt(params.get('step'), 31 * 24 * 3600);
   if (step) {
@@ -168,6 +173,8 @@ export const parseStatusView = (params: URLSearchParams): StatusViewState => {
 export const statusViewKey = (state: StatusViewState) =>
   statusViewSearch(state);
 
-/** Whether `range` (the last N days up to `now`) still reaches back to `at`. */
-export const rangeReaches = (range: TimeRange, at: number, now: number) =>
+/** Whether `range` (the last N days up to `now`) still reaches back to `at`
+ * - the latest measurement reaches back to no moment. */
+export const rangeReaches = (range: StatusRange, at: number, now: number) =>
+  isTimeRange(range) &&
   now - at <= TIME_RANGE_DAYS[range] * 24 * 60 * 60 * 1000 * 0.95;

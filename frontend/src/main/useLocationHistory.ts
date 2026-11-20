@@ -30,7 +30,9 @@ type LocationHistory = {
 export const useLocationHistory = (
   locationId: number,
   demo: boolean,
-  spec: HeatmapWindow | null,
+  /** The window - or 'latest': every device's newest measurement as one
+   * frame (?latest=1, the status page's "Letzte Messung"). */
+  spec: HeatmapWindow | 'latest' | null,
   /** The value per sensor (?profile=) - |WP - EP| by default. */
   profile: HeatProfile = 'diff',
   revision = 0,
@@ -49,7 +51,8 @@ export const useLocationHistory = (
     if (!spec) {
       return;
     }
-    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${heatmapQuery(spec)}${heatProfileQuery(profile)}`;
+    const query = spec === 'latest' ? 'latest=1' : heatmapQuery(spec);
+    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${query}${heatProfileQuery(profile)}`;
     const request = `${url}#${revision}`;
     if (requested.current === request) {
       return;
