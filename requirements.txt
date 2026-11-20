@@ -1,7 +1,7 @@
 #   pip install django-storages[sftp]
 
 asgiref~=3.13.0
-celery~=5.7.0       
+celery~=5.7.0
 channels~=4.3.2
 channels-redis~=4.3.0
 charset-normalizer~=3.5.2
@@ -13,7 +13,7 @@ django-auto-prefetch~=1.14.0
 django_celery_results~=2.6.0
 django-colorfield~=0.14.0
 django-cors-headers~=4.9.0
-django-dbbackup~=5.4.0
+django-dbbackup~=5.4.1
 django-debug-toolbar~=8.0.0
 django-ipware~=8.0.0
 django-polymorphic~=4.11.7
@@ -33,13 +33,13 @@ opencv-python-headless~=5.0.0.93   # pre-built wheel (no musl wheel on PyPI): do
 paramiko~=5.1.0        # SFTP of the daily backup transfer (progeo/helper/backup_transfer.py)
 Pillow~=13.0.0
 pymodbus~=3.12.1        # >=3.13 breaks progeo/helper/modbus_simulator.py (datastore API change)
-pymupdf~=2.1            # runs in docker/cad_factory - keep aligned with its Dockerfile
+#pymupdf~=2.1          # runs in docker/cad_factory - keep aligned with its Dockerfile
 pip-review~=1.3.0       # pip-review --interactive      ||  pip-review -aC
 pip_audit~=2.10.1
 plotly~=7.1.0
 prometheus-client~=0.26.0   # /metrics for compose profile "monitoring" (progeo/metrics.py)
 psycopg2-binary~=2.9.13
-pyairtable~=3.5.0.post1
+pyairtable~=3.5.1
 pytesseract~=0.3.13    # OCR of the Lageplan tables (progeo/helper/plan_ocr.py); binary: docker/backend-base
 pytest~=9.2.0
 pytest-cov~=7.1.0
@@ -49,7 +49,7 @@ qrcode~=8.2
 redis~=8.1.0            # Celery broker: kombu's redis transport needs it but doesn't declare it
 reportlab~=5.1.0
 requests~=2.34.2
-ruff~=0.17.4            # ruff check --fix
+ruff~=0.17.6            # ruff check --fix
 sentry-sdk~=2.75.0      # error tracking -> GlitchTip, only active with SENTRY_DSN (progeo/sentry.py)
 supervisor~=4.3.0      # supervisord/supervisorctl of the backend container - from pip, not apk
 tablib~=3.10.0
