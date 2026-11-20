@@ -245,3 +245,25 @@ export const selectedPermissionPreset = (
   });
   return matchingPreset?.[0] ?? 'custom';
 };
+
+/**
+ * "Berechtigungen übernehmen von": the permissions of `source` (another
+ * user) for every code the editor may grant - the others stay as they are
+ * (the backend would refuse them anyway). `skipped`: what `source` holds
+ * but differs here and can't be granted.
+ */
+export const copyPermissions = (
+  current: string[],
+  source: string[],
+  grantableCodes: string[],
+): { permissions: string[]; skipped: string[] } => {
+  const grantable = new Set(grantableCodes);
+  const has = new Set(current);
+  return {
+    permissions: [
+      ...current.filter((code) => !grantable.has(code)),
+      ...source.filter((code) => grantable.has(code)),
+    ],
+    skipped: source.filter((code) => !grantable.has(code) && !has.has(code)),
+  };
+};

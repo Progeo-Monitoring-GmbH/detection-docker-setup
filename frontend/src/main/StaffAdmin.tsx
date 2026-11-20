@@ -40,10 +40,12 @@ import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
 import StaffNotificationCases from './StaffNotificationCases';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import HoverDetails from '../components/ui/kit/HoverDetails';
 import { staffFlags, useAccess } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
 import {
   applyPermissionPreset,
+  copyPermissions,
   PERMISSION_GROUPS,
   selectedPermissionPreset,
 } from './staffPermissions';
@@ -180,6 +182,7 @@ const UserFormModal = ({
   canInvite = true,
   canDisable = true,
   accounts = [],
+  users = [],
   testId,
 }: {
   show: boolean;
@@ -199,6 +202,8 @@ const UserFormModal = ({
   canDisable?: boolean;
   /** A mini admin's accounts: a new user joins one (chosen when there are several). */
   accounts?: UserAccount[];
+  /** The users whose permissions can be copied ("Berechtigungen übernehmen von"). */
+  users?: StaffUser[];
   /** data-testid of the dialog; its fields and buttons are "<testId>-<name>". */
   testId: string;
 }) => {
@@ -211,6 +216,11 @@ const UserFormModal = ({
   const [sendInvite, setSendInvite] = useState(false);
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
   const [accountId, setAccountId] = useState('');
+  // The user whose permissions were copied in - told until saved.
+  const [copied, setCopied] = useState<{
+    username: string;
+    skipped: string[];
+  } | null>(null);
   // Asked first (a ConfirmDialog inside this modal): a new password, or
   // saving with "active" switched off - the payload waits meanwhile.
   const [ask, setAsk] = useState<
@@ -222,6 +232,7 @@ const UserFormModal = ({
       return;
     }
     setAsk(null);
+    setCopied(null);
     setUsername(user?.username || '');
     setEmail(user?.email || '');
     setPassword('');
@@ -276,6 +287,27 @@ const UserFormModal = ({
     }
     onSave(payload);
   };
+
+  // Everyone but the edited user, by name.
+  const copySources = users
+    .filter((other) => other.id !== user?.id)
+    .sort((a, b) => a.username.localeCompare(b.username));
+  const copyFrom = (sourceId: string) => {
+    const source = copySources.find((other) => String(other.id) === sourceId);
+    if (!source) {
+      return;
+    }
+    const result = copyPermissions(
+      selectedPerms,
+      rowPermissions(source),
+      grantableCodes,
+    );
+    setSelectedPerms(result.permissions);
+    setCopied({ username: source.username, skipped: result.skipped });
+  };
+  const labelOf = (code: string) =>
+    permissionDefs.find((def) => def.code === code)?.label ??
+    permissionLabel(code);
 
   const groupedPermissionDefs = PERMISSION_GROUPS.map((group) => ({
     ...group,
@@ -384,12 +416,47 @@ const UserFormModal = ({
             )}
           </div>
 
-          <Form.Label className="d-block mb-1">
-            {t('staff_field_permissions')}{' '}
-            <small className="text-muted">
-              {t('staff_field_permissions_hint')}
-            </small>
-          </Form.Label>
+          <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-1">
+            <Form.Label className="mb-0">
+              {t('staff_field_permissions')}{' '}
+              <small className="text-muted">
+                {t('staff_field_permissions_hint')}
+              </small>
+            </Form.Label>
+            {copySources.length > 0 && grantableCodes.length > 0 && (
+              <Form.Select
+                size="sm"
+                className="staff-permission-copy"
+                aria-label={t('staff_permission_copy_from')}
+                // Always back to the prompt: picking the same user again copies again.
+                value=""
+                onChange={(event) => copyFrom(event.target.value)}
+                data-testid={childTestId(testId, 'permission-copy')}
+              >
+                <option value="">{t('staff_permission_copy_from')}</option>
+                {copySources.map((other) => (
+                  <option key={other.id} value={other.id}>
+                    {t('staff_permission_copy_option', {
+                      username: other.username,
+                      count: rowPermissions(other).length,
+                    })}
+                  </option>
+                ))}
+              </Form.Select>
+            )}
+          </div>
+          {copied && (
+            <div
+              className="small text-muted mb-2"
+              data-testid={childTestId(testId, 'permission-copied')}
+            >
+              {t('staff_permission_copied', { username: copied.username })}
+              {copied.skipped.length > 0 &&
+                ` ${t('staff_permission_copy_skipped', {
+                  codes: copied.skipped.map(labelOf).join(', '),
+                })}`}
+            </div>
+          )}
           <div
             className="staff-permissions-box mb-2"
             data-testid={childTestId(testId, 'permissions')}
@@ -459,8 +526,14 @@ const UserFormModal = ({
                           ? selectedLabels.join(', ')
                           : t('staff_permissions_none')}
                       </div>
-                      <details className="staff-permission-details">
-                        <summary>{t('staff_permission_customize')}</summary>
+                      <HoverDetails
+                        className="staff-permission-details"
+                        summary={t('staff_permission_customize')}
+                        testId={childTestId(
+                          testId,
+                          `permission-details-${group.id}`,
+                        )}
+                      >
                         <div className="staff-permission-options">
                           {group.definitions.map((def) => {
                             const grantable = grantableCodes.includes(def.code);
@@ -481,7 +554,7 @@ const UserFormModal = ({
                             );
                           })}
                         </div>
-                      </details>
+                      </HoverDetails>
                     </section>
                   </div>
                 );
@@ -1460,6 +1533,7 @@ const StaffAdmin = () => {
         canInvite={canInviteUser}
         canDisable={canDisableUser}
         accounts={isMiniAdmin ? (response.admin_accounts ?? []) : []}
+        users={response.users}
         testId="staff-user-create"
       />
 
@@ -1477,6 +1551,7 @@ const StaffAdmin = () => {
         onGeneratePassword={isStaff ? handleGeneratePassword : undefined}
         staffFields={isStaff}
         canDisable={canDisableUser}
+        users={response.users}
         testId="staff-user-edit-dialog"
       />
 

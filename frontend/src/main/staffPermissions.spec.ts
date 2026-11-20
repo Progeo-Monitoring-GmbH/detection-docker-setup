@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyPermissionPreset,
+  copyPermissions,
   PERMISSION_GROUPS,
   selectedPermissionPreset,
 } from './staffPermissions';
@@ -45,5 +46,23 @@ describe('staff permission presets', () => {
         group.permissions,
       ),
     ).toBe('custom');
+  });
+});
+
+describe('copyPermissions', () => {
+  const grantable = ['a', 'b', 'c'];
+
+  it('takes the grantable permissions of the other user', () => {
+    expect(copyPermissions(['a', 'x'], ['b', 'c'], grantable)).toEqual({
+      permissions: ['x', 'b', 'c'],
+      skipped: [],
+    });
+  });
+
+  it('keeps what can not be granted and names what was skipped', () => {
+    expect(copyPermissions(['x'], ['a', 'x', 'y'], grantable)).toEqual({
+      permissions: ['x', 'a'],
+      skipped: ['y'],
+    });
   });
 });

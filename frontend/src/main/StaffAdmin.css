@@ -221,3 +221,9 @@
 .table.staff-messaging-counts {
   max-width: 560px;
 }
+
+/* "Berechtigungen übernehmen von": beside the permissions' label. */
+.form-select.staff-permission-copy {
+  width: auto;
+  max-width: 100%;
+}
