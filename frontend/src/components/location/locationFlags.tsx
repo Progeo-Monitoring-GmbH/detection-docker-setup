@@ -5,6 +5,7 @@ import { BellSlashFill, Trash3Fill } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { staffFlags } from '../../main/access';
+import { createListeners } from '../../listeners';
 import { repeatedTestId } from '../../testIds';
 import './locationFlags.css';
 
@@ -67,7 +68,7 @@ const BATCH = 200;
 const store = new Map<number, LocationFlags>();
 const requested = new Set<number>();
 const queued = new Set<number>();
-const listeners = new Set<() => void>();
+const listeners = createListeners();
 let version = 0;
 type Auth = ReturnType<typeof useAuth>;
 
@@ -76,15 +77,10 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 const notify = () => {
   version += 1;
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 };
 
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+const { subscribe } = listeners;
 
 const getVersion = () => version;
 

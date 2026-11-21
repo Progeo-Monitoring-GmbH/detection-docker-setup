@@ -27,6 +27,7 @@ import {
 import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
 import { childTestId } from '../testIds';
+import { readJsonFile } from '../readJsonFile';
 import './LocationClimatePanels.css';
 
 type LocationClimatePanelsProps = {
@@ -196,28 +197,18 @@ const LocationClimatePanels = ({
   };
 
   /** Reads the picked file - the import is sent only after the confirmation. */
-  const readImport = (files: FileList | null) => {
-    if (!files || files.length === 0) {
-      return;
-    }
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(String(reader.result));
-      } catch {
-        showErrorBar(enqueueSnackbar, 'File is not valid JSON');
-        return;
-      }
-      const rows =
-        payload && typeof payload === 'object' && !Array.isArray(payload)
-          ? (payload as { data?: unknown }).data
-          : payload;
-      setPendingImport({ file: file.name, rows: Array.isArray(rows) ? rows.length : 0, payload });
-    };
-    reader.readAsText(file);
-  };
+  const readImport = (files: FileList | null) =>
+    readJsonFile(
+      files,
+      (payload, file) => {
+        const rows =
+          payload && typeof payload === 'object' && !Array.isArray(payload)
+            ? (payload as { data?: unknown }).data
+            : payload;
+        setPendingImport({ file, rows: Array.isArray(rows) ? rows.length : 0, payload });
+      },
+      () => showErrorBar(enqueueSnackbar, 'File is not valid JSON'),
+    );
 
   const importMeasurements = () => {
     if (!pendingImport) {

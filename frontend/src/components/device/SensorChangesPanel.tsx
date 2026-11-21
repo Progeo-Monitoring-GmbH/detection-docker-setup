@@ -4,6 +4,7 @@ import { CheckLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import type { SensorChange } from './measurementBands';
 import { childTestId } from '../../testIds';
+import { byNumberNullsLast } from '../ui/kit/sortNullsLast';
 import './SensorChangesPanel.css';
 
 /** Rows per page of the table. */
@@ -37,15 +38,7 @@ const formatPercent = (value: number) =>
   `${value > 0 ? '+' : value < 0 ? '−' : '±'}${Math.abs(value).toFixed(1)} %`;
 
 /** Ascending, a missing percentage after every number (also when DataTable reverses it). */
-const byPercent =
-  (pick: (change: SensorChange) => number | null) => (a: SensorChange, b: SensorChange) => {
-    const left = pick(a);
-    const right = pick(b);
-    if (left == null || right == null) {
-      return left == null && right == null ? 0 : left == null ? 1 : -1;
-    }
-    return left - right;
-  };
+const byPercent = byNumberNullsLast<SensorChange>;
 
 const wpPercent = (change: SensorChange) => percentChange(change.wpThen, change.wpNow);
 const epPercent = (change: SensorChange) => percentChange(change.epThen, change.epNow);

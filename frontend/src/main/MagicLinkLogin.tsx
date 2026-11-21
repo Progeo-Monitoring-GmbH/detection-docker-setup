@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import { internalPath } from '../internalPath';
 import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { OtpReason, otpReason } from './twoFactor';
 
@@ -34,10 +35,8 @@ const MagicLinkLogin = () => {
       otpStep ? { token, otp: otp.trim() } : { token },
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
-        const forward = String(response.data.forward || '');
-        // Only paths inside the app - never an absolute or protocol-relative URL.
-        const internal = forward.startsWith('/') && !forward.startsWith('//');
-        navigate(internal ? forward : '/', { replace: true });
+        // Only paths inside the app - never another origin.
+        navigate(internalPath(response.data.forward) ?? '/', { replace: true });
       },
       (err) => {
         setBusy(false);

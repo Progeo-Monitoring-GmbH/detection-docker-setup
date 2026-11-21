@@ -2,7 +2,6 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +25,7 @@ import {
   type SensorSpread,
   shownSensors,
 } from './sensorColumns';
+import useElementWidth from '../ui/useElementWidth';
 import './SensorColumnsPlot.css';
 
 const PLOT_TOP = 10;
@@ -118,21 +118,12 @@ const SensorColumnsPlot = ({
   const [level, setLevel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [width, setWidth] = useState(800);
   const [zoom, setZoom] = useState<number | null>(null);
   const [wheelHint, showWheelHint] = useWheelHint();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const width = useElementWidth(scrollerRef);
   const gutterRef = useRef<SVGSVGElement | null>(null);
 
-  useLayoutEffect(() => {
-    const element = scrollerRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth || 800));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   const shown = useMemo(() => shownSensors(count, spread, level, selected), [count, spread, level, selected]);
   const column = columnWidthOf(width, shown.length, zoom);

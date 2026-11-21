@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { jwtDecode } from 'jwt-decode';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import { internalPath } from '../internalPath';
 import { setDemoToken } from './demo';
 
 /**
@@ -46,9 +47,8 @@ const DemoLogin = () => {
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
         setDemoToken(token);
-        // Only paths inside the app - never an absolute or protocol-relative URL.
-        const internal = forward.startsWith('/') && !forward.startsWith('//');
-        navigate(internal ? forward : '/demo/', { replace: true });
+        // Only paths inside the app - never another origin.
+        navigate(internalPath(forward) ?? '/demo/', { replace: true });
       },
       () => {
         setDemoToken(null);

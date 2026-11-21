@@ -328,6 +328,14 @@ const CellFailed = ({
   </span>
 );
 
+/** A state cell while the row's details are loading - or failed to load. */
+const StatePending = ({ row, failed, t }: { row: LocationRow; failed: boolean; t: TFn }) =>
+  failed ? (
+    <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
+  ) : (
+    <CellLoading testId="locations-state-loading" rowId={row.id} t={t} />
+  );
+
 /** The State column: a dot and Online / Offline / No data. */
 const LocationStateCell = ({
   row,
@@ -339,11 +347,7 @@ const LocationStateCell = ({
   t: TFn;
 }) => {
   if (row.measurement_count === undefined) {
-    return failed ? (
-      <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
-    ) : (
-      <CellLoading testId="locations-state-loading" rowId={row.id} t={t} />
-    );
+    return <StatePending row={row} failed={failed} t={t} />;
   }
   const connectivity = locationConnectivity(row);
   return (
@@ -463,11 +467,7 @@ const LocationMobileStateCell = ({
   t: TFn;
 }) => {
   if (row.measurement_count === undefined) {
-    return failed ? (
-      <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
-    ) : (
-      <CellLoading testId="locations-state-loading" rowId={row.id} t={t} />
-    );
+    return <StatePending row={row} failed={failed} t={t} />;
   }
   const connectivity = locationConnectivity(row);
   return (

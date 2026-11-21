@@ -1,5 +1,6 @@
 import type { AxiosError, AxiosInstance } from 'axios';
 import { getBackendUrl } from './backendUrl';
+import { createListeners } from './listeners';
 
 /**
  * Notices that the backend is gone - restarted, updated, still booting - while
@@ -25,15 +26,12 @@ type Listener = () => void;
 
 let active = false;
 let probing: Promise<boolean> | null = null;
-const listeners = new Set<Listener>();
+const listeners = createListeners();
 
 export const isMaintenance = () => active;
 
 export function subscribeMaintenance(listener: Listener) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 
 function setMaintenance(value: boolean) {
@@ -41,7 +39,7 @@ function setMaintenance(value: boolean) {
     return;
   }
   active = value;
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 }
 
 /** Whether the backend answers at all. Any response but a gateway error

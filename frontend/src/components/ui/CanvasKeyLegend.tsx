@@ -8,6 +8,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronUp, Keyboard } from 'react-bootstrap-icons';
+import { createListeners } from '../../listeners';
 import { childTestId } from '../../testIds';
 import './CanvasKeyLegend.css';
 
@@ -30,7 +31,7 @@ export type LegendGroup = {
 
 // Collapsed or not - one state for every legend on the page, kept in
 // localStorage (a convenience: without it the legend starts open).
-const listeners = new Set<() => void>();
+const { subscribe, notify } = createListeners();
 const readCollapsed = () => {
   try {
     return window.localStorage.getItem(STORAGE_KEY) === '1';
@@ -46,11 +47,7 @@ const setCollapsed = (next: boolean) => {
   } catch {
     // Private mode / blocked storage: only this page keeps it.
   }
-  listeners.forEach((listener) => listener());
-};
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  notify();
 };
 
 const Keys = ({ keys }: { keys: string[] }) => (

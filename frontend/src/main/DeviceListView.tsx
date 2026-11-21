@@ -17,7 +17,7 @@ import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { formatDate } from './dateFormat';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
-import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
+import LocationPicker from '../components/location/LocationPicker';
 import DeviceCommandsDialog from '../components/device/DeviceCommandsDialog';
 import DeviceProvisionPanel, { type ProvisionedDevice } from '../components/device/DeviceProvisionPanel';
 import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
@@ -31,6 +31,7 @@ import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { staffFlags } from './access';
 import { repeatedTestId } from '../testIds';
 import useLocationParam from './useLocationParam';
+import usePickableLocations from '../components/location/usePickableLocations';
 import './DeviceListView.css';
 
 type HashKind = 'project' | 'mac' | 'legacy';
@@ -141,8 +142,7 @@ const DeviceListView = () => {
   // only the setup permission gets the setup alone.
   const canList = isStaff || hasPermission('module_devices_enabled');
 
-  const [locations, setLocations] = useState<PickableLocation[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(true);
+  const { locations, locationsLoading } = usePickableLocations('devices_locations_failed');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(false);
   const [pinging, setPinging] = useState(false);
@@ -161,25 +161,6 @@ const DeviceListView = () => {
   const requestRef = useRef(0);
 
   const { locationId, selectLocation } = useLocationParam();
-
-  const loadLocations = () =>
-    axiosConfig.perform_get(
-      auth,
-      '/v1/location/min/',
-      (response) => {
-        setLocations(Array.isArray(response?.data) ? response.data : []);
-        setLocationsLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, t('devices_locations_failed'), error);
-        setLocationsLoading(false);
-      },
-    );
-
-  useEffect(() => {
-    void loadLocations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadOverview = (id: number, ping: boolean) => {
     if (!canList) {

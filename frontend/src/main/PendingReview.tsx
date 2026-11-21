@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import AuthPage, { authButtonClass } from '../components/auth/AuthPage';
 import { COMPANY, telHref } from './company';
+import { internalPath } from '../internalPath';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected' | null;
 
@@ -32,9 +33,8 @@ const PendingReview = () => {
       '/api/auth-support/access-requests/me/',
       (response) => {
         setStatus((response.data.status ?? null) as ReviewStatus);
-        const url = String(response.data.demo_url || '');
-        // Only paths inside the app - never an absolute or protocol-relative URL.
-        setDemoUrl(url.startsWith('/') && !url.startsWith('//') ? url : null);
+        // Only paths inside the app - never another origin.
+        setDemoUrl(internalPath(response.data.demo_url));
       },
       () => undefined,
     );

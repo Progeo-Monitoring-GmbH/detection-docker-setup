@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Form, Modal, Spinner } from 'react-bootstrap';
 import { Copy } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import LocationPicker, { type PickableLocation } from '../location/LocationPicker';
+import usePickableLocations from '../location/usePickableLocations';
 import { showRequestError } from '../ui/Snackbar.jsx';
 import { childTestId, repeatedTestId } from '../../testIds';
 import { MIN_AREA_POINTS } from './heatLimitations';
@@ -63,8 +64,8 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy, testId = 'heat-limit-copy-d
   const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const [locations, setLocations] = useState<PickableLocation[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(true);
+  // Once per opening - the modal is mounted for one copy.
+  const { locations, locationsLoading } = usePickableLocations('heat_limit_copy_locations_failed');
   const [sourceId, setSourceId] = useState<number | null>(null);
   const [source, setSource] = useState<HeatLimitationSource | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -77,23 +78,6 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy, testId = 'heat-limit-copy-d
   const sourcePlans = source?.plans ?? [];
   const areas = planAreas(source, planId);
   const chosen = areas.filter((area) => selected.includes(area.id));
-
-  useEffect(() => {
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/location/min/',
-      (response) => {
-        setLocations(Array.isArray(response?.data) ? response.data : []);
-        setLocationsLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, t('heat_limit_copy_locations_failed'), error);
-        setLocationsLoading(false);
-      },
-    );
-    // Once per opening - the modal is mounted for one copy.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const selectSource = (location: PickableLocation | null) => {
     const request = ++requestRef.current;

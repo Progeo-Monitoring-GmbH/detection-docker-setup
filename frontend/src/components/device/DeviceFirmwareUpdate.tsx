@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
+import usePolledGet from './usePolledGet';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import BoldTrans from '../ui/kit/BoldTrans';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
@@ -67,47 +68,22 @@ const DeviceFirmwareUpdate = ({
   const [target, setTarget] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closedRef = useRef(false);
   const base = `/v1/device/${deviceId}/firmware/`;
 
-  const load = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    void axiosConfig.perform_get(
-      auth,
-      `${base}${query}`,
-      (response) => {
-        if (closedRef.current) {
-          return;
-        }
-        const next = response?.data as FirmwareResponse;
-        setData(next);
-        setTarget((current) => {
-          const remote = (next?.bundles ?? []).filter((bundle) => bundle.remote);
-          return remote.some((bundle) => bundle.id === current) ? current : (remote[0]?.id ?? '');
-        });
-        if (next?.update?.running) {
-          timerRef.current = setTimeout(load, REFRESH_MS);
-        }
-      },
-      (error) => showRequestError(enqueueSnackbar, t('device_firmware_load_failed'), error),
-    );
-  };
-
-  useEffect(() => {
-    closedRef.current = false;
-    load();
-    return () => {
-      closedRef.current = true;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId, query]);
+  const load = usePolledGet<FirmwareResponse>(
+    `${base}${query}`,
+    (next) => {
+      setData(next);
+      setTarget((current) => {
+        const remote = (next?.bundles ?? []).filter((bundle) => bundle.remote);
+        return remote.some((bundle) => bundle.id === current) ? current : (remote[0]?.id ?? '');
+      });
+      return Boolean(next?.update?.running);
+    },
+    (error) => showRequestError(enqueueSnackbar, t('device_firmware_load_failed'), error),
+    REFRESH_MS,
+    [deviceId, query],
+  );
 
   const start = () => {
     setBusy(true);

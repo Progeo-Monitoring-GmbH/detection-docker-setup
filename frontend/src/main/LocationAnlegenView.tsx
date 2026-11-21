@@ -11,6 +11,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import PhoneInput from '../components/ui/PhoneInput';
 import { childTestId, repeatedTestId } from '../testIds';
+import { readJsonFile } from '../readJsonFile';
 import './LocationAnlegenView.css';
 
 type AccountOption = { id: number; name: string };
@@ -333,24 +334,17 @@ const LocationAnlegenView = () => {
 
   /** Reads the picked file and counts its rows - sent only after the confirmation. */
   const readImport = (files: FileList | null) => {
-    if (!files || files.length === 0) {
-      return;
+    if (files?.length) {
+      setImportMsg(null);
     }
-    setImportMsg(null);
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(String(reader.result));
-      } catch {
-        showErrorBar(enqueueSnackbar, 'File is not valid JSON');
-        return;
-      }
-      const { rows, summary } = importSummary(payload);
-      setPendingImport({ file: file.name, payload, rows, summary });
-    };
-    reader.readAsText(file);
+    readJsonFile(
+      files,
+      (payload, file) => {
+        const { rows, summary } = importSummary(payload);
+        setPendingImport({ file, payload, rows, summary });
+      },
+      () => showErrorBar(enqueueSnackbar, 'File is not valid JSON'),
+    );
   };
 
   const importData = () => {

@@ -23,7 +23,7 @@ $input-border-color: #cac4c4;
 // Same stack as FONT_STACK in src/styles/fonts.ts (Plotly, canvas text).
 $font-family-sans-serif: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, sans-serif;
 
-@import '~bootstrap/scss/bootstrap';
+@import 'bootstrap/scss/bootstrap';
 
 .card-body {
   padding: 0 !important;

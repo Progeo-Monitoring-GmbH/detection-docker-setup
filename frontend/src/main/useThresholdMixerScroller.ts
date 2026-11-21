@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { columnWidthOf } from '../components/device/sensorColumns';
+import useElementWidth from '../components/ui/useElementWidth';
 import { useWheelHint, useZoomWheel } from '../components/ui/wheelZoom';
 import { keyScrollOf, type ScrollState } from './thresholdMixerView';
 
@@ -11,21 +12,12 @@ import { keyScrollOf, type ScrollState } from './thresholdMixerView';
  */
 const useThresholdMixerScroller = (count: number, loading: boolean) => {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(800);
+  // The scroller's width decides the column width (it mounts after loading).
+  const width = useElementWidth(scrollerRef, 800, [loading]);
   const [zoomColumn, setZoomColumn] = useState<number | null>(null);
   const [scroll, setScroll] = useState<ScrollState>({ left: 0, client: 0, total: 0 });
   const [wheelHint, showWheelHint] = useWheelHint();
 
-  // The scroller's width decides the column width.
-  useLayoutEffect(() => {
-    const element = scrollerRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth || 800));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [loading]);
 
   const column = columnWidthOf(width, count, zoomColumn);
   const plotWidth = Math.max(width, column * count);

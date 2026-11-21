@@ -2,7 +2,6 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +16,7 @@ import UsageHelp from '../components/ui/UsageHelp';
 import PlotHelp from '../components/ui/PlotHelp';
 import { gridValuesOf, labelEveryOf } from './thresholdMixer';
 import { paintMask } from './noiseProfiles';
+import useElementWidth from '../components/ui/useElementWidth';
 import { childTestId } from '../testIds';
 import './NoiseProfile.css';
 
@@ -87,7 +87,7 @@ const NoiseProfilePlot = ({
   const { t } = useTranslation();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(800);
+  const width = useElementWidth(scrollerRef);
   // The masks while dragging - committed with the drag's end.
   const [live, setLive] = useState<Masks | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -104,15 +104,6 @@ const NoiseProfilePlot = ({
   const masks = live ?? { mask_e, mask_w };
   const sensors = Math.max(masks.mask_e.length, masks.mask_w.length);
 
-  useLayoutEffect(() => {
-    const element = scrollerRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth || 800));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   const column = Math.max(MIN_COLUMN, width / Math.max(sensors, 1));
   const plotWidth = Math.max(width, column * sensors);

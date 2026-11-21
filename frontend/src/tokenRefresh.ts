@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { jwtDecode, type JwtPayload } from 'jwt-decode';
 import { getBackendBaseUrl } from './backendUrl';
+import { createListeners } from './listeners';
 
 /**
  * Access/refresh token handling shared by CoreAuthProvider and the axios
@@ -18,7 +19,7 @@ const REFRESH_TOKEN_KEY = 'refreshToken';
 const refreshUrl = () => `${getBackendBaseUrl()}/api/token/refresh/`;
 
 type TokenListener = (access: string, refresh: string) => void;
-const listeners = new Set<TokenListener>();
+const listeners = createListeners<[access: string, refresh: string]>();
 
 let refreshInFlight: Promise<string | null> | null = null;
 
@@ -57,16 +58,9 @@ export const storeTokens = (access: string, refresh?: string | null) => {
 
 export const clearStoredTokens = () => storeTokens('', '');
 
-export const onTokensRefreshed = (listener: TokenListener) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+export const onTokensRefreshed = (listener: TokenListener) => listeners.subscribe(listener);
 
-const notify = (access: string, refresh: string) => {
-  listeners.forEach((listener) => listener(access, refresh));
-};
+const notify = listeners.notify;
 
 /** Whether an access token is close enough to expiry to renew it early. */
 export const shouldRefreshAccessToken = (

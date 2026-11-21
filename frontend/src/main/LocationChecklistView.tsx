@@ -41,6 +41,7 @@ import QaScoreboard from './QaScoreboard';
 import { QA_CHECKED_EVENT } from './qaScoreboardData';
 import { repeatedTestId } from '../testIds';
 import useLocationParam from './useLocationParam';
+import usePickableLocations from '../components/location/usePickableLocations';
 import './LocationChecklistView.css';
 
 /**
@@ -266,8 +267,7 @@ const LocationChecklistView = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { locationId, selectLocation } = useLocationParam();
 
-  const [locations, setLocations] = useState<PickableLocation[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(true);
+  const { locations, setLocations, locationsLoading } = usePickableLocations('devices_locations_failed');
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<OverviewRow[] | null>(null);
@@ -281,22 +281,6 @@ const LocationChecklistView = () => {
   const [deniedFields, setDeniedFields] = useState<Set<string>>(new Set());
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
-
-  useEffect(() => {
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/location/min/',
-      (response) => {
-        setLocations(Array.isArray(response?.data) ? response.data : []);
-        setLocationsLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, t('devices_locations_failed'), error);
-        setLocationsLoading(false);
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadReadiness = (id: number) => {
     const request = ++requestRef.current;

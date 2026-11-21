@@ -6,12 +6,14 @@
  * fetch them again right away instead of at the next login.
  */
 
+import { createListeners } from './listeners';
+
 export const PERMISSIONS_HEADER = 'x-permissions-version';
 
 type Listener = () => void;
 
 let known: string | null = null;
-const listeners = new Set<Listener>();
+const listeners = createListeners();
 
 /** The version of an answer - a change from the one seen so far tells the listeners. */
 export const notePermissionsVersion = (value: unknown) => {
@@ -21,17 +23,12 @@ export const notePermissionsVersion = (value: unknown) => {
   const changed = known !== null && known !== value;
   known = value;
   if (changed) {
-    listeners.forEach((listener) => listener());
+    listeners.notify();
   }
 };
 
 /** Called whenever the permissions changed (returns the unsubscribe). */
-export const onPermissionsChanged = (listener: Listener) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+export const onPermissionsChanged = (listener: Listener) => listeners.subscribe(listener);
 
 /** Logged out / another user: the next version seen is the new baseline. */
 export const resetPermissionsVersion = () => {

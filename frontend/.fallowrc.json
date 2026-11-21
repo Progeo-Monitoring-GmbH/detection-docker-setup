@@ -1,12 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Paths as "**/src/..." globs: they match both from frontend/ (the CLI) and
+  // from the repo root (the VS Code extension, fallow.configPath in
+  // .vscode/settings.json points here).
   // Reached only through resolve.alias in vite.config.ts.
-  "entry": ["src/plotly.ts", "src/plotly-no-maplibre.css"],
-  // bootstrap: imported by scss/style.scss via the "~" alias.
+  "entry": ["**/src/plotly.ts", "**/src/plotly-no-maplibre.css"],
+  // bootstrap: imported by scss/style.scss (Sass, not seen as a JS import).
   // buffer: browser polyfill aliased for Plotly's source modules.
   "ignoreDependencies": ["bootstrap", "buffer"],
   "duplicates": {
-    // Vendored @font-face declarations.
-    "ignore": ["src/assets/fonts/**"]
+    "ignore": [
+      // Vendored @font-face declarations.
+      "**/src/assets/fonts/**",
+      // The privacy policy in German and English: the same structure on purpose.
+      "**/src/main/privacyPolicyContent.tsx",
+      "**/src/main/privacyPolicyContentEn.tsx"
+    ]
   }
 }

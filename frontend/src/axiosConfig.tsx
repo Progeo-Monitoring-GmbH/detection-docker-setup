@@ -213,7 +213,9 @@ export default class axiosConfig {
     );
   }
 
-  static async perform_post(
+  /** POST / PATCH: the same handling, only the method differs. */
+  private static async perform_write(
+    method: 'post' | 'patch',
     auth: AuthContextType | undefined,
     url: string,
     data,
@@ -224,10 +226,21 @@ export default class axiosConfig {
     axiosConfig.updateToken(config.token);
     return axiosConfig.handle(
       auth,
-      axiosConfig.holder.post(url, data, config),
+      axiosConfig.holder[method](url, data, config),
       callBackSuccess,
       callBackError,
     );
+  }
+
+  static async perform_post(
+    auth: AuthContextType | undefined,
+    url: string,
+    data,
+    callBackSuccess,
+    callBackError = defaultErrorCallback,
+    config: IConfig = {},
+  ) {
+    return axiosConfig.perform_write('post', auth, url, data, callBackSuccess, callBackError, config);
   }
 
   static async perform_patch(
@@ -238,13 +251,7 @@ export default class axiosConfig {
     callBackError = defaultErrorCallback,
     config: IConfig = {},
   ) {
-    axiosConfig.updateToken(config.token);
-    return axiosConfig.handle(
-      auth,
-      axiosConfig.holder.patch(url, data, config),
-      callBackSuccess,
-      callBackError,
-    );
+    return axiosConfig.perform_write('patch', auth, url, data, callBackSuccess, callBackError, config);
   }
 
   static async perform_get(

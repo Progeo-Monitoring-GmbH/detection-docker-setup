@@ -4,6 +4,8 @@
  * the comments on them - arrows, areas, whole screens.
  */
 
+import { internalPath } from '../internalPath';
+
 export const SCREEN_REVIEW_URL = '/v1/screen-review/';
 
 export type ScreenDevice = 'pc' | 'mobile';
@@ -98,8 +100,7 @@ export const imageUrl = (image: Pick<ScreenImage, 'url' | 'path'>) =>
  * A link into the portal for `url` - only a path of this site (no other
  * origin, no "javascript:"), else null.
  */
-export const portalHref = (url: string | null | undefined) =>
-  url && url.startsWith('/') && !url.startsWith('//') ? url : null;
+export const portalHref = (url: string | null | undefined) => internalPath(url);
 
 /** The element a step acts on, readable: "staff-user-edit [2]" or the CSS selector. */
 export const stepTarget = (step: ModalStep) =>

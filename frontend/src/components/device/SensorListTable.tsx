@@ -3,6 +3,7 @@ import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { childTestId, repeatedTestId } from '../../testIds';
 import { progeoTableStyles } from '../ui/kit/SearchableDataTable';
+import { byNumberNullsLast } from '../ui/kit/sortNullsLast';
 import './SensorListTable.css';
 
 export type SensorListRow = {
@@ -35,15 +36,7 @@ const readingClass = (row: SensorListRow, value: number | null, base = '') =>
     .filter(Boolean)
     .join(' ') || undefined;
 
-/** Sorts numbers ascending, missing values below every number (DataTable reverses it for descending). */
-const byNumber = (pick: (row: SensorListRow) => number | null) => (a: SensorListRow, b: SensorListRow) => {
-  const left = pick(a);
-  const right = pick(b);
-  if (left == null || right == null) {
-    return left == null && right == null ? 0 : left == null ? 1 : -1;
-  }
-  return left - right;
-};
+const byNumber = byNumberNullsLast<SensorListRow>;
 
 /**
  * "One row per sensor" (Status tab): next to the smartex heatmap - with the

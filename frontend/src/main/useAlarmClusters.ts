@@ -3,6 +3,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import useAlarmAcknowledge from './useAlarmAcknowledge';
 import type { VerdachtsstelleCluster } from './locationStatusData';
 
 const ALARM_WINDOW_DAYS = 90;
@@ -26,7 +27,6 @@ export const useAlarmClusters = (
   const [denied, setDenied] = useState(false);
   /** When the clusters arrived - active alarms run until then. */
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
-  const [acknowledging, setAcknowledging] = useState<Set<string>>(new Set());
 
   // Once per location (`auth` changes with the path, no reason to ask again).
   const authRef = useRef(auth);
@@ -63,39 +63,11 @@ export const useAlarmClusters = (
     }
   }, [enabled, fetchClusters, revision]);
 
-  /** Acknowledges every pending alarm of the cluster, then reloads. */
-  const acknowledge = (cluster: VerdachtsstelleCluster) => {
-    if (cluster.pending_ack_alarm_ids.length === 0) {
-      return;
-    }
-    setAcknowledging((prev) => new Set(prev).add(cluster.id));
-    Promise.all(
-      cluster.pending_ack_alarm_ids.map(
-        (alarmId) =>
-          new Promise<void>((resolve) => {
-            void axiosConfig.perform_post(
-              auth,
-              // ?location=: alarm ids are only unique within one project database.
-              `/v1/alarm/${alarmId}/acknowledge/?location=${locationId}`,
-              {},
-              () => resolve(),
-              (error) => {
-                showRequestError(enqueueSnackbar, 'Could not acknowledge alarm', error);
-                resolve();
-              },
-            );
-          }),
-      ),
-    ).then(() => {
-      setAcknowledging((prev) => {
-        const next = new Set(prev);
-        next.delete(cluster.id);
-        return next;
-      });
-      setLoading(true);
-      fetchClusters();
-    });
-  };
+  // Acknowledging every pending alarm of a cluster, then reloading.
+  const { acknowledging, acknowledge } = useAlarmAcknowledge(locationId, () => {
+    setLoading(true);
+    fetchClusters();
+  });
 
   return { clusters, loading, denied, loadedAt, acknowledging, acknowledge };
 };

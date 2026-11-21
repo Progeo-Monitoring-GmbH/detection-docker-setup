@@ -123,10 +123,6 @@ export default ({ mode }) => {
         // Plotly's source modules expect Node's Buffer; use the browser polyfill.
         { find: /^buffer$/, replacement: 'buffer/' },
         { find: '@', replacement:path.resolve(import.meta.dirname, 'src') },
-        {
-          find: /^~(.*)$/,
-          replacement: '$1',
-        },
       ],
     },
   });

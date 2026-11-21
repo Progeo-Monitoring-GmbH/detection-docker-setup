@@ -3,6 +3,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import useAlarmAcknowledge from './useAlarmAcknowledge';
 import {
   computedSuspicionUrl,
   type ComputedSuspicionPoint,
@@ -30,7 +31,6 @@ export const useComputedSuspicion = (
   const [answeredKey, setAnsweredKey] = useState<string | null>(null);
   const loading = enabled && answeredKey !== key;
   const [denied, setDenied] = useState(false);
-  const [acknowledging, setAcknowledging] = useState<Set<string>>(new Set());
 
   // `auth` changes with the path - no reason to ask again.
   const authRef = useRef(auth);
@@ -78,42 +78,8 @@ export const useComputedSuspicion = (
     }
   }, [enabled, fetchPoints, revision]);
 
-  /** Acknowledges every pending alarm of the point's sensors, then reloads. */
-  const acknowledge = (point: ComputedSuspicionPoint) => {
-    if (point.pending_ack_alarm_ids.length === 0) {
-      return;
-    }
-    setAcknowledging((prev) => new Set(prev).add(point.id));
-    Promise.all(
-      point.pending_ack_alarm_ids.map(
-        (alarmId) =>
-          new Promise<void>((resolve) => {
-            void axiosConfig.perform_post(
-              auth,
-              // ?location=: alarm ids are only unique within one project database.
-              `/v1/alarm/${alarmId}/acknowledge/?location=${locationId}`,
-              {},
-              () => resolve(),
-              (error) => {
-                showRequestError(
-                  enqueueSnackbar,
-                  'Could not acknowledge alarm',
-                  error,
-                );
-                resolve();
-              },
-            );
-          }),
-      ),
-    ).then(() => {
-      setAcknowledging((prev) => {
-        const next = new Set(prev);
-        next.delete(point.id);
-        return next;
-      });
-      fetchPoints();
-    });
-  };
+  // Acknowledging every pending alarm of a point, then reloading.
+  const { acknowledging, acknowledge } = useAlarmAcknowledge(locationId, fetchPoints);
 
   return {
     points,

@@ -6,6 +6,7 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import { staffFlags } from './access';
 import { isDemoUser } from './demo';
+import { createListeners } from '../listeners';
 
 /**
  * Favorite locations of the user (/v1/favorite/, FavoriteViewSet) - the
@@ -33,16 +34,11 @@ type FavoritesState = {
 const FAVORITES_URL = '/v1/favorite/';
 
 let state: FavoritesState = { token: null, favorites: [], max: 10, pending: [] };
-const listeners = new Set<() => void>();
+const { subscribe, notify } = createListeners();
 
 const setState = (change: Partial<FavoritesState>) => {
   state = { ...state, ...change };
-  listeners.forEach((listener) => listener());
-};
-
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  notify();
 };
 
 const getState = () => state;

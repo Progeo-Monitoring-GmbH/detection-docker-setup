@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import AuthPage from '../components/auth/AuthPage';
+import { internalPath } from '../internalPath';
 import {
   NewPasswordForm,
   OtpField,
@@ -40,10 +41,8 @@ const PasswordResetConfirm = () => {
       { token, otp: otp.trim(), password },
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
-        const forward = String(response.data.forward || '');
-        // Only paths inside the app - never an absolute or protocol-relative URL.
-        const internal = forward.startsWith('/') && !forward.startsWith('//');
-        navigate(internal ? forward : '/', { replace: true });
+        // Only paths inside the app - never another origin.
+        navigate(internalPath(response.data.forward) ?? '/', { replace: true });
       },
       (err) => {
         const reason = err?.response?.data?.reason;

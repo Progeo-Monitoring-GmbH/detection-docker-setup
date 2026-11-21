@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from 'react-bootstrap';
 import { Plus, X } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
+import usePolledGet from './usePolledGet';
 import { staffFlags } from '../../main/access';
 import { formatDate } from '../../main/dateFormat';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
@@ -121,46 +122,20 @@ const DeviceCommandsDialog = ({
   const [updateOpen, setUpdateOpen] = useState(false);
   const [logHour, setLogHour] = useState(() => new Date().getHours());
   const [result, setResult] = useState<{ id: number; command: string; value: unknown } | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closedRef = useRef(false);
-
   const query = device.location ? `?location=${device.location}` : '';
   const base = `/v1/device/${device.id}/commands/`;
 
-  const load = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    void axiosConfig.perform_get(
-      auth,
-      `${base}${query}`,
-      (response) => {
-        if (closedRef.current) {
-          return;
-        }
-        const next = response?.data as CommandsResponse;
-        setData(next);
-        // Follow open commands until the controller answered.
-        if (next?.commands?.some((command) => OPEN_STATUSES.has(command.status))) {
-          timerRef.current = setTimeout(load, REFRESH_MS);
-        }
-      },
-      (error) => showRequestError(enqueueSnackbar, t('device_commands_load_failed'), error),
-    );
-  };
-
-  useEffect(() => {
-    closedRef.current = false;
-    load();
-    return () => {
-      closedRef.current = true;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.id, device.location]);
+  const load = usePolledGet<CommandsResponse>(
+    `${base}${query}`,
+    (next) => {
+      setData(next);
+      // Follow open commands until the controller answered.
+      return Boolean(next?.commands?.some((command) => OPEN_STATUSES.has(command.status)));
+    },
+    (error) => showRequestError(enqueueSnackbar, t('device_commands_load_failed'), error),
+    REFRESH_MS,
+    [device.id, device.location],
+  );
 
   const commandLabel = (command: string) => t(`device_command_${command}`);
 
