@@ -181,14 +181,17 @@ export const ROUTES = [
       // A LoRaWAN project: climate panels with their own dialogs (superuser).
       ...climateModals('climate-panels'),
       {
+        // The per-sensor list: staff only, after switching from the computed points.
         testId: 'verdachtsstelle-acknowledge-dialog',
+        roles: ['staff'],
         open: [
+          { click: 'suspicion-mode-option', key: 'sensors' },
           { click: 'verdachtsstelle-toggle', key: 'sensor-6' },
           { click: 'verdachtsstelle-acknowledge', key: 'sensor-6' },
         ],
       },
       {
-        // mx-PEEL: the computed points (staff switch to them first).
+        // The computed points (the default, mx-PEEL has the most).
         testId: 'computed-suspicion-acknowledge-dialog',
         scenario: 'mx-peel',
         open: [

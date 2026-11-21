@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { ChevronDown, ChevronRight, CheckLg } from 'react-bootstrap-icons';
 import type { TFunction } from 'i18next';
@@ -10,6 +10,7 @@ import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
 import { splitResolved, toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
 import { formatDate } from './dateFormat';
+import AlarmHistoryTable from './AlarmHistoryTable';
 import { repeatedTestId } from '../testIds';
 import './VerdachtsstellenPanel.css';
 
@@ -26,6 +27,8 @@ type VerdachtsstellenPanelProps = {
   onAcknowledge: (cluster: VerdachtsstelleCluster) => void;
   /** Demo view: no write actions. */
   readOnly: boolean;
+  /** Right of the title (the staff's Berechnet / Je Sensor switch). */
+  headerActions?: ReactNode;
 };
 
 /** The Verdachtsstellen (suspected leaks) of the location, each expandable
@@ -40,6 +43,7 @@ const VerdachtsstellenPanel = ({
   acknowledging,
   onAcknowledge,
   readOnly,
+  headerActions,
 }: VerdachtsstellenPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -66,7 +70,11 @@ const VerdachtsstellenPanel = ({
     ));
 
   return (
-    <PanelCard testId="verdachtsstellen" title={t('status_verdachtsstellen_title')}>
+    <PanelCard
+      testId="verdachtsstellen"
+      title={t('status_verdachtsstellen_title')}
+      actions={headerActions}
+    >
       {denied ? (
         <div className="verdachtsstellen-denied" data-testid="verdachtsstellen-denied">
           {t('status_no_measurement_access')}
@@ -213,33 +221,11 @@ const VerdachtsstelleRow = ({
           <div className="verdachtsstellen-details-title">
             {t('status_alarm_history')}
           </div>
-          <div className="verdachtsstellen-history">
-            <div className="verdachtsstellen-history-head">
-              <span>{t('status_col_date')}</span>
-              <span>{t('status_col_state')}</span>
-              <span>{t('status_col_value')}</span>
-            </div>
-            {cluster.alarms.map((entry) => (
-              <div
-                key={entry.id}
-                className="verdachtsstellen-history-row"
-                {...repeatedTestId('verdachtsstelle-history-row', entry.id)}
-              >
-                <span className="verdachtsstellen-history-date">
-                  {formatDate(entry.triggered_at)}
-                </span>
-                <span>
-                  <StateBadge
-                    state={entry.state}
-                    label={t(`ui_${entry.state}`)}
-                  />
-                </span>
-                <span className="verdachtsstellen-history-value">
-                  {entry.value != null ? `${Math.round(entry.value)} mV` : '–'}
-                </span>
-              </div>
-            ))}
-          </div>
+          <AlarmHistoryTable
+            entries={cluster.alarms}
+            testId={`verdachtsstelle-history-${cluster.id}`}
+            rowTestId="verdachtsstelle-history-row"
+          />
           <div className="verdachtsstellen-actions">
             <button
               type="button"

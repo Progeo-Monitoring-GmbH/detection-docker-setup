@@ -115,41 +115,6 @@
   font-weight: 500;
 }
 
-.verdachtsstellen-history {
-  background: var(--progeo-surface);
-  border-radius: 11px;
-  overflow: hidden;
-}
-
-.verdachtsstellen-history-head,
-.verdachtsstellen-history-row {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr;
-  padding: 9px 12px;
-}
-
-.verdachtsstellen-history-head {
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-.verdachtsstellen-history-row {
-  font-size: 12.5px;
-  border-top: 1px solid var(--progeo-track-soft);
-}
-
-.verdachtsstellen-history-date {
-  font-weight: 500;
-}
-
-.verdachtsstellen-history-value {
-  font-weight: 600;
-  color: var(--progeo-orange);
-}
-
 .verdachtsstellen-actions {
   display: flex;
   align-items: center;

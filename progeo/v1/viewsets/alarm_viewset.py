@@ -395,8 +395,8 @@ class AlarmViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="computed-clusters", methods=["GET"])
     def computed_clusters(self, request, *args, **kwargs):
         """
-        smartex® mx-PEEL: the over-threshold sensors of the ?days= window
-        aggregated into computed suspicion points (helper/
+        The over-threshold sensors of the ?days= window (every product's
+        Status tab) aggregated into computed suspicion points (helper/
         suspicion_clusters.py, docs/mx_peel_suspicion_points.md) - a weighted
         KDE over the sensors' positions on the Lageplan and its peaks. Same
         parameters, scoping and window as clusters.
@@ -405,8 +405,10 @@ class AlarmViewSet(ProgeoModalViewSet):
         each point with its position (x, y: the normalized coordinates of
         the heatmap's sensor_points; x_m, y_m on a calibrated plan), the
         Lageplan it lies on, strength (0..1 of the strongest), the member
-        sensor_ids, worst state/severity, peak reading, first/last seen
-        and pending_ack_alarm_ids (acknowledged via alarm/<id>/acknowledge).
+        sensor_ids, worst state/severity, peak reading, first/last seen,
+        pending_ack_alarm_ids (acknowledged via alarm/<id>/acknowledge) and
+        the members' alarm history (alarms). A sensor not placed on a
+        Lageplan is a point of its own without x/y.
         """
         loaded = self._location_alarms(request)
         if not isinstance(loaded, tuple):

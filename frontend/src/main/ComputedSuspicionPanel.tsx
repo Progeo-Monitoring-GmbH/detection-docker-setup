@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { CheckLg, ChevronDown, ChevronRight } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -15,12 +15,13 @@ import {
   type SuspicionMode,
 } from './computedSuspicion';
 import { formatDate } from './dateFormat';
+import AlarmHistoryTable from './AlarmHistoryTable';
 import { toggledSet } from './locationStatusData';
 import { repeatedTestId } from '../testIds';
 import './VerdachtsstellenPanel.css';
 import './ComputedSuspicionPanel.css';
 
-/** Staff: computed points or the per-sensor Verdachtsstellen (mx-PEEL only). */
+/** Staff: computed points or the per-sensor Verdachtsstellen - in the panel's header. */
 export const SuspicionModeSwitch = ({
   mode,
   onChange,
@@ -58,10 +59,12 @@ type ComputedSuspicionPanelProps = {
   onAcknowledge: (point: ComputedSuspicionPoint) => void;
   /** Demo view: no write actions. */
   readOnly: boolean;
+  /** Right of the title (the staff's Berechnet / Je Sensor switch). */
+  headerActions?: ReactNode;
 };
 
 /**
- * smartex® mx-PEEL: the computed suspicion points of the selected range -
+ * The computed suspicion points of the selected range (every product) -
  * the places a leak most likely is, aggregated from the sensors over their
  * threshold (computedSuspicion.ts). Each row is lettered like its ring on
  * the plan and expands to its sensors and the acknowledgement.
@@ -74,6 +77,7 @@ const ComputedSuspicionPanel = ({
   acknowledging,
   onAcknowledge,
   readOnly,
+  headerActions,
 }: ComputedSuspicionPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -142,6 +146,7 @@ const ComputedSuspicionPanel = ({
     <PanelCard
       testId="computed-suspicion"
       title={t('suspicion_computed_title')}
+      actions={headerActions}
     >
       <div className="computed-suspicion-hint">
         {t('suspicion_computed_hint')}
@@ -216,9 +221,11 @@ const ComputedSuspicionRow = ({
         <span className="verdachtsstellen-row-main">
           <span className="verdachtsstellen-row-head">
             <span className="verdachtsstellen-row-label">
-              {t('suspicion_computed_point', {
-                count: point.sensor_ids.length,
-              })}
+              {point.sensor_ids.length === 1
+                ? sensorLabel(point.sensor_ids[0])
+                : t('suspicion_computed_point', {
+                    count: point.sensor_ids.length,
+                  })}
             </span>
             <StateBadge state={point.state} label={t(`ui_${point.state}`)} />
             {point.severity && (
@@ -233,6 +240,7 @@ const ComputedSuspicionRow = ({
             {point.last_seen &&
               ` · ${t('suspicion_last_seen', { date: formatDate(point.last_seen, 'date') })}`}
             {meters && ` · ${formatMeters(meters)}`}
+            {point.x == null && ` · ${t('suspicion_unplaced')}`}
           </span>
         </span>
         <span
@@ -282,6 +290,15 @@ const ComputedSuspicionRow = ({
               </span>
             ))}
           </div>
+          <div className="verdachtsstellen-details-title">
+            {t('status_alarm_history')}
+          </div>
+          <AlarmHistoryTable
+            entries={point.alarms ?? []}
+            sensorLabel={point.sensor_ids.length > 1 ? sensorLabel : undefined}
+            testId={`computed-suspicion-history-${point.id}`}
+            rowTestId="computed-suspicion-history-row"
+          />
           <div className="verdachtsstellen-actions">
             <button
               type="button"

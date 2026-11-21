@@ -1,6 +1,6 @@
 /**
- * smartex® mx-PEEL: computed suspicion points ("berechnete
- * Verdachtsstellen") - the over-threshold sensors of the selected range
+ * Computed suspicion points ("berechnete Verdachtsstellen", every product -
+ * mx-PEEL needed them first) - the over-threshold sensors of the selected range
  * aggregated into the places a leak most likely is (backend:
  * /v1/alarm/computed-clusters/, helper/suspicion_clusters.py, concept in
  * docs/mx_peel_suspicion_points.md). Pure helpers - the hook is
@@ -11,18 +11,23 @@ import type { SuspicionPlanMarker } from '../components/device/SuspicionMarkers'
 import type { Severity } from '../components/ui/kit/SeverityBadge';
 import type { AlarmState } from '../components/ui/kit/StateBadge';
 
-/** ProgeoLocation.PROJECT_TYPE_CHOICES: smartex® mx-PEEL. */
-export const PROJECT_TYPE_MX_PEEL = 7;
-
-export const usesComputedSuspicion = (projectType: number | null | undefined) =>
-  projectType === PROJECT_TYPE_MX_PEEL;
+/** One line of an "Alarm-Verlauf": a reading of an over-threshold sensor. */
+export type AlarmHistoryEntry = {
+  id: number | string;
+  triggered_at: string | null;
+  value: number | null;
+  state: AlarmState;
+  /** The sensor - set in a computed point's history (several sensors). */
+  sensor_id?: number;
+};
 
 /** One computed point, as /v1/alarm/computed-clusters/ answers it. */
 export type ComputedSuspicionPoint = {
   id: string;
-  /** Normalized position - the coordinates of the heatmap's sensor_points. */
-  x: number;
-  y: number;
+  /** Normalized position - the coordinates of the heatmap's sensor_points;
+   * null: the sensor isn't placed on a Lageplan (a point of its own, no ring). */
+  x: number | null;
+  y: number | null;
   /** The Lageplan (view) it lies on. */
   lageplan: number | null;
   /** 0..1 of the plan's strongest point. */
@@ -41,18 +46,19 @@ export type ComputedSuspicionPoint = {
   /** Position in metres on a calibrated plan. */
   x_m: number | null;
   y_m: number | null;
+  /** The member sensors' alarm history, newest first. */
+  alarms: AlarmHistoryEntry[];
 };
 
-/** What the Status tab shows for an mx-PEEL object: the computed points or
- * the per-sensor Verdachtsstellen (staff can switch). */
+/** What the Status tab shows: the computed points or the per-sensor
+ * Verdachtsstellen (staff can switch). */
 export type SuspicionMode = 'computed' | 'sensors';
 
 /** Customers always see the computed points; staff pick. */
 export const effectiveSuspicionMode = (
-  isMxPeel: boolean,
   isStaff: boolean,
   picked: SuspicionMode,
-): SuspicionMode | null => (isMxPeel ? (isStaff ? picked : 'computed') : null);
+): SuspicionMode => (isStaff ? picked : 'computed');
 
 /** "A", "B", ... "Z", "AA", ... - the letter of the n-th point (0-based),
  * the same on the plan and in the list. */
@@ -77,19 +83,26 @@ export const sensorList = (
   return more > 0 ? `${shown.join(', ')} +${more}` : shown.join(', ');
 };
 
-/** The markers of the points on the plan: lettered as in the list. */
+/** The markers of the points on the plan: lettered as in the list - a
+ * point of an unplaced sensor keeps its letter but has no ring. */
 export const suspicionMarkersOf = (
   points: ComputedSuspicionPoint[],
 ): SuspicionPlanMarker[] =>
-  points.map((point, index) => ({
-    id: point.id,
-    x: point.x,
-    y: point.y,
-    lageplan: point.lageplan,
-    label: pointLetter(index),
-    state: point.state,
-    strength: point.strength,
-  }));
+  points.flatMap((point, index) =>
+    point.x == null || point.y == null
+      ? []
+      : [
+          {
+            id: point.id,
+            x: point.x,
+            y: point.y,
+            lageplan: point.lageplan,
+            label: pointLetter(index),
+            state: point.state,
+            strength: point.strength,
+          },
+        ],
+  );
 
 /** The markers on the shown view (Lageplan) - those of no plan on every view. */
 export const suspicionsOnPlan = (

@@ -6,7 +6,6 @@ import {
   sensorList,
   suspicionMarkersOf,
   suspicionsOnPlan,
-  usesComputedSuspicion,
   type ComputedSuspicionPoint,
 } from './computedSuspicion';
 
@@ -32,29 +31,18 @@ const point = (
   pending_ack_alarm_ids: [10],
   x_m: null,
   y_m: null,
+  alarms: [],
   ...overrides,
 });
 
-describe('usesComputedSuspicion', () => {
-  it('is on for smartex mx-PEEL only', () => {
-    expect(usesComputedSuspicion(7)).toBe(true);
-    expect(usesComputedSuspicion(1)).toBe(false);
-    expect(usesComputedSuspicion(null)).toBe(false);
-  });
-});
-
 describe('effectiveSuspicionMode', () => {
-  it('always shows customers the computed points of an mx-PEEL object', () => {
-    expect(effectiveSuspicionMode(true, false, 'sensors')).toBe('computed');
+  it('always shows customers the computed points', () => {
+    expect(effectiveSuspicionMode(false, 'sensors')).toBe('computed');
   });
 
   it('lets staff pick', () => {
-    expect(effectiveSuspicionMode(true, true, 'sensors')).toBe('sensors');
-    expect(effectiveSuspicionMode(true, true, 'computed')).toBe('computed');
-  });
-
-  it('is off for other products', () => {
-    expect(effectiveSuspicionMode(false, true, 'computed')).toBeNull();
+    expect(effectiveSuspicionMode(true, 'sensors')).toBe('sensors');
+    expect(effectiveSuspicionMode(true, 'computed')).toBe('computed');
   });
 });
 
@@ -98,6 +86,20 @@ describe('suspicionMarkersOf', () => {
     ).toEqual([
       ['computed-1', 'A', 'neu', 1],
       ['computed-7', 'B', 'geloest', 0.4],
+    ]);
+  });
+});
+
+describe('suspicionMarkersOf - unplaced sensors', () => {
+  it('gives them no ring but keeps the letters of the others', () => {
+    const markers = suspicionMarkersOf([
+      point('a'),
+      point('b', { x: null, y: null, lageplan: null }),
+      point('c'),
+    ]);
+    expect(markers.map((marker) => [marker.id, marker.label])).toEqual([
+      ['a', 'A'],
+      ['c', 'C'],
     ]);
   });
 });

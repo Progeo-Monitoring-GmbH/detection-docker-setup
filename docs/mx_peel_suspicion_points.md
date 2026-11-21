@@ -1,10 +1,10 @@
-# mx-PEEL: computed suspicion points
+# Computed suspicion points
 
-For smartex® mx-PEEL locations (project type 7), the Status tab doesn't list one Verdachtsstelle per sensor. It shows **computed suspicion points**: the places where a leak is most likely, aggregated from all sensors that were over their threshold in the selected period.
+The Status tab of every product (since 2026-11-21; first only smartex® mx-PEEL, project type 7) doesn't list one Verdachtsstelle per sensor. It shows **computed suspicion points**: the places where a leak is most likely, aggregated from all sensors that were over their threshold in the selected period.
 
 ## Why
 
-An mx-PEEL roof has many sensors close together. One leak lets several neighbouring sensors go over their threshold at the same time, so the per-sensor list shows one leak as a dozen entries. Customers need "where is the leak", not "which sensors fired".
+A roof has many sensors close together, an mx-PEEL roof most of all. One leak lets several neighbouring sensors go over their threshold at the same time, so the per-sensor list shows one leak as a dozen entries. Customers need "where is the leak", not "which sensors fired".
 
 ## How the points are computed
 
@@ -23,6 +23,8 @@ Code: [progeo/helper/suspicion_clusters.py](../progeo/helper/suspicion_clusters.
 4. **Members.** Each over-threshold sensor joins its nearest peak within `ASSIGN_SIGMAS × sigma`. A peak without members is dropped.
 
 **Safety rule:** an *active* sensor (an alarm not yet normalized) never disappears. If it is left over (too weak, or too far from every peak), it becomes a point of its own. Weak sensors that are already resolved are dropped; hiding those is the purpose of the aggregation.
+
+**Unplaced sensors:** a sensor without a position on a Lageplan (no measure point, or one without coordinates) can't be aggregated. It becomes a point of its own with `x`/`y`/`lageplan` null: listed with its letter and "not placed on the Lageplan", but without a ring on the plan. Disabled sensors are left out.
 
 Each Lageplan (view) of a location gets its own calculation, in its own coordinates.
 
@@ -50,14 +52,16 @@ The period is the Status tab's range. A longer range holds more alarms, so it ca
 - `max_value`, `max_exceedance`, `readings`.
 - `first_seen`, `last_seen`.
 - `alarm_ids`, `pending_ack_alarm_ids`.
+- `alarms`: the member sensors' alarm history merged, newest first, each entry with its `sensor_id` (at most `HISTORY_LIMIT` = 1000). The expanded point shows it as the "Alarm-Verlauf" table (25 rows per page, with a sensor column when the point has several sensors).
 
 Acknowledging a point acknowledges every pending alarm of its member sensors (`/v1/alarm/<id>/acknowledge/`).
 
 ## In the portal
 
 - **Customers** see the computed points in the "Suspected leak locations" panel and as lettered rings (A, B, ...) over the heatmap. The heatmap stays. Ring size follows the strength; ring colour follows the state (red: new, orange: acknowledged, grey: resolved).
-- **Staff** (`is_staff` or `is_superuser`) can switch between "Computed" and "Per sensor" above the panel. With "Show as normal user" on, staff see the customer view.
-- Other products keep the per-sensor Verdachtsstellen.
+- **Staff** (`is_staff` or `is_superuser`) can switch between "Computed" and "Per sensor" in the panel's header. With "Show as normal user" on, staff see the customer view.
+- The "Verdachtsstellen" KPI counts the open computed points (per sensor while staff look at "Per sensor").
+- LoRaWAN climate objects have no Verdachtsstellen.
 
 Frontend: [computedSuspicion.ts](../frontend/src/main/computedSuspicion.ts), [useComputedSuspicion.ts](../frontend/src/main/useComputedSuspicion.ts), [ComputedSuspicionPanel.tsx](../frontend/src/main/ComputedSuspicionPanel.tsx), [SuspicionMarkers.tsx](../frontend/src/components/device/SuspicionMarkers.tsx).
 

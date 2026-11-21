@@ -174,14 +174,57 @@ def test_api_window_decides_which_alarms_count(api_client, peel_world):
     assert sorted(point["sensor_ids"] for point in long["points"]) == [[recent], [old]]
 
 
-def test_api_skips_unplaced_and_disabled_sensors(api_client, peel_world):
+def test_api_skips_disabled_sensors(api_client, peel_world):
     _account, location, device, member = peel_world
     f.make_measure_point(location, 500, nx=0.5, ny=0.5, x=0.5, y=0.5, disabled=True)
     f.make_alarm(device, sensor_id=500, value=300, triggered_ago=f.minutes(30))
-    f.make_alarm(device, sensor_id=999, value=300, triggered_ago=f.minutes(30))  # no measure point
     api_client.force_authenticate(user=member)
 
     assert _computed(api_client, location)["points"] == []
+
+
+def test_api_an_unplaced_sensor_is_a_point_of_its_own(api_client, peel_world):
+    """No position on a Lageplan: it can't be aggregated, but its alarm must not disappear."""
+    _account, location, device, member = peel_world
+    f.make_alarm(device, sensor_id=999, value=300, triggered_ago=f.minutes(30))  # no measure point
+    api_client.force_authenticate(user=member)
+
+    [point] = _computed(api_client, location)["points"]
+
+    assert point["sensor_ids"] == [999]
+    assert (point["x"], point["y"], point["lageplan"]) == (None, None, None)
+    assert point["state"] == "neu" and point["pending_ack_alarm_ids"]
+
+
+def test_api_points_carry_the_alarm_history_of_their_sensors(api_client, peel_world):
+    _account, location, device, member = peel_world
+    first, second = _sensor_at(0.1, 0.1), _sensor_at(0.2, 0.1)
+    f.make_alarm(device, sensor_id=first, value=300, triggered_ago=f.minutes(90))
+    f.make_alarm(device, sensor_id=second, value=280, triggered_ago=f.minutes(30))
+    api_client.force_authenticate(user=member)
+
+    [point] = _computed(api_client, location)["points"]
+
+    history = point["alarms"]
+    assert [entry["sensor_id"] for entry in history] == [second, first]  # newest first
+    assert len({entry["id"] for entry in history}) == len(history)
+    assert all(entry["state"] == "neu" for entry in history)
+
+
+def test_api_clusters_every_product(api_client):
+    """Not only mx-PEEL: any location with placed sensors gets computed points."""
+    account = f.make_account()
+    location = f.make_location(account, project_type=1)
+    device = f.make_device(location, mac="AA:DD")
+    for index, (x, y) in enumerate(GRID, start=1):
+        f.make_measure_point(location, index, nx=x, ny=y, x=x, y=y)
+    for sensor in (_sensor_at(0.1, 0.1), _sensor_at(0.2, 0.1)):
+        f.make_alarm(device, sensor_id=sensor, value=300, triggered_ago=f.minutes(30))
+    api_client.force_authenticate(user=f.make_user(perms=MEASURE, accounts=[account]))
+
+    points = _computed(api_client, location)["points"]
+
+    assert [len(point["sensor_ids"]) for point in points] == [2]
 
 
 def test_api_of_a_foreign_location_is_empty(api_client, peel_world):

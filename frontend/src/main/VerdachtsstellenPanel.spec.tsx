@@ -40,6 +40,23 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  // The Alarm-Verlauf is a DataTable, which asks for the colour scheme; jsdom has no matchMedia.
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  // Its pagination watches its size.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -113,5 +130,23 @@ describe('VerdachtsstellenPanel', () => {
     click('verdachtsstelle-acknowledge');
     click('verdachtsstelle-acknowledge-dialog-confirm');
     expect(onAcknowledge).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+  });
+});
+
+describe('VerdachtsstellenPanel - Alarm-Verlauf', () => {
+  it('pages the alarm history in a DataTable, 25 rows at a time', () => {
+    const open = cluster('sensor-6', 6, 'neu');
+    open.alarms = Array.from({ length: 40 }, (_, index) => ({
+      id: index,
+      triggered_at: new Date(Date.UTC(2026, 10, 20, 12) - index * 60_000).toISOString(),
+      value: 150 + index,
+      state: 'neu' as const,
+    }));
+    render([open]);
+
+    act(() => (container.querySelector('[data-testid="verdachtsstelle-toggle"]') as HTMLElement).click());
+
+    expect(container.querySelectorAll('[data-testid="verdachtsstelle-history-row"]')).toHaveLength(25);
+    expect(byTestId('verdachtsstelle-history-sensor-6')).not.toBeNull();
   });
 });

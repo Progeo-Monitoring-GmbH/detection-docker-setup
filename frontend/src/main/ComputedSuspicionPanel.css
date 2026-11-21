@@ -1,10 +1,11 @@
 /* smartex® mx-PEEL: the computed suspicion points (ComputedSuspicionPanel.tsx).
    The rows reuse the Verdachtsstellen styles (VerdachtsstellenPanel.css). */
 
+/* The staff's Berechnet / Je Sensor switch, in the panel's header - an
+   extra row above the panel pushed it below the plan's top edge. */
 .computed-suspicion-mode {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 8px;
 }
 
 .computed-suspicion-hint {

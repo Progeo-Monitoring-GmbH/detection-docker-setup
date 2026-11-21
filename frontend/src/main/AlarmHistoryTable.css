@@ -1,0 +1,17 @@
+/* AlarmHistoryTable.tsx: the "Alarm-Verlauf" of a Verdachtsstelle or a
+   computed point. Theme variables: scss/main.css. */
+
+.alarm-history {
+  background: var(--progeo-surface);
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.alarm-history-date {
+  font-weight: 600;
+}
+
+.alarm-history-value {
+  font-weight: 700;
+  color: var(--progeo-orange);
+}

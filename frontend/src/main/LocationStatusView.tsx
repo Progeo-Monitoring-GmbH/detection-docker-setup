@@ -63,7 +63,6 @@ import ComputedSuspicionPanel, {
 import {
   effectiveSuspicionMode,
   suspicionMarkersOf,
-  usesComputedSuspicion,
   type SuspicionMode,
 } from './computedSuspicion';
 import { useComputedSuspicion } from './useComputedSuspicion';
@@ -298,11 +297,15 @@ const LocationStatusHeader = ({
  * since its newest measurement. */
 const StatusKpis = ({
   clusters,
+  openSuspicions,
   threshold,
   anlage,
   now,
 }: {
   clusters: VerdachtsstelleCluster[];
+  /** The open Verdachtsstellen as the panel shows them (the computed
+   * points); null: one per sensor. */
+  openSuspicions: number | null;
   threshold: number | null;
   anlage: { state: AnlageState; last: number | null; next: number | null };
   now: number;
@@ -343,6 +346,7 @@ const StatusKpis = ({
     (cluster) => cluster.state !== 'geloest',
   );
   const worstSeverity = worstSeverityOf(openClusters);
+  const openCount = openSuspicions ?? openClusters.length;
   const highestReading = highestOf(
     clusters.map((cluster) => cluster.max_value),
   );
@@ -357,15 +361,15 @@ const StatusKpis = ({
           value: worstSeverity
             ? t(`ui_severity_${worstSeverity}` as const)
             : t('status_kpi_ok'),
-          note: openClusters.length
-            ? t('status_kpi_note_open', { count: openClusters.length })
+          note: openCount
+            ? t('status_kpi_note_open', { count: openCount })
             : t('status_kpi_note_none'),
           valueColor: severityColor(worstSeverity),
         },
         {
           testId: 'status-kpi-verdachtsstellen',
           label: t('status_kpi_verdachtsstellen'),
-          value: String(openClusters.length),
+          value: String(openCount),
           unit: t('status_kpi_active_unit'),
         },
         {
@@ -618,20 +622,17 @@ const LocationStatusView = ({
     acknowledging,
     acknowledge,
   } = useAlarmClusters(locationId, demo, !isLorawan, liveRevision);
-  // smartex® mx-PEEL: computed suspicion points of the range instead of one
-  // Verdachtsstelle per sensor - staff can switch (computedSuspicion.ts).
+  // Computed suspicion points of the range instead of one Verdachtsstelle
+  // per sensor (every product) - staff can switch (computedSuspicion.ts).
   const [pickedSuspicionMode, setSuspicionMode] =
     useState<SuspicionMode>('computed');
-  const suspicionMode = effectiveSuspicionMode(
-    usesComputedSuspicion(location?.project_type),
-    isStaff,
-    pickedSuspicionMode,
-  );
+  const suspicionMode = effectiveSuspicionMode(isStaff, pickedSuspicionMode);
   const computed = useComputedSuspicion(
     locationId,
     rangeDays,
     demo,
-    suspicionMode === 'computed',
+    // LoRaWAN climate objects have no Verdachtsstellen.
+    suspicionMode === 'computed' && !isLorawan,
     liveRevision,
   );
   const suspicionMarkers = useMemo(
@@ -757,6 +758,11 @@ const LocationStatusView = ({
     [clusters, clustersLoadedAt, openedAt, sensorLabel, t],
   );
 
+  // In the panel's header - a row of its own pushed the panel below the plan's top.
+  const suspicionSwitch = isStaff ? (
+    <SuspicionModeSwitch mode={suspicionMode} onChange={setSuspicionMode} />
+  ) : undefined;
+
   return (
     <div className="status-view" data-testid="page-location-status">
       <LocationStatusHeader
@@ -780,6 +786,13 @@ const LocationStatusView = ({
             !clustersDenied && (
               <StatusKpis
                 clusters={clusters}
+                openSuspicions={
+                  suspicionMode === 'computed' && !computed.loading
+                    ? computed.points.filter(
+                        (point) => point.state !== 'geloest',
+                      ).length
+                    : null
+                }
                 threshold={thresholdValue}
                 anlage={anlageStatusOf(
                   measurementRange,
@@ -878,12 +891,6 @@ const LocationStatusView = ({
                 />
               </div>
               <div className="status-column-side">
-                {suspicionMode != null && isStaff && (
-                  <SuspicionModeSwitch
-                    mode={suspicionMode}
-                    onChange={setSuspicionMode}
-                  />
-                )}
                 {suspicionMode === 'computed' ? (
                   <ComputedSuspicionPanel
                     points={computed.points}
@@ -893,6 +900,7 @@ const LocationStatusView = ({
                     acknowledging={computed.acknowledging}
                     onAcknowledge={computed.acknowledge}
                     readOnly={demo}
+                    headerActions={suspicionSwitch}
                   />
                 ) : (
                   <VerdachtsstellenPanel
@@ -906,6 +914,7 @@ const LocationStatusView = ({
                     acknowledging={acknowledging}
                     onAcknowledge={acknowledge}
                     readOnly={demo}
+                    headerActions={suspicionSwitch}
                   />
                 )}
               </div>

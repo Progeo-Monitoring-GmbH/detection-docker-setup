@@ -43,13 +43,41 @@ const point = (
   pending_ack_alarm_ids: [10],
   x_m: null,
   y_m: null,
+  alarms: [],
   ...overrides,
 });
+
+/** `count` readings of the sensors 3 and 4, newest first. */
+const history = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `${index % 2 ? 4 : 3}:${index}`,
+    sensor_id: index % 2 ? 4 : 3,
+    triggered_at: new Date(Date.UTC(2026, 10, 20, 12) - index * 60_000).toISOString(),
+    value: 200 + index,
+    state: 'neu' as const,
+  }));
 
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  // DataTable asks for the colour scheme; jsdom has no matchMedia.
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  // Its pagination watches its size.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -146,6 +174,40 @@ describe('ComputedSuspicionPanel', () => {
     ) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.hidden).toBe(true);
+  });
+
+  it('pages the alarm history of a point, 25 rows at a time, with the sensor of each', () => {
+    renderPanel({ points: [point('computed-3', { alarms: history(30) })] });
+
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')?.click());
+
+    const rows = container.querySelectorAll(
+      '[data-testid="computed-suspicion-history-row"]',
+    );
+    expect(rows).toHaveLength(25);
+    const table = byTestId('computed-suspicion-history-computed-3');
+    expect(table?.textContent).toContain('status_col_sensor');
+    expect(table?.textContent).toContain('Sensor 4');
+  });
+
+  it('names a single-sensor point by its sensor and marks it unplaced without a position', () => {
+    renderPanel({
+      points: [
+        point('computed-9', { sensor_ids: [9], x: null, y: null, lageplan: null }),
+      ],
+    });
+
+    const row = byTestId('computed-suspicion-row', 'computed-9');
+    expect(row?.textContent).toContain('Sensor 9');
+    expect(row?.textContent).toContain('suspicion_unplaced');
+  });
+
+  it('shows the header actions (the staff switch) in the panel header', () => {
+    renderPanel({ headerActions: <span data-testid="switch">switch</span> });
+
+    expect(
+      container.querySelector('.progeo-panel-head [data-testid="switch"]'),
+    ).not.toBeNull();
   });
 
   it('says so when there is nothing or no access', () => {

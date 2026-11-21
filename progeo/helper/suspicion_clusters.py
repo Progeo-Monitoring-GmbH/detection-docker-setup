@@ -1,8 +1,8 @@
-"""Computed suspicion points ("berechnete Verdachtsstellen") for smartex®
-mx-PEEL - see docs/mx_peel_suspicion_points.md.
+"""Computed suspicion points ("berechnete Verdachtsstellen") - every
+product's Status tab, see docs/mx_peel_suspicion_points.md.
 
-An mx-PEEL roof has many sensors close together; a leak lets several
-neighbours go over their threshold at once, so the per-sensor list
+A roof has many sensors close together (mx-PEEL most of all); a leak lets
+several neighbours go over their threshold at once, so the per-sensor list
 (AlarmViewSet.clusters) shows one leak as a dozen Verdachtsstellen. Here
 the over-threshold sensors of the selected time range are aggregated into
 the places a leak most likely is - the same "detect cluster" idea as
@@ -28,7 +28,11 @@ helper/weighted_heatmap.py:
 Safety rule: a sensor that is still active (an alarm not normalized) never
 disappears - left over (too weak or too far from every peak), it becomes a
 point of its own. Weak resolved sensors left over are dropped: they are
-what the aggregation is meant to hide.
+what the aggregation is meant to hide. A sensor without a position on a
+Lageplan can't be aggregated - it is a point of its own (no x/y).
+
+Each point carries the alarm history of its sensors (newest first, at most
+HISTORY_LIMIT entries) for the "Alarm-Verlauf" table.
 
 A longer time range holds more alarms, so it can yield more (or other)
 points - "last year" may show three leaks, "last 24 h" only the one still
@@ -59,6 +63,8 @@ ASSIGN_SIGMAS = 2.5
 RESOLUTION = 160
 # The KDE area: the sensors' bounding box plus this many sigmas.
 PAD_SIGMAS = 3.0
+# Alarm history entries per point (its sensors' together, newest first).
+HISTORY_LIMIT = 1000
 
 STATE_ORDER = {"geloest": 0, "quittiert": 1, "neu": 2}
 SEVERITY_ORDER = {"beobachten": 0, "alarm": 1, "kritisch": 2}
@@ -101,8 +107,19 @@ def _worst(values, order):
     return max(values, key=lambda value: order.get(value, -1)) if values else None
 
 
+def _history(members) -> list[dict]:
+    """The members' alarm histories merged, each entry with its sensor."""
+    entries = [
+        {**entry, "id": f"{member['sensor_id']}:{entry.get('id')}", "sensor_id": member["sensor_id"]}
+        for member in members
+        for entry in member.get("alarms") or []
+    ]
+    entries.sort(key=lambda entry: _iso(entry.get("triggered_at")) or "", reverse=True)
+    return entries[:HISTORY_LIMIT]
+
+
 def _point(members, x, y, strength, value):
-    """One computed suspicion point from its member sensors."""
+    """One computed suspicion point from its member sensors (x/y None: not on a plan)."""
     sensor_ids = sorted(member["sensor_id"] for member in members)
     firsts = [member["first_seen"] for member in members if member.get("first_seen")]
     lasts = [member["last_seen"] for member in members if member.get("last_seen")]
@@ -110,8 +127,8 @@ def _point(members, x, y, strength, value):
     exceedances = [member["exceedance"] for member in members if member.get("exceedance") is not None]
     return {
         "id": f"computed-{sensor_ids[0]}",
-        "x": round(float(x), 4),
-        "y": round(float(y), 4),
+        "x": round(float(x), 4) if x is not None else None,
+        "y": round(float(y), 4) if y is not None else None,
         "lageplan": members[0].get("lageplan"),
         "strength": round(float(strength), 3),
         "value": float(value),
@@ -128,6 +145,7 @@ def _point(members, x, y, strength, value):
         "pending_ack_alarm_ids": sorted(
             {alarm_id for member in members for alarm_id in member.get("pending_ack_alarm_ids", [])}
         ),
+        "alarms": _history(members),
     }
 
 
@@ -237,18 +255,16 @@ def computed_suspicion_points(location, db_name: str, clusters) -> tuple[list[di
         positions.setdefault(point.sensor_order, (plan_id, x, y, point.threshold, point.disabled))
 
     sensors_by_plan = {}
+    unplaced = []
     for cluster in clusters:
-        placed = positions.get(cluster["sensor_id"])
-        if placed is None:
-            continue
-        plan_id, x, y, own_threshold, disabled = placed
+        plan_id, x, y, own_threshold, disabled = positions.get(cluster["sensor_id"]) or (None, None, None, None, False)
         if disabled:
             # Switched off: triggers no alarm, adds no suspicion.
             continue
         threshold = own_threshold if own_threshold is not None else location.alarm_threshold
         peak = cluster.get("max_value")
         first_seen, last_seen = _times(cluster)
-        sensors_by_plan.setdefault(plan_id, []).append({
+        sensor = {
             "sensor_id": cluster["sensor_id"],
             "lageplan": plan_id,
             "x": x,
@@ -264,7 +280,13 @@ def computed_suspicion_points(location, db_name: str, clusters) -> tuple[list[di
             "readings": _readings(cluster),
             "alarm_ids": cluster.get("alarm_ids", []),
             "pending_ack_alarm_ids": cluster.get("pending_ack_alarm_ids", []),
-        })
+            "alarms": cluster.get("alarms") or [],
+        }
+        if x is None or y is None:
+            # No position on a Lageplan: nothing to aggregate with - never hidden.
+            unplaced.append(sensor)
+        else:
+            sensors_by_plan.setdefault(plan_id, []).append(sensor)
 
     plans = {plan.pk: plan for plan in ProgeoLageplan.objects.using(db_name).filter(location=location)}
     points, sigmas = [], {}
@@ -279,5 +301,10 @@ def computed_suspicion_points(location, db_name: str, clusters) -> tuple[list[di
             point["x_m"] = round(meters[0], 2) if meters else None
             point["y_m"] = round(meters[1], 2) if meters else None
             points.append(point)
+    for sensor in unplaced:
+        point = _point([sensor], None, None, 0.0, 0.0)
+        point["lageplan"] = None
+        point["x_m"] = point["y_m"] = None
+        points.append(point)
     points.sort(key=lambda point: (-STATE_ORDER.get(point["state"], 0), -point["strength"]))
     return points, sigmas
