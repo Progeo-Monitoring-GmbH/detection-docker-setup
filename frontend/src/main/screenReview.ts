@@ -11,7 +11,18 @@ export const SCREEN_REVIEW_URL = '/v1/screen-review/';
 export type ScreenDevice = 'pc' | 'mobile';
 export type ScreenRole = 'user' | 'staff';
 export type NoteKind = 'arrow' | 'area' | 'note';
-export type NoteAction = 'move' | 'select' | 'remove' | 'bigger' | 'smaller';
+export type NoteAction =
+  | 'move'
+  | 'select'
+  | 'remove'
+  | 'bigger'
+  | 'smaller'
+  /** A question / something to check - not necessarily a change. */
+  | 'question'
+  /** A remark about the whole run or the review tool (a run-level note, image ""). */
+  | 'general';
+/** Where a note applies: this screenshot, all of its device's, everywhere. */
+export type NoteScope = 'screen' | 'device' | 'all';
 
 export type ScreenRun = {
   run: string;
@@ -135,6 +146,12 @@ export type ScreenNote = {
   author_name: string | null;
   created: string;
   updated: string;
+  /** Missing on older payloads: "screen". */
+  scope?: NoteScope;
+  /** Dealt with - drawn faded, no longer an open comment. */
+  done?: boolean;
+  done_at?: string | null;
+  done_by_name?: string | null;
 };
 
 /** A shape being drawn or not saved yet. */
@@ -143,12 +160,14 @@ export type DraftShape =
   | { kind: 'area'; geometry: AreaGeometry }
   | { kind: 'note'; geometry: null };
 
+/** The actions of a note on a screenshot ("general" is run-level only). */
 export const NOTE_ACTIONS: NoteAction[] = [
   'move',
   'select',
   'remove',
   'bigger',
   'smaller',
+  'question',
 ];
 
 /** The colour of each action - the same as the export's (backend ACTION_COLOR). */
@@ -158,7 +177,36 @@ export const ACTION_COLORS: Record<NoteAction, string> = {
   remove: '#e34948',
   bigger: '#008300',
   smaller: '#eb6834',
+  question: '#008080',
+  general: '#6c757d',
 };
+
+export const NOTE_SCOPES: NoteScope[] = ['screen', 'device', 'all'];
+
+/** The scope of a note - older payloads without one: this screenshot. */
+export const scopeOf = (note: Pick<ScreenNote, 'scope'>): NoteScope =>
+  note.scope ?? 'screen';
+
+/** Actions the backend refuses without a comment (where to? what? which remark?). */
+const COMMENT_REQUIRED: ReadonlySet<NoteAction> = new Set<NoteAction>([
+  'move',
+  'question',
+  'general',
+]);
+
+export const needsComment = (action: NoteAction) =>
+  COMMENT_REQUIRED.has(action);
+
+/** A note with `action` can be saved with `comment` (not blank where one is required). */
+export const canSaveNote = (action: NoteAction, comment: string) =>
+  !needsComment(action) || comment.trim() !== '';
+
+/** A run-level note (the whole run / the review tool) - it belongs to no screenshot. */
+export const isGeneralNote = (note: Pick<ScreenNote, 'image'>) =>
+  note.image === '';
+
+/** Not marked as done - an open comment. */
+export const isOpenNote = (note: Pick<ScreenNote, 'done'>) => !note.done;
 
 /** What a new shape most likely asks for. */
 export const defaultAction = (kind: NoteKind): NoteAction =>
@@ -343,13 +391,35 @@ export const stepCursor = (
   }
 };
 
-/** The notes of each image, in their order (= their numbers on the image). */
+const byCreation = (a: ScreenNote, b: ScreenNote) =>
+  a.created.localeCompare(b.created) || a.id - b.id;
+
+/**
+ * The notes of each image, in their order (= their numbers on the image) -
+ * done ones too (they keep their number); the run-level ones (image "") left out.
+ */
 export const notesByImage = (notes: ScreenNote[]) => {
   const grouped = new Map<string, ScreenNote[]>();
-  [...notes]
-    .sort((a, b) => a.created.localeCompare(b.created) || a.id - b.id)
+  notes
+    .filter((note) => !isGeneralNote(note))
+    .sort(byCreation)
     .forEach((note) =>
       grouped.set(note.image, [...(grouped.get(note.image) ?? []), note]),
     );
   return grouped;
 };
+
+/** The run-level notes (image ""), oldest first. */
+export const generalNotes = (notes: ScreenNote[]) =>
+  notes.filter(isGeneralNote).sort(byCreation);
+
+/**
+ * The screenshots with an open comment (for "only commented"): one whose
+ * notes are all done counts as dealt with, not as commented.
+ */
+export const commentedImages = (grouped: ReadonlyMap<string, ScreenNote[]>) =>
+  new Set(
+    [...grouped]
+      .filter(([, list]) => list.some(isOpenNote))
+      .map(([file]) => file),
+  );

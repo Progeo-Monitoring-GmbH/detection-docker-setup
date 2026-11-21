@@ -29,12 +29,12 @@ from datetime import datetime
 from django.conf import settings
 from django.core.cache import cache
 
-from progeo.helper import screen_review
+from progeo.helper import screen_review, screen_review_elements
 from progeo.helper.basics import elog, ilog, wlog
 
 STATE_KEY = "progeo:screen-review-fetch"
 STATE_TTL = 24 * 60 * 60
-# The files of a run: its screenshots and the capture's manifest.
+# The files of a run: its screenshots (with their element lists) and the capture's manifest.
 _FOLDERS = screen_review.DEVICES
 
 
@@ -113,8 +113,10 @@ def _download_run(sftp, base, run, target):
             folder = target / entry.filename
             folder.mkdir()
             for image in sftp.listdir_attr(source):
-                # Screenshots only - nothing else of the remote folder comes along.
-                if stat.S_ISREG(image.st_mode or 0) and screen_review.parse_image_name(image.filename):
+                # Screenshots and their element lists (screen_review_elements) only -
+                # nothing else of the remote folder comes along.
+                name = screen_review_elements.image_name_of(image.filename) or image.filename
+                if stat.S_ISREG(image.st_mode or 0) and screen_review.parse_image_name(name):
                     sftp.get(f"{source}/{image.filename}", str(folder / image.filename))
                     count += 1
     return count

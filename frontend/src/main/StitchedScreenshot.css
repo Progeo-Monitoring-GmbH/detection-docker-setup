@@ -84,6 +84,11 @@
   stroke-dasharray: 6 4;
 }
 
+/* A note marked as done: faded, still there (it keeps its number). */
+.stitched-shape--done {
+  opacity: 0.35;
+}
+
 /* The part the gallery's cursor is on (keys, swipes). */
 .stitched-part--active .stitched-slice {
   border-color: #eb633b;

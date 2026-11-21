@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Download,
   ExclamationTriangle,
+  Pencil,
   Trash,
 } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -36,9 +37,16 @@ import ScreenLocation, { ScreenFailures } from './ScreenLocation';
 import {
   ACTION_COLORS,
   NOTE_ACTIONS,
+  NOTE_SCOPES,
   SCREEN_REVIEW_URL,
   ALL_SCREENS,
+  canSaveNote,
+  commentedImages,
   defaultAction,
+  generalNotes,
+  isOpenNote,
+  needsComment,
+  scopeOf,
   sliceHeightOf,
   slicesOf,
   filterImages,
@@ -47,6 +55,7 @@ import {
   type CursorMove,
   type DraftShape,
   type NoteAction,
+  type NoteScope,
   type ReviewedMark,
   type ScreenDevice,
   type ScreenFailure,
@@ -115,14 +124,130 @@ const useScreenshotSrc = (
   return cached ?? (loaded?.key === key ? loaded.src : null);
 };
 
+type NotesUpdate = (update: (notes: ScreenNote[]) => ScreenNote[]) => void;
+type NotePayload = Partial<
+  Pick<ScreenNote, 'image' | 'kind' | 'action' | 'comment' | 'geometry' | 'scope' | 'done'>
+>;
+
+/**
+ * The requests on the notes of `run` - each result handed to `onNotes`
+ * (a saved note replaces its old self or is added, a deleted one leaves).
+ */
+const useNoteRequests = (run: string, onNotes: NotesUpdate) => {
+  const { t } = useTranslation();
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const url = (id?: number) =>
+    `${SCREEN_REVIEW_URL}${run}/notes/${id != null ? `${id}/` : ''}`;
+  const saved =
+    (then?: () => void) => (response: { data: { note: ScreenNote } }) => {
+      const note = response.data.note;
+      onNotes((current) =>
+        current.some((entry) => entry.id === note.id)
+          ? current.map((entry) => (entry.id === note.id ? note : entry))
+          : [...current, note],
+      );
+      then?.();
+    };
+  const failed = (then?: () => void) => (error: unknown) => {
+    then?.();
+    showRequestError(enqueueSnackbar, t('screens_note_failed'), error);
+  };
+  return {
+    create: (payload: NotePayload, done?: () => void, error?: () => void) =>
+      void axiosConfig.perform_post(
+        auth,
+        url(),
+        payload,
+        saved(done),
+        failed(error),
+      ),
+    patch: (
+      id: number,
+      payload: NotePayload,
+      done?: () => void,
+      error?: () => void,
+    ) =>
+      void axiosConfig.perform_patch(
+        auth,
+        url(id),
+        payload,
+        saved(done),
+        failed(error),
+      ),
+    remove: (id: number, done?: () => void) => {
+      axiosConfig.updateToken();
+      void axiosConfig.holder
+        .delete(url(id))
+        .then(() => {
+          onNotes((current) => current.filter((note) => note.id !== id));
+          done?.();
+        })
+        .catch(failed());
+    },
+  };
+};
+
+/** "Done" on a note: marks it as dealt with, a second click reopens it. */
+const NoteDoneToggle = ({
+  note,
+  onToggle,
+}: {
+  note: ScreenNote;
+  onToggle: () => void;
+}) => {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      className={`screen-note-done-toggle${note.done ? ' screen-note-done-toggle--done' : ''}`}
+      onClick={onToggle}
+      aria-pressed={Boolean(note.done)}
+      title={note.done ? t('screens_note_reopen') : t('screens_note_mark_done')}
+      data-testid="screen-note-done"
+      data-test-key={note.id}
+    >
+      {note.done ? <CheckCircleFill /> : <CheckCircle />}
+      <span>{t('screens_note_done')}</span>
+    </button>
+  );
+};
+
+/** Who marked a note as done, and when - nothing while it is open. */
+const NoteDoneMeta = ({ note }: { note: ScreenNote }) => {
+  const { t } = useTranslation();
+  if (!note.done) {
+    return null;
+  }
+  return (
+    <span className="d-block small screen-note-done-meta">
+      {t('screens_note_done_by', {
+        name: note.done_by_name ?? '–',
+        date: note.done_at ? formatDate(note.done_at) : '–',
+      })}
+    </span>
+  );
+};
+
+/** "Only this screen" / "All phone screens" / "Everywhere" - the device of the screenshot. */
+const useScopeLabel = () => {
+  const { t } = useTranslation();
+  return (scope: NoteScope, device: ScreenDevice) =>
+    scope === 'device'
+      ? t(`screens_scope_device_${device}`)
+      : t(`screens_scope_${scope}`);
+};
+
 const ImageBadges = ({
   image,
   notes,
 }: {
   image: ScreenImage;
-  notes: number;
+  notes: ScreenNote[];
 }) => {
   const { t } = useTranslation();
+  const open = notes.filter(isOpenNote).length;
+  const done = notes.length - open;
   return (
     <span className="screen-badges">
       <Badge bg="primary">{t(`screens_device_${image.device}`)}</Badge>
@@ -130,9 +255,14 @@ const ImageBadges = ({
       <Badge bg="light" text="dark">
         {image.language.toUpperCase()}
       </Badge>
-      {notes > 0 && (
+      {open > 0 && (
         <Badge bg="warning" text="dark">
-          {t('screens_notes_count', { count: notes })}
+          {t('screens_notes_count', { count: open })}
+        </Badge>
+      )}
+      {done > 0 && (
+        <Badge bg="success" data-testid="screen-notes-done-count">
+          {t('screens_notes_done_count', { count: done })}
         </Badge>
       )}
       {image.errors.length > 0 && (
@@ -189,7 +319,7 @@ const ScreenCard = ({
           {image.action}
         </button>
         <ScreenLocation image={image} />
-        <ImageBadges image={image} notes={notes.length} />
+        <ImageBadges image={image} notes={notes} />
         <PillButton
           label={reviewed ? t('screens_reviewed') : t('screens_mark_reviewed')}
           title={
@@ -266,11 +396,11 @@ const ScreenEditor = ({
   canStep: (step: -1 | 1) => boolean;
   onStep: (step: -1 | 1) => void;
   onClose: () => void;
-  onNotes: (update: (notes: ScreenNote[]) => ScreenNote[]) => void;
+  onNotes: NotesUpdate;
 }) => {
   const { t } = useTranslation();
-  const auth = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
+  const requests = useNoteRequests(run, onNotes);
+  const scopeLabel = useScopeLabel();
   const touch = useIsMobile('(pointer: coarse)');
   const src = useScreenshotSrc(cache, run, image.file, true);
   const [imageElement, setImageElement] = useState<HTMLDivElement | null>(null);
@@ -281,6 +411,7 @@ const ScreenEditor = ({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [action, setAction] = useState<NoteAction>('select');
   const [comment, setComment] = useState('');
+  const [scope, setScope] = useState<NoteScope>('screen');
   const [busy, setBusy] = useState(false);
   // The comment whose delete waits for its ConfirmDialog.
   const [askDelete, setAskDelete] = useState<ScreenNote | null>(null);
@@ -311,6 +442,7 @@ const ScreenEditor = ({
     setFormOpen(false);
     setEditingId(null);
     setComment('');
+    setScope('screen');
   };
 
   // Another screenshot (paged on): no tool, draft or form of the last one.
@@ -382,43 +514,33 @@ const ScreenEditor = ({
     setEditingId(id);
     setAction(note.action);
     setComment(note.comment);
+    setScope(scopeOf(note));
     setFormOpen(true);
   };
 
+  // Move and question need a comment (where to? what?) - the backend refuses them empty.
+  const saveable = canSaveNote(action, comment);
   const save = () => {
+    if (!saveable) {
+      return;
+    }
     setBusy(true);
-    const done = (response: { data: { note: ScreenNote } }) => {
-      const saved = response.data.note;
-      onNotes((current) =>
-        editingId != null
-          ? current.map((note) => (note.id === saved.id ? saved : note))
-          : [...current, saved],
-      );
+    const done = () => {
       setBusy(false);
       resetForm();
     };
-    const failed = (error: unknown) => {
-      setBusy(false);
-      showRequestError(enqueueSnackbar, t('screens_note_failed'), error);
-    };
+    const failed = () => setBusy(false);
     if (editingId != null) {
-      void axiosConfig.perform_patch(
-        auth,
-        `${SCREEN_REVIEW_URL}${run}/notes/${editingId}/`,
-        { action, comment },
-        done,
-        failed,
-      );
+      requests.patch(editingId, { action, comment, scope }, done, failed);
     } else if (draft) {
-      void axiosConfig.perform_post(
-        auth,
-        `${SCREEN_REVIEW_URL}${run}/notes/`,
+      requests.create(
         {
           image: image.file,
           kind: draft.kind,
           geometry: draft.geometry,
           action,
           comment,
+          scope,
         },
         done,
         failed,
@@ -426,20 +548,15 @@ const ScreenEditor = ({
     }
   };
 
-  const remove = (id: number) => {
-    axiosConfig.updateToken();
-    void axiosConfig.holder
-      .delete(`${SCREEN_REVIEW_URL}${run}/notes/${id}/`)
-      .then(() => {
-        onNotes((current) => current.filter((note) => note.id !== id));
-        if (editingId === id) {
-          resetForm();
-        }
-      })
-      .catch((error: unknown) =>
-        showRequestError(enqueueSnackbar, t('screens_note_failed'), error),
-      );
-  };
+  const remove = (id: number) =>
+    requests.remove(id, () => {
+      if (editingId === id) {
+        resetForm();
+      }
+    });
+
+  const toggleDone = (note: ScreenNote) =>
+    requests.patch(note.id, { done: !note.done });
 
   return (
     <Modal show fullscreen onHide={onClose} data-testid="screen-editor">
@@ -447,7 +564,7 @@ const ScreenEditor = ({
         <Modal.Title className="screen-editor-title">
           {image.action}
           <ScreenLocation image={image} />
-          <ImageBadges image={image} notes={notes.length} />
+          <ImageBadges image={image} notes={notes} />
         </Modal.Title>
         <div
           className="screen-editor-pager"
@@ -544,6 +661,9 @@ const ScreenEditor = ({
               onChange={(event) => setPartHeight(Number(event.target.value))}
               data-testid="screen-editor-size"
             />
+            <Form.Text className="d-block mt-0">
+              {t('screens_scaled_hint')}
+            </Form.Text>
           </Form.Group>
           {tool && (
             <div className="small text-muted">
@@ -602,9 +722,39 @@ const ScreenEditor = ({
                 maxLength={5000}
                 placeholder={t('screens_comment_placeholder')}
                 onChange={(event) => setComment(event.target.value)}
+                required={needsComment(action)}
                 autoFocus
                 data-testid="screen-note-comment"
               />
+              {!saveable && (
+                <div
+                  className="small screen-note-required"
+                  data-testid="screen-note-comment-required"
+                >
+                  {t('screens_comment_required', {
+                    action: t(`screens_action_${action}`),
+                  })}
+                </div>
+              )}
+              <Form.Group controlId="screen-note-scope">
+                <Form.Label className="small fw-semibold mb-1">
+                  {t('screens_scope_label')}
+                </Form.Label>
+                <Form.Select
+                  size="sm"
+                  value={scope}
+                  onChange={(event) =>
+                    setScope(event.target.value as NoteScope)
+                  }
+                  data-testid="screen-note-scope"
+                >
+                  {NOTE_SCOPES.map((value) => (
+                    <option key={value} value={value}>
+                      {scopeLabel(value, image.device)}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
               <div className="d-flex gap-2 justify-content-end">
                 <Button
                   size="sm"
@@ -618,7 +768,7 @@ const ScreenEditor = ({
                   size="sm"
                   variant="primary"
                   onClick={save}
-                  disabled={busy}
+                  disabled={busy || !saveable}
                   data-testid="screen-note-save"
                 >
                   {busy && (
@@ -638,7 +788,7 @@ const ScreenEditor = ({
               {notes.map((note, index) => (
                 <li
                   key={note.id}
-                  className={`screen-note${note.id === editingId ? ' screen-note--selected' : ''}`}
+                  className={`screen-note${note.id === editingId ? ' screen-note--selected' : ''}${note.done ? ' screen-note--done' : ''}`}
                   data-testid="screen-note"
                   data-test-key={note.id}
                 >
@@ -654,17 +804,30 @@ const ScreenEditor = ({
                       {index + 1}
                     </span>
                     <span>
-                      <strong>{t(`screens_action_${note.action}`)}</strong>
-                      <span className="text-muted">
-                        {' '}
-                        · {t(`screens_kind_${note.kind}`)}
+                      <span className="screen-note-text">
+                        <strong>{t(`screens_action_${note.action}`)}</strong>
+                        <span className="text-muted">
+                          {' '}
+                          · {t(`screens_kind_${note.kind}`)}
+                        </span>
+                        {scopeOf(note) !== 'screen' && (
+                          <Badge
+                            bg="info"
+                            className="ms-1"
+                            data-testid="screen-note-scope-badge"
+                          >
+                            {scopeLabel(scopeOf(note), image.device)}
+                          </Badge>
+                        )}
+                        <span className="d-block">{note.comment || '–'}</span>
                       </span>
-                      <span className="d-block">{note.comment || '–'}</span>
                       <span className="d-block small text-muted">
                         {note.author_name ?? '–'} · {formatDate(note.created)}
                       </span>
+                      <NoteDoneMeta note={note} />
                     </span>
                   </button>
+                  <NoteDoneToggle note={note} onToggle={() => toggleDone(note)} />
                   <button
                     type="button"
                     className="screen-note-delete"
@@ -709,6 +872,183 @@ const ScreenEditor = ({
   );
 };
 
+/** A general note being written (id null) or changed. */
+type GeneralDraft = { id: number | null; comment: string };
+
+/**
+ * The run's general notes (image "": the whole run or the review tool) -
+ * listed with edit / done / delete - and the dialog that writes one
+ * (`draft`, opened by the toolbar's "General note" or an entry's edit).
+ */
+const GeneralNotes = ({
+  run,
+  notes,
+  onNotes,
+  draft,
+  onDraft,
+}: {
+  run: string;
+  notes: ScreenNote[];
+  onNotes: NotesUpdate;
+  draft: GeneralDraft | null;
+  onDraft: (draft: GeneralDraft | null) => void;
+}) => {
+  const { t } = useTranslation();
+  const requests = useNoteRequests(run, onNotes);
+  const [busy, setBusy] = useState(false);
+  const [askDelete, setAskDelete] = useState<ScreenNote | null>(null);
+  const saveable = draft !== null && canSaveNote('general', draft.comment);
+  const open = notes.filter(isOpenNote).length;
+
+  const save = () => {
+    if (!draft || !saveable) {
+      return;
+    }
+    setBusy(true);
+    const done = () => {
+      setBusy(false);
+      onDraft(null);
+    };
+    const failed = () => setBusy(false);
+    if (draft.id != null) {
+      requests.patch(draft.id, { comment: draft.comment }, done, failed);
+    } else {
+      requests.create(
+        {
+          image: '',
+          kind: 'note',
+          action: 'general',
+          comment: draft.comment,
+          scope: 'all',
+        },
+        done,
+        failed,
+      );
+    }
+  };
+
+  return (
+    <>
+      {notes.length > 0 && (
+        <section
+          className="screen-general"
+          data-testid="screens-general-notes"
+        >
+          <div className="screen-notes-title">
+            {t('screens_general_title')}{' '}
+            <Badge bg={open > 0 ? 'warning' : 'success'} text={open > 0 ? 'dark' : undefined}>
+              {open > 0
+                ? t('screens_notes_count', { count: open })
+                : t('screens_notes_done_count', { count: notes.length })}
+            </Badge>
+          </div>
+          <ul className="screen-notes">
+            {notes.map((note) => (
+              <li
+                key={note.id}
+                className={`screen-note${note.done ? ' screen-note--done' : ''}`}
+                data-testid="screens-general-note-item"
+                data-test-key={note.id}
+              >
+                <span className="screen-note-body">
+                  <span>
+                    <span className="screen-note-text d-block">
+                      {note.comment || '–'}
+                    </span>
+                    <span className="d-block small text-muted">
+                      {note.author_name ?? '–'} · {formatDate(note.created)}
+                    </span>
+                    <NoteDoneMeta note={note} />
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="screen-note-edit"
+                  onClick={() => onDraft({ id: note.id, comment: note.comment })}
+                  title={t('screens_general_edit')}
+                  aria-label={t('screens_general_edit')}
+                  data-testid="screens-general-edit"
+                  data-test-key={note.id}
+                >
+                  <Pencil />
+                </button>
+                <NoteDoneToggle
+                  note={note}
+                  onToggle={() => requests.patch(note.id, { done: !note.done })}
+                />
+                <button
+                  type="button"
+                  className="screen-note-delete"
+                  onClick={() => setAskDelete(note)}
+                  title={t('screens_delete_note')}
+                  aria-label={t('screens_delete_note')}
+                  data-testid="screens-general-delete"
+                  data-test-key={note.id}
+                >
+                  <Trash />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <ConfirmDialog
+        show={draft !== null}
+        danger={false}
+        title={
+          draft?.id != null
+            ? t('screens_general_edit')
+            : t('screens_general_note')
+        }
+        message={
+          <Form.Group controlId="screens-general-comment">
+            <Form.Text className="d-block mb-2 mt-0">
+              {t('screens_general_hint')}
+            </Form.Text>
+            <Form.Control
+              as="textarea"
+              rows={4}
+              value={draft?.comment ?? ''}
+              maxLength={5000}
+              placeholder={t('screens_general_placeholder')}
+              onChange={(event) =>
+                draft && onDraft({ ...draft, comment: event.target.value })
+              }
+              required
+              autoFocus
+              data-testid="screens-general-comment"
+            />
+          </Form.Group>
+        }
+        confirmLabel={t('screens_save')}
+        cancelLabel={t('screens_cancel')}
+        onConfirm={save}
+        onCancel={() => onDraft(null)}
+        confirming={busy}
+        confirmDisabled={!saveable}
+        testId="screens-general-dialog"
+      />
+      <ConfirmDialog
+        show={askDelete !== null}
+        title={t('screens_delete_note')}
+        message={t('screens_delete_general_confirm', {
+          comment: askDelete?.comment || '-',
+        })}
+        confirmLabel={t('screens_delete_note')}
+        cancelLabel={t('screens_cancel')}
+        onConfirm={() => {
+          if (askDelete) {
+            requests.remove(askDelete.id);
+          }
+          setAskDelete(null);
+        }}
+        onCancel={() => setAskDelete(null)}
+        testId="screens-general-delete-dialog"
+      />
+    </>
+  );
+};
+
 /**
  * /review/screens/ (staff): the screenshots of a build - every route, pc and
  * mobile, as a user and as staff (python manage.py e2e_screenshots) - cut
@@ -747,6 +1087,8 @@ const ScreenReviewView = () => {
   const scrollToCursor = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The general note being written / changed (its dialog open).
+  const [generalDraft, setGeneralDraft] = useState<GeneralDraft | null>(null);
   // The object URLs of the loaded screenshots - freed when the page is left.
   const [cache] = useState(() => new Map<string, string>());
   useEffect(
@@ -803,6 +1145,12 @@ const ScreenReviewView = () => {
     () => notesByImage(shownDetail?.notes ?? []),
     [shownDetail],
   );
+  const runNotes = useMemo(
+    () => generalNotes(shownDetail?.notes ?? []),
+    [shownDetail],
+  );
+  // A screenshot counts as commented while one of its notes is open.
+  const commented = useMemo(() => commentedImages(notes), [notes]);
   const reviewedMarks = useMemo(
     () =>
       new Map((shownDetail?.reviewed ?? []).map((mark) => [mark.image, mark])),
@@ -813,10 +1161,10 @@ const ScreenReviewView = () => {
       filterImages(
         shownDetail?.images ?? [],
         filter,
-        new Set(notes.keys()),
+        commented,
         new Set(reviewedMarks.keys()),
       ),
-    [shownDetail, filter, notes, reviewedMarks],
+    [shownDetail, filter, commented, reviewedMarks],
   );
   const reviewedCount = (shownDetail?.images ?? []).filter((image) =>
     reviewedMarks.has(image.file),
@@ -924,7 +1272,10 @@ const ScreenReviewView = () => {
         enter: () => currentImage && openAt(cursorIndex),
       },
     },
-    Boolean(shownDetail) && openFile === null && images.length > 0,
+    Boolean(shownDetail) &&
+      openFile === null &&
+      generalDraft === null &&
+      images.length > 0,
   );
 
   // Touch: a swipe across a screenshot's parts moves through them (from the
@@ -1056,6 +1407,15 @@ const ScreenReviewView = () => {
           <div className="d-flex gap-2 flex-wrap">
             {/* No screenshot container here (live): the runs come from staging. */}
             <StagingFetchButton onFetched={loadRuns} />
+            {shownDetail && (
+              <PillButton
+                label={t('screens_general_note')}
+                title={t('screens_general_hint')}
+                icon={<ChatLeftText />}
+                onClick={() => setGeneralDraft({ id: null, comment: '' })}
+                testId="screens-general-note"
+              />
+            )}
             {runId && (
               <PillButton
                 label={t('screens_export', { count: noteCount })}
@@ -1215,6 +1575,15 @@ const ScreenReviewView = () => {
               />
             )}
           </div>
+        )}
+        {shownDetail && (
+          <GeneralNotes
+            run={shownDetail.run}
+            notes={runNotes}
+            onNotes={updateNotes('')}
+            draft={generalDraft}
+            onDraft={setGeneralDraft}
+          />
         )}
         {shownDetail && <ScreenFailures failures={shownDetail.failures ?? []} />}
       </PanelCard>

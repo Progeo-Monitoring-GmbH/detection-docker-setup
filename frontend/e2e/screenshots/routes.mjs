@@ -373,6 +373,8 @@ export const ROUTES = [
   { action: 'alarms', path: '/alarms/', roles: ['staff'] },
   { action: 'alarm-report', path: '/alarms/report/', roles: ['staff'] },
   { action: 'escalations', path: '/escalations/', roles: ['staff'] },
+  // The "Alarmablauf" tab: the open notification cases as timelines.
+  { action: 'escalations-flow', path: '/escalations/?view=flow', roles: ['staff'] },
   {
     action: 'escalation-detail',
     path: '/escalations/1',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getBackendUrl } from '../backendUrl';
 import {
   answerPoints,
@@ -47,6 +47,15 @@ const sensor = (
 });
 
 describe('planSourceMeta', () => {
+  // The image URL needs a backend URL: without VITE_BACKEND_URL (CI, no
+  // .env.local) it falls back to window.location - and this spec runs in node.
+  beforeEach(() => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.test');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('is null without a plan image', () => {
     expect(planSourceMeta(null)).toBeNull();
     expect(planSourceMeta(plan(1))).toBeNull();

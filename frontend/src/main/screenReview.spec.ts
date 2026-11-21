@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACTION_COLORS,
   ALL_SCREENS,
+  NOTE_ACTIONS,
   areaBetween,
+  canSaveNote,
+  commentedImages,
   defaultAction,
   filterImages,
+  generalNotes,
   imagePointOf,
   imageUrl,
+  isGeneralNote,
+  isOpenNote,
+  needsComment,
   notesByImage,
+  scopeOf,
   portalHref,
   sliceHeightOf,
   slicesOf,
@@ -305,4 +314,69 @@ it('numbers the notes of an image in the order they were made', () => {
 
   expect(grouped.get('a.png')?.map((entry) => entry.id)).toEqual([1, 3]);
   expect(grouped.get('b.png')?.map((entry) => entry.id)).toEqual([2]);
+});
+
+describe('general and done notes', () => {
+  const note = (
+    id: number,
+    file: string,
+    created: string,
+    done = false,
+  ): ScreenNote =>
+    ({ id, image: file, created, done, action: 'select' }) as ScreenNote;
+  const notes = [
+    note(4, '', '2026-11-18T12:00'),
+    note(1, 'a.png', '2026-11-18T09:00', true),
+    note(2, 'b.png', '2026-11-18T08:00', true),
+    note(3, 'b.png', '2026-11-18T10:00'),
+    note(5, '', '2026-11-18T07:00', true),
+  ];
+
+  it('keeps the run-level notes (image "") out of the per-image groups', () => {
+    const grouped = notesByImage(notes);
+
+    expect([...grouped.keys()].sort()).toEqual(['a.png', 'b.png']);
+    expect(generalNotes(notes).map((entry) => entry.id)).toEqual([5, 4]);
+    expect(isGeneralNote(notes[0])).toBe(true);
+    expect(isGeneralNote(notes[1])).toBe(false);
+  });
+
+  it('counts a screen as commented only while one of its notes is open', () => {
+    const commented = commentedImages(notesByImage(notes));
+
+    expect([...commented]).toEqual(['b.png']);
+    expect(
+      filterImages(
+        [
+          image('a.png', 'pc', 'user', 'a'),
+          image('b.png', 'pc', 'user', 'b'),
+        ],
+        { ...ALL_SCREENS, commentedOnly: true },
+        commented,
+      ).map((entry) => entry.file),
+    ).toEqual(['b.png']);
+    expect(isOpenNote(notes[1])).toBe(false);
+    expect(isOpenNote({})).toBe(true);
+  });
+
+  it('requires a comment for move, question and general', () => {
+    expect(needsComment('move')).toBe(true);
+    expect(needsComment('question')).toBe(true);
+    expect(needsComment('general')).toBe(true);
+    expect(needsComment('select')).toBe(false);
+    expect(canSaveNote('move', '  ')).toBe(false);
+    expect(canSaveNote('question', 'Why two buttons?')).toBe(true);
+    expect(canSaveNote('remove', '')).toBe(true);
+  });
+
+  it('offers question on a screen, but general only run-level', () => {
+    expect(NOTE_ACTIONS).toContain('question');
+    expect(NOTE_ACTIONS).not.toContain('general');
+    expect(ACTION_COLORS.question).toBe('#008080');
+  });
+
+  it('takes "screen" as the scope of older notes', () => {
+    expect(scopeOf({})).toBe('screen');
+    expect(scopeOf({ scope: 'device' })).toBe('device');
+  });
 });

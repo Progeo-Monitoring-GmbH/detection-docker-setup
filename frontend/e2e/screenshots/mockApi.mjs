@@ -1288,6 +1288,74 @@ export const mockAnswer = (
   if (path.endsWith('/favorite/')) {
     return { favorites: [] };
   }
+  if (path.endsWith('/notification-case/timeline/')) {
+    // /escalations/?view=flow: an alarm case after its first stage (one mail
+    // bounced), the reminder in 1 h 40 min; an offline case before its notice.
+    const people = [
+      { name: 'Maria Müller', channels: ['mail', 'sms'], objektleitung: false },
+      { name: 'Jonas Weber', channels: ['mail'], objektleitung: false },
+      { name: 'Leitstand', channels: ['mail', 'messenger'], objektleitung: false },
+    ];
+    const opened = NOW - 2.4 * HOUR;
+    return {
+      now: iso(NOW),
+      run_minutes: 15,
+      cases: [
+        {
+          id: 1, kind: 'alarm', phase: 'notified', location_id: 1, project_id: 4711,
+          location_name: 'Halle Nord', location_missing: false, stage: 1, stages: 3,
+          opened_at: iso(opened), alarm_count: 3, device_count: 0, muted_until: null,
+          muted_forever: false, acknowledged_at: null, back_since: null, unreachable_since: null,
+          escalation_id: null, next_at: iso(opened + 4 * HOUR),
+          points: [
+            { type: 'detected', at: iso(opened) },
+            {
+              type: 'sent', stage: 1, at: iso(opened + 3 * 60000), text: 'Stufe 1 versendet',
+              sms: 1, messenger: 1, recipients: 3, withheld: false, escalation: false, objektleitung: false,
+              mails: [
+                { name: 'Maria Müller', address: 'maria.mueller@progeo.com', status: 'sent' },
+                { name: 'Jonas Weber', address: 'jonas.weber@progeo.com', status: 'bounced' },
+                { name: 'Leitstand', address: 'leitstand@progeo.com', status: 'sent' },
+              ],
+            },
+            {
+              type: 'planned', stage: 2, due_at: iso(opened + 4 * HOUR), at: iso(opened + 4 * HOUR),
+              overdue: false, paused: false, withheld: false, objektleitung: false, escalation: false,
+              customer: true, recipients: people,
+            },
+            {
+              type: 'planned', stage: 3, due_at: iso(opened + 24 * HOUR), at: iso(opened + 24 * HOUR),
+              overdue: false, paused: false, withheld: false, objektleitung: true, escalation: true,
+              customer: true,
+              recipients: [...people, { name: 'Heike Schulz', channels: ['mail'], objektleitung: true }],
+            },
+          ],
+          end: { kind: 'acknowledge', stable_hours: null },
+        },
+        {
+          id: 2, kind: 'offline', phase: 'detected', location_id: 2, project_id: 4712,
+          location_name: 'Lager Süd', location_missing: false, stage: 0, stages: 4,
+          opened_at: iso(NOW - 6 * HOUR), alarm_count: 0, device_count: 2, muted_until: null,
+          muted_forever: false, acknowledged_at: null, back_since: null, unreachable_since: null,
+          escalation_id: null, next_at: iso(NOW + 16 * HOUR),
+          points: [
+            { type: 'detected', at: iso(NOW - 6 * HOUR) },
+            ...[[1, 16, false], [2, 88, false], [3, 184, true]].map(([stage, hours, lead]) => ({
+              type: 'planned', stage, due_at: iso(NOW + hours * HOUR), at: iso(NOW + hours * HOUR),
+              overdue: false, paused: false, withheld: false, objektleitung: lead, escalation: false,
+              customer: true, recipients: [{ name: 'Lager Süd (Kontakt)', channels: ['mail'], objektleitung: false }],
+            })),
+            {
+              type: 'planned', stage: 4, due_at: iso(NOW + 352 * HOUR), at: iso(NOW + 352 * HOUR),
+              overdue: false, paused: false, withheld: false, objektleitung: false, escalation: true,
+              customer: false, recipients: [],
+            },
+          ],
+          end: { kind: 'back_online', stable_hours: 2 },
+        },
+      ],
+    };
+  }
   if (path.endsWith('/notification-case/summary/')) {
     const phases = {
       open: 3,

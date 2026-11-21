@@ -1805,7 +1805,9 @@ class ScreenReviewNote(models.Model):
     the e2e_screenshots command, /review/screens/): what to do (`action`)
     with what - an arrow from A to B, an area, or the whole screen (note).
     `geometry` is in the screenshot's pixels (= CSS pixels of the page):
-    arrow {x1, y1, x2, y2}, area {x, y, w, h}, note None."""
+    arrow {x1, y1, x2, y2}, area {x, y, w, h}, note None. A "general" note
+    belongs to the whole run (image ""). `scope`: where else the comment
+    applies; `done_at`: worked off - left out of the next PROMPT.md."""
 
     class Kind(models.TextChoices):
         ARROW = "arrow", "Arrow"
@@ -1818,6 +1820,15 @@ class ScreenReviewNote(models.Model):
         REMOVE = "remove", "Remove"
         BIGGER = "bigger", "Bigger"
         SMALLER = "smaller", "Smaller"
+        # A question / something to check - not necessarily a change.
+        QUESTION = "question", "Question"
+        # About the whole run or the review tool, not one screen (image "").
+        GENERAL = "general", "General"
+
+    class Scope(models.TextChoices):
+        SCREEN = "screen", "This screen only"
+        DEVICE = "device", "All screens of this device"
+        ALL = "all", "Everywhere"
 
     # The run's folder (media/uploads/e2e/<run>/) and the image's file name.
     run = models.CharField(max_length=32, db_index=True)
@@ -1826,9 +1837,12 @@ class ScreenReviewNote(models.Model):
     action = models.CharField(max_length=8, choices=Action.choices)
     comment = models.TextField(blank=True, default="")
     geometry = models.JSONField(null=True, blank=True)
+    scope = models.CharField(max_length=8, choices=Scope.choices, default=Scope.SCREEN)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     created = models.DateTimeField(default=timezone.now)
     updated = models.DateTimeField(default=timezone.now)
+    done_at = models.DateTimeField(null=True, blank=True)
+    done_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
 
     class Meta:
         ordering = ["run", "image", "created", "pk"]

@@ -259,12 +259,16 @@ def test_the_export_holds_the_commented_screens_and_the_prompt(api_client, run, 
     }
     prompt = archive.read("PROMPT.md").decode("utf-8")
     assert f"# Screen review – build {RUN}" in prompt
-    assert "3 comment(s) on 2 screen(s): 1 × bigger, 1 × move, 1 × select." in prompt
-    assert "Route: `/location/overview/`" in prompt
+    assert "3 open comment(s) on 2 screen(s): 1 × bigger, 1 × move, 1 × select." in prompt
+    # Route and URL are the same here: only the URL.
+    assert "- Page route:" not in prompt.split("## pc-staff-en-location-overview.png")[1].split("## ")[0]
     assert "language: en" in prompt
-    assert "1. **MOVE** – arrow from (100, 300) to (900, 320): Nach rechts" in prompt
-    assert "2. **BIGGER** – area x 40–640, y 1200–1500: Tabelle zu klein" in prompt
-    assert "1. **SELECT** – the whole screen: Logo fehlt" in prompt
+    ids = {note.comment: note.pk for note in ScreenReviewNote.objects.all()}
+    assert (f"1. [#{ids['Nach rechts']}] **MOVE** · arrow from (100, 300) to (900, 320) · "
+            "scope: this screen only: Nach rechts") in prompt
+    assert (f"2. [#{ids['Tabelle zu klein']}] **BIGGER** · area x 40–640, y 1200–1500 · "
+            "scope: this screen only: Tabelle zu klein") in prompt
+    assert f"1. [#{ids['Logo fehlt']}] **SELECT** · the whole screen · scope: this screen only: Logo fehlt" in prompt
     assert "TypeError: x is undefined" in prompt
     assert "- URL: `/location/overview/`" in prompt
     # The arrow is drawn in: the plain grey screenshot has its colour now.
@@ -437,3 +441,96 @@ def test_screenshots_are_marked_reviewed_for_the_team(api_client, run, staff):
     assert api_client.post(url, {"image": "../secret.png", "reviewed": True}, format="json").status_code == 404
     assert api_client.post(url, {"image": "mobile-user-login.png", "reviewed": "yes"},
                            format="json").status_code == 400
+
+
+# ---------------------------------------------------------------------------- prompt improvements
+
+def _export_prompt(api_client):
+    archive = zipfile.ZipFile(io.BytesIO(api_client.get(f"{URL}export/").content))
+    return archive, archive.read("PROMPT.md").decode("utf-8")
+
+
+def test_a_general_note_belongs_to_the_run_and_leads_the_prompt(api_client, run, staff):
+    response = api_client.post(f"{URL}notes/", {"image": "", "kind": "note", "action": "general",
+                                               "comment": "Cut-offs unter 75 px nicht schneiden"}, format="json")
+    assert response.status_code == 200
+    note = response.json()["note"]
+    assert (note["image"], note["kind"], note["scope"]) == ("", "note", "all")
+
+    archive, prompt = _export_prompt(api_client)
+
+    assert f"## General\n\n- [#{note['id']}] Cut-offs unter 75 px nicht schneiden" in prompt
+    assert "1 open comment(s) on 0 screen(s) and 1 general one(s): 1 × general." in prompt
+    assert [entry["image"] for entry in json.loads(archive.read("notes.json"))["notes"]] == [""]
+
+
+@pytest.mark.parametrize("action", ["move", "question", "general"])
+def test_moves_questions_and_general_notes_need_a_comment(api_client, run, staff, action):
+    response = _note(api_client, action=action, comment="  ")
+    assert response.status_code == 400
+    assert not ScreenReviewNote.objects.exists()
+
+
+def test_the_scope_says_where_else_a_comment_applies(api_client, run, staff):
+    assert _note(api_client, scope="planet").status_code == 400
+    _note(api_client, image="mobile-user-login.png", kind="note", action="question", geometry=None,
+          comment="Gibt es den Knopf auch am PC?", scope="device")
+    _note(api_client, kind="note", action="select", geometry=None, comment="Fett", scope="all")
+
+    _archive, prompt = _export_prompt(api_client)
+
+    assert "**QUESTION** · the whole screen · scope: every phone screen - fix it everywhere it shows there" in prompt
+    assert "**SELECT** · the whole screen · scope: everywhere (every device and page)" in prompt
+    assert review.ACTION_TEXT["question"] in prompt
+
+
+def test_done_comments_are_left_out_of_the_prompt(api_client, run, staff):
+    kept = _note(api_client, comment="Bleibt").json()["note"]
+    # An older note without the comment a move needs now: marking it done still works.
+    old = ScreenReviewNote.objects.create(run=RUN, image="pc-staff-en-location-overview.png", kind="arrow",
+                                          action="move", comment="",
+                                          geometry={"x1": 1, "y1": 2, "x2": 3, "y2": 4})
+
+    done = api_client.patch(f"{URL}notes/{old.pk}/", {"done": True}, format="json").json()["note"]
+    assert done["done"] and done["done_by_name"] == "Jonas Weber" and done["done_at"]
+    assert api_client.patch(f"{URL}notes/{old.pk}/", {"done": "yes"}, format="json").status_code == 400
+
+    archive, prompt = _export_prompt(api_client)
+
+    assert f"[#{kept['id']}]" in prompt and f"[#{old.pk}]" not in prompt
+    assert "1 comment(s) marked done are left out." in prompt
+    # notes.json keeps them all - with their state.
+    states = {entry["id"]: entry["done"] for entry in json.loads(archive.read("notes.json"))["notes"]}
+    assert states == {kept["id"]: False, old.pk: True}
+
+    reopened = api_client.patch(f"{URL}notes/{old.pk}/", {"done": False}, format="json").json()["note"]
+    assert not reopened["done"] and reopened["done_at"] is None
+
+
+def test_the_prompt_names_the_elements_under_a_comment_and_who_was_signed_in(api_client, run, staff):
+    elements = [
+        {"t": "page-locations", "g": "div", "s": "Objekte", "r": [0, 0, 1440, 2600]},
+        {"t": "locations-filter", "g": "div", "s": "Filter", "r": [80, 280, 400, 60]},
+        {"t": "locations-search", "g": "input", "s": "Suchen", "r": [90, 290, 200, 40]},
+        {"t": "locations-export", "k": "csv", "g": "button", "s": "Export", "r": [880, 300, 60, 40]},
+        {"g": "button", "s": "Mit Airtable abgleichen", "r": [40, 1210, 300, 40]},
+    ]
+    (run / "pc" / "pc-staff-en-location-overview.elements.json").write_text(
+        json.dumps({"elements": elements}), encoding="utf-8")
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest["images"][0]["persona"] = {"username": "staff.weber", "is_staff": True, "is_superuser": True,
+                                        "permissions": []}
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    _note(api_client)  # arrow from (100, 300) to (900, 320)
+    _note(api_client, kind="area", action="remove", comment="Weg",
+          geometry={"x": 30, "y": 1200, "w": 320, "h": 60})
+
+    archive, prompt = _export_prompt(api_client)
+
+    assert '   - Arrow starts on: `[data-testid="locations-search"]` "Suchen" (input)' in prompt
+    assert ('   - Arrow points at: `[data-testid="locations-export"][data-test-key="csv"]` "Export" (button)'
+            in prompt)
+    assert '   - Marks: `<button>` "Mit Airtable abgleichen"' in prompt
+    assert "- Signed in as: staff `staff.weber` (staff, superuser" in prompt
+    targets = {entry["comment"]: entry["targets"] for entry in json.loads(archive.read("notes.json"))["notes"]}
+    assert targets["Weg"] == {"area": ['`<button>` "Mit Airtable abgleichen"']}

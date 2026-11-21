@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
-import { ArrowRepeat, CheckCircle, ChatLeftText, Search, XLg } from 'react-bootstrap-icons';
+import {
+  ArrowRepeat,
+  CheckCircle,
+  ChatLeftText,
+  Search,
+  XLg,
+} from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import BoldTrans from '../components/ui/kit/BoldTrans';
@@ -11,7 +17,10 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
-import { matchesSearchWords, searchWords } from '../components/ui/kit/tableSearch';
+import {
+  matchesSearchWords,
+  searchWords,
+} from '../components/ui/kit/tableSearch';
 import { foldSearchText } from '../components/location/locationSearch';
 import { formatDate } from './dateFormat';
 import EscalationStatusBadge from './EscalationStatusBadge';
@@ -29,6 +38,7 @@ import { staffFlags } from './access';
 import { repeatedTestId } from '../testIds';
 import './EscalationsView.css';
 import StatusViewSummary from './StatusViewSummary';
+import AlarmFlowTab from './AlarmFlowTab';
 import { statusViewPath } from './statusViewState';
 
 type StateFilter = 'open' | 'closed' | 'all';
@@ -64,6 +74,20 @@ const EscalationsView = () => {
   const { id } = useParams();
   const selectedId = id ? Number(id) : null;
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
+  // The tab: the escalations (default) or the flow of the open notification
+  // cases ("Alarmablauf") - in the URL, so a reload or a link keeps it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view =
+    selectedId == null && searchParams.get('view') === 'flow' ? 'flow' : 'list';
+  const selectView = (next: string) => {
+    if (next === 'flow') {
+      navigate('/escalations/?view=flow');
+    } else if (selectedId == null) {
+      const params = new URLSearchParams(searchParams);
+      params.delete('view');
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   const [filter, setFilter] = useState<StateFilter>('open');
   const [query, setQuery] = useState('');
@@ -139,100 +163,123 @@ const EscalationsView = () => {
   };
 
   return (
-    <div
-      className="d-flex flex-column flex-xl-row gap-3 align-items-stretch"
-      data-testid="page-escalations"
-    >
-      <div className="escalations-list-col">
-        <PanelCard
-          testId="escalations-list"
-          title={t('escalations_title')}
-          actions={
-            <div className="d-flex align-items-center gap-2">
-              <SegmentedControl
-                options={[
-                  { value: 'open', label: t('escalation_filter_open') },
-                  { value: 'closed', label: t('escalation_filter_closed') },
-                  { value: 'all', label: t('escalation_filter_all') },
-                ]}
-                value={filter}
-                onChange={(value) => setFilter(value as StateFilter)}
-                testId="escalations-filter"
-              />
-              <Button
-                size="sm"
-                variant="link"
-                onClick={loadList}
-                title={t('escalation_refresh')}
-                aria-label={t('escalation_refresh')}
-                data-testid="escalations-refresh"
-              >
-                <ArrowRepeat />
-              </Button>
-            </div>
-          }
-        >
-          <div className="progeo-table-search escalations-search">
-            <Search aria-hidden size={13} className="progeo-table-search-icon" />
-            <input
-              type="search"
-              value={query}
-              placeholder={t('escalation_search')}
-              aria-label={t('escalation_search')}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setQuery('');
-                }
-              }}
-              className="progeo-table-search-input"
-              data-testid="escalations-search"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                aria-label={t('escalation_search_clear')}
-                title={t('escalation_search_clear')}
-                className="progeo-table-search-clear"
-              >
-                <XLg size={10} />
-              </button>
-            )}
-          </div>
-          <EscalationList
-            list={
-              list && searchWords(query).length
-                ? list.filter((escalation) =>
-                    matchesSearchWords(
-                      escalationSearchText(escalation, t(statusKey(escalation.status))),
-                      searchWords(query),
-                    ),
-                  )
-                : list
-            }
-            filtered={searchWords(query).length > 0}
-            selectedId={selectedId}
-            onSelect={(escalation) => navigate(escalationPath(escalation.id))}
-          />
-        </PanelCard>
+    <div data-testid="page-escalations">
+      <div className="escalations-view-switch">
+        <SegmentedControl
+          options={[
+            { value: 'list', label: t('flow_tab_list') },
+            { value: 'flow', label: t('flow_tab_flow') },
+          ]}
+          value={view}
+          onChange={selectView}
+          testId="escalations-view"
+        />
       </div>
-      {selectedId != null && (
-        <div className="escalations-detail-col">
-          {shown ? (
-            // Remounted with every change: the controls start from the saved values.
-            <EscalationDetail
-              key={`${shown.id}-${shown.updated}`}
-              escalation={shown}
-              staff={staff}
-              onChanged={changed}
-            />
-          ) : (
-            <PanelCard testId="escalation-detail-loading">
-              <div className="d-flex justify-content-center py-4 text-muted">
-                <Spinner size="sm" animation="border" />
+      {view === 'flow' ? (
+        <AlarmFlowTab />
+      ) : (
+        <div className="d-flex flex-column flex-xl-row gap-3 align-items-stretch">
+          <div className="escalations-list-col">
+            <PanelCard
+              testId="escalations-list"
+              title={t('escalations_title')}
+              actions={
+                <div className="d-flex align-items-center gap-2">
+                  <SegmentedControl
+                    options={[
+                      { value: 'open', label: t('escalation_filter_open') },
+                      { value: 'closed', label: t('escalation_filter_closed') },
+                      { value: 'all', label: t('escalation_filter_all') },
+                    ]}
+                    value={filter}
+                    onChange={(value) => setFilter(value as StateFilter)}
+                    testId="escalations-filter"
+                  />
+                  <Button
+                    size="sm"
+                    variant="link"
+                    onClick={loadList}
+                    title={t('escalation_refresh')}
+                    aria-label={t('escalation_refresh')}
+                    data-testid="escalations-refresh"
+                  >
+                    <ArrowRepeat />
+                  </Button>
+                </div>
+              }
+            >
+              <div className="progeo-table-search escalations-search">
+                <Search
+                  aria-hidden
+                  size={13}
+                  className="progeo-table-search-icon"
+                />
+                <input
+                  type="search"
+                  value={query}
+                  placeholder={t('escalation_search')}
+                  aria-label={t('escalation_search')}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setQuery('');
+                    }
+                  }}
+                  className="progeo-table-search-input"
+                  data-testid="escalations-search"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    aria-label={t('escalation_search_clear')}
+                    title={t('escalation_search_clear')}
+                    className="progeo-table-search-clear"
+                  >
+                    <XLg size={10} />
+                  </button>
+                )}
               </div>
+              <EscalationList
+                list={
+                  list && searchWords(query).length
+                    ? list.filter((escalation) =>
+                        matchesSearchWords(
+                          escalationSearchText(
+                            escalation,
+                            t(statusKey(escalation.status)),
+                          ),
+                          searchWords(query),
+                        ),
+                      )
+                    : list
+                }
+                filtered={searchWords(query).length > 0}
+                selectedId={selectedId}
+                onSelect={(escalation) =>
+                  navigate(escalationPath(escalation.id))
+                }
+              />
             </PanelCard>
+          </div>
+          {selectedId != null && (
+            <div className="escalations-detail-col">
+              {shown ? (
+                // Remounted with every change: the controls start from the saved values.
+                <EscalationDetail
+                  key={`${shown.id}-${shown.updated}`}
+                  escalation={shown}
+                  staff={staff}
+                  onChanged={changed}
+                />
+              ) : (
+                <PanelCard testId="escalation-detail-loading">
+                  <div className="d-flex justify-content-center py-4 text-muted">
+                    <Spinner size="sm" animation="border" />
+                  </div>
+                </PanelCard>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -425,7 +472,10 @@ const EscalationDetail = ({
         // Three groups, each control next to its own button: the message and
         // "Comment", the changes (status, assignee) as labelled rows, closing
         // apart at the bottom. The message goes with whichever action is used.
-        <div className="escalation-actions" data-testid="escalation-detail-actions">
+        <div
+          className="escalation-actions"
+          data-testid="escalation-detail-actions"
+        >
           <div className="escalation-actions-compose">
             <Form.Control
               as="textarea"
@@ -438,7 +488,9 @@ const EscalationDetail = ({
               data-testid="escalation-message"
             />
             <div className="escalation-actions-compose-foot">
-              <span className="small text-muted">{t('escalation_message_hint')}</span>
+              <span className="small text-muted">
+                {t('escalation_message_hint')}
+              </span>
               <Button
                 size="sm"
                 onClick={() => act('comment')}
@@ -452,7 +504,10 @@ const EscalationDetail = ({
           </div>
 
           <div className="escalation-actions-grid">
-            <label className="escalation-actions-label" htmlFor="escalation-status-select">
+            <label
+              className="escalation-actions-label"
+              htmlFor="escalation-status-select"
+            >
               {t('escalation_status')}
             </label>
             <Form.Select
@@ -480,7 +535,10 @@ const EscalationDetail = ({
               {t('escalation_set_status')}
             </Button>
 
-            <label className="escalation-actions-label" htmlFor="escalation-assignee-select">
+            <label
+              className="escalation-actions-label"
+              htmlFor="escalation-assignee-select"
+            >
               {t('escalation_assignee')}
             </label>
             <Form.Select
@@ -544,7 +602,8 @@ const EscalationDetail = ({
             i18nKey="escalation_close_confirm"
             values={{
               title: escalation.title,
-              location: `${escalation.project_id ?? '-'} ${escalation.location_name ?? ''}`.trim(),
+              location:
+                `${escalation.project_id ?? '-'} ${escalation.location_name ?? ''}`.trim(),
             }}
           />
         }

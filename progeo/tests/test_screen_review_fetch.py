@@ -59,6 +59,9 @@ def staging(settings, tmp_path, monkeypatch):
         (runs / run / "pc").mkdir(parents=True)
         (runs / run / "mobile").mkdir()
         (runs / run / "pc" / "pc-staff-de-location-overview.png").write_bytes(b"png-pc")
+        # The elements under the screenshot's comments (screen_review_elements).
+        (runs / run / "pc" / "pc-staff-de-location-overview.elements.json").write_text('{"elements": []}')
+        (runs / run / "pc" / "secrets.elements.json").write_text("x")
         (runs / run / "mobile" / "mobile-user-login.png").write_bytes(b"png-mobile")
         (runs / run / "manifest.json").write_text("{}")
         # Neither a screenshot nor a run's file: stays on staging.
@@ -87,6 +90,9 @@ def test_the_missing_runs_come_from_the_staging_checkout(staging):
     assert (run / "pc" / "pc-staff-de-location-overview.png").read_bytes() == b"png-pc"
     assert (run / "mobile" / "mobile-user-login.png").exists() and (run / "manifest.json").exists()
     assert not (run / "pc" / "notes.txt").exists() and not (run / "private.key").exists()
+    # A screenshot's element list comes along - an element list of no screenshot doesn't.
+    assert (run / "pc" / "pc-staff-de-location-overview.elements.json").exists()
+    assert not (run / "pc" / "secrets.elements.json").exists()
     assert not (staging.local / f"{STAGING_RUN}.part").exists()
     # Staging's checkout is /home/progeo/detection-docker-setup: relative to the login's home.
     assert all(path.startswith("detection-docker-setup/media/uploads/e2e/") for path in staging.sftp.gets)

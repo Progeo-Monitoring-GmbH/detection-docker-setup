@@ -58,3 +58,4 @@ coverage.xml
 documentation/
 auto_lageplan_previews/
 cosign.*
+.superpowers/

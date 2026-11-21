@@ -1,0 +1,337 @@
+/* /escalations/ "Alarmablauf" (AlarmFlowTab, AlarmFlowTimeline): one open
+   notification case per row as a horizontal timeline - solid rail for what
+   happened, dashed for what is to come, a "jetzt" pin in between. Phones:
+   the same points as a vertical list. Theme variables: scss/main.css. */
+
+.alarm-flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alarm-flow-hint {
+  color: #8b8383;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+.alarm-flow-case {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  box-shadow: var(--progeo-shadow-chrome);
+  padding: 12px 14px 14px;
+}
+
+.alarm-flow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.alarm-flow-title {
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.alarm-flow-spacer {
+  flex: 1;
+}
+
+.alarm-flow-next {
+  font-weight: 600;
+  color: var(--progeo-orange);
+}
+
+.alarm-flow-muted {
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.alarm-flow-ok {
+  color: #1f7a3a;
+}
+
+.alarm-flow-fail {
+  color: #b3261e;
+}
+
+.alarm-flow-paused {
+  color: #8a6d00;
+  font-size: 12px;
+}
+
+/* -- the rail ---------------------------------------------------------------- */
+
+/* A wide case scrolls inside its own box, never the page. */
+.alarm-flow-scroll {
+  overflow-x: auto;
+}
+
+.alarm-flow-rail {
+  display: grid;
+  align-items: start;
+}
+
+.alarm-flow-stop,
+.alarm-flow-now {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 6px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+/* The rail segment behind each point: solid up to "jetzt", dashed after it. */
+.alarm-flow-stop::before,
+.alarm-flow-now::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  border-top: 3px solid var(--progeo-blue);
+}
+
+.alarm-flow-now::before,
+.alarm-flow-stop--planned::before,
+.alarm-flow-stop--end::before {
+  border-top-style: dashed;
+  border-top-color: #9fb3c6;
+}
+
+.alarm-flow-dot {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--progeo-white);
+}
+
+.alarm-flow-dot--detected {
+  background: var(--progeo-orange);
+}
+
+.alarm-flow-dot--sent {
+  background: var(--progeo-blue);
+}
+
+.alarm-flow-dot--planned {
+  background: var(--progeo-surface);
+  border: 3px dashed var(--progeo-blue);
+  color: var(--progeo-blue);
+}
+
+.alarm-flow-dot--end {
+  background: #1f7a3a;
+}
+
+.alarm-flow-when {
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.alarm-flow-label {
+  color: #6e6868;
+}
+
+.alarm-flow-label--ok {
+  color: #1f7a3a;
+}
+
+.alarm-flow-countdown {
+  color: var(--progeo-orange);
+  font-weight: 600;
+}
+
+.alarm-flow-countdown--due {
+  color: #b3261e;
+}
+
+/* -- "jetzt" ---------------------------------------------------------------- */
+
+.alarm-flow-now-pin {
+  position: relative;
+  z-index: 1;
+  width: 3px;
+  height: 30px;
+  background: var(--progeo-orange);
+}
+
+.alarm-flow-now-label {
+  position: relative;
+  z-index: 1;
+  background: var(--progeo-orange);
+  color: var(--progeo-white);
+  border-radius: var(--progeo-radius-pill);
+  padding: 2px 9px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.alarm-flow-now-notes {
+  margin-top: 4px;
+  color: #6e6868;
+  font-size: 12px;
+}
+
+/* -- the cards ----------------------------------------------------------------- */
+
+.alarm-flow-card {
+  margin-top: 8px;
+  width: 100%;
+  background: var(--progeo-panel-bg);
+  border-radius: 10px;
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.alarm-flow-card--planned {
+  background: var(--progeo-surface);
+  border: 1px dashed #9fb3c6;
+}
+
+.alarm-flow-card-title {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.alarm-flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  margin: 2px 3px 0 0;
+  border-radius: var(--progeo-radius-pill);
+  background: #e6edf3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.alarm-flow-chip--fail {
+  background: #fde8e4;
+  color: #b3261e;
+}
+
+.alarm-flow-chip--warn {
+  background: #fff4d6;
+  color: #8a6d00;
+  white-space: normal;
+}
+
+.alarm-flow-people {
+  list-style: none;
+  margin: 5px 0 0;
+  padding: 0;
+}
+
+.alarm-flow-people li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 0;
+  border-top: 1px solid #e6edf3;
+}
+
+.alarm-flow-person {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.alarm-flow-channels {
+  display: inline-flex;
+  gap: 4px;
+  color: var(--progeo-blue);
+  flex: none;
+}
+
+.alarm-flow-mail {
+  flex: none;
+}
+
+.alarm-flow-mail--ok {
+  color: #1f7a3a;
+}
+
+.alarm-flow-mail--fail {
+  color: #b3261e;
+}
+
+.alarm-flow-mail--held {
+  color: #8a6d00;
+}
+
+/* -- phones: the points as a vertical list, rail on the left ------------------- */
+
+@media (max-width: 640px) {
+  .alarm-flow-scroll {
+    overflow-x: visible;
+  }
+
+  /* !important: the grid columns are set inline (one per point). */
+  .alarm-flow-rail {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .alarm-flow-stop,
+  .alarm-flow-now {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    column-gap: 10px;
+    align-items: start;
+    text-align: left;
+    padding: 0;
+  }
+
+  .alarm-flow-stop > :not(.alarm-flow-dot),
+  .alarm-flow-now > :not(.alarm-flow-now-pin) {
+    grid-column: 2;
+  }
+
+  .alarm-flow-dot,
+  .alarm-flow-now-pin {
+    grid-column: 1;
+    grid-row: 1 / span 4;
+    justify-self: center;
+  }
+
+  /* The rail runs down the left instead of across. */
+  .alarm-flow-stop::before,
+  .alarm-flow-now::before {
+    left: 11px;
+    right: auto;
+    top: 0;
+    bottom: -12px;
+    border-top: none;
+    border-left: 3px solid var(--progeo-blue);
+  }
+
+  .alarm-flow-now::before,
+  .alarm-flow-stop--planned::before,
+  .alarm-flow-stop--end::before {
+    border-left-style: dashed;
+    border-left-color: #9fb3c6;
+  }
+
+  .alarm-flow-when {
+    margin-top: 2px;
+  }
+
+  .alarm-flow-now-label {
+    justify-self: start;
+  }
+}

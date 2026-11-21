@@ -197,11 +197,12 @@ const StitchedScreenshot = ({
   }: (typeof shapes)[number]) => {
     const color = isDraft ? '#094b81' : ACTION_COLORS[note.action];
     const selected = !isDraft && note.id === selectedNoteId;
+    const isDone = !isDraft && 'done' in note && Boolean(note.done);
     const select =
       !isDraft && onSelectNote && !tool
         ? () => onSelectNote(note.id)
         : undefined;
-    const className = `stitched-shape${selected ? ' stitched-shape--selected' : ''}${isDraft ? ' stitched-shape--draft' : ''}${select ? ' stitched-shape--clickable' : ''}`;
+    const className = `stitched-shape${selected ? ' stitched-shape--selected' : ''}${isDraft ? ' stitched-shape--draft' : ''}${isDone ? ' stitched-shape--done' : ''}${select ? ' stitched-shape--clickable' : ''}`;
     if (isArea(note.geometry)) {
       const { x, y, w, h } = note.geometry;
       return (

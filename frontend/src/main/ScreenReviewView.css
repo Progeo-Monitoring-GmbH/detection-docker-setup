@@ -201,6 +201,74 @@
   color: #e34948;
 }
 
+.screen-note-edit {
+  padding: 6px;
+  border: none;
+  background: none;
+  color: #8b8383;
+}
+
+.screen-note-edit:hover {
+  color: var(--progeo-blue);
+}
+
+/* "Done" on a note - green once it is. */
+.screen-note-done-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px solid #c9c2c2;
+  border-radius: var(--progeo-radius-pill);
+  background: none;
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.screen-note-done-toggle:hover,
+.screen-note-done-toggle--done {
+  border-color: #3f7a1c;
+  color: #3f7a1c;
+}
+
+/* A done note: greyed, its text struck through - who / when stays readable. */
+.screen-note--done .screen-note-body {
+  color: #8b8383;
+}
+
+.screen-note--done .screen-note-text {
+  text-decoration: line-through;
+}
+
+.screen-note--done .screen-note-number {
+  opacity: 0.45;
+}
+
+.screen-note-done-meta {
+  color: #3f7a1c;
+}
+
+/* Why the save button is disabled (a comment is required). */
+.screen-note-required {
+  color: #b5541f;
+}
+
+/* The run's general notes, below the filters. */
+.screen-general {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* Long comments wrap - the done / delete buttons stay beside them (phones too). */
+.screen-note .screen-note-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Phones and narrow windows: the tools below the image. */
 @media (max-width: 900px) {
   .screen-editor {

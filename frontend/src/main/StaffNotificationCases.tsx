@@ -5,7 +5,7 @@ import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
@@ -149,7 +149,7 @@ const StaffNotificationCases = () => {
     fetchCases();
   }, [fetchCases]);
 
-  const openCase = (row: NotificationCase) => {
+  const openCase = (row: Pick<NotificationCase, 'id'>) => {
     void axiosConfig.perform_get(
       auth,
       `/v1/notification-case/${row.id}/`,
@@ -157,6 +157,19 @@ const StaffNotificationCases = () => {
       (error) => showRequestError(enqueueSnackbar, t('staff_notifications_load_error'), error),
     );
   };
+
+  // /staff/?case=<id> (e.g. from the Alarmablauf of /escalations/): that
+  // case's detail right away, the list in view behind it.
+  const [searchParams] = useSearchParams();
+  const linkedCase = Number(searchParams.get('case'));
+  useEffect(() => {
+    if (!Number.isInteger(linkedCase) || linkedCase <= 0) {
+      return;
+    }
+    openCase({ id: linkedCase });
+    document.querySelector('[data-testid="staff-notifications"]')?.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedCase]);
 
   const act = (path: 'mute' | 'unmute' | 'close', body: Record<string, unknown>, message: string) => {
     if (!selected) {

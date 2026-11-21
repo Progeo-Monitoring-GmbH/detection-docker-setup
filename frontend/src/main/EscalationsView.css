@@ -119,3 +119,9 @@
   max-width: 420px;
   margin-bottom: 10px;
 }
+
+/* The tab switch above the page: Eskalationen | Alarmablauf. */
+.escalations-view-switch {
+  display: flex;
+  margin-bottom: 12px;
+}

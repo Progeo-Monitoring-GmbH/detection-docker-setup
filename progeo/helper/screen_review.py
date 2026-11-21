@@ -55,7 +55,19 @@ ACTION_TEXT = {
     "remove": "Remove the marked element.",
     "bigger": "Make the marked element bigger.",
     "smaller": "Make the marked element smaller.",
+    "question": "A question or something to check - answer it (in your report, by its id) and change"
+                " something only if the answer calls for it.",
+    "general": "About the whole run or the review tool, not one screen.",
 }
+# Where else a comment applies (ScreenReviewNote.scope) - PROMPT.md's words.
+SCOPE_TEXT = {
+    "screen": "this screen only",
+    "device": "every {device} screen - fix it everywhere it shows there",
+    "all": "everywhere (every device and page) - fix it everywhere it shows",
+}
+DEVICE_TEXT = {"pc": "desktop", "mobile": "phone"}
+# Actions that are nothing without their text.
+COMMENT_REQUIRED = ("move", "question", "general")
 # The colour of each action - the same as the review page's (screenReview.ts).
 ACTION_COLOR = {
     "move": (42, 120, 214),
@@ -63,6 +75,8 @@ ACTION_COLOR = {
     "remove": (227, 73, 72),
     "bigger": (0, 131, 0),
     "smaller": (235, 104, 52),
+    "question": (0, 128, 128),
+    "general": (110, 110, 110),
 }
 
 
@@ -286,8 +300,24 @@ def run_images(run: str) -> list:
                 "viewport": entry.get("viewport"),
                 "width": entry.get("width"), "height": entry.get("height"),
                 "errors": [str(error)[:300] for error in entry.get("errors", [])][:5],
+                "persona": _clean_persona(entry.get("persona")),
             })
     return images
+
+
+def _clean_persona(value):
+    """Who the capture was signed in as (manifest, newer runs): {username,
+    is_staff, is_superuser, permissions} - None for older runs."""
+    if not isinstance(value, dict):
+        return None
+    permissions = value.get("permissions")
+    return {
+        "username": _text(value.get("username"), 100),
+        "is_staff": bool(value.get("is_staff")),
+        "is_superuser": bool(value.get("is_superuser")),
+        "permissions": [_text(code, 80) for code in permissions if isinstance(code, str)][:100]
+        if isinstance(permissions, list) else [],
+    }
 
 
 def run_failures(run: str) -> list:
@@ -344,17 +374,27 @@ def clean_note(data, run: str) -> dict:
 
     if not isinstance(data, dict):
         raise ReviewError("A note must be an object")
+    action = data.get("action")
+    if action not in ScreenReviewNote.Action.values:
+        raise ReviewError("action must be one of " + ", ".join(ScreenReviewNote.Action.values))
+    comment = data.get("comment") or ""
+    if not isinstance(comment, str) or len(comment) > 5000:
+        raise ReviewError("comment must be a text of at most 5000 characters")
+    if action in COMMENT_REQUIRED and not comment.strip():
+        raise ReviewError(f"A {action} note needs a comment")
+    if action == "general":
+        # About the whole run: no screen, no shape, everywhere.
+        run_dir(run)
+        return {"image": "", "kind": "note", "action": action, "comment": comment.strip(),
+                "geometry": None, "scope": ScreenReviewNote.Scope.ALL}
     image = data.get("image")
     image_path(run, image)
     kind = data.get("kind")
     if kind not in ScreenReviewNote.Kind.values:
         raise ReviewError("kind must be arrow, area or note")
-    action = data.get("action")
-    if action not in ScreenReviewNote.Action.values:
-        raise ReviewError("action must be move, select, remove, bigger or smaller")
-    comment = data.get("comment") or ""
-    if not isinstance(comment, str) or len(comment) > 5000:
-        raise ReviewError("comment must be a text of at most 5000 characters")
+    scope = data.get("scope") or ScreenReviewNote.Scope.SCREEN
+    if scope not in ScreenReviewNote.Scope.values:
+        raise ReviewError("scope must be screen, device or all")
     geometry = data.get("geometry")
     if kind == "note":
         geometry = None
@@ -365,7 +405,8 @@ def clean_note(data, run: str) -> dict:
         geometry = {name: _number(geometry.get(name), name) for name in names}
         if kind == "area" and (geometry["w"] <= 0 or geometry["h"] <= 0):
             raise ReviewError("An area needs a width and a height")
-    return {"image": image, "kind": kind, "action": action, "comment": comment.strip(), "geometry": geometry}
+    return {"image": image, "kind": kind, "action": action, "comment": comment.strip(), "geometry": geometry,
+            "scope": scope}
 
 
 def mark_payload(mark) -> dict:
@@ -383,6 +424,10 @@ def note_payload(note) -> dict:
         "comment": note.comment, "geometry": note.geometry, "author": note.author_id,
         "author_name": (note.author.get_full_name() or note.author.username) if note.author else None,
         "created": note.created.isoformat(), "updated": note.updated.isoformat(),
+        "scope": note.scope,
+        "done": note.done_at is not None,
+        "done_at": note.done_at.isoformat() if note.done_at else None,
+        "done_by_name": (note.done_by.get_full_name() or note.done_by.username) if note.done_by else None,
     }
 
 
@@ -457,51 +502,108 @@ def _where(note) -> str:
     return "the whole screen"
 
 
-def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
-    """PROMPT.md: every comment of the run, per screen - for whoever works on it next."""
+def _persona_text(image) -> str:
+    """"staff `staff.weber` (superuser)" / "user `kunde.mueller` - permissions: a, b"."""
+    persona = image.get("persona")
+    if not persona:
+        return image["role"]
+    text = f"{image['role']} `{persona['username']}`" if persona.get("username") else image["role"]
+    flags = [name for name, on in (("staff", persona["is_staff"]), ("superuser", persona["is_superuser"])) if on]
+    if flags:
+        text += f" ({', '.join(flags)} - sees everything a held permission does not hide)"
+    if persona["permissions"]:
+        text += " - permissions: " + ", ".join(f"`{code}`" for code in persona["permissions"])
+    elif not flags:
+        text += " - no module permissions"
+    return text
+
+
+def _note_head(number, note, device) -> str:
+    comment = note.comment.replace("\n", " ").strip() or "(no comment)"
+    scope = SCOPE_TEXT.get(note.scope or "screen", SCOPE_TEXT["screen"]).format(
+        device=DEVICE_TEXT.get(device, device))
+    return f"{number}. [#{note.pk}] **{note.action.upper()}** · {_where(note)} · scope: {scope}: {comment}"
+
+
+def _target_lines(found) -> list:
+    """The elements under a comment (screen_review_elements.targets)."""
+    from progeo.helper import screen_review_elements as elements
+
+    lines = []
+    if found.get("area"):
+        lines.append("   - Marks: " + "; ".join(elements.describe(element) for element in found["area"]))
+    if found.get("from"):
+        lines.append(f"   - Arrow starts on: {elements.describe(found['from'])}")
+    if found.get("to"):
+        lines.append(f"   - Arrow points at: {elements.describe(found['to'])}")
+    return lines
+
+
+def prompt_markdown(run: str, images: list, notes_by_image: dict, general_notes=(), targets_of=None,
+                    done_count=0) -> str:
+    """PROMPT.md: every open comment of the run - the general ones, then per
+    screen - for whoever works on it next. `targets_of(note)`: the elements
+    under a comment (screen_review_elements.targets); `done_count`: comments
+    marked done, left out."""
+    targets_of = targets_of or (lambda note: {})
     # Each page, then its dialogs - the order of the review page.
     commented = sorted(
         (image for image in images if notes_by_image.get(image["file"])),
         key=lambda image: (image["action"], (image.get("modal") or {}).get("name") or "", image["device"],
                            image["role"], image["language"]),
     )
-    total = sum(len(notes_by_image[image["file"]]) for image in commented)
+    total = sum(len(notes_by_image[image["file"]]) for image in commented) + len(general_notes)
     counts = {}
-    for image in commented:
-        for note in notes_by_image[image["file"]]:
-            counts[note.action] = counts.get(note.action, 0) + 1
+    for note in [*general_notes, *(note for image in commented for note in notes_by_image[image["file"]])]:
+        counts[note.action] = counts.get(note.action, 0) + 1
     lines = [
         f"# Screen review – build {run}",
         "",
         ("Full-page screenshots of the ProGeo monitoring portal (pc and mobile, as a normal user and as staff,"
-        " with mocked data) with review comments. Work through every comment below: each names the screen"
-        " (its route), what to do and where."),
+         " with mocked data) with review comments. Work through every comment below: each names the screen"
+         " (its URL), what to do and where - and the element it marks."),
         "",
         "- The commented screenshots are in `screens/` - every comment is drawn in and numbered.",
-        ("- Each screen names its URL (open it in the portal) - a dialog also how it is opened on that page:"
-        " the steps by `data-testid` (`data-test-key` for repeated elements), then the dialog's own test id."),
+        ("- Each comment has a stable id `[#n]` - refer to it in your report (\"#412 fixed: …\"); the"
+         " review page marks comments as done."),
+        ("- **Marks / Arrow starts on / Arrow points at**: the element under the comment, found by its"
+         " position when the screenshot was taken - search the code for that `data-testid`. Without it"
+         " (older builds, an empty spot) only the coordinates are given."),
         ("- Coordinates are pixels of the full-page screenshot = CSS pixels of the page at that viewport,"
-        " x from the left, y from the top of the page (not of the window). A dialog's screenshot is the"
-        " window with the dialog open (x, y from the window's top left)."),
-        ("- Actions: **move** (arrow from the element to its new place), **select** (the element meant),"
-        " **remove**, **bigger**, **smaller**."),
+         " x from the left, y from the top of the page (not of the window). A dialog's screenshot is the"
+         " window with the dialog open (x, y from the window's top left). The reviewer sees the screenshots"
+         " scaled down - a size they judge (\"too small\", \"cut off\") is by eye, not in these pixels."),
+        ("- Actions: **move** (arrow from the element to its new place - the comment says how), **select**"
+         " (the element meant - the comment says what to change), **remove**, **bigger**, **smaller**,"
+         " **question** (answer or check it; change only if needed), **general** (about the whole run or"
+         " the review tool)."),
+        ("- **Scope**: *this screen only*, *every phone/desktop screen* or *everywhere* - fix a comment"
+         " everywhere its scope covers, not only on the screenshot it was made on."),
+        ("- \"Signed in as\" names the mocked user and their module permissions - an element missing for"
+         " one role may be a permission, not a bug."),
         "",
         "## Summary",
         "",
-        f"{total} comment(s) on {len(commented)} screen(s): "
-        + (", ".join(f"{count} × {action}" for action, count in sorted(counts.items())) or "none") + ".",
+        f"{total} open comment(s) on {len(commented)} screen(s)"
+        + (f" and {len(general_notes)} general one(s)" if general_notes else "") + ": "
+        + (", ".join(f"{count} × {action}" for action, count in sorted(counts.items())) or "none") + "."
+        + (f" {done_count} comment(s) marked done are left out." if done_count else ""),
         "",
     ]
+    if general_notes:
+        lines += ["## General", ""]
+        for note in general_notes:
+            comment = note.comment.replace("\n", " ").strip()
+            lines.append(f"- [#{note.pk}] {comment}")
+        lines.append("")
     for image in commented:
         viewport = image.get("viewport") or []
         size = f"{viewport[0]}×{viewport[1]}" if len(viewport) == 2 else image["device"]
         modal = image.get("modal")
-        lines += [
-            f"## {image['file']}",
-            "",
-            f"- Route: `{image.get('path') or '?'}`",
-            f"- URL: `{image.get('url') or image.get('path') or '?'}`",
-        ]
+        url = image.get("url") or image.get("path") or "?"
+        lines += [f"## {image['file']}", "", f"- URL: `{url}`"]
+        if image.get("path") and image["path"] != url:
+            lines.append(f"- Page route: `{image['path']}` (taken at the URL above)")
         if modal:
             dialog = f"- Dialog: **{modal['name']}**"
             if modal.get("testId"):
@@ -512,42 +614,62 @@ def prompt_markdown(run: str, images: list, notes_by_image: dict) -> str:
             if modal.get("scenario"):
                 lines.append(f"- Mocked data variant: `{modal['scenario']}`")
         lines += [
-            f"- Device: {image['device']} ({size}) · user: {image['role']} · language: {image['language']}",
+            f"- Device: {image['device']} ({size}) · language: {image['language']}",
+            f"- Signed in as: {_persona_text(image)}",
             f"- Image: `screens/{image['file']}` ({image.get('width')}×{image.get('height')} px)",
         ]
         if image.get("errors"):
             lines.append(f"- The page reported errors while captured: {'; '.join(image['errors'])}")
         lines.append("")
         for number, note in enumerate(notes_by_image[image["file"]], start=1):
-            comment = note.comment.replace("\n", " ").strip() or "(no comment)"
-            lines += [
-                f"{number}. **{note.action.upper()}** – {_where(note)}: {comment}",
-                f"   → {ACTION_TEXT.get(note.action, '')}",
-            ]
+            lines.append(_note_head(number, note, image["device"]))
+            lines += _target_lines(targets_of(note))
+            lines.append(f"   → {ACTION_TEXT.get(note.action, '')}")
         lines.append("")
     return "\n".join(lines)
 
 
 def export_zip(run: str) -> bytes:
-    """The ZIP of a run's comments: PROMPT.md, notes.json and screens/ (the
-    commented screenshots, drawn in)."""
+    """The ZIP of a run's open comments: PROMPT.md, notes.json (every comment,
+    with `done` and the elements under it) and screens/ (the commented
+    screenshots, drawn in). Comments marked done stay out of PROMPT.md and
+    the drawings."""
+    from progeo.helper import screen_review_elements as elements
     from progeo.v1.models import ScreenReviewNote
 
     images = run_images(run)
+    known = {image["file"] for image in images}
+    notes = list(ScreenReviewNote.objects.filter(run=run).select_related("author", "done_by").order_by("created", "pk"))
+    open_notes = [note for note in notes if note.done_at is None]
+    general = [note for note in open_notes if note.action == ScreenReviewNote.Action.GENERAL]
     notes_by_image = {}
-    for note in ScreenReviewNote.objects.filter(run=run).select_related("author").order_by("created", "pk"):
-        notes_by_image.setdefault(note.image, []).append(note)
+    for note in open_notes:
+        if note.action != ScreenReviewNote.Action.GENERAL and note.image in known:
+            notes_by_image.setdefault(note.image, []).append(note)
+    element_cache = {}
+
+    def targets_of(note):
+        if note.image not in element_cache:
+            element_cache[note.image] = elements.load(image_path(run, note.image)) if note.image in known else []
+        return elements.targets(element_cache[note.image], note.kind, note.geometry)
+
+    def json_targets(note):
+        found = targets_of(note) if note.image in known else {}
+        return {key: ([elements.describe(item) for item in value] if isinstance(value, list)
+                      else elements.describe(value)) for key, value in found.items()}
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("PROMPT.md", prompt_markdown(run, images, notes_by_image))
+        archive.writestr("PROMPT.md", prompt_markdown(run, images, notes_by_image, general, targets_of,
+                                                      done_count=len(notes) - len(open_notes)))
         archive.writestr("notes.json", json.dumps({
             "run": run,
-            "notes": [note_payload(note) for notes in notes_by_image.values() for note in notes],
+            "notes": [{**note_payload(note), "targets": json_targets(note)} for note in notes],
         }, indent=2, ensure_ascii=False))
         for image in images:
-            notes = notes_by_image.get(image["file"])
-            if not notes:
+            image_notes = notes_by_image.get(image["file"])
+            if not image_notes:
                 continue
             path = image_path(run, image["file"])
-            archive.writestr(f"screens/{image['file']}", annotate(path, list(enumerate(notes, start=1))))
+            archive.writestr(f"screens/{image['file']}", annotate(path, list(enumerate(image_notes, start=1))))
     return buffer.getvalue()

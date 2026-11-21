@@ -881,7 +881,11 @@ def send_online_mail(case) -> int:
 
 
 def process(now=None) -> dict:
-    """Send what is due (celery beat, every 15 minutes)."""
+    """Send what is due (celery beat, every 15 minutes). Every case reads its
+    location's project database - its connection is closed after the case
+    (release_connection): ~1000 project databases, one open connection each,
+    exceed Postgres' max_connections ("too many clients")."""
+    from progeo.helper.project_dbs import release_connection
     from progeo.v1.models import NotificationCase
 
     now = now or _now()
@@ -902,6 +906,8 @@ def process(now=None) -> dict:
                 result["alarm_stages"] += 1
         except Exception as exc:  # noqa: BLE001 - one broken case must not stop the others
             elog(f"[notification_cases] alarm case {case.pk} failed: {exc}")
+        finally:
+            release_connection(case.db)
 
     if in_window(now):
         budget = _offline_mail_budget(now)
@@ -923,6 +929,8 @@ def process(now=None) -> dict:
                     result["offline_stages"] += 1
             except Exception as exc:  # noqa: BLE001
                 elog(f"[notification_cases] offline case {case.pk} failed: {exc}")
+            finally:
+                release_connection(case.db)
         for case in NotificationCase.objects.using(DB).filter(online_mail_due=True):
             if len(case.notified or []) > budget:
                 result["deferred"] += 1
@@ -932,6 +940,8 @@ def process(now=None) -> dict:
                 result["online_mails"] += 1
             except Exception as exc:  # noqa: BLE001
                 elog(f"[notification_cases] online mail of case {case.pk} failed: {exc}")
+            finally:
+                release_connection(case.db)
         try:
             result["digest"] = send_staff_digest(now)
         except Exception as exc:  # noqa: BLE001

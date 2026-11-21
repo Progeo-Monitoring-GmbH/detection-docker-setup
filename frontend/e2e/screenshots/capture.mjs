@@ -20,7 +20,9 @@
 // Writes {device}/{device}-{role}-{language}-{action}.png per page,
 // {device}-{role}-{language}-{action}--{dialog}.png per dialog (routes.mjs
 // `modals`) and manifest.json (after every screenshot - a run cut short keeps
-// what it has). A dialog that does not open is no screenshot but an entry in
+// what it has; each entry names the persona it was taken as). Next to every
+// screenshot `<file>.elements.json`: its visible elements and where they are,
+// so the review's PROMPT.md names the element under a comment. A dialog that does not open is no screenshot but an entry in
 // the manifest's `failures` - the run goes on.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -268,6 +270,78 @@ const urlOf = (page) => {
   return `${url.pathname}${url.search}${url.hash}`;
 };
 
+// -- the elements of a screenshot ---------------------------------------------------------
+
+// What the review's PROMPT.md names under a comment (backend
+// helper/screen_review_elements.py): the visible elements with a test id,
+// plus unnamed buttons, links and inputs - in the screenshot's pixels.
+const ELEMENT_LIMIT = 3000;
+const ELEMENTS_SELECTOR =
+  '[data-testid], button, a[href], input, select, textarea, [role="button"]';
+
+/**
+ * `<file>.elements.json` next to the screenshot. `rootSelector`: a dialog -
+ * only its elements (the page behind the backdrop is not what a comment on
+ * a dialog means). Never fails the screenshot.
+ */
+const saveElements = async (page, device, file, rootSelector = null) => {
+  try {
+    const elements = await page.evaluate(
+      ({ selector, root: rootSel, limit }) => {
+        const root = (rootSel && document.querySelector(rootSel)) || document;
+        const rows = [];
+        for (const node of root.querySelectorAll(selector)) {
+          const box = node.getBoundingClientRect();
+          if (box.width < 1 || box.height < 1) {
+            continue;
+          }
+          const style = getComputedStyle(node);
+          if (style.visibility === 'hidden' || style.display === 'none') {
+            continue;
+          }
+          const testId = node.getAttribute('data-testid');
+          const text = (
+            node.getAttribute('aria-label') ||
+            node.innerText ||
+            node.value ||
+            node.getAttribute('title') ||
+            ''
+          )
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 80);
+          if (!testId && !text) {
+            continue;
+          }
+          rows.push({
+            t: testId || undefined,
+            k: node.getAttribute('data-test-key') || undefined,
+            g: node.tagName.toLowerCase(),
+            s: text || undefined,
+            r: [
+              Math.round(box.x + window.scrollX),
+              Math.round(box.y + window.scrollY),
+              Math.round(box.width),
+              Math.round(box.height),
+            ],
+          });
+          if (rows.length >= limit) {
+            break;
+          }
+        }
+        return rows;
+      },
+      { selector: ELEMENTS_SELECTOR, root: rootSelector, limit: ELEMENT_LIMIT },
+    );
+    fs.writeFileSync(
+      path.join(OUT, device, file.replace(/\.png$/, '.elements.json')),
+      JSON.stringify({ elements }),
+    );
+  } catch {
+    // The screenshot stays usable - its comments then name coordinates only.
+  }
+};
+
 // -- dialogs ---------------------------------------------------------------------------
 
 const STEP_TIMEOUT = 8000;
@@ -486,6 +560,13 @@ try {
             viewport: [width, height],
             errors: shot.errors.slice(0, 5),
             unmocked: [...shot.unmocked].sort(),
+            // Who it was taken as - PROMPT.md: a missing element may be a permission.
+            persona: {
+              username: persona.username,
+              is_staff: persona.is_staff,
+              is_superuser: persona.is_superuser,
+              permissions: persona.permissions,
+            },
           });
           try {
             if (wantPage) {
@@ -497,6 +578,7 @@ try {
                   path: path.join(OUT, device, file),
                   ...(await growToPage(page, width)),
                 });
+                await saveElements(page, device, file);
                 const size = await page.evaluate(() => [
                   document.documentElement.scrollWidth,
                   document.documentElement.scrollHeight,
@@ -566,6 +648,7 @@ try {
                 await page.waitForTimeout(450);
                 await growToDialog(page, selector, width, height);
                 await page.screenshot({ path: path.join(OUT, device, file) });
+                await saveElements(page, device, file, selector);
                 const size = page.viewportSize();
                 manifest.images.push({
                   ...entryOf(file),

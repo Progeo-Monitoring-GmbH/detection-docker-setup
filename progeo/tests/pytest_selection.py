@@ -39,14 +39,14 @@ AREA_MODULES = {
     "locations": """
         auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api dm_transfer plan_meters plan_ocr
-        location_readiness readiness_qa screen_review screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf
+        location_readiness readiness_qa screen_review screen_review_elements screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video
         heat_limitations_api location_climate measurement_history noise_profiles
     """,
     "notifications": """
-        bounces_and_notifications notification_cases email_and_sms_helpers measurement_notice messenger matrix_setup
+        bounces_and_notifications notification_cases notification_timeline email_and_sms_helpers measurement_notice messenger matrix_setup
         outbound test_mail_command
     """,
     "operations": """

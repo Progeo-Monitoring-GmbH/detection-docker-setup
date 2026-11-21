@@ -29,8 +29,9 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         DELETE /v1/screen-review/<run>/                        the run with its notes (superusers)
         GET    /v1/screen-review/<run>/image/<file>/           a screenshot (PNG)
         GET    /v1/screen-review/<run>/export/                 ZIP: PROMPT.md, notes.json, screens/
-        POST   /v1/screen-review/<run>/notes/                  {image, kind, action, comment, geometry}
-        PATCH  /v1/screen-review/<run>/notes/<id>/             the same fields
+        POST   /v1/screen-review/<run>/notes/                  {image, kind, action, comment, geometry, scope}
+                                                               (a "general" note: image "", the whole run)
+        PATCH  /v1/screen-review/<run>/notes/<id>/             the same fields and/or {done: true|false}
         DELETE /v1/screen-review/<run>/notes/<id>/
         POST   /v1/screen-review/<run>/reviewed/               {image, reviewed: true|false}
         GET    /v1/screen-review/fetch/                        the fetch from staging: {enabled, state}
@@ -85,7 +86,7 @@ class ScreenReviewViewSet(viewsets.ViewSet):
             images = review.run_images(run)
         except review.ReviewError as exc:
             return _failed(str(exc), 404)
-        notes = ScreenReviewNote.objects.filter(run=run).select_related("author")
+        notes = ScreenReviewNote.objects.filter(run=run).select_related("author", "done_by")
         marks = ScreenReviewMark.objects.filter(run=run).select_related("reviewed_by")
         return RequestSuccess({
             "run": run, "images": images, "notes": [review.note_payload(note) for note in notes],
@@ -143,19 +144,27 @@ class ScreenReviewViewSet(viewsets.ViewSet):
     @require_staff_permissions("module_admin_screen_review")
     @action(detail=True, methods=["PATCH", "DELETE"], url_path=r"notes/(?P<note_id>\d+)")
     def note(self, request, run=None, note_id=None, *args, **kwargs):
-        note = ScreenReviewNote.objects.filter(run=run, pk=int(note_id)).select_related("author").first()
+        note = ScreenReviewNote.objects.filter(run=run, pk=int(note_id)).select_related("author", "done_by").first()
         if note is None:
             return _failed("Note not found", 404)
         if request.method == "DELETE":
             note.delete()
             return RequestSuccess({"deleted": int(note_id)})
         data = request.data if isinstance(request.data, dict) else {}
-        try:
-            fields = review.clean_note({**review.note_payload(note), **data, "image": note.image}, run)
-        except review.ReviewError as exc:
-            return _failed(str(exc))
-        for name, value in fields.items():
-            setattr(note, name, value)
+        if "done" in data and not isinstance(data["done"], bool):
+            return _failed("done must be true or false")
+        # Only {done}: no check of the other fields (an older note may lack
+        # the comment a new one needs).
+        if set(data) - {"done"}:
+            try:
+                fields = review.clean_note({**review.note_payload(note), **data, "image": note.image}, run)
+            except review.ReviewError as exc:
+                return _failed(str(exc))
+            for name, value in fields.items():
+                setattr(note, name, value)
+        if "done" in data and data["done"] != (note.done_at is not None):
+            note.done_at = timezone.now() if data["done"] else None
+            note.done_by = request.user if data["done"] else None
         note.updated = timezone.now()
         note.save()
         return RequestSuccess({"note": review.note_payload(note)})

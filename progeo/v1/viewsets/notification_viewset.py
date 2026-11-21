@@ -14,6 +14,7 @@ and must neither acknowledge an alarm nor unsubscribe anybody.
 Staff (is_staff or is_superuser) - the monitoring of the cases:
   GET  /v1/notification-case/?state=open|resolved|all&kind=offline|alarm&location=<id>
   GET  /v1/notification-case/summary/
+  GET  /v1/notification-case/timeline/      the open cases as timelines (helper/notification_timeline.py)
   GET  /v1/notification-case/<pk>/          with its protocol
   POST /v1/notification-case/<pk>/mute/     {days: n | null (until unmuted)}
   POST /v1/notification-case/<pk>/unmute/
@@ -226,6 +227,25 @@ class NotificationCaseViewSet(viewsets.ViewSet):
         if error:
             return error
         return RequestSuccess({"case": _detail(case)})
+
+    @action(detail=False, methods=["GET"])
+    def timeline(self, request, *args, **kwargs):
+        """The open cases as timelines (/escalations/ "Alarmablauf"): what was
+        sent, what comes next - the next message first."""
+        denied = self._denied(request)
+        if denied:
+            return denied
+        from progeo.helper import notification_timeline
+
+        now = timezone.now()
+        return RequestSuccess({
+            "now": notification_timeline.iso(now),
+            "run_minutes": notification_timeline.RUN_MINUTES,
+            "cases": notification_timeline.open_timelines(now),
+            # More open cases than shown: the page says so.
+            "total": notification_timeline.open_case_count(),
+            "limit": notification_timeline.LIMIT,
+        })
 
     @action(detail=False, methods=["GET"])
     def summary(self, request, *args, **kwargs):
