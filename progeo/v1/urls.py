@@ -27,6 +27,7 @@ from progeo.v1.viewsets.qa_viewset import QAViewSet
 from progeo.v1.viewsets.screen_review_viewset import ScreenReviewViewSet
 from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
+from progeo.v1.viewsets.threshold_fine_tune_viewset import ThresholdFineTuneViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
 
 progeo_router = CustomRouter()
@@ -88,6 +89,9 @@ location_selection_router.register(r'', LocationSelectionViewSet, basename='loca
 screen_review_router = CustomRouter()
 screen_review_router.register(r'', ScreenReviewViewSet, basename='screen-review')
 
+threshold_fine_tune_router = CustomRouter()
+threshold_fine_tune_router.register(r'', ThresholdFineTuneViewSet, basename='threshold-fine-tune')
+
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
@@ -106,6 +110,7 @@ urlpatterns = [
     re_path(r'^screen-review/', include(screen_review_router.urls)),
     re_path(r'^location-selection/', include(location_selection_router.urls)),
     re_path(r'^database-usage/', include(database_usage_router.urls)),
+    re_path(r'^threshold-fine-tune/', include(threshold_fine_tune_router.urls)),
     re_path(r'^notification-case/', include(notification_case_router.urls)),
     re_path(r'^notification-location/', include(notification_location_router.urls)),
     # Flash bundle uploads (release.sh); nginx serves them at /firmware/.

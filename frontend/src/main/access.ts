@@ -75,6 +75,8 @@ export const APP_ROUTE_ACCESS = {
   '/escalations/': staffPermission('module_escalations_enabled'),
   // The screenshots of a build and their review comments (e2e_screenshots).
   '/review/screens/': staffPermission('module_admin_screen_review'),
+  // The findings of fine_tune_thresholds: pick and apply alarm thresholds.
+  '/staff/thresholds/': staffPermission('module_admin_thresholds'),
   '/escalations/:id': staffPermission('module_escalations_enabled'),
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
   '/backup/:account/overview/': allOf(

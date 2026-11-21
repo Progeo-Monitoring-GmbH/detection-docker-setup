@@ -9,8 +9,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('../../../hooks/CoreAuthProvider.tsx', () => ({ useAuth: () => ({}) }));
+// Locations /v1/location/<id>/ answers for (the others: no access).
+const api = vi.hoisted(() => ({ locations: new Map<number, { id: number; name: string }>(), urls: [] as string[] }));
 vi.mock('../../axiosConfig', () => ({
-  default: { perform_get: () => undefined },
+  default: {
+    perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void, fail: (error: unknown) => void) => {
+      api.urls.push(url);
+      const id = Number(/^\/v1\/location\/(\d+)\/$/.exec(url)?.[1]);
+      if (id) {
+        const location = api.locations.get(id);
+        if (location) {
+          ok({ data: location });
+        } else {
+          fail({ response: { status: 404 } });
+        }
+      }
+    },
+  },
 }));
 vi.mock('../../main/access', () => ({
   useAccess: () => ({ can: () => true, hasPermission: () => false }),
@@ -18,9 +33,9 @@ vi.mock('../../main/access', () => ({
   portalItemRule: () => null,
 }));
 vi.mock('../../main/roleModel', () => ({ useProgeoRole: () => 'staff' }));
-vi.mock('../../main/portalNav', () => ({
-  PORTAL_NAV_ITEMS: [],
-  portalNavPath: () => '',
+vi.mock('../../main/portalNav', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  PORTAL_NAV_ITEMS: [{ key: 'status', segment: 'status', labelKey: 'nav_status', icon: 'M0 0' }],
 }));
 vi.mock('./SidebarShell', () => ({
   default: ({
@@ -44,6 +59,8 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  api.locations.clear();
+  api.urls = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -125,5 +142,32 @@ describe('showsVerwaltungLink', () => {
   it('always shows the overview to staff who may open it', () => {
     expect(showsVerwaltungLink(false, 0, true)).toBe(true);
     expect(showsVerwaltungLink(false, null, true)).toBe(true);
+  });
+});
+
+describe('LocationSidebar with ?location= outside the portal', () => {
+  const statusLink = () =>
+    container.querySelector('[data-testid="sidebar-link"][data-test-key="status"]');
+
+  it("shows the location's links on a page that selects it by ?location=", () => {
+    api.locations.set(1181, { id: 1181, name: 'Halle 1181' });
+    render('/device/overview?location=1181');
+
+    expect(statusLink()?.getAttribute('href')).toBe('/location/1181/status');
+    expect(container.textContent).toContain('Halle 1181');
+  });
+
+  it('shows no location links for a location the user cannot open', () => {
+    render('/device/overview?location=77');
+
+    expect(api.urls).toContain('/v1/location/77/');
+    expect(statusLink()).toBeNull();
+  });
+
+  it('shows no location links without ?location=', () => {
+    render('/device/overview');
+
+    expect(statusLink()).toBeNull();
+    expect(api.urls.some((url) => /^\/v1\/location\/\d+\/$/.test(url))).toBe(false);
   });
 });

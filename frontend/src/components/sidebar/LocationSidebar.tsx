@@ -23,13 +23,14 @@ import {
   ListCheck,
   People,
   Plug,
+  Sliders,
   Terminal,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
-import { PORTAL_NAV_ITEMS, portalNavPath } from '../../main/portalNav';
+import { PORTAL_NAV_ITEMS, openLocationId, portalNavPath } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
 import { repeatedTestId } from '../../testIds';
 import SidebarShell from './SidebarShell';
@@ -88,14 +89,44 @@ export const showsVerwaltungLink = (
  * guards the page itself.
  */
 const LocationSidebar = ({
-  location = null,
-  locationId = null,
+  location: portalLocation = null,
+  locationId: portalLocationId = null,
 }: LocationSidebarProps) => {
   const { t } = useTranslation();
   const auth = useAuth();
   const { can, hasPermission, isStaffOrSuperuser } = useAccess();
   const role = useProgeoRole();
   const routerLocation = useRouterLocation();
+  // The requests below run per location - `auth` changes with the path.
+  const authRef = useRef(auth);
+  useLayoutEffect(() => {
+    authRef.current = auth;
+  });
+
+  // Outside the portal a page may still show one location by ?location=
+  // (/device/overview?location=12, the checklist, the Lageplan wizard): its
+  // links (Status, Objektinfos, ...) are there too. Shown once the location
+  // has loaded - a location the user can't open gets no links.
+  const queryLocationId =
+    portalLocationId == null
+      ? openLocationId(routerLocation.pathname, routerLocation.search)
+      : null;
+  const [queryLocation, setQueryLocation] = useState<LocationDetail | null>(null);
+  useEffect(() => {
+    if (queryLocationId == null) {
+      return;
+    }
+    void axiosConfig.perform_get(
+      authRef.current,
+      `/v1/location/${queryLocationId}/`,
+      (response) => setQueryLocation((response?.data || null) as LocationDetail | null),
+      () => setQueryLocation(null),
+    );
+  }, [queryLocationId]);
+  const location =
+    portalLocation ??
+    (queryLocationId != null && queryLocation?.id === queryLocationId ? queryLocation : null);
+  const locationId = portalLocationId ?? (location ? queryLocationId : null);
 
   // The open alarm clusters of the location they were counted for.
   const [clusterCount, setClusterCount] = useState<{
@@ -106,10 +137,6 @@ const LocationSidebar = ({
   // Once per location: hasPermission is a new function on every render, and
   // `auth` changes with the path - neither is a reason to ask again.
   const canSeeMeasurements = hasPermission('module_measurements_enabled');
-  const authRef = useRef(auth);
-  useLayoutEffect(() => {
-    authRef.current = auth;
-  });
   const openClusterCount =
     locationId && canSeeMeasurements && clusterCount?.locationId === locationId
       ? clusterCount.count
@@ -252,6 +279,14 @@ const LocationSidebar = ({
       icon: Images,
       to: '/review/screens/',
       visible: can(routeRule('/review/screens/')),
+    },
+    {
+      // The findings of fine_tune_thresholds - pick and apply alarm thresholds.
+      key: 'threshold-fine-tune',
+      label: t('sidebar_threshold_fine_tune'),
+      icon: Sliders,
+      to: '/staff/thresholds/',
+      visible: can(routeRule('/staff/thresholds/')),
     },
     {
       // How the project databases are used - which are dead.

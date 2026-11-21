@@ -681,6 +681,8 @@ SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
 EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
+# Threshold proposals of fine_tune_thresholds (and their applied/revert records).
+FINE_TUNE_DIR = os.path.join(MEDIA_ROOT, os.getenv("FINE_TUNE_DIR", "fine-tune"))
 # Flash bundles for the field app (helper/firmware.py). nginx serves this
 # directory publicly at /firmware/ (docker/nginx/snippets/firmware.conf), so
 # the name is fixed.

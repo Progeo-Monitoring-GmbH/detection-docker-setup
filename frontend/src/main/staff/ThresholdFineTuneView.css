@@ -1,0 +1,143 @@
+/* ThresholdFineTuneView.tsx: the fine_tune_thresholds findings - slider per
+   location, its safety margin above the true maximum. Theme: scss/main.css. */
+
+.form-select.ftt-file-select {
+  width: auto;
+  min-width: 240px;
+  max-width: 100%;
+}
+
+/* Slider + exact number side by side. */
+.ftt-threshold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.form-range.ftt-slider {
+  flex: 1 1 auto;
+  min-width: 110px;
+}
+
+.form-control.ftt-number {
+  flex: 0 0 76px;
+  width: 76px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Differs from the threshold the location has now - will be written. */
+.form-control.ftt-number--changed {
+  border-color: var(--progeo-orange);
+  font-weight: 700;
+}
+
+/* Safety margin: red below the maximum, yellow below the scan's buffer. */
+.ftt-margin {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ftt-margin--ok {
+  color: #3d7a1f;
+}
+
+.ftt-margin--warn {
+  color: #9a6b00;
+}
+
+.ftt-margin--danger {
+  color: #b3261e;
+}
+
+.ftt-margin--none {
+  color: #6b6a64;
+}
+
+.ftt-margin-abs {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* The scan's verdict per location. */
+.ftt-action {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--progeo-radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--progeo-track);
+  color: var(--progeo-blue);
+}
+
+.ftt-action--lower {
+  background: rgba(141, 193, 96, 0.25);
+  color: #3d7a1f;
+}
+
+.ftt-action--raise {
+  background: rgba(97, 170, 197, 0.22);
+  color: #1f5f78;
+}
+
+.ftt-action--review {
+  background: rgba(251, 188, 21, 0.25);
+  color: #7a5600;
+}
+
+.ftt-action--skipped_active_alarm {
+  background: rgba(235, 99, 59, 0.18);
+  color: #a63c1c;
+}
+
+.ftt-applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #3d7a1f;
+  white-space: nowrap;
+}
+
+/* The location's threshold changed since the scan (or the last apply). */
+.ftt-drift {
+  display: block;
+  font-size: 0.75rem;
+  color: #a63c1c;
+  white-space: nowrap;
+}
+
+.ftt-warnings {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #7a5600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* The confirm modals: one location per line, old -> new right. */
+.ftt-change-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.ftt-change-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--progeo-track);
+  font-size: 0.875rem;
+}

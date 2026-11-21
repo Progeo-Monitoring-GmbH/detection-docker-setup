@@ -78,6 +78,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_escalations_enabled", "Can access escalations module"),
     ("module_reports_enabled", "Can access reports module"),
     ("module_alarms_enabled", "Can access alarms module"),
+    ("module_admin_thresholds", "Can fine-tune the alarm thresholds (fine_tune_thresholds)"),
 )
 
 # Held for real - staff included (holds_permission): the buttons they unlock

@@ -71,6 +71,7 @@ describe('APP_ROUTE_ACCESS', () => {
           'module_admin_staff_enabled',
           'module_admin_insights',
           'module_admin_screen_review',
+          'module_admin_thresholds',
           'module_escalations_enabled',
         ].includes(code),
     };
@@ -80,6 +81,7 @@ describe('APP_ROUTE_ACCESS', () => {
     expect(visible).toContain('/insights/activity/');
     expect(visible).toContain('/insights/databases/');
     expect(visible).toContain('/review/screens/');
+    expect(visible).toContain('/staff/thresholds/');
     expect(visible).toContain('/escalations/');
     expect(visible).toContain('/escalations/:id');
   });

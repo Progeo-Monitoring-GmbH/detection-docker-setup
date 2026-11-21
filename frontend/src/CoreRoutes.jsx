@@ -110,6 +110,9 @@ const UserActivityView = React.lazy(
   () => import('./main/staff/UserActivityView.tsx'),
 );
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
+const ThresholdFineTuneView = React.lazy(
+  () => import('./main/staff/ThresholdFineTuneView.tsx'),
+);
 const ScreenReviewView = React.lazy(
   () => import('./main/ScreenReviewView.tsx'),
 );
@@ -281,6 +284,10 @@ const CoreRoutes = () => {
           <Route
             path="/escalations/:id"
             element={guard('/escalations/:id', <EscalationsView />)}
+          />
+          <Route
+            path="/staff/thresholds/"
+            element={guard('/staff/thresholds/', <ThresholdFineTuneView />)}
           />
           <Route
             path="/review/screens/"
