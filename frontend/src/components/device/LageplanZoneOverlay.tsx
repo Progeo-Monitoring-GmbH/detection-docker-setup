@@ -91,6 +91,9 @@ type LageplanZoneOverlayProps = {
   alignment?: PlanPointAlignment | null;
   /** A click (not a drag) on a sensor or dm band, with its pos. */
   onPointClick?: (pos: number) => void;
+  /** A sensor (pos) to point out - an orange ring (a dm band: its line),
+   * e.g. the one hovered in a Verdachtsstelle's sensor list. */
+  highlightedPosition?: number | null;
   /**
    * data-testid of the overlay; its parts are "<testId>-plan", "-zoom",
    * "-tooltip", ... With the default the sensors keep their own ids
@@ -182,6 +185,7 @@ const LageplanZoneOverlay = ({
   mode = 'lines',
   alignment = null,
   onPointClick,
+  highlightedPosition = null,
   testId = DEFAULT_TEST_ID,
 }: LageplanZoneOverlayProps) => {
   const { t } = useTranslation();
@@ -487,6 +491,10 @@ const LageplanZoneOverlay = ({
     mode === 'segments' ? segmentPadding(points.map(toView), planUnit) : 0;
 
   const markerRadius = (mode === 'points' ? 0.016 : 0.01) * unit;
+  const highlighted =
+    highlightedPosition != null
+      ? (points.find((point) => point.pos === highlightedPosition) ?? null)
+      : null;
 
   return (
     <div
@@ -725,6 +733,16 @@ const LageplanZoneOverlay = ({
             </g>
           );
         })}
+        {highlighted && (
+          <ZoneHighlight
+            point={highlighted}
+            from={toView(highlighted)}
+            to={endToView(highlighted)}
+            radius={markerRadius * 2.2}
+            unit={unit}
+            testId={zoneId('highlight')}
+          />
+        )}
       </svg>
 
       <WheelZoomHint
@@ -809,6 +827,46 @@ const GroupLabel = ({
     </text>
   );
 };
+
+/** The sensor pointed out from outside: a ring around it, or along its dm band. */
+const ZoneHighlight = ({
+  point,
+  from,
+  to,
+  radius,
+  unit,
+  testId,
+}: {
+  point: LageplanZonePoint;
+  from: [number, number];
+  to: [number, number] | null;
+  radius: number;
+  unit: number;
+  testId?: string;
+}) =>
+  to ? (
+    <line
+      className="lageplan-zone-highlight"
+      data-testid={testId}
+      data-test-key={point.pos}
+      x1={from[0]}
+      y1={from[1]}
+      x2={to[0]}
+      y2={to[1]}
+      strokeWidth={0.02 * unit}
+      strokeLinecap="round"
+    />
+  ) : (
+    <circle
+      className="lageplan-zone-highlight"
+      data-testid={testId}
+      data-test-key={point.pos}
+      cx={from[0]}
+      cy={from[1]}
+      r={radius}
+      strokeWidth={0.006 * unit}
+    />
+  );
 
 /** The zone of a hovered line or segment: its sensors and the highest current value. */
 const ZoneTooltip = ({

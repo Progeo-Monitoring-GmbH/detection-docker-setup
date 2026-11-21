@@ -8,7 +8,13 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
-import { splitResolved, toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
+import {
+  firstDetectedOf,
+  splitResolved,
+  toggledSet,
+  type VerdachtsstelleCluster,
+} from './locationStatusData';
+import { FirstDetectionButton } from './ComputedSuspicionPanel';
 import { formatDate } from './dateFormat';
 import AlarmHistoryTable from './AlarmHistoryTable';
 import { repeatedTestId } from '../testIds';
@@ -29,6 +35,8 @@ type VerdachtsstellenPanelProps = {
   readOnly: boolean;
   /** Right of the title (the staff's Berechnet / Je Sensor switch). */
   headerActions?: ReactNode;
+  /** Sets the plan's time slider to a moment (ISO-8601) - the first detection. */
+  onShowMoment?: (at: string) => void;
 };
 
 /** The Verdachtsstellen (suspected leaks) of the location, each expandable
@@ -44,6 +52,7 @@ const VerdachtsstellenPanel = ({
   onAcknowledge,
   readOnly,
   headerActions,
+  onShowMoment,
 }: VerdachtsstellenPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -65,6 +74,7 @@ const VerdachtsstellenPanel = ({
         onAcknowledge={() => setAckTarget(cluster)}
         acknowledging={acknowledging.has(cluster.id)}
         readOnly={readOnly}
+        onShowMoment={onShowMoment}
         t={t}
       />
     ));
@@ -147,6 +157,7 @@ type VerdachtsstelleRowProps = {
   acknowledging: boolean;
   /** Demo view: no write actions. */
   readOnly?: boolean;
+  onShowMoment?: (at: string) => void;
   t: TFunction;
 };
 
@@ -160,9 +171,11 @@ const VerdachtsstelleRow = ({
   onAcknowledge,
   acknowledging,
   readOnly = false,
+  onShowMoment,
   t,
 }: VerdachtsstelleRowProps) => {
   const hasPendingAck = cluster.pending_ack_alarm_ids.length > 0;
+  const firstDetected = firstDetectedOf(cluster);
 
   return (
     <div
@@ -227,6 +240,14 @@ const VerdachtsstelleRow = ({
             rowTestId="verdachtsstelle-history-row"
           />
           <div className="verdachtsstellen-actions">
+            {onShowMoment && firstDetected && (
+              <FirstDetectionButton
+                at={firstDetected}
+                onShow={onShowMoment}
+                testId="verdachtsstelle-first-seen"
+                testKey={cluster.id}
+              />
+            )}
             <button
               type="button"
               hidden={readOnly}

@@ -50,6 +50,7 @@ import {
   historySpecFor,
   measurePointMeters,
   nextMeasurementOf,
+  sensorNameOf,
   severityColor,
   worstSeverityOf,
   type VerdachtsstelleCluster,
@@ -439,6 +440,13 @@ const LocationStatusView = ({
   // its own history, only for the heatmap; the Zeitreihe, the KPIs and the
   // sensor table keep |WP - EP| (the alarm value).
   const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
+  // The sensor hovered in a Verdachtsstelle's sensor list - pointed out on the plan.
+  const [hoveredSensor, setHoveredSensor] = useState<number | null>(null);
+  // A moment asked for on the page (a Verdachtsstelle's first detection):
+  // the plan's slider goes there - `revision` also when it is asked twice.
+  const [jump, setJump] = useState<{ at: number; revision: number } | null>(
+    null,
+  );
 
   // The settings of the URL, applied when the page opens and whenever they
   // change: an escalation's quick link (view, range, step, sensor, sensors,
@@ -463,6 +471,8 @@ const LocationStatusView = ({
     applied.key !== requestedKey
   ) {
     setApplied({ at: focusAt, key: requestedKey });
+    // A new ?at= wins over a moment asked for on the page.
+    setJump(null);
     if (requested.view) {
       setStatusView(requested.view);
     }
@@ -512,7 +522,9 @@ const LocationStatusView = ({
           ? // Found by the background check: how many is unknown.
             t('status_live_measurement_new')
           : t(
-              alarm ? 'status_live_measurement_alarm' : 'status_live_measurement',
+              alarm
+                ? 'status_live_measurement_alarm'
+                : 'status_live_measurement',
               { count },
             ),
         { variant: alarm ? 'warning' : 'info' },
@@ -548,7 +560,9 @@ const LocationStatusView = ({
     : effectiveTimeRange(selectedRange, rangeOptions);
   // The days of what goes with a period (computed suspicion points, battery
   // chart): the latest measurement goes with the last 24 h.
-  const rangeDays = isTimeRange(range) ? TIME_RANGE_DAYS[range] : TIME_RANGE_DAYS['24h'];
+  const rangeDays = isTimeRange(range)
+    ? TIME_RANGE_DAYS[range]
+    : TIME_RANGE_DAYS['24h'];
 
   // What the page shows - an escalation created now keeps it (statusViewState.ts).
   useEffect(() => {
@@ -713,11 +727,18 @@ const LocationStatusView = ({
     (sensorId: number) => sensorPoints.find((point) => point.pos === sensorId),
     [sensorPoints],
   );
+  // The name the plan gives a sensor (its own, else its dm band / line);
+  // "Sensor #7" only without one.
+  const visualization = planVisualization(location?.project_type);
   const sensorLabel = useCallback(
     (sensorId: number) =>
-      measurePointOf(sensorId)?.name ||
-      t('status_sensor_label', { sensor: sensorId }),
-    [measurePointOf, t],
+      sensorNameOf(
+        measurePointOf(sensorId),
+        visualization === 'lines'
+          ? (row) => t('status_line_label', { line: row + 1 })
+          : null,
+      ) ?? t('status_sensor_label', { sensor: sensorId }),
+    [measurePointOf, t, visualization],
   );
   const metersOf = useCallback(
     (sensorId: number) => measurePointMeters(measurePointOf(sensorId)),
@@ -756,6 +777,26 @@ const LocationStatusView = ({
               }),
       ),
     [clusters, clustersLoadedAt, openedAt, sensorLabel, t],
+  );
+
+  // "Erstes Auftreten anzeigen": the plan's slider to that moment - in a
+  // range that reaches back to it (the shortest available, as for ?at=).
+  const showMoment = useCallback(
+    (iso: string) => {
+      const at = Date.parse(iso);
+      if (!Number.isFinite(at)) {
+        return;
+      }
+      setJump((prev) => ({ at, revision: (prev?.revision ?? 0) + 1 }));
+      if (!rangeReaches(range, at, now)) {
+        const reaching = rangeContaining(at, now, rangeOptions);
+        if (reaching) {
+          setSelectedRange(reaching);
+          setPickedStep(null);
+        }
+      }
+    },
+    [now, range, rangeOptions],
   );
 
   // In the panel's header - a row of its own pushed the panel below the plan's top.
@@ -851,7 +892,7 @@ const LocationStatusView = ({
                 <LocationPlanPanel
                   preferredPlanId={planFromParams(searchParams)}
                   heatmap={heatmap}
-                  visualization={planVisualization(location?.project_type)}
+                  visualization={visualization}
                   withSensorTable={showsSensorTable(location?.project_type)}
                   threshold={thresholdValue}
                   denied={shownDenied}
@@ -862,7 +903,8 @@ const LocationStatusView = ({
                   profileLoading={
                     heatProfile !== 'diff' && profileSource.loading
                   }
-                  focusTime={focusAt}
+                  focusTime={jump?.at ?? focusAt}
+                  focusRevision={jump?.revision ?? 0}
                   // The step only matters for the animation: beside its start.
                   frameToolbar={
                     !isLatest &&
@@ -887,6 +929,7 @@ const LocationStatusView = ({
                     )
                   }
                   suspicions={suspicionMarkers}
+                  highlightedSensor={hoveredSensor}
                   onFrameTimeChange={onFrameTimeChange}
                 />
               </div>
@@ -901,6 +944,8 @@ const LocationStatusView = ({
                     onAcknowledge={computed.acknowledge}
                     readOnly={demo}
                     headerActions={suspicionSwitch}
+                    onSensorHover={setHoveredSensor}
+                    onShowMoment={showMoment}
                   />
                 ) : (
                   <VerdachtsstellenPanel
@@ -915,6 +960,7 @@ const LocationStatusView = ({
                     onAcknowledge={acknowledge}
                     readOnly={demo}
                     headerActions={suspicionSwitch}
+                    onShowMoment={showMoment}
                   />
                 )}
               </div>

@@ -1,6 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { Spinner } from 'react-bootstrap';
-import { CheckLg, ChevronDown, ChevronRight } from 'react-bootstrap-icons';
+import {
+  CheckLg,
+  ChevronDown,
+  ChevronRight,
+  ClockHistory,
+} from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
@@ -61,6 +66,10 @@ type ComputedSuspicionPanelProps = {
   readOnly: boolean;
   /** Right of the title (the staff's Berechnet / Je Sensor switch). */
   headerActions?: ReactNode;
+  /** A member sensor hovered (null: left) - the plan points it out. */
+  onSensorHover?: (sensorId: number | null) => void;
+  /** Sets the plan's time slider to a moment (ISO-8601) - the first detection. */
+  onShowMoment?: (at: string) => void;
 };
 
 /**
@@ -78,6 +87,8 @@ const ComputedSuspicionPanel = ({
   onAcknowledge,
   readOnly,
   headerActions,
+  onSensorHover,
+  onShowMoment,
 }: ComputedSuspicionPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -136,6 +147,8 @@ const ComputedSuspicionPanel = ({
             acknowledging={acknowledging.has(point.id)}
             readOnly={readOnly}
             sensorLabel={sensorLabel}
+            onSensorHover={onSensorHover}
+            onShowMoment={onShowMoment}
           />
         ))}
       </div>
@@ -186,6 +199,8 @@ type ComputedSuspicionRowProps = {
   acknowledging: boolean;
   readOnly: boolean;
   sensorLabel: (sensorId: number) => string;
+  onSensorHover?: (sensorId: number | null) => void;
+  onShowMoment?: (at: string) => void;
 };
 
 const ComputedSuspicionRow = ({
@@ -198,6 +213,8 @@ const ComputedSuspicionRow = ({
   acknowledging,
   readOnly,
   sensorLabel,
+  onSensorHover,
+  onShowMoment,
 }: ComputedSuspicionRowProps) => {
   const { t } = useTranslation();
   const hasPendingAck = point.pending_ack_alarm_ids.length > 0;
@@ -285,7 +302,17 @@ const ComputedSuspicionRow = ({
           </div>
           <div className="computed-suspicion-sensors">
             {point.sensor_ids.map((sensorId) => (
-              <span key={sensorId} className="computed-suspicion-sensor">
+              <span
+                key={sensorId}
+                className="computed-suspicion-sensor"
+                // Points the sensor out on the plan while hovered (or focused).
+                tabIndex={onSensorHover ? 0 : undefined}
+                onMouseEnter={() => onSensorHover?.(sensorId)}
+                onMouseLeave={() => onSensorHover?.(null)}
+                onFocus={() => onSensorHover?.(sensorId)}
+                onBlur={() => onSensorHover?.(null)}
+                {...repeatedTestId('computed-suspicion-sensor', sensorId)}
+              >
                 {sensorLabel(sensorId)}
               </span>
             ))}
@@ -300,6 +327,14 @@ const ComputedSuspicionRow = ({
             rowTestId="computed-suspicion-history-row"
           />
           <div className="verdachtsstellen-actions">
+            {onShowMoment && point.first_seen && (
+              <FirstDetectionButton
+                at={point.first_seen}
+                onShow={onShowMoment}
+                testId="computed-suspicion-first-seen"
+                testKey={point.id}
+              />
+            )}
             <button
               type="button"
               hidden={readOnly}
@@ -319,6 +354,34 @@ const ComputedSuspicionRow = ({
         </div>
       )}
     </div>
+  );
+};
+
+/** "Erstes Auftreten anzeigen": the plan's time slider to the first detection
+ * (also in VerdachtsstellenPanel). */
+export const FirstDetectionButton = ({
+  at,
+  onShow,
+  testId,
+  testKey,
+}: {
+  at: string;
+  onShow: (at: string) => void;
+  testId: string;
+  testKey: string;
+}) => {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      className="verdachtsstellen-jump"
+      title={t('suspicion_show_first_seen_hint', { date: formatDate(at) })}
+      onClick={() => onShow(at)}
+      {...repeatedTestId(testId, testKey)}
+    >
+      <ClockHistory size={14} />
+      <span>{t('suspicion_show_first_seen')}</span>
+    </button>
   );
 };
 

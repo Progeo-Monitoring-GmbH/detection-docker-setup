@@ -65,12 +65,18 @@ type LocationPlanPanelProps = {
   /** A time of interest (ms, e.g. a notification's event): shown until a
    * frame is picked, while the frames reach back to it - else the newest. */
   focusTime?: number | null;
+  /** Raised to show `focusTime` again although a frame was picked since
+   * (a Verdachtsstelle's "first detection" asked for twice). */
+  focusRevision?: number;
   /** Controls beside the frame slider's play button (the step width). */
   frameToolbar?: ReactNode;
   /** The sensor (pos) selected on the plan - marked there; a click on a
    * sensor reports it (the heatmap only). */
   selectedSensor?: number | null;
   onSensorSelect?: (pos: number) => void;
+  /** A sensor (pos) pointed out on the plan - e.g. the one hovered in a
+   * Verdachtsstelle's sensor list. */
+  highlightedSensor?: number | null;
   /** smartex® mx-PEEL: the computed suspicion points - over the heat of the
    * view (Lageplan) they lie on. */
   suspicions?: SuspicionPlanMarker[];
@@ -132,9 +138,11 @@ const LocationPlanPanel = ({
   onProfileChange,
   profileLoading = false,
   focusTime = null,
+  focusRevision = 0,
   frameToolbar,
   selectedSensor = null,
   onSensorSelect,
+  highlightedSensor = null,
   suspicions,
   onFrameTimeChange,
   testId = 'plan-panel',
@@ -158,24 +166,29 @@ const LocationPlanPanel = ({
   // overlays show the newest whenever the frames change (`picked.heatmap`).
   const [picked, setPicked] = useState<{
     heatmap: SensorHeatmapResponse | null;
+    focus: number;
     index: number | null;
-  }>({ heatmap: null, index: null });
+  }>({ heatmap: null, focus: 0, index: null });
   const frameTotal = heatmap?.timestamps.length ?? 0;
   // Until a frame is picked: the one of the time of interest, else the newest.
   const startFrame =
     (heatmap ? focusFrameIndex(heatmap.timestamps, focusTime) : null) ??
     (frameTotal > 0 ? frameTotal - 1 : null);
   const frameIndex =
-    withHeat || picked.heatmap === heatmap ? picked.index : startFrame;
+    withHeat || (picked.heatmap === heatmap && picked.focus === focusRevision)
+      ? picked.index
+      : startFrame;
   // Stable per heatmap: SensorHeatmap2D reports its frame from an effect on it.
   const setFrameIndex = useCallback(
     (index: number | null) =>
       setPicked((prev) =>
-        prev.heatmap === heatmap && prev.index === index
+        prev.heatmap === heatmap &&
+        prev.focus === focusRevision &&
+        prev.index === index
           ? prev
-          : { heatmap, index },
+          : { heatmap, focus: focusRevision, index },
       ),
-    [heatmap],
+    [focusRevision, heatmap],
   );
 
   // The frame's time, told to the page (its timestamps are seconds).
@@ -336,9 +349,11 @@ const LocationPlanPanel = ({
               onProfileChange={onProfileChange}
               profileLoading={profileLoading}
               focusTime={focusTime}
+              focusRevision={focusRevision}
               frameToolbar={frameToolbar}
               // The clicked sensor: the white "selected" ring (lila marks active ones).
               focusedPosition={selectedSensor}
+              highlightedPosition={highlightedSensor}
               onSensorClick={onSensorSelect}
               suspicions={shownSuspicions}
             />
@@ -372,6 +387,7 @@ const LocationPlanPanel = ({
           // 'tiles' never gets here (asTiles above) - points keeps the type whole.
           mode={visualization === 'tiles' ? 'points' : visualization}
           alignment={shownPlan}
+          highlightedPosition={highlightedSensor}
         />
         {sensorTable}
       </>

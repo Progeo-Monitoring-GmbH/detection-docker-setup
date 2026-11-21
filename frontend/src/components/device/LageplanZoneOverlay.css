@@ -55,3 +55,12 @@
   stroke: #ffffff;
   pointer-events: none;
 }
+
+/* The sensor pointed out from outside (highlightedPosition) - the orange of
+   the heatmap's highlighted marker. */
+.lageplan-zone-highlight {
+  fill: none;
+  stroke: var(--progeo-orange);
+  stroke-opacity: 0.9;
+  pointer-events: none;
+}

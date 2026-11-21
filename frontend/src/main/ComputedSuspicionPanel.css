@@ -59,3 +59,15 @@
   padding: 2px 9px;
   font-size: 12px;
 }
+
+/* Hovering a sensor points it out on the plan (highlightedSensor). */
+.computed-suspicion-sensor {
+  cursor: default;
+}
+
+.computed-suspicion-sensor:hover,
+.computed-suspicion-sensor:focus-visible {
+  background: var(--progeo-orange);
+  color: #fff;
+  outline: none;
+}

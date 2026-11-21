@@ -13,6 +13,7 @@ AREA_MODULES = {
     "alarms": """
         admin_overview_and_test_notification alarm_episodes alarm_evaluation_and_check alarm_thresholds_unit
         alarm_overview_api alarm_report_api alarm_severity_and_clusters escalations_api suspicion_clusters
+        threshold_fine_tune
     """,
     "backups": """
         backup_download backup_reload backup_transfer dbbackup_connector import_live_backup restore_backups

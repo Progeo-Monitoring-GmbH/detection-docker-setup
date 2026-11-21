@@ -100,6 +100,9 @@ type SensorHeatmap2DProps = {
    * back to it, else the newest. E.g. the time of a notification's event.
    */
   focusTime?: number | null;
+  /** Raised to show `focusTime` again although a frame was picked since
+   * (e.g. the same moment asked for twice). */
+  focusRevision?: number;
   /** Controls beside the slider's play button - e.g. the page's step width,
    * which only matters for the animation. */
   frameToolbar?: ReactNode;
@@ -128,6 +131,9 @@ type SensorHeatmap2DProps = {
   /** Device (sensor_points[].device) whose marker is highlighted - e.g. the
    * line hovered in the climate charts. */
   highlightedDevice?: number | null;
+  /** Sensor (pos, sensor_order) highlighted like `highlightedDevice` - e.g.
+   * the one hovered in a Verdachtsstelle's sensor list. */
+  highlightedPosition?: number | null;
   /** The pos (sensor_order) of the selected (active) sensors - e.g. those
    * of the measurements' second plot - drawn with a lila ring. */
   selectedPositions?: number[];
@@ -259,6 +265,7 @@ const SensorHeatmap2D = ({
   onTimeChange,
   hideFrameSlider = false,
   focusTime = null,
+  focusRevision = 0,
   frameToolbar,
   toolbarStart,
   alarms,
@@ -266,6 +273,7 @@ const SensorHeatmap2D = ({
   fitPlan = false,
   compact = fitPlan,
   highlightedDevice = null,
+  highlightedPosition = null,
   selectedPositions,
   focusedPosition = null,
   onHoverDevice,
@@ -310,13 +318,14 @@ const SensorHeatmap2D = ({
   );
   // The frame picked on the own slider - for these timestamps only: new
   // data (another period or step) starts at the newest frame again (or the
-  // one holding `focusTime`).
+  // one holding `focusTime`), and so does a new focusRevision.
   const [ownPick, setOwnPick] = useState<{
     timestamps: number[];
+    focus: number;
     index: number;
   } | null>(null);
   const ownIndex =
-    ownPick?.timestamps === timestamps
+    ownPick?.timestamps === timestamps && ownPick.focus === focusRevision
       ? ownPick.index
       : (focusFrameIndex(timestamps, focusTime) ?? timestamps.length - 1);
   // Coupled (onTimeChange): the frame holding `time`.
@@ -328,12 +337,12 @@ const SensorHeatmap2D = ({
   const setTimestampIndex = useCallback(
     (index: number) => {
       if (!onTimeChange) {
-        setOwnPick({ timestamps, index });
+        setOwnPick({ timestamps, focus: focusRevision, index });
       } else if (index >= 0 && index < timestamps.length) {
         onTimeChange(timestamps[index] * 1000);
       }
     },
-    [onTimeChange, timestamps],
+    [focusRevision, onTimeChange, timestamps],
   );
   // The shown frame, within the timestamps there are.
   const frameIndex = Math.max(
@@ -695,7 +704,9 @@ const SensorHeatmap2D = ({
   const highlightedIndex =
     highlightedDevice != null
       ? sensorIndex((sensor) => sensor.device === highlightedDevice)
-      : null;
+      : highlightedPosition != null
+        ? sensorIndex((sensor) => sensor.pos === highlightedPosition)
+        : null;
   const sceneSensors = scene?.layout.sensors;
   const selectedIndices = useMemo(() => {
     const positions = new Set(selectedPositions ?? []);

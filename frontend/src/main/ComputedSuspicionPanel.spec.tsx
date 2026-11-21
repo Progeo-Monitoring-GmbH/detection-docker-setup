@@ -210,6 +210,38 @@ describe('ComputedSuspicionPanel', () => {
     ).not.toBeNull();
   });
 
+  it('points a hovered member sensor out on the plan', () => {
+    const onSensorHover = vi.fn();
+    renderPanel({ onSensorHover });
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+
+    const chip = byTestId('computed-suspicion-sensor', '4')!;
+    act(() => {
+      chip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(onSensorHover).toHaveBeenLastCalledWith(4);
+    act(() => {
+      chip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+    expect(onSensorHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it('sets the time slider to the first detection - also in the demo', () => {
+    const onShowMoment = vi.fn();
+    renderPanel({
+      readOnly: true,
+      onShowMoment,
+      points: [point('computed-3', { first_seen: '2026-11-02T08:00:00Z' }), point('computed-9')],
+    });
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+    act(() => byTestId('computed-suspicion-first-seen', 'computed-3')!.click());
+    expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z');
+
+    // Without a first detection there is nothing to show.
+    act(() => byTestId('computed-suspicion-toggle', 'computed-9')!.click());
+    expect(byTestId('computed-suspicion-first-seen', 'computed-9')).toBeNull();
+  });
+
   it('says so when there is nothing or no access', () => {
     renderPanel({ points: [] });
     expect(byTestId('computed-suspicion-empty')).not.toBeNull();

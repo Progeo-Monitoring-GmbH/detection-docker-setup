@@ -6,11 +6,13 @@ import type {
 import {
   alarmSpansOf,
   finiteValue,
+  firstDetectedOf,
   frameValue,
   highestOf,
   historySpecFor,
   planViewsOf,
   sensorLinesOf,
+  sensorNameOf,
   sensorRowsOf,
   sensorStatsOf,
   severityColor,
@@ -412,5 +414,44 @@ describe('splitResolved', () => {
 
   it('gives two empty lists without clusters', () => {
     expect(splitResolved([])).toEqual({ open: [], resolved: [] });
+  });
+});
+
+describe('sensorNameOf', () => {
+  const line = (row: number) => `Linie ${row + 1}`;
+
+  it('takes the own name of the sensor first', () => {
+    expect(sensorNameOf(point(7, { name: 'Hauptdach', grid_y: 2 }), line)).toBe('Hauptdach');
+  });
+
+  it('on a plan of lines: the dm band, else the line with the sensor', () => {
+    expect(sensorNameOf(point(7, { x_end: 0.9, y_end: 0.5 }), line)).toBe('dm 7');
+    expect(sensorNameOf(point(79, { grid_y: 5 }), line)).toBe('Linie 6 · #79');
+  });
+
+  it('has none without a name off a plan of lines, or without the point', () => {
+    expect(sensorNameOf(point(79, { grid_y: 5 }), null)).toBeNull();
+    expect(sensorNameOf(undefined, line)).toBeNull();
+  });
+});
+
+describe('firstDetectedOf', () => {
+  const alarm = (id: number, at: string | null) => ({ id, triggered_at: at, value: 150, state: 'neu' as const });
+
+  it('is the oldest alarm of the history', () => {
+    const detected = firstDetectedOf(
+      cluster({
+        since: '2026-11-20T10:00:00Z',
+        alarms: [alarm(3, '2026-11-20T10:00:00Z'), alarm(1, '2026-11-02T08:00:00Z'), alarm(2, null)],
+      }),
+    );
+    expect(detected).toBe('2026-11-02T08:00:00Z');
+  });
+
+  it('falls back to the start of the latest episode without a dated alarm', () => {
+    expect(firstDetectedOf(cluster({ since: '2026-11-20T10:00:00Z', alarms: [alarm(2, null)] }))).toBe(
+      '2026-11-20T10:00:00Z',
+    );
+    expect(firstDetectedOf(cluster())).toBeNull();
   });
 });

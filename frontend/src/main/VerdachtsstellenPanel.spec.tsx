@@ -67,7 +67,11 @@ afterEach(() => {
   container.remove();
 });
 
-const render = (clusters: VerdachtsstelleCluster[], onAcknowledge: (cluster: VerdachtsstelleCluster) => void = () => undefined) =>
+const render = (
+  clusters: VerdachtsstelleCluster[],
+  onAcknowledge: (cluster: VerdachtsstelleCluster) => void = () => undefined,
+  onShowMoment?: (at: string) => void,
+) =>
   act(() =>
     root.render(
       <VerdachtsstellenPanel
@@ -78,6 +82,7 @@ const render = (clusters: VerdachtsstelleCluster[], onAcknowledge: (cluster: Ver
         acknowledging={new Set()}
         onAcknowledge={onAcknowledge}
         readOnly={false}
+        onShowMoment={onShowMoment}
       />,
     ),
   );
@@ -148,5 +153,28 @@ describe('VerdachtsstellenPanel - Alarm-Verlauf', () => {
 
     expect(container.querySelectorAll('[data-testid="verdachtsstelle-history-row"]')).toHaveLength(25);
     expect(byTestId('verdachtsstelle-history-sensor-6')).not.toBeNull();
+  });
+});
+
+describe('VerdachtsstellenPanel - first detection', () => {
+  it('sets the time slider to the oldest alarm of the Verdachtsstelle', () => {
+    const onShowMoment = vi.fn();
+    render(
+      [
+        {
+          ...cluster('c1', 7, 'neu'),
+          since: '2026-11-20T10:00:00Z',
+          alarms: [
+            { id: 2, triggered_at: '2026-11-20T10:00:00Z', value: 150, state: 'neu' },
+            { id: 1, triggered_at: '2026-11-02T08:00:00Z', value: 130, state: 'geloest' },
+          ],
+        },
+      ],
+      undefined,
+      onShowMoment,
+    );
+    act(() => (container.querySelector('[data-testid="verdachtsstelle-toggle"]') as HTMLButtonElement).click());
+    act(() => (byTestId('verdachtsstelle-first-seen') as HTMLButtonElement).click());
+    expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z');
   });
 });

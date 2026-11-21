@@ -260,6 +260,44 @@ export const sensorLinesOf = (
 };
 
 /**
+ * The name a sensor goes by outside the plan (Verdachtsstellen, Alarm-Verlauf)
+ * - the one the plan gives it: its own name (ProgeoMeasurePoint.name), else
+ * on a plan of lines (smartex® dm, `lineLabel` set) its band ("dm 7") or its
+ * line with the sensor ("Linie 3 · #7"); null without one - the caller falls
+ * back to "Sensor #7".
+ */
+export const sensorNameOf = (
+  point: SensorHeatmapPoint | undefined,
+  lineLabel: ((row: number) => string) | null,
+): string | null => {
+  if (!point) {
+    return null;
+  }
+  if (point.name) {
+    return point.name;
+  }
+  if (!lineLabel) {
+    return null;
+  }
+  if (hasBand(point)) {
+    return `dm ${point.pos}`;
+  }
+  return point.grid_y != null ? `${lineLabel(point.grid_y)} · #${point.pos}` : null;
+};
+
+/** When a Verdachtsstelle (one sensor's) was detected first: its oldest
+ * alarm in the history, else the start of its latest episode. */
+export const firstDetectedOf = (cluster: VerdachtsstelleCluster): string | null => {
+  const times = cluster.alarms
+    .map((alarm) => alarm.triggered_at)
+    .filter((at): at is string => Boolean(at) && Number.isFinite(Date.parse(at as string)));
+  if (times.length === 0) {
+    return cluster.since;
+  }
+  return times.reduce((oldest, at) => (Date.parse(at) < Date.parse(oldest) ? at : oldest));
+};
+
+/**
  * Points of LageplanZoneOverlay - sensor_points already carry the same
  * normalized x/y the heatmap markers use. With `lines`, the sensors of one
  * grid row are joined into one line; the value is the one of the shown frame,

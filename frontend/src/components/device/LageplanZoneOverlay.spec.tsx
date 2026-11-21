@@ -288,3 +288,27 @@ describe('segmentPadding', () => {
     expect(segmentPadding([[0, 0]], 1000)).toBe(40);
   });
 });
+
+describe('LageplanZoneOverlay highlight', () => {
+  it('rings the sensor pointed out from outside, and nothing without one', () => {
+    act(() => {
+      root.render(<LageplanZoneOverlay imageUrl={null} points={POINTS} height={300} mode="points" highlightedPosition={3} />);
+    });
+    const ring = container.querySelector('[data-testid="zone-highlight"]');
+    expect(ring?.getAttribute('data-test-key')).toBe('3');
+    expect(ring?.tagName).toBe('circle');
+
+    act(() => {
+      root.render(<LageplanZoneOverlay imageUrl={null} points={POINTS} height={300} mode="points" highlightedPosition={null} />);
+    });
+    expect(container.querySelector('[data-testid="zone-highlight"]')).toBeNull();
+  });
+
+  it('draws a highlighted dm band along its line', () => {
+    const band = { ...point(4, 0.2, 0.5, null), end: [0.8, 0.5] as [number, number], group: 'band-4' };
+    act(() => {
+      root.render(<LageplanZoneOverlay imageUrl={null} points={[band]} height={300} mode="lines" highlightedPosition={4} />);
+    });
+    expect(container.querySelector('[data-testid="zone-highlight"]')?.tagName).toBe('line');
+  });
+});
