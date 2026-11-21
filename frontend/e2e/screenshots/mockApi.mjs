@@ -627,6 +627,19 @@ export const mockAnswer = (
   if (/\/location\/\d+\/access\/$/.test(path)) {
     return locationAccess();
   }
+  // "Mit Airtable abgleichen" (AirtableSyncButton): two projects without a location.
+  if (path.endsWith('/device/provision/airtable/sync/')) {
+    return {
+      available: [
+        { project_id: 4800, name: 'Halle 41 – Dachfläche A', airtable_type: 'dm', project_type_label: 'smartex® dm', status: 'Sensorik', product_sheets: [], airtable_url: null, raw_address: 'Industriestraße 41\n50707 Köln' },
+        { project_id: 4801, name: 'Halle 42 – Dachfläche B', airtable_type: 'dm', project_type_label: 'smartex® dm', status: 'Technischer Planung', product_sheets: [], airtable_url: null, raw_address: 'Industriestraße 42\n50708 Berlin' },
+      ],
+      updated: [],
+      unchanged: 38,
+      signed: 'mock-signed',
+      accounts: [{ id: 1, name: 'Kunde A' }],
+    };
+  }
   if (/\/location\/\d+\/devices\/names\/$/.test(path)) {
     return {
       devices: [
@@ -1119,6 +1132,34 @@ export const mockAnswer = (
   if (path.endsWith('/location/min/')) {
     return role === 'user' ? locations.slice(0, 6) : locations;
   }
+  if (path.endsWith('/location/map/')) {
+    // The location map (/map/): every location at its city, a little apart -
+    // activity at once, no chunks to load.
+    const CITY_POINTS = {
+      Köln: [50.94, 6.96],
+      Berlin: [52.52, 13.4],
+      Hamburg: [53.55, 9.99],
+      München: [48.14, 11.58],
+      Leipzig: [51.34, 12.37],
+      Stuttgart: [48.78, 9.18],
+    };
+    const shown = role === 'user' ? locations.slice(0, 6) : locations;
+    return {
+      locations: shown.map((row) => {
+        const [lat, lng] = CITY_POINTS[row.city];
+        return {
+          ...row,
+          latitude: lat + (row.id % 5) * 0.03,
+          longitude: lng + (row.id % 7) * 0.03,
+          device_count: 1 + (row.id % 3),
+          last_measurement_at: row.id % 4 ? iso(NOW - row.id * HOUR) : null,
+        };
+      }),
+      activity: {},
+      chunks: 0,
+      databases: 0,
+    };
+  }
   if (path.endsWith('/location/details/')) {
     return ids.map((id) => ({
       ...locations[id - 1],
@@ -1152,7 +1193,9 @@ export const mockAnswer = (
         ...row,
         account_id: 1,
         owner: 'Kunde A',
-        status: row.id % 5 ? 'ok' : 'offline',
+        // The worst open severity or 'ok' - what admin_overview sends
+        // (no 'offline': it showed as an untranslated ui_severity_ key).
+        status: row.id % 5 ? 'ok' : 'beobachten',
       })),
       kpis: {},
       count: locations.length,

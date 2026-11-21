@@ -44,6 +44,9 @@
     right: 0;
     bottom: 0;
     width: auto;
+    /* left/right follow the layout viewport - which a too wide page widens
+       past the screen; 100vw keeps the sheet on the phone's screen. */
+    max-width: 100vw;
     max-height: 100vh;
     max-height: 100dvh;
     border-radius: var(--progeo-radius-panel) var(--progeo-radius-panel) 0 0;

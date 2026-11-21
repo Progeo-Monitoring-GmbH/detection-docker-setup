@@ -160,21 +160,24 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
 ];
 
 /**
- * Result of "Sync with Airtable" (staff, device overview): the projects in
+ * Result of "Sync with Airtable" (staff, AirtableSyncButton): the projects in
  * "Technischer Planung", "Sensorik" or "Messeinheit und Inbetriebnahme"
  * (shown per row) without a location can be created under
  * an account; the existing locations were merge-updated by the sync
  * (helper/airtable_locations.py). `onLocationsChanged`: names changed or
- * locations were created - the overview reloads its location list.
+ * locations were created - the page reloads its location list. `flat`: inside
+ * a dialog, without the panel's own background and padding.
  */
 const AirtableSyncPanel = ({
   initial,
   onClose,
   onLocationsChanged,
+  flat = false,
 }: {
   initial: AirtableSync;
   onClose: () => void;
   onLocationsChanged: () => void;
+  flat?: boolean;
 }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -227,6 +230,7 @@ const AirtableSyncPanel = ({
     <PanelCard
       title="Airtable projects (Technischer Planung, Sensorik, Messeinheit und Inbetriebnahme)"
       testId="airtable-sync"
+      flat={flat}
       actions={
         <Button variant="link" size="sm" className="p-0" onClick={onClose} data-testid="airtable-sync-close">
           Close
@@ -259,6 +263,8 @@ const AirtableSyncPanel = ({
             defaultSortFieldId="project_id"
             selection={selection}
             testId="airtable-sync-table"
+            // Phones: name and status in the row, the rest in its expander.
+            mobileColumns={['name', 'status']}
             highlightOnHover
             dense
           />

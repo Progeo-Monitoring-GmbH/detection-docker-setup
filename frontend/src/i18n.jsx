@@ -352,7 +352,7 @@ i18n
           acknowledge_alarms_verdachtsstelle_message:
             'Acknowledge the {{count}} pending alarm(s) of the suspected leak at {{sensor}}? They are marked as acknowledged by you; once every alarm of the location is acknowledged, the reminders stop. This cannot be undone.',
           acknowledge_alarms_point_message:
-            'Acknowledge the {{count}} pending alarm(s) of suspicion point {{letter}} ({{sensors}} sensors)? They are marked as acknowledged by you; once every alarm of the location is acknowledged, the reminders stop. This cannot be undone.',
+            'Acknowledge the <strong>{{count}} pending alarm(s)</strong> of suspicion point <strong>{{letter}}</strong> (<strong>{{sensors}} sensors</strong>)? They are marked as acknowledged by you; once every alarm of the location is acknowledged, the reminders stop. This cannot be undone.',
           demo_subtitle: 'Read-only demo data - nothing here is real customer data.',
           demo_login_checking: 'Opening the demo…',
           demo_login_invalid: 'This demo link is invalid or has expired.',
@@ -418,6 +418,15 @@ i18n
           status_range_180d: 'Last half year',
           status_range_1y: 'Last year',
           status_range_3y: 'Last 3 years',
+          time_range_label: 'Period',
+          status_range_short_latest: 'Latest',
+          status_range_short_24h: '24 h',
+          status_range_short_7d: '7 days',
+          status_range_short_30d: '30 days',
+          status_range_short_90d: 'Quarter',
+          status_range_short_180d: 'Half year',
+          status_range_short_1y: '1 year',
+          status_range_short_3y: '3 years',
           climate_bucket_minutes: '{{count}}-minute averages',
           climate_bucket_hourly: 'Hourly averages',
           climate_bucket_hours: '{{count}}-hour averages',
@@ -1432,6 +1441,7 @@ i18n
           analyse_compare_change_deviation: 'Deviation of the WP change (middle 50 %)',
           analyse_sensors_disable: 'Disable sensors ({{count}})',
           analyse_sensors_enable: 'Enable sensors ({{count}})',
+          analyse_sensors_pick_hint: 'Select sensors in the column chart or on the plan to disable or enable them.',
           analyse_sensors_disable_title: 'Switch the selected sensors off: they never trigger an alarm and are drawn gray',
           analyse_sensors_enable_title: 'Switch the selected sensors on again',
           analyse_sensors_disable_confirm_title: 'Disable sensors?',
@@ -1541,6 +1551,22 @@ i18n
             'Import the {{count}} row(s) of "{{file}}" ({{summary}})? Rows whose id exists already are overwritten with the values of the file, the others are added. This cannot be undone.',
           anlegen_import_cancel: 'Cancel',
           lageplan_wizard_cancel: 'Cancel',
+          lageplan_wizard_hint_location:
+            'The location whose Lageplan you set up - every later step works on it.',
+          lageplan_wizard_hint_devices:
+            'Which controller each imported sensor belongs to: per device the range of its sensor pairs (from - to).',
+          lageplan_wizard_hint_plans:
+            'The site plan image or PDF the measure points are drawn on. Upload several and pick the main one; the selected plan is used in the next steps.',
+          lageplan_wizard_hint_points:
+            'Where the sensors lie: import their positions from CAD (DWG/DXF), JSON or TXT - or select a sensor and place it by hand on the plan in step 5.',
+          lageplan_wizard_hint_align:
+            'Move, scale and rotate the imported points until they lie right on the plan, and set the plan scale (metres per pixel).',
+          lageplan_wizard_hint_dm_transfer:
+            'Only for smartex dm bands: finds the start and end of each band on the plan, so the sensors are drawn as lines instead of points.',
+          lageplan_wizard_hint_heat_limits:
+            'Areas of the plan the heatmap is limited to (e.g. the roof surface) - outside them no heat is shown. Without an area the heat is not limited.',
+          lageplan_wizard_hint_klemmliste:
+            'The Klemmliste gives every measure point its sensor name (from MUX card and PIN). Staff also find the project documents from Airtable here.',
           lageplan_wizard_remove_plan_title: 'Remove Lageplan?',
           lageplan_wizard_remove_plan_message:
             '"{{plan}}" is removed - with its image, its heat limitations and its {{count}} measure point(s). This cannot be undone.',
@@ -1734,6 +1760,7 @@ i18n
           einstell_mixer_scroll_right: 'Scroll right',
           einstell_mixer_24h: '24 h',
           einstell_mixer_days: '{{count}} days',
+          einstell_mixer_period: 'Period',
           einstell_mixer_max: 'Highest value',
           einstell_mixer_max_legend: 'Highest value in the period',
           einstell_mixer_over_legend: 'Above its threshold ({{count}})',
@@ -2155,7 +2182,7 @@ i18n
           escalation_assign: 'Assign',
           escalation_close: 'Close escalation',
           escalation_close_confirm_title: 'Close escalation?',
-          escalation_close_confirm: 'The escalation "{{title}}" (project {{location}}) is closed; your message goes into its protocol. A closed escalation can no longer be commented on, reassigned or changed - this cannot be undone.',
+          escalation_close_confirm: 'The escalation <strong>"{{title}}"</strong> (project <strong>{{location}}</strong>) is closed; your message goes into its protocol. A closed escalation can <strong>no longer be commented on, reassigned or changed</strong> - this cannot be undone.',
           escalation_closed_hint: 'This escalation is closed.',
           escalation_entry_created: 'opened the escalation',
           escalation_entry_status: 'changed the status: {{from}} → {{to}}',
@@ -2219,7 +2246,7 @@ i18n
           provision_add_close: 'Close',
           provision_test_clear: 'Clear test measurements',
           provision_test_clear_message:
-            'Delete the {{count}} listed test measurement(s) of {{device}} - and any alarms they raised? This cannot be undone.',
+            'Delete the <strong>{{count}} listed test measurement(s)</strong> of <strong>{{device}}</strong> - and <strong>any alarms they raised</strong>? This cannot be undone.',
           provision_test_clear_confirm: 'Delete',
           provision_test_clear_cancel: 'Cancel',
           provision_loading: 'Loading…',
@@ -2391,6 +2418,7 @@ i18n
           devices_action_test_measurements: 'Test measurements',
           devices_add: 'Add device',
           devices_airtable_sync: 'Sync with Airtable',
+          airtable_sync_failed: 'Could not sync with Airtable',
           devices_action_delete: 'Delete',
           devices_delete_title: 'Delete device',
           devices_delete_message:
@@ -2444,6 +2472,9 @@ i18n
           device_commands_update_content: 'File content',
           device_commands_send_update: 'Send file',
           device_commands_update_hint: 'Stored encrypted until the controller took it - the history keeps path and size only.',
+          device_commands_update_open: 'Overwrite config',
+          device_commands_update_open_hint: 'Replace a file on the controller (e.g. its config) - opens the editor',
+          device_commands_update_close: 'Cancel',
           device_commands_result_title: 'Result of {{command}} #{{id}}',
           device_commands_result_edit: 'Edit and send as update',
           device_commands_result_hide: 'Hide',
@@ -2493,7 +2524,7 @@ i18n
           device_firmware_target: 'Update to',
           device_firmware_start: 'Update',
           device_firmware_confirm_title: 'Update firmware?',
-          device_firmware_confirm: '{{device}} is updated from {{current}} to {{bundle}}. When it next polls, it downloads the changed files, installs them and restarts - no measurements meanwhile. Going back needs another update.',
+          device_firmware_confirm: '<strong>{{device}}</strong> is updated from <strong>{{current}}</strong> to <strong>{{bundle}}</strong>. When it next polls, it downloads the changed files, installs them and restarts - <strong>no measurements meanwhile</strong>. Going back needs another update.',
           device_firmware_started: 'Firmware update to {{bundle}} started',
           device_firmware_start_failed: 'Could not start the firmware update',
           device_firmware_load_failed: 'Could not load the firmware bundles',
@@ -3065,7 +3096,7 @@ i18n
           acknowledge_alarms_verdachtsstelle_message:
             'Die {{count}} offenen Alarm(e) der Verdachtsstelle an {{sensor}} quittieren? Sie werden als von Ihnen quittiert vermerkt; sind alle Alarme des Objekts quittiert, enden die Erinnerungen. Das kann nicht rückgängig gemacht werden.',
           acknowledge_alarms_point_message:
-            'Die {{count}} offenen Alarm(e) des Verdachtspunkts {{letter}} ({{sensors}} Sensoren) quittieren? Sie werden als von Ihnen quittiert vermerkt; sind alle Alarme des Objekts quittiert, enden die Erinnerungen. Das kann nicht rückgängig gemacht werden.',
+            'Die <strong>{{count}} offenen Alarm(e)</strong> des Verdachtspunkts <strong>{{letter}}</strong> (<strong>{{sensors}} Sensoren</strong>) quittieren? Sie werden als von Ihnen quittiert vermerkt; sind alle Alarme des Objekts quittiert, enden die Erinnerungen. Das kann nicht rückgängig gemacht werden.',
           demo_subtitle: 'Reine Demo-Daten (nur lesend) - keine echten Kundendaten.',
           demo_login_checking: 'Demo wird geöffnet…',
           demo_login_invalid: 'Dieser Demo-Link ist ungültig oder abgelaufen.',
@@ -3131,6 +3162,15 @@ i18n
           status_range_180d: 'Letztes Halbjahr',
           status_range_1y: 'Letztes Jahr',
           status_range_3y: 'Letzte 3 Jahre',
+          time_range_label: 'Zeitraum',
+          status_range_short_latest: 'Letzte Messung',
+          status_range_short_24h: '24 h',
+          status_range_short_7d: '7 Tage',
+          status_range_short_30d: '30 Tage',
+          status_range_short_90d: 'Quartal',
+          status_range_short_180d: 'Halbjahr',
+          status_range_short_1y: '1 Jahr',
+          status_range_short_3y: '3 Jahre',
           climate_bucket_minutes: '{{count}}-Minuten-Mittel',
           climate_bucket_hourly: 'Stundenmittel',
           climate_bucket_hours: '{{count}}-Stunden-Mittel',
@@ -4149,6 +4189,7 @@ i18n
           analyse_compare_change_deviation: 'Abweichung der WP-Änderung (mittlere 50 %)',
           analyse_sensors_disable: 'Sensoren deaktivieren ({{count}})',
           analyse_sensors_enable: 'Sensoren aktivieren ({{count}})',
+          analyse_sensors_pick_hint: 'Sensoren in der Spaltengrafik oder im Plan auswählen, um sie zu deaktivieren oder zu aktivieren.',
           analyse_sensors_disable_title: 'Die ausgewählten Sensoren abschalten: sie lösen keinen Alarm mehr aus und werden grau gezeichnet',
           analyse_sensors_enable_title: 'Die ausgewählten Sensoren wieder einschalten',
           analyse_sensors_disable_confirm_title: 'Sensoren deaktivieren?',
@@ -4260,6 +4301,22 @@ i18n
             'Die {{count}} Zeile(n) aus „{{file}}“ ({{summary}}) importieren? Zeilen, deren ID es schon gibt, werden mit den Werten der Datei überschrieben, die übrigen hinzugefügt. Das kann nicht rückgängig gemacht werden.',
           anlegen_import_cancel: 'Abbrechen',
           lageplan_wizard_cancel: 'Abbrechen',
+          lageplan_wizard_hint_location:
+            'Das Objekt, dessen Lageplan Sie einrichten - alle weiteren Schritte beziehen sich darauf.',
+          lageplan_wizard_hint_devices:
+            'Zu welchem Steuergerät jeder importierte Sensor gehört: je Gerät der Bereich seiner Sensorpaare (von - bis).',
+          lageplan_wizard_hint_plans:
+            'Das Bild oder PDF des Lageplans, auf dem die Messpunkte liegen. Mehrere Pläne sind möglich, einer ist der Hauptplan; der gewählte Plan gilt für die nächsten Schritte.',
+          lageplan_wizard_hint_points:
+            'Wo die Sensoren liegen: Positionen aus CAD (DWG/DXF), JSON oder TXT importieren - oder einen Sensor wählen und in Schritt 5 von Hand auf den Plan setzen.',
+          lageplan_wizard_hint_align:
+            'Die importierten Punkte verschieben, skalieren und drehen, bis sie richtig auf dem Plan liegen, und den Maßstab (Meter pro Pixel) festlegen.',
+          lageplan_wizard_hint_dm_transfer:
+            'Nur für smartex-dm-Bänder: sucht Anfang und Ende jedes Bandes auf dem Plan, damit die Sensoren als Linien statt als Punkte erscheinen.',
+          lageplan_wizard_hint_heat_limits:
+            'Bereiche des Plans, auf die die Heatmap beschränkt ist (z. B. die Dachfläche) - außerhalb wird keine Wärme angezeigt. Ohne Bereich ist sie nicht beschränkt.',
+          lageplan_wizard_hint_klemmliste:
+            'Die Klemmliste gibt jedem Messpunkt seinen Sensornamen (aus MUX-Karte und PIN). Mitarbeiter finden hier außerdem die Projektdokumente aus Airtable.',
           lageplan_wizard_remove_plan_title: 'Lageplan entfernen?',
           lageplan_wizard_remove_plan_message:
             '„{{plan}}“ wird entfernt - mit seinem Bild, seinen Heat-Limitations und seinen {{count}} Messpunkt(en). Das kann nicht rückgängig gemacht werden.',
@@ -4456,6 +4513,7 @@ i18n
           einstell_mixer_scroll_right: 'Nach rechts blättern',
           einstell_mixer_24h: '24 h',
           einstell_mixer_days: '{{count}} Tage',
+          einstell_mixer_period: 'Zeitraum',
           einstell_mixer_max: 'Höchstwert',
           einstell_mixer_max_legend: 'Höchstwert im Zeitraum',
           einstell_mixer_over_legend: 'Über dem Schwellwert ({{count}})',
@@ -4877,7 +4935,7 @@ i18n
           escalation_assign: 'Zuweisen',
           escalation_close: 'Eskalation schließen',
           escalation_close_confirm_title: 'Eskalation schließen?',
-          escalation_close_confirm: 'Die Eskalation "{{title}}" (Projekt {{location}}) wird geschlossen; Ihre Nachricht kommt ins Protokoll. Eine geschlossene Eskalation kann nicht mehr kommentiert, zugewiesen oder geändert werden - das kann nicht rückgängig gemacht werden.',
+          escalation_close_confirm: 'Die Eskalation <strong>"{{title}}"</strong> (Projekt <strong>{{location}}</strong>) wird geschlossen; Ihre Nachricht kommt ins Protokoll. Eine geschlossene Eskalation kann <strong>nicht mehr kommentiert, zugewiesen oder geändert werden</strong> - das kann nicht rückgängig gemacht werden.',
           escalation_closed_hint: 'Diese Eskalation ist geschlossen.',
           escalation_entry_created: 'hat die Eskalation eröffnet',
           escalation_entry_status: 'hat den Status geändert: {{from}} → {{to}}',
@@ -4941,7 +4999,7 @@ i18n
           provision_add_close: 'Schließen',
           provision_test_clear: 'Test-Messungen bereinigen',
           provision_test_clear_message:
-            'Die {{count}} gelisteten Test-Messung(en) von {{device}} löschen - samt der Alarme, die sie ausgelöst haben? Das kann nicht rückgängig gemacht werden.',
+            'Die <strong>{{count}} gelisteten Test-Messung(en)</strong> von <strong>{{device}}</strong> löschen - <strong>samt der Alarme, die sie ausgelöst haben</strong>? Das kann nicht rückgängig gemacht werden.',
           provision_test_clear_confirm: 'Löschen',
           provision_test_clear_cancel: 'Abbrechen',
           provision_loading: 'Wird geladen…',
@@ -5114,6 +5172,7 @@ i18n
           devices_action_test_measurements: 'Test-Messungen',
           devices_add: 'Gerät hinzufügen',
           devices_airtable_sync: 'Mit Airtable abgleichen',
+          airtable_sync_failed: 'Abgleich mit Airtable fehlgeschlagen',
           devices_action_delete: 'Löschen',
           devices_delete_title: 'Gerät löschen',
           devices_delete_message:
@@ -5167,6 +5226,9 @@ i18n
           device_commands_update_content: 'Dateiinhalt',
           device_commands_send_update: 'Datei senden',
           device_commands_update_hint: 'Verschlüsselt gespeichert, bis der Controller sie abgeholt hat - im Verlauf bleiben nur Pfad und Größe.',
+          device_commands_update_open: 'Config überschreiben',
+          device_commands_update_open_hint: 'Eine Datei auf dem Controller ersetzen (z. B. seine Config) - öffnet den Editor',
+          device_commands_update_close: 'Abbrechen',
           device_commands_result_title: 'Ergebnis von {{command}} #{{id}}',
           device_commands_result_edit: 'Bearbeiten und als Update senden',
           device_commands_result_hide: 'Ausblenden',
@@ -5216,7 +5278,7 @@ i18n
           device_firmware_target: 'Aktualisieren auf',
           device_firmware_start: 'Aktualisieren',
           device_firmware_confirm_title: 'Firmware aktualisieren?',
-          device_firmware_confirm: '{{device}} wird von {{current}} auf {{bundle}} aktualisiert. Bei seiner nächsten Abfrage lädt er die geänderten Dateien, installiert sie und startet neu - so lange misst er nicht. Zurück geht es nur mit einem weiteren Update.',
+          device_firmware_confirm: '<strong>{{device}}</strong> wird von <strong>{{current}}</strong> auf <strong>{{bundle}}</strong> aktualisiert. Bei seiner nächsten Abfrage lädt er die geänderten Dateien, installiert sie und startet neu - <strong>so lange misst er nicht</strong>. Zurück geht es nur mit einem weiteren Update.',
           device_firmware_started: 'Firmware-Update auf {{bundle}} gestartet',
           device_firmware_start_failed: 'Firmware-Update konnte nicht gestartet werden',
           device_firmware_load_failed: 'Firmware-Bundles konnten nicht geladen werden',

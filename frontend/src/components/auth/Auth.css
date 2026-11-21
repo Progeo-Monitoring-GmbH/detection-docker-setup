@@ -95,6 +95,24 @@
   justify-content: center;
 }
 
+/* Phones: the address above is a single left-aligned column, so the footer
+   lines up with it (same box and inset) instead of wrapping centered, and
+   the "·" separator - meaningless once the parts stack - is dropped. */
+@media (max-width: 640px) {
+  .auth-page .auth-footer {
+    width: 100%;
+    max-width: 420px;
+    padding: 28px 8px 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .auth-page .auth-footer-separator {
+    display: none;
+  }
+}
+
 /* Small centered links below a form (magic link, request access, ...). */
 .auth-links {
   display: flex;

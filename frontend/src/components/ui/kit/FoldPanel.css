@@ -1,0 +1,71 @@
+/* FoldPanel.tsx - a PanelCard (kit.css .progeo-panel) whose header folds the
+   body. The toggle is a plain button: chevron and title, left aligned. */
+
+.progeo-panel.progeo-fold .progeo-fold-head {
+  padding: 14px 20px;
+}
+
+.progeo-panel.progeo-fold .progeo-fold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progeo-panel.progeo-fold .progeo-fold-toggle:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.progeo-panel.progeo-fold .progeo-fold-toggle:focus-visible {
+  outline: 2px solid var(--progeo-blue);
+  outline-offset: 1px;
+}
+
+.progeo-fold-chevron {
+  flex: none;
+  color: #8b8383;
+  transition: transform 0.2s ease;
+}
+
+.progeo-fold--open .progeo-fold-chevron {
+  transform: rotate(90deg);
+}
+
+.progeo-fold-hint {
+  padding: 0 20px 14px;
+  font-size: 13px;
+  color: #6e6868;
+}
+
+.progeo-panel.progeo-fold .progeo-fold-body {
+  padding: 4px 20px 18px;
+}
+
+/* Phones: a little less padding - the content keeps the width. */
+@media (max-width: 640px) {
+  .progeo-panel.progeo-fold .progeo-fold-head {
+    padding: 12px 14px;
+  }
+
+  .progeo-fold-hint {
+    padding: 0 14px 12px;
+  }
+
+  .progeo-panel.progeo-fold .progeo-fold-body {
+    padding: 4px 14px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progeo-fold-chevron {
+    transition: none;
+  }
+}

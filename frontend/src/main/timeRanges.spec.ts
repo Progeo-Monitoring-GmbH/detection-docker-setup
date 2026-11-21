@@ -7,6 +7,7 @@ import {
   TIME_RANGE_DAYS,
   timeRangeCandidates,
   timeRangeLabelKey,
+  timeRangeShortLabelKey,
   type MeasurementRange,
 } from './timeRanges';
 
@@ -42,6 +43,11 @@ describe('TIME_RANGE_DAYS', () => {
   it('builds the status_range_* label keys', () => {
     expect(timeRangeLabelKey('30d')).toBe('status_range_30d');
     expect(timeRangeLabelKey('3y')).toBe('status_range_3y');
+  });
+
+  it('builds the short status_range_short_* keys of the range picker', () => {
+    expect(timeRangeShortLabelKey('7d')).toBe('status_range_short_7d');
+    expect(timeRangeShortLabelKey('latest')).toBe('status_range_short_latest');
   });
 });
 

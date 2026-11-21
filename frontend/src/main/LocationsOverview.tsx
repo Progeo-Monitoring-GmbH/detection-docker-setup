@@ -21,7 +21,9 @@ import {
   selectionColumn,
 } from '../components/ui/kit/SearchableDataTable';
 import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
+import AirtableSyncButton from '../components/device/AirtableSyncButton';
 import AssignLocationsModal from './AssignLocationsModal';
+import { staffFlags } from './access';
 import MergeProjectsModal from './MergeProjectsModal';
 import { mergeBlocker, type SelectedLocation } from './locationSelection';
 import { formatDate, formatRelativeTime } from './dateFormat';
@@ -651,7 +653,8 @@ const locationColumns = ({
     ),
     sortable: true,
     right: true,
-    width: '84px',
+    // "ZUSTAND" and the sort arrow fit (84px cut the heading off).
+    width: '104px',
     omit: !mobile,
   },
   {
@@ -686,6 +689,12 @@ const LocationsOverview = () => {
   // The selection's buttons, each with its own permission (the backend checks the same).
   const canMerge = hasPermission('module_locations_mergable');
   const canAssign = hasPermission('module_user_invitable');
+  // "Only objects with connected devices": a device feature - staff, or
+  // module_devices_enabled (like the device overview). Without it the
+  // switch is hidden and every object is listed.
+  const canFilterConnected =
+    staffFlags(auth?.user).isStaffOrSuperuser ||
+    hasPermission('module_devices_enabled');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<'assign' | 'merge' | null>(null);
   const navigate = useNavigate();
@@ -925,11 +934,14 @@ const LocationsOverview = () => {
 
   // Search and "only connected" filter the loaded rows - no request.
   const filteredRows = useMemo(() => {
-    const connected = onlyConnected ? connectedRowFilter(rows) : () => true;
+    const connected =
+      canFilterConnected && onlyConnected
+        ? connectedRowFilter(rows)
+        : () => true;
     return listedRows.filter(
       (row) => connected(row) && matchesLocationSearch(row, searchText),
     );
-  }, [rows, listedRows, onlyConnected, searchText]);
+  }, [rows, listedRows, canFilterConnected, onlyConnected, searchText]);
 
   const sortedRows = useMemo(
     () =>
@@ -1056,15 +1068,17 @@ const LocationsOverview = () => {
           </button>
         )}
       </div>
-      <Form.Check
-        id="locations-only-connected"
-        data-testid="locations-only-connected"
-        type="switch"
-        className="locations-only-connected"
-        label={t('locations_only_connected')}
-        checked={onlyConnected}
-        onChange={(event) => setOnlyConnected(event.target.checked)}
-      />
+      {canFilterConnected && (
+        <Form.Check
+          id="locations-only-connected"
+          data-testid="locations-only-connected"
+          type="switch"
+          className="locations-only-connected"
+          label={t('locations_only_connected')}
+          checked={onlyConnected}
+          onChange={(event) => setOnlyConnected(event.target.checked)}
+        />
+      )}
       {canListAlarms && (
         <PillButton
           label={t('locations_active_alarms')}
@@ -1080,6 +1094,8 @@ const LocationsOverview = () => {
           testId="locations-active-alarms-button"
         />
       )}
+      {/* Staff: new and renamed projects from Airtable (renders nothing otherwise). */}
+      <AirtableSyncButton onLocationsChanged={fetchLocations} />
     </div>
   );
 

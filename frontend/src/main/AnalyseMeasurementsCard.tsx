@@ -130,6 +130,17 @@ const AnalyseMeasurementsCard = ({
               )}
             </div>
           )}
+          {/* Disabling is only offered for picked sensors - without this
+              line nobody finds out that a click on a column (or a sensor on
+              the plan) is what brings the button up. */}
+          {canSwitchSensors && sensors.length === 0 && measurements.length > 0 && (
+            <span
+              className="text-muted small"
+              data-testid="analyse-sensor-switch-hint"
+            >
+              {t('analyse_sensors_pick_hint')}
+            </span>
+          )}
         </div>
         {measurementTotal > measurements.length && (
           <div

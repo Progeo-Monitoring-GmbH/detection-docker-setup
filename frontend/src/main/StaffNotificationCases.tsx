@@ -12,6 +12,8 @@ import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
+import ScrollShadow from '../components/ui/kit/ScrollShadow';
+import useIsMobile from '../components/ui/useIsMobile';
 import { repeatedTestId } from '../testIds';
 import {
   LocationFlagIcons,
@@ -247,6 +249,8 @@ const StaffNotificationCases = () => {
 
   const offline = summary?.counts.offline;
   const alarm = summary?.counts.alarm;
+  const summaryKinds = [['offline', offline], ['alarm', alarm]] as const;
+  const isPhone = useIsMobile();
 
   return (
     <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-notifications">
@@ -302,28 +306,64 @@ const StaffNotificationCases = () => {
                 </ul>
               </div>
             )}
-            <Table size="sm" bordered responsive className="mb-3 small staff-notifications-summary" data-testid="staff-notifications-summary">
-              <thead>
-                <tr>
-                  <th />
-                  {SUMMARY_PHASES.map((phase) => (
-                    <th key={phase}>{t(`staff_notifications_phase_${phase}`)}</th>
-                  ))}
-                  <th>{t('staff_notifications_resolved_day')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {([['offline', offline], ['alarm', alarm]] as const).map(([name, counts]) => (
-                  <tr key={name} {...repeatedTestId('staff-notifications-summary-row', name)}>
-                    <th>{t(`notification_kind_${name}`)}</th>
+            {/* Ten phase columns: on phones turned on its side (a phase per
+                row, offline / alarm as the two columns) so it fits; wider
+                screens that still cut it off show the scroll cue. */}
+            <ScrollShadow className="mb-3" testId="staff-notifications-summary-scroll">
+              {isPhone ? (
+                <Table size="sm" bordered className="small staff-notifications-summary" data-testid="staff-notifications-summary">
+                  <thead>
+                    <tr>
+                      <th />
+                      {summaryKinds.map(([name]) => (
+                        <th key={name} {...repeatedTestId('staff-notifications-summary-row', name)}>
+                          {t(`notification_kind_${name}`)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
                     {SUMMARY_PHASES.map((phase) => (
-                      <td key={phase}>{counts?.[phase] ?? 0}</td>
+                      <tr key={phase}>
+                        <th>{t(`staff_notifications_phase_${phase}`)}</th>
+                        {summaryKinds.map(([name, counts]) => (
+                          <td key={name}>{counts?.[phase] ?? 0}</td>
+                        ))}
+                      </tr>
                     ))}
-                    <td>{summary.resolved_last_day[name] ?? 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+                    <tr>
+                      <th>{t('staff_notifications_resolved_day')}</th>
+                      {summaryKinds.map(([name]) => (
+                        <td key={name}>{summary.resolved_last_day[name] ?? 0}</td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </Table>
+              ) : (
+                <Table size="sm" bordered className="small staff-notifications-summary" data-testid="staff-notifications-summary">
+                  <thead>
+                    <tr>
+                      <th />
+                      {SUMMARY_PHASES.map((phase) => (
+                        <th key={phase}>{t(`staff_notifications_phase_${phase}`)}</th>
+                      ))}
+                      <th>{t('staff_notifications_resolved_day')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaryKinds.map(([name, counts]) => (
+                      <tr key={name} {...repeatedTestId('staff-notifications-summary-row', name)}>
+                        <th>{t(`notification_kind_${name}`)}</th>
+                        {SUMMARY_PHASES.map((phase) => (
+                          <td key={phase}>{counts?.[phase] ?? 0}</td>
+                        ))}
+                        <td>{summary.resolved_last_day[name] ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </ScrollShadow>
           </>
         )}
 

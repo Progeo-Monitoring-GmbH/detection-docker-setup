@@ -20,6 +20,7 @@ import {
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
+import TimeRangeSelect from './TimeRangeSelect';
 import type { LocationDetail } from './locationTypes';
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
 import {
@@ -39,7 +40,6 @@ import {
   type StatusRange,
   TIME_RANGE_DAYS,
   timeRangeCandidates,
-  timeRangeLabelKey,
 } from './timeRanges';
 import {
   alarmSpansOf,
@@ -855,15 +855,12 @@ const LocationStatusView = ({
               value={statusView}
               onChange={(value) => setStatusView(value as 'roof' | 'zeitreihe')}
             />
-            <SegmentedControl
+            <TimeRangeSelect<StatusRange>
               testId="status-range"
-              options={[LATEST_RANGE, ...rangeOptions].map((value) => ({
-                value,
-                label: t(timeRangeLabelKey(value)),
-              }))}
+              ranges={[LATEST_RANGE, ...rangeOptions]}
               value={range}
               onChange={(value) => {
-                setSelectedRange(value as StatusRange);
+                setSelectedRange(value);
                 setPickedStep(null);
               }}
             />

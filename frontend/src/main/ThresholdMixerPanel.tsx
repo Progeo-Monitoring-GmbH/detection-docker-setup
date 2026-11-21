@@ -752,18 +752,23 @@ const ThresholdMixerPanel = ({
             {loaded.note}
           </span>
         ) : (
-          <SegmentedControl
-            options={PERIODS.map((period) => ({
-              value: String(period),
-              label: period === 1 ? t('einstell_mixer_24h') : t('einstell_mixer_days', { count: period }),
-            }))}
-            value={String(days)}
-            onChange={(value) => {
-              setLoading(true);
-              setDays(Number(value));
-            }}
-            testId={childTestId(testId, 'period')}
-          />
+          // Labelled: on its own the chips read as a filter of unknown meaning
+          // (on phones they wrap below the title, away from any context).
+          <div className="threshold-mixer-period">
+            <span className="threshold-mixer-period-label">{t('einstell_mixer_period')}</span>
+            <SegmentedControl
+              options={PERIODS.map((period) => ({
+                value: String(period),
+                label: period === 1 ? t('einstell_mixer_24h') : t('einstell_mixer_days', { count: period }),
+              }))}
+              value={String(days)}
+              onChange={(value) => {
+                setLoading(true);
+                setDays(Number(value));
+              }}
+              testId={childTestId(testId, 'period')}
+            />
+          </div>
         )
       }
     >
@@ -946,7 +951,7 @@ const ThresholdMixerPanel = ({
                 ))
               )}
             </div>
-            <div className="d-flex flex-column gap-2 justify-content-end">
+            <div className="threshold-mixer-actions">
               <PillButton
                 variant="accent"
                 label={saving ? t('einstell_mixer_saving') : t('einstell_mixer_save', { count: changes.length })}

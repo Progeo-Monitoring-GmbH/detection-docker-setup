@@ -12,6 +12,11 @@
 //                        "action--dialog" = only that dialog
 //   SCREENS_MODALS       0: pages only, no dialogs
 //
+// Every page is shot with its FoldPanels unfolded (unfoldAll - a route's or
+// dialog's `unfold: false` keeps them folded), with the consent decided:
+// external maps declined unless the route's `consent` says otherwise (their
+// tiles are answered locally, TILE_SERVERS).
+//
 // Writes {device}/{device}-{role}-{language}-{action}.png per page,
 // {device}-{role}-{language}-{action}--{dialog}.png per dialog (routes.mjs
 // `modals`) and manifest.json (after every screenshot - a run cut short keeps
@@ -101,8 +106,11 @@ const chunk = (type, data) => {
   crc.writeUInt32BE(crc32(body));
   return Buffer.concat([length, body, crc]);
 };
-/** A light grey PNG with a darker grid - a stand-in for a site plan or a screenshot. */
-const placeholderPng = (width, height) => {
+/**
+ * A light grey PNG with a darker grid (every `grid` px) - a stand-in for a
+ * site plan, a screenshot or a map tile.
+ */
+const placeholderPng = (width, height, grid = 50) => {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
@@ -111,7 +119,7 @@ const placeholderPng = (width, height) => {
   for (let y = 0; y < height; y += 1) {
     const row = y * (width * 3 + 1);
     for (let x = 0; x < width; x += 1) {
-      const line = x % 50 === 0 || y % 50 === 0;
+      const line = x % grid === 0 || y % grid === 0;
       rows.fill(line ? 200 : 236, row + 1 + x * 3, row + 4 + x * 3);
     }
   }
@@ -123,6 +131,17 @@ const placeholderPng = (width, height) => {
   ]);
 };
 const PLACEHOLDER_PNG = placeholderPng(1200, 800);
+// A 256 px map tile, its grid seamless across tiles.
+const TILE_PNG = placeholderPng(256, 256, 64);
+/**
+ * The external tile servers of the Leaflet maps (src/components/ui/mapLayers.ts) -
+ * loaded only with the externalMaps consent (a route's `consent`). Answered with
+ * TILE_PNG: the screenshot neither depends on the internet nor sends anything out.
+ */
+const TILE_SERVERS = [
+  'https://server.arcgisonline.com/**',
+  'https://tile.openstreetmap.org/**',
+];
 const isImageRequest = (pathname) =>
   /\.(png|jpe?g|webp)$/i.test(pathname) ||
   /\/screen-review\/[^/]+\/image\//.test(pathname);
@@ -145,6 +164,27 @@ const saveManifest = () =>
     JSON.stringify(manifest, null, 2),
   );
 
+/**
+ * Unfolds every folded FoldPanel (src/components/ui/kit/FoldPanel.tsx) - the
+ * screenshot shows the panels' content, a dialog's steps find the elements in
+ * them. In rounds: an unfolded panel can hold folded ones.
+ */
+const FOLDED = '[data-testid="fold-toggle"][aria-expanded="false"]';
+const unfoldAll = async (page) => {
+  for (let round = 0; round < 5; round += 1) {
+    const clicked = await page.evaluate((selector) => {
+      const toggles = [...document.querySelectorAll(selector)];
+      toggles.forEach((toggle) => toggle.click());
+      return toggles.length;
+    }, FOLDED);
+    if (!clicked) {
+      return;
+    }
+    // Bootstrap's Collapse transition (350 ms), content laid out after it.
+    await page.waitForTimeout(500);
+  }
+};
+
 const settle = async (page) => {
   // The page's root (data-testid="page-…"), then quiet network and a moment
   // for charts and transitions.
@@ -165,6 +205,42 @@ const pageHeight = (page) =>
   );
 
 /**
+ * Pins every element whose height follows the window's (vh, a flex column of
+ * the window's height) to its height in the device's window: the window
+ * grown by a probe, what grew with it gets its old height as an inline
+ * height / min-height / max-height. Then a taller window changes nothing.
+ */
+const FREEZE_PROBE = 240;
+const freezeWindowHeights = async (page, width) => {
+  const { height } = page.viewportSize();
+  await page.evaluate(() => {
+    const elements = [...document.body.querySelectorAll('*')];
+    window.__captureFreeze = elements.map((element) => [
+      element,
+      element.getBoundingClientRect().height,
+    ]);
+  });
+  await page.setViewportSize({ width, height: height + FREEZE_PROBE });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const grown = (window.__captureFreeze ?? []).filter(
+      ([element, before]) =>
+        element.isConnected &&
+        element.getBoundingClientRect().height - before > 1,
+    );
+    for (const [element, before] of grown) {
+      element.style.setProperty('box-sizing', 'border-box', 'important');
+      for (const property of ['height', 'min-height', 'max-height']) {
+        element.style.setProperty(property, `${before}px`, 'important');
+      }
+    }
+    delete window.__captureFreeze;
+  });
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(300);
+};
+
+/**
  * The window as tall as the page, settled - then the screenshot is just the
  * window. Playwright's fullPage capture resizes the window while it shoots:
  * the app reacts to that resize mid-capture (the sidebar spread over the page
@@ -173,8 +249,13 @@ const pageHeight = (page) =>
  * Measured once, at the device's own window: grown again and again, every
  * element sized by the window (min-height: 100vh) grew with it - a mobile
  * page ended up six windows tall, the rest empty.
+ *
+ * Grown once, they still grew - and what came after them was cut off (the
+ * map, calc(100vh - 220px), pushed the location list out of the shot). So
+ * first freezeWindowHeights: the page keeps the layout of the device's window.
  */
 const growToPage = async (page, width) => {
+  await freezeWindowHeights(page, width);
   const height = Math.min(await pageHeight(page), MAX_HEIGHT);
   await page.setViewportSize({ width, height });
   await page.waitForTimeout(500);
@@ -318,7 +399,7 @@ try {
             timezoneId: 'Europe/Berlin',
           });
           await context.addInitScript(
-            ({ token, language: lng }) => {
+            ({ token, language: lng, consent }) => {
               if (token) {
                 localStorage.setItem('authToken', token);
                 localStorage.setItem('refreshToken', token);
@@ -334,12 +415,27 @@ try {
                     necessary: true,
                     externalMaps: false,
                     statistics: false,
+                    // routes.mjs `consent`: e.g. the map with its tiles.
+                    ...consent,
                   },
                 }),
               );
             },
-            { token: route.public ? null : tokenOf(persona), language },
+            {
+              token: route.public ? null : tokenOf(persona),
+              language,
+              consent: route.consent ?? {},
+            },
           );
+          for (const server of TILE_SERVERS) {
+            await context.route(server, (request) =>
+              request.fulfill({
+                status: 200,
+                contentType: 'image/png',
+                body: TILE_PNG,
+              }),
+            );
+          }
           // Per screenshot: its mock variant, the requests without a mock.
           const shot = { scenario: null, unmocked: new Set(), errors: [] };
           await context.route(`${MOCK_ORIGIN}/**`, (request) => {
@@ -366,7 +462,7 @@ try {
           page.on('pageerror', (error) =>
             shot.errors.push(error.message.slice(0, 300)),
           );
-          const open = async (target, scenario = null) => {
+          const open = async (target, scenario = null, unfold = true) => {
             shot.scenario = scenario;
             shot.unmocked = new Set();
             shot.errors = [];
@@ -376,6 +472,9 @@ try {
               timeout: 30000,
             });
             await settle(page);
+            if (unfold) {
+              await unfoldAll(page);
+            }
           };
           const entryOf = (file) => ({
             file,
@@ -392,7 +491,7 @@ try {
             if (wantPage) {
               const file = `${prefix}.png`;
               try {
-                await open(route.path);
+                await open(route.path, null, route.unfold !== false);
                 const url = urlOf(page);
                 await page.screenshot({
                   path: path.join(OUT, device, file),
@@ -445,7 +544,11 @@ try {
               };
               let done = 0;
               try {
-                await open(target, modal.scenario ?? null);
+                await open(
+                  target,
+                  modal.scenario ?? null,
+                  (modal.unfold ?? route.unfold) !== false,
+                );
                 const url = urlOf(page);
                 for (const step of steps) {
                   await runStep(page, step);

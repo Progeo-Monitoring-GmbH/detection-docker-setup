@@ -40,7 +40,8 @@
 /* A table in phone mode fits its panel: the data table sizes itself to its
    widest content otherwise (min-width: fit-content), and a long object name
    would push the kept columns off the screen - it is cut with an ellipsis. */
-.progeo-mobile-table .rdt_Table {
+.progeo-mobile-table .rdt_Table,
+.progeo-mobile-table .rdt_wrapper {
   width: 100%;
   min-width: 0;
 }
@@ -50,4 +51,24 @@
 .progeo-mobile-table .rdt_TableCol {
   min-width: 0 !important;
   overflow: hidden;
+}
+
+/* The expander arrow (its button is 38px) needs no 48px column - the room
+   goes to the kept columns. */
+.progeo-mobile-table {
+  --rdt-system-col-width: 38px;
+}
+
+/* The selection checkbox (selectionColumn, 48px elsewhere): just the box,
+   centred, no cell padding. !important: the data table writes the column
+   width inline. */
+.progeo-mobile-table .rdt_TableCell[data-column-id='__selected'],
+.progeo-mobile-table .rdt_TableCol[data-column-id='__selected'] {
+  flex: 0 0 26px !important;
+  width: 26px !important;
+  min-width: 26px !important;
+  max-width: 26px !important;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
 }

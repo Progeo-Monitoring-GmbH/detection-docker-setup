@@ -61,6 +61,25 @@ describe('slicesOf', () => {
     expect(slicesOf(900, 900)).toHaveLength(1);
   });
 
+  it('cuts off no rest shorter than 75 px - it stays with the part before', () => {
+    // The login on a phone: 938 px in 844 px windows - a 94 px rest is a part.
+    expect(slicesOf(938, 844)).toEqual([
+      { index: 0, top: 0, height: 844 },
+      { index: 1, top: 844, height: 94 },
+    ]);
+    // 74 px rest: one part of 918 px.
+    expect(slicesOf(918, 844)).toEqual([{ index: 0, top: 0, height: 918 }]);
+    // Exactly 75 px is cut.
+    expect(slicesOf(919, 844)).toHaveLength(2);
+    // Only the last rest - a long page keeps its full parts.
+    expect(slicesOf(2 * 844 + 10, 844)).toEqual([
+      { index: 0, top: 0, height: 844 },
+      { index: 1, top: 844, height: 854 },
+    ]);
+    // A page shorter than 75 px is still one part.
+    expect(slicesOf(40, 844)).toEqual([{ index: 0, top: 0, height: 40 }]);
+  });
+
   it('takes the window height of the capture, else the device default', () => {
     expect(sliceHeightOf({ viewport: [390, 700], device: 'mobile' })).toBe(700);
     expect(sliceHeightOf({ viewport: null, device: 'mobile' })).toBe(844);

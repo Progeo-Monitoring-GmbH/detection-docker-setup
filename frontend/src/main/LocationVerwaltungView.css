@@ -260,6 +260,11 @@
   .location-verwaltung-invite {
     grid-template-columns: 1fr;
   }
+
+  /* "Einladung senden" as wide as its label, like "Hinzufügen" above. */
+  .location-verwaltung-invite .progeo-pill {
+    justify-self: start;
+  }
 }
 
 .location-verwaltung-invite-hint {

@@ -576,7 +576,9 @@ const BackupView = () => {
             </div>
             <ul className="backup-confirm-list" data-testid="backup-delete-confirm-list">
               {(hasSelection ? selectedRows : backups).map((backup) => (
-                <li key={backup.id} {...repeatedTestId('backup-delete-confirm-item', backup.id)}>{backup.name}</li>
+                <li key={backup.id} {...repeatedTestId('backup-delete-confirm-item', backup.id)}>
+                  <strong>{backup.name}</strong>
+                </li>
               ))}
             </ul>
           </div>

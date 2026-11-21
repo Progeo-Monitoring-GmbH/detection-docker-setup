@@ -67,6 +67,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** i18n key of a range's toggle label. */
 export const timeRangeLabelKey = (range: StatusRange) => `status_range_${range}`;
 
+/** i18n key of a range's short label ("7 Tage") - the range picker's button. */
+export const timeRangeShortLabelKey = (range: StatusRange) => `status_range_short_${range}`;
+
 /**
  * The `candidates` to offer, shortest first: the shortest always, every
  * longer one only once the data spans more than the candidate before it - it

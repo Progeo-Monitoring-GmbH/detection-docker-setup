@@ -1,0 +1,23 @@
+/* The result dialog of "Mit Airtable abgleichen" (AirtableSyncButton.tsx):
+   the flat AirtableSyncPanel is its content. */
+
+.airtable-sync-dialog .modal-content {
+  background: var(--progeo-panel-bg);
+  border: none;
+  border-radius: 20px;
+}
+
+.airtable-sync-dialog .modal-body.airtable-sync-dialog-body {
+  padding: 18px 20px;
+}
+
+/* Phones: the dialog is the full screen, without the rounded corners. */
+@media (max-width: 767.98px) {
+  .airtable-sync-dialog .modal-content {
+    border-radius: 0;
+  }
+
+  .airtable-sync-dialog .modal-body.airtable-sync-dialog-body {
+    padding: 14px 12px;
+  }
+}

@@ -96,6 +96,14 @@ describe('LageplanWizardView anchors', () => {
     expect(container.querySelectorAll('.lageplan-step--target')).toHaveLength(1);
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
     expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toBe(step);
+    // The steps are folded - the one the link points at is unfolded.
+    const toggle = (panel: Element) => panel.querySelector('[data-testid="fold-toggle"]')!;
+    expect(toggle(step).getAttribute('aria-expanded')).toBe('true');
+    const others = [...container.querySelectorAll('section[data-testid^="lageplan-wizard-step-"]')].filter(
+      (panel) => panel !== step,
+    );
+    expect(others.length).toBeGreaterThan(0);
+    others.forEach((panel) => expect(toggle(panel).getAttribute('aria-expanded')).toBe('false'));
   });
 
   it('marks and scrolls to nothing without an anchor', async () => {
@@ -103,6 +111,13 @@ describe('LageplanWizardView anchors', () => {
 
     expect(current.search).toBe('?location=7');
     expect(container.querySelectorAll('.lageplan-step--target')).toHaveLength(0);
+    // Every step folded, each with its explanation.
+    const toggles = container.querySelectorAll('[data-testid="fold-toggle"]');
+    expect(toggles.length).toBeGreaterThanOrEqual(8);
+    toggles.forEach((toggle) => expect(toggle.getAttribute('aria-expanded')).toBe('false'));
+    expect(container.querySelector('[data-testid="lageplan-wizard-step-1-hint"]')?.textContent).toBe(
+      'lageplan_wizard_hint_location',
+    );
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });

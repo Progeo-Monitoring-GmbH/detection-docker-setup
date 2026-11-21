@@ -230,8 +230,12 @@
   color: var(--progeo-orange);
 }
 
+/* minmax(0, 1fr), not the implicit auto column: the cookie table (long
+   storage names) scrolls in its .privacy-table-wrap instead of widening the
+   page - a wider page also widened the fixed cookie banner off a phone. */
 .privacy-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   counter-reset: section;
 }
@@ -245,6 +249,8 @@
   padding: 26px 30px;
   box-shadow: var(--progeo-shadow-chrome);
   scroll-margin-top: 20px;
+  /* Long addresses and URLs wrap on a phone. */
+  overflow-wrap: break-word;
 }
 
 .privacy-section h2 {

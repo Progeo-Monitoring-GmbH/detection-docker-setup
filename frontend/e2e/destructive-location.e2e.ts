@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, expectConfirmGuard, locationId, openPage, test, type GuardedRequest } from './fixtures';
+import { expect, expectConfirmGuard, locationId, openPage, test, unfoldAll, type GuardedRequest } from './fixtures';
 
 /**
  * The rule "every destructive action asks first" in the location / device
@@ -223,8 +223,11 @@ test.describe('devices', () => {
 test.describe('Lageplan wizard', () => {
   test.beforeEach(needsLocation);
 
-  const openWizard = (page: Page) =>
-    openPage(page, `/site-plan/wizard/?location=${locationId}`, 'page-lageplan-wizard');
+  // The steps are folded (FoldPanel) - unfolded, their buttons can be clicked.
+  const openWizard = async (page: Page) => {
+    await openPage(page, `/site-plan/wizard/?location=${locationId}`, 'page-lageplan-wizard');
+    await unfoldAll(page);
+  };
 
   test('removing a Lageplan asks first (#8)', async ({ page }) => {
     await openWizard(page);

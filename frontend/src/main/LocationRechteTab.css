@@ -254,3 +254,31 @@
   font-size: 12px;
   color: #8b8383;
 }
+
+/* Phones: the name indent wastes a sixth of the card, and the channel pills
+   then wrap mid-word ("E-/Mail") and overflow the card. The rows start at the
+   card edge like "Letzter Login", each track spans the full width and its
+   pills share it without breaking their labels. */
+@media (max-width: 640px) {
+  .location-rechte-settings,
+  .location-rechte-contact-fix,
+  .location-rechte-locked-hint {
+    padding-left: 0;
+  }
+
+  .location-rechte-settings {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .location-rechte-settings .location-rechte-track {
+    width: 100%;
+  }
+
+  .location-rechte-settings .location-rechte-track .progeo-pill {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+}

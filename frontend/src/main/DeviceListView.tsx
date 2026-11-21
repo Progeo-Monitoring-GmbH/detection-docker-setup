@@ -5,7 +5,6 @@ import { useNavigate, useSearchParams } from 'react-router';
 import {
   Activity,
   ArrowClockwise,
-  ArrowRepeat,
   Broadcast,
   Image,
   PlusCircle,
@@ -20,7 +19,6 @@ import { formatDate } from './dateFormat';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
 import DeviceCommandsDialog from '../components/device/DeviceCommandsDialog';
-import AirtableSyncPanel, { type AirtableSync } from '../components/device/AirtableSyncPanel';
 import DeviceProvisionPanel, { type ProvisionedDevice } from '../components/device/DeviceProvisionPanel';
 import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
@@ -119,7 +117,8 @@ const muted = <span className="device-list-muted">–</span>;
  * Also the device setup (formerly /device/provision/, staff or
  * module_devices_provision): "Gerät hinzufügen" provisions a new controller
  * for the location (DeviceProvisionPanel), each device's "Test-Messungen"
- * follow its test measurements, staff can sync the locations with Airtable.
+ * follow its test measurements. ("Mit Airtable abgleichen" lives on the
+ * location overview and the Verwaltung page: AirtableSyncButton.)
  */
 const DeviceListView = () => {
   const auth = useAuth();
@@ -156,8 +155,6 @@ const DeviceListView = () => {
   const [adding, setAdding] = useState(false);
   // The device whose test measurements are shown (new or picked in the list).
   const [testDevice, setTestDevice] = useState<ProvisionedDevice | null>(null);
-  const [airtable, setAirtable] = useState<AirtableSync | null>(null);
-  const [syncing, setSyncing] = useState(false);
   // Devices whose "notify on measurements" switch is being saved.
   const [notifySaving, setNotifySaving] = useState<number[]>([]);
   // Answers of an older selection are dropped.
@@ -306,28 +303,6 @@ const DeviceListView = () => {
   };
 
   // -- setup -------------------------------------------------------------------
-
-  const syncAirtable = () => {
-    setSyncing(true);
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/device/provision/airtable/sync/',
-      {},
-      (response) => {
-        const data = (response?.data || null) as AirtableSync | null;
-        setAirtable(data);
-        setSyncing(false);
-        if (data?.updated.length) {
-          // Names may have changed.
-          void loadLocations();
-        }
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not sync with Airtable', error);
-        setSyncing(false);
-      },
-    );
-  };
 
   const deviceCreated = (device: ProvisionedDevice) => {
     setTestDevice(device);
@@ -634,16 +609,6 @@ const DeviceListView = () => {
         title={t('devices_title')}
         actions={
           <div className="device-list-toolbar" data-testid="device-list-toolbar">
-            {isStaff && (
-              <PillButton
-                variant="ghost"
-                icon={syncing ? <Spinner animation="border" size="sm" /> : <ArrowRepeat size={14} />}
-                label={t('devices_airtable_sync')}
-                disabled={syncing}
-                onClick={syncAirtable}
-                testId="device-list-airtable-sync"
-              />
-            )}
             {locationId !== null && isStaff && canList && (
               <PillButton
                 variant="ghost"
@@ -691,16 +656,6 @@ const DeviceListView = () => {
           <div className="device-list-hint device-list-hint--pick" data-testid="device-list-pick-hint">{t('devices_pick_location')}</div>
         )}
       </PanelCard>
-
-      {airtable && (
-        <AirtableSyncPanel
-          // A new sync starts a fresh selection.
-          key={airtable.signed}
-          initial={airtable}
-          onClose={() => setAirtable(null)}
-          onLocationsChanged={() => void loadLocations()}
-        />
-      )}
 
       {locationId !== null && adding && (
         <DeviceProvisionPanel

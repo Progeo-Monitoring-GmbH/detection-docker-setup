@@ -5,6 +5,7 @@ import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import BoldTrans from '../ui/kit/BoldTrans';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import PillButton from '../ui/kit/PillButton';
 // Section title, select and row are shared with the dialog it sits in.
@@ -218,7 +219,12 @@ const DeviceFirmwareUpdate = ({
       <ConfirmDialog
         show={confirming}
         title={t('device_firmware_confirm_title')}
-        message={t('device_firmware_confirm', { device: deviceName, current: data.current ?? '?', bundle: target })}
+        message={
+          <BoldTrans
+            i18nKey="device_firmware_confirm"
+            values={{ device: deviceName, current: data.current ?? '?', bundle: target }}
+          />
+        }
         confirmLabel={t('device_firmware_start')}
         cancelLabel={t('devices_cancel')}
         onConfirm={start}

@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
 const cache = vi.hoisted(() => ({ entries: new Map<string, unknown>() }));
 const hooks = vi.hoisted(() => ({
   auth: { user: { is_staff: false, user_id: 5 } as Record<string, unknown>, viewAsUser: false },
-  permissions: { hasPermission: () => true, isLoading: false },
+  permissions: { hasPermission: (_code?: string): boolean => true, isLoading: false },
   snackbar: { enqueueSnackbar: () => undefined },
   translation: { t: (key: string) => key },
 }));
@@ -202,6 +202,37 @@ describe('LocationsOverview filters and cache', () => {
 
     expect(api.urls.length).toBe(requests);
     expect(rowTestKeys()).toContain(5);
+  });
+
+  it('hides the switch without module_devices_enabled and lists every object', async () => {
+    const permissions = hooks.permissions;
+    hooks.permissions = {
+      hasPermission: (code: string) => code !== 'module_devices_enabled',
+      isLoading: false,
+    } as typeof permissions;
+    try {
+      await render();
+      expect(onlyConnectedSwitch()).toBeNull();
+      expect(rowTestKeys()).toContain(5);
+    } finally {
+      hooks.permissions = permissions;
+    }
+  });
+
+  it('shows the switch to staff without the module permission', async () => {
+    const permissions = hooks.permissions;
+    const auth = hooks.auth;
+    hooks.permissions = { hasPermission: () => false, isLoading: false } as typeof permissions;
+    hooks.auth = { ...auth, user: { is_staff: true, user_id: 5 } };
+    try {
+      await render();
+      expect(onlyConnectedSwitch()).not.toBeNull();
+      // Staff also get "Mit Airtable abgleichen" (AirtableSyncButton).
+      expect(container.querySelector('[data-testid="airtable-sync-button"]')).not.toBeNull();
+    } finally {
+      hooks.permissions = permissions;
+      hooks.auth = auth;
+    }
   });
 
   it('shows the cached list at once on a reload and refreshes it in the background', async () => {

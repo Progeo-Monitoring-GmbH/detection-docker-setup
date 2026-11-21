@@ -21,6 +21,7 @@ import {
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
+import AirtableSyncButton from '../components/device/AirtableSyncButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, {
   type Severity,
@@ -176,6 +177,8 @@ const LocationVerwaltungView = () => {
   const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('Alle');
+  // Bumped to load the list again (the Airtable sync changed locations).
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [permsFor, setPermsFor] = useState<VerwaltungRow | null>(null);
   const [rules, setRules] = useState<AccessRule[]>([]);
@@ -253,7 +256,7 @@ const LocationVerwaltungView = () => {
     return () => {
       cancelled = true;
     };
-  }, [enqueueSnackbar]);
+  }, [enqueueSnackbar, reloadKey]);
 
   // The list has every location of every account (~1000 rows): typing
   // updates the field at once, the rows follow when React has time.
@@ -736,6 +739,9 @@ const LocationVerwaltungView = () => {
                     />
                   ))}
                 </div>
+                <AirtableSyncButton
+                  onLocationsChanged={() => setReloadKey((key) => key + 1)}
+                />
               </div>
             }
           >
@@ -883,6 +889,7 @@ const LocationVerwaltungView = () => {
                     ))}
                   </select>
                   <PillButton
+                    variant="accent"
                     label={t('rechte_add_confirm')}
                     onClick={addUser}
                     testId="verwaltung-permissions-add"
@@ -917,6 +924,7 @@ const LocationVerwaltungView = () => {
                     data-testid="verwaltung-invite-last-name"
                   />
                   <PillButton
+                    variant="accent"
                     label={t('verwaltung_invite_send')}
                     onClick={inviteUser}
                     disabled={!inviteValid || inviting}

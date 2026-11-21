@@ -15,6 +15,19 @@
   border-color: var(--bs-success);
 }
 
+/* The switches of the user dialog (staff / active / send invite) in one row;
+   a label that no longer fits moves to a new row whole instead of being
+   squeezed into a narrow word-per-line column (phones). */
+.staff-user-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.staff-user-switches > .form-check {
+  white-space: nowrap;
+}
+
 /* -- accounts (staffAccounts.tsx): a coloured box per account, the legend -- */
 
 .staff-account-boxes {

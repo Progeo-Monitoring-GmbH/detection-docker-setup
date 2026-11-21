@@ -170,10 +170,24 @@ export const sliceHeightOf = (
 
 export type Slice = { index: number; top: number; height: number };
 
-/** The parts of an image `height` px tall, `sliceHeight` each (the last one shorter). */
+/**
+ * The shortest part worth its own frame: a rest below it is not cut off but
+ * stays with the part before (a few px strip of a page is no screen to review).
+ */
+export const MIN_SLICE_HEIGHT = 75;
+
+/**
+ * The parts of an image `height` px tall, `sliceHeight` each - the last one
+ * shorter, or up to MIN_SLICE_HEIGHT px taller (a shorter rest is not cut off).
+ */
 export const slicesOf = (height: number, sliceHeight: number): Slice[] => {
   const slices: Slice[] = [];
   for (let top = 0, index = 0; top < height; top += sliceHeight, index += 1) {
+    const rest = height - top - sliceHeight;
+    if (rest > 0 && rest < MIN_SLICE_HEIGHT) {
+      slices.push({ index, top, height: height - top });
+      break;
+    }
     slices.push({ index, top, height: Math.min(sliceHeight, height - top) });
   }
   return slices;

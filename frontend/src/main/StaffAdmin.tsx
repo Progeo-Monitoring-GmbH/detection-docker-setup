@@ -381,7 +381,7 @@ const UserFormModal = ({
             </Form.Group>
           )}
 
-          <div className="d-flex gap-4 mb-3">
+          <div className="staff-user-switches mb-3">
             {staffFields && (
               <Form.Check
                 type="switch"

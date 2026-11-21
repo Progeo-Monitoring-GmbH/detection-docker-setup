@@ -7,6 +7,10 @@
 //   roles   - "user": a customer with the usual module permissions,
 //             "staff": staff (and superuser - every page) - see mockApi.mjs
 //   public  - opened without a login (captured once, as "user")
+//   consent - the cookie consent's categories other than the default (all
+//             declined), e.g. { externalMaps: true } for a page with a map
+//   unfold  - false: the FoldPanels stay folded (default: capture.mjs unfolds
+//             them all after loading - before the page's and its dialogs' shots)
 //   modals  - the dialogs (Modal, ConfirmDialog, drawers) opened on this page,
 //             each its own screenshot {...}-{action}--{name}.png, taken from a
 //             freshly loaded page:
@@ -29,6 +33,7 @@
 //     devices   only these (default: all)
 //     path      opened on another URL (default: the page's)
 //     scenario  a variant of the mocked data (mockApi.mjs SCENARIOS)
+//     unfold    false: opened with the FoldPanels folded (default: the page's)
 //
 //   A new ConfirmDialog is one line in its page's modals:
 //     { testId: 'backup-delete-confirm', open: ['backup-delete-bulk'] },
@@ -167,6 +172,11 @@ export const ROUTES = [
         roles: ['staff'],
         open: [selectRow('locations-table', 3), 'locations-selection-assign'],
       },
+      {
+        testId: 'airtable-sync-dialog',
+        roles: ['staff'],
+        open: ['airtable-sync-button'],
+      },
     ],
   },
   {
@@ -175,7 +185,9 @@ export const ROUTES = [
     roles: ['user', 'staff'],
     modals: [
       {
+        // Dissolving needs module_locations_mergable - not the plain customer's.
         testId: 'location-group-dissolve-dialog',
+        roles: ['staff'],
         open: ['location-group-dissolve'],
       },
       // A LoRaWAN project: climate panels with their own dialogs (superuser).
@@ -380,10 +392,16 @@ export const ROUTES = [
         testId: 'device-commands',
         open: [expandRow(1), { click: 'device-list-commands', key: '1' }],
       },
-      ...['restart', 'maintenance'].map((command) => ({
-        testId: `device-commands-${command}-dialog`,
-        open: [...OPEN_COMMANDS, { click: 'device-commands-command', key: command }],
-      })),
+      // maintenance / normal are outdated - no buttons any more (DeviceCommandsDialog).
+      {
+        testId: 'device-commands-restart-dialog',
+        open: [...OPEN_COMMANDS, { click: 'device-commands-command', key: 'restart' }],
+      },
+      {
+        // The commands dialog with its file editor open ("Config überschreiben").
+        testId: 'device-commands-update',
+        open: [...OPEN_COMMANDS, 'device-commands-update-open'],
+      },
       {
         testId: 'device-commands-send-params-dialog',
         open: [...OPEN_COMMANDS, 'device-commands-send-params'],
@@ -392,6 +410,8 @@ export const ROUTES = [
         testId: 'device-commands-send-update-dialog',
         open: [
           ...OPEN_COMMANDS,
+          // The file editor only after "Config überschreiben".
+          'device-commands-update-open',
           {
             fill: 'device-commands-update-content',
             value: '[measure]\ninterval = 3600',
@@ -462,7 +482,9 @@ export const ROUTES = [
       {
         testId: 'lageplan-wizard-import-dialog',
         open: [
-          { click: 'lageplan-wizard-point-source-option', key: 'json' },
+          // A phone shows the sources as a dropdown (they don't fit in one row).
+          { click: 'lageplan-wizard-point-source-option', key: 'json', device: 'pc' },
+          { select: 'lageplan-wizard-point-source-select', value: 'json', device: 'mobile' },
           {
             upload: 'lageplan-wizard-import-json-input',
             file: {
@@ -495,7 +517,8 @@ export const ROUTES = [
       },
     ],
   },
-  { action: 'map', path: '/map/', roles: ['staff'] },
+  // The map only shows with the external maps accepted (tiles: capture.mjs TILE_SERVERS).
+  { action: 'map', path: '/map/', roles: ['staff'], consent: { externalMaps: true } },
   {
     action: 'staff-admin',
     path: '/staff/',

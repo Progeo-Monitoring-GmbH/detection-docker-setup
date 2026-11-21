@@ -8,6 +8,7 @@ import {
 } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
+import BoldTrans from '../components/ui/kit/BoldTrans';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -169,11 +170,16 @@ const ComputedSuspicionPanel = ({
         testId="computed-suspicion-acknowledge-dialog"
         show={ackTarget !== null}
         title={t('acknowledge_alarms_title')}
-        message={t('acknowledge_alarms_point_message', {
-          count: ackTarget?.point.pending_ack_alarm_ids.length ?? 0,
-          letter: ackTarget?.letter ?? '',
-          sensors: ackTarget?.point.sensor_ids.length ?? 0,
-        })}
+        message={
+          <BoldTrans
+            i18nKey="acknowledge_alarms_point_message"
+            values={{
+              count: ackTarget?.point.pending_ack_alarm_ids.length ?? 0,
+              letter: ackTarget?.letter ?? '',
+              sensors: ackTarget?.point.sensor_ids.length ?? 0,
+            }}
+          />
+        }
         confirmLabel={t('ui_quittieren')}
         cancelLabel={t('acknowledge_alarms_cancel')}
         danger={false}

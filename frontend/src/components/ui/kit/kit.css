@@ -191,6 +191,37 @@
   background: var(--progeo-track);
 }
 
+/* Phones: a track that wraps onto a second row became a lopsided blob (the
+   999px radius on a two-row box) with a ragged last row. The radius is the
+   one of a single row (pill 32px + 2 x 3px padding) - one-row tracks look
+   the same - and the pills fill each row (a track stretched to the full
+   width, e.g. the mixer's period, gets even segments). A SegmentedControl
+   that would wrap shows a dropdown instead (SegmentedControl.tsx); a
+   hand-built track (the management status filter) still wraps as a tidy
+   grid of segments. */
+@media (max-width: 640px) {
+  .progeo-pill-track {
+    border-radius: 19px;
+  }
+
+  .progeo-pill-track > .progeo-pill {
+    flex: 1 1 auto;
+    justify-content: center;
+    white-space: nowrap;
+  }
+}
+
+/* SegmentedControl measures its pills' one-row width with this, for a moment
+   (no wrapping, no stretching) - it decides whether a phone gets a dropdown. */
+.progeo-pill-track.progeo-pill-track--measure {
+  flex-wrap: nowrap;
+}
+
+.progeo-pill-track.progeo-pill-track--measure > .progeo-pill {
+  flex: none;
+  white-space: nowrap;
+}
+
 .progeo-pill-select {
   display: flex;
   align-items: center;
@@ -219,6 +250,21 @@
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
+}
+
+/* A SegmentedControl that didn't fit on a phone - its options as a dropdown. */
+.progeo-pill-select.progeo-segmented-select {
+  max-width: 100%;
+}
+
+.progeo-pill-select.progeo-segmented-select .progeo-pill-track {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.progeo-pill-select.progeo-segmented-select select.form-select {
+  max-width: 100%;
+  text-overflow: ellipsis;
 }
 
 /* -- Badges (SeverityBadge / StateBadge); the colour comes per value --------- */

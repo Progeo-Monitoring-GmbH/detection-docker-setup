@@ -6,11 +6,11 @@ import FrameSlider from '../components/device/FrameSlider';
 import type { KeyHint } from '../components/ui/KeyHints';
 import UsageHelp from '../components/ui/UsageHelp';
 import PillSelect from '../components/ui/kit/PillSelect';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { MEAN_WINDOWS } from './analyseSmoothing';
 import type { CompareOffset } from './analyseCompare';
 import type { ProfileRange } from './NoiseProfilePanel';
-import { timeRangeLabelKey, type TimeRange } from './timeRanges';
+import type { TimeRange } from './timeRanges';
+import TimeRangeSelect from './TimeRangeSelect';
 
 const RESOLUTIONS = [300, 600, 1000, 2000] as const;
 const STICKY_TOP = 0;
@@ -70,14 +70,11 @@ const AnalyseFrameControl = ({
   const { t } = useTranslation();
   const rangeToolbar = (
     <div className="d-flex flex-wrap align-items-center gap-2">
-      <SegmentedControl
+      <TimeRangeSelect
         testId="analyse-range"
-        options={rangeOptions.map((value) => ({
-          value,
-          label: t(timeRangeLabelKey(value)),
-        }))}
+        ranges={rangeOptions}
         value={range}
-        onChange={(value) => onRangeChange(value as TimeRange)}
+        onChange={onRangeChange}
       />
       {!isLorawan && (
         <>

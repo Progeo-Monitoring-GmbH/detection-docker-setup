@@ -368,6 +368,10 @@ test.describe('controller commands', () => {
 
   test('sending a file asks first', async ({ page }) => {
     await openCommands(page);
+    // The file editor opens with "Config überschreiben" (superusers only).
+    const open = page.getByTestId('device-commands-update-open');
+    test.skip((await open.count()) === 0, 'update: superusers only');
+    await open.click();
     const content = page.getByTestId('device-commands-update-content');
     test.skip((await content.count()) === 0, 'update: superusers only');
     await content.fill('-- e2e: never sent');

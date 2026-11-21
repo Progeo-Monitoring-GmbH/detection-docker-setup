@@ -17,6 +17,11 @@ vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useTranslation: () => translation,
 }));
+// The dialog's bold message (tested in BoldTrans.spec) as the mocked t's text.
+vi.mock('../components/ui/kit/BoldTrans', () => ({
+  default: ({ i18nKey, values }: { i18nKey: string; values?: Record<string, unknown> }) =>
+    translation.t(i18nKey, values),
+}));
 
 const { default: ComputedSuspicionPanel } =
   await import('./ComputedSuspicionPanel');

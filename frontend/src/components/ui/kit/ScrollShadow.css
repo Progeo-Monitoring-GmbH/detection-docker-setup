@@ -1,0 +1,68 @@
+/* ScrollShadow.tsx: a horizontal scroll box whose edges show a shadow and a
+   chevron while there is more content that way. The shadow darkens instead of
+   fading to a colour, so it works on any panel background. */
+
+.progeo-scroll-shadow {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.progeo-scroll-shadow-scroller {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The content keeps its own bottom margin inside the scroller - the cue covers
+   the content only. */
+.progeo-scroll-shadow-scroller > .table {
+  margin-bottom: 0;
+}
+
+.progeo-scroll-shadow-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  color: var(--progeo-blue);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.progeo-scroll-shadow-edge--start {
+  left: 0;
+  justify-content: flex-start;
+  padding-left: 2px;
+  background: linear-gradient(to right, rgba(29, 35, 52, 0.18), rgba(29, 35, 52, 0));
+}
+
+.progeo-scroll-shadow-edge--end {
+  right: 0;
+  justify-content: flex-end;
+  padding-right: 2px;
+  background: linear-gradient(to left, rgba(29, 35, 52, 0.18), rgba(29, 35, 52, 0));
+}
+
+/* The chevron on a small white dot, readable above any cell. */
+.progeo-scroll-shadow-edge svg {
+  box-sizing: content-box;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--progeo-surface, #fff);
+  box-shadow: 0 1px 3px rgba(29, 35, 52, 0.25);
+}
+
+.progeo-scroll-shadow--start .progeo-scroll-shadow-edge--start,
+.progeo-scroll-shadow--end .progeo-scroll-shadow-edge--end {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progeo-scroll-shadow-edge {
+    transition: none;
+  }
+}

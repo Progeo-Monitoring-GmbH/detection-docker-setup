@@ -25,6 +25,20 @@ export const openPage = async (page: Page, path: string, pageTestId: string) => 
   await expect(page.getByTestId(pageTestId)).toBeVisible();
 };
 
+/**
+ * Unfolds every folded FoldPanel on the page (src/components/ui/kit/FoldPanel.tsx,
+ * folded by default) - in rounds, an unfolded panel can hold folded ones.
+ */
+export const unfoldAll = async (page: Page) => {
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const folded = page.locator('[data-testid="fold-toggle"][aria-expanded="false"]');
+  for (let round = 0; round < 5 && (await folded.count()) > 0; round += 1) {
+    await folded.evaluateAll((toggles) => toggles.forEach((toggle) => (toggle as HTMLElement).click()));
+    // Bootstrap's Collapse transition.
+    await page.waitForTimeout(400);
+  }
+};
+
 /** A location the test user sees (E2E_LOCATION_ID) - its pages are skipped without one. */
 export const locationId = process.env.E2E_LOCATION_ID;
 

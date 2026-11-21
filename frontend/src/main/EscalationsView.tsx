@@ -6,6 +6,7 @@ import { useSnackbar } from 'notistack';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import BoldTrans from '../components/ui/kit/BoldTrans';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -538,10 +539,15 @@ const EscalationDetail = ({
       <ConfirmDialog
         show={askClose}
         title={t('escalation_close_confirm_title')}
-        message={t('escalation_close_confirm', {
-          title: escalation.title,
-          location: `${escalation.project_id ?? '-'} ${escalation.location_name ?? ''}`.trim(),
-        })}
+        message={
+          <BoldTrans
+            i18nKey="escalation_close_confirm"
+            values={{
+              title: escalation.title,
+              location: `${escalation.project_id ?? '-'} ${escalation.location_name ?? ''}`.trim(),
+            }}
+          />
+        }
         confirmLabel={t('escalation_close')}
         cancelLabel={t('staff_cancel')}
         onConfirm={close}

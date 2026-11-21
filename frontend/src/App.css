@@ -59,20 +59,23 @@ body .modal {
   --bs-modal-width: max(500px, 50vw);
 }
 
-/* -- phones: the large dialogs (user, permissions, approvals) on the whole
-   screen - the small confirmations stay dialogs. ------------------------------ */
+/* -- phones: the large dialogs (user, permissions, approvals) span the whole
+   width from the top of the screen - as tall as their content (a short form
+   leaves no empty screen between its fields and its buttons; a long one
+   scrolls). min-height 0 also beats .modal-dialog-centered's, so a centered
+   dialog starts at the top too. The small confirmations stay dialogs. ------- */
 @media (max-width: 640px) {
   .modal-dialog.modal-lg,
   .modal-dialog.modal-xl {
     max-width: none;
-    min-height: 100%;
+    min-height: 0;
     margin: 0;
   }
 
-  .modal-dialog.modal-lg .modal-content,
-  .modal-dialog.modal-xl .modal-content {
-    min-height: 100vh;
+  /* A fullscreen="…" dialog keeps Bootstrap's square corners. */
+  .modal-dialog.modal-lg:not([class*='modal-fullscreen']) .modal-content,
+  .modal-dialog.modal-xl:not([class*='modal-fullscreen']) .modal-content {
     border: none;
-    border-radius: 0;
+    border-radius: 0 0 var(--bs-modal-border-radius) var(--bs-modal-border-radius);
   }
 }

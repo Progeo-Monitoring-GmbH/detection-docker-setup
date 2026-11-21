@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import FoldPanel from '../components/ui/kit/FoldPanel';
 import { childTestId, repeatedTestId, testId } from '../testIds';
 import './LocationInterfaceTab.css';
 
@@ -267,7 +268,8 @@ const BusyLabel = ({ busy, busyText, children }: { busy: boolean; busyText: stri
  * SystemConfig, falls back to django.env until saved). The messenger cards
  * share the SMS permissions - both are text message gateways. Cards are shown according to the granular
  * module_interface_* permissions; the page itself needs
- * module_interface_enabled (access.ts).
+ * module_interface_enabled (access.ts). Every card is a FoldPanel, folded
+ * by default.
  */
 const LocationInterfaceTab = () => {
   const { hasPermission } = usePermissions();
@@ -316,109 +318,106 @@ const SmtpConfigCard = () => {
   }
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid="interface-smtp">
-      <Card.Body>
-        <h5 className="mb-1">SMTP Server</h5>
-        <p className="text-muted small">
-          Used for alarm / report mails. Leave the password empty or unchanged
-          ({PASSWORD_MASK}) to keep the stored one.
-        </p>
-        <Row className="g-3">
-          <Col md={6}>
-            <Form.Label className="small text-muted">Sender</Form.Label>
-            <Form.Control
-              size="sm"
-              placeholder="Mess-Server <kontakt@progeo.com>"
-              value={form.sender ?? ''}
-              onChange={set('sender')}
-              data-testid="interface-smtp-sender"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={6}>
-            <Form.Label className="small text-muted">Reply-To</Form.Label>
-            <Form.Control
-              size="sm"
-              value={form.reply_to ?? ''}
-              onChange={set('reply_to')}
-              data-testid="interface-smtp-reply-to"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={5}>
-            <Form.Label className="small text-muted">Server</Form.Label>
-            <Form.Control
-              size="sm"
-              placeholder="smtp.progeo.com"
-              value={form.server ?? ''}
-              onChange={set('server')}
-              data-testid="interface-smtp-server"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Port</Form.Label>
-            <Form.Control
-              size="sm"
-              type="number"
-              value={form.port ?? 587}
-              onChange={set('port')}
-              data-testid="interface-smtp-port"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={3}>
-            <Form.Label className="small text-muted">Username</Form.Label>
-            <Form.Control
-              size="sm"
-              value={form.username ?? ''}
-              onChange={set('username')}
-              data-testid="interface-smtp-username"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Password</Form.Label>
-            <Form.Control
-              size="sm"
-              type="password"
-              placeholder={config?.password ? PASSWORD_MASK : ''}
-              value={form.password ?? ''}
-              onChange={set('password')}
-              data-testid="interface-smtp-password"
-              disabled={!canEdit}
-            />
-          </Col>
-        </Row>
-        <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={save}
-              disabled={saving || testing}
-              data-testid="interface-smtp-save"
-            >
-              {saving ? 'Saving…' : 'Save SMTP config'}
-            </Button>
-          )}
+    <FoldPanel testId="interface-smtp" title="SMTP Server">
+      <p className="text-muted small">
+        Used for alarm / report mails. Leave the password empty or unchanged
+        ({PASSWORD_MASK}) to keep the stored one.
+      </p>
+      <Row className="g-3">
+        <Col md={6}>
+          <Form.Label className="small text-muted">Sender</Form.Label>
+          <Form.Control
+            size="sm"
+            placeholder="Mess-Server <kontakt@progeo.com>"
+            value={form.sender ?? ''}
+            onChange={set('sender')}
+            data-testid="interface-smtp-sender"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={6}>
+          <Form.Label className="small text-muted">Reply-To</Form.Label>
+          <Form.Control
+            size="sm"
+            value={form.reply_to ?? ''}
+            onChange={set('reply_to')}
+            data-testid="interface-smtp-reply-to"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={5}>
+          <Form.Label className="small text-muted">Server</Form.Label>
+          <Form.Control
+            size="sm"
+            placeholder="smtp.progeo.com"
+            value={form.server ?? ''}
+            onChange={set('server')}
+            data-testid="interface-smtp-server"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Port</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            value={form.port ?? 587}
+            onChange={set('port')}
+            data-testid="interface-smtp-port"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={3}>
+          <Form.Label className="small text-muted">Username</Form.Label>
+          <Form.Control
+            size="sm"
+            value={form.username ?? ''}
+            onChange={set('username')}
+            data-testid="interface-smtp-username"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Password</Form.Label>
+          <Form.Control
+            size="sm"
+            type="password"
+            placeholder={config?.password ? PASSWORD_MASK : ''}
+            value={form.password ?? ''}
+            onChange={set('password')}
+            data-testid="interface-smtp-password"
+            disabled={!canEdit}
+          />
+        </Col>
+      </Row>
+      <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
+        {canEdit && (
           <Button
             size="sm"
-            variant="outline-secondary"
-            onClick={() => runTest()}
-            disabled={testing || saving}
-            title="Connects to the server, checks TLS and login. No mail is sent."
-            data-testid="interface-smtp-test"
+            variant="primary"
+            onClick={save}
+            disabled={saving || testing}
+            data-testid="interface-smtp-save"
           >
-            <BusyLabel busy={testing} busyText="Testing…">
-              Test connection
-            </BusyLabel>
+            {saving ? 'Saving…' : 'Save SMTP config'}
           </Button>
-          {!canEdit && <ReadOnlyHint permission="module_interface_smtp_edit" testId="interface-smtp-read-only" />}
-        </div>
-        <TestFeedback result={testResult} testId="interface-smtp-test-result" />
-      </Card.Body>
-    </Card>
+        )}
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          onClick={() => runTest()}
+          disabled={testing || saving}
+          title="Connects to the server, checks TLS and login. No mail is sent."
+          data-testid="interface-smtp-test"
+        >
+          <BusyLabel busy={testing} busyText="Testing…">
+            Test connection
+          </BusyLabel>
+        </Button>
+        {!canEdit && <ReadOnlyHint permission="module_interface_smtp_edit" testId="interface-smtp-read-only" />}
+      </div>
+      <TestFeedback result={testResult} testId="interface-smtp-test-result" />
+    </FoldPanel>
   );
 };
 
@@ -439,100 +438,97 @@ const ModbusConfigCard = () => {
   }
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid="interface-modbus">
-      <Card.Body>
-        <h5 className="mb-1">Modbus TCP</h5>
-        <p className="text-muted small">
-          Connection used for device communication via Modbus TCP.
-        </p>
-        <Row className="g-3">
-          <Col md={4}>
-            <Form.Label className="small text-muted">Host</Form.Label>
-            <Form.Control
-              size="sm"
-              placeholder="127.0.0.1"
-              value={form.host ?? ''}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, host: event.target.value }))
-              }
-              data-testid="interface-modbus-host"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Port</Form.Label>
-            <Form.Control
-              size="sm"
-              type="number"
-              value={form.port ?? 502}
-              onChange={setNum('port')}
-              data-testid="interface-modbus-port"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Unit ID</Form.Label>
-            <Form.Control
-              size="sm"
-              type="number"
-              value={form.unit_id ?? 1}
-              onChange={setNum('unit_id')}
-              data-testid="interface-modbus-unit-id"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Timeout (s)</Form.Label>
-            <Form.Control
-              size="sm"
-              type="number"
-              value={form.timeout ?? 3}
-              onChange={setNum('timeout')}
-              data-testid="interface-modbus-timeout"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={2}>
-            <Form.Label className="small text-muted">Start address</Form.Label>
-            <Form.Control
-              size="sm"
-              type="number"
-              value={form.start_address ?? 0}
-              onChange={setNum('start_address')}
-              data-testid="interface-modbus-start-address"
-              disabled={!canEdit}
-            />
-          </Col>
-        </Row>
-        <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={save}
-              disabled={saving || testing}
-              data-testid="interface-modbus-save"
-            >
-              {saving ? 'Saving…' : 'Save Modbus config'}
-            </Button>
-          )}
+    <FoldPanel testId="interface-modbus" title="Modbus TCP">
+      <p className="text-muted small">
+        Connection used for device communication via Modbus TCP.
+      </p>
+      <Row className="g-3">
+        <Col md={4}>
+          <Form.Label className="small text-muted">Host</Form.Label>
+          <Form.Control
+            size="sm"
+            placeholder="127.0.0.1"
+            value={form.host ?? ''}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, host: event.target.value }))
+            }
+            data-testid="interface-modbus-host"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Port</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            value={form.port ?? 502}
+            onChange={setNum('port')}
+            data-testid="interface-modbus-port"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Unit ID</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            value={form.unit_id ?? 1}
+            onChange={setNum('unit_id')}
+            data-testid="interface-modbus-unit-id"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Timeout (s)</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            value={form.timeout ?? 3}
+            onChange={setNum('timeout')}
+            data-testid="interface-modbus-timeout"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={2}>
+          <Form.Label className="small text-muted">Start address</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            value={form.start_address ?? 0}
+            onChange={setNum('start_address')}
+            data-testid="interface-modbus-start-address"
+            disabled={!canEdit}
+          />
+        </Col>
+      </Row>
+      <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
+        {canEdit && (
           <Button
             size="sm"
-            variant="outline-secondary"
-            onClick={() => runTest()}
-            disabled={testing || saving}
-            title="Connects to the server and reads the register at the start address. Nothing is written."
-            data-testid="interface-modbus-test"
+            variant="primary"
+            onClick={save}
+            disabled={saving || testing}
+            data-testid="interface-modbus-save"
           >
-            <BusyLabel busy={testing} busyText="Testing…">
-              Test connection
-            </BusyLabel>
+            {saving ? 'Saving…' : 'Save Modbus config'}
           </Button>
-          {!canEdit && <ReadOnlyHint permission="module_interface_modbus_edit" testId="interface-modbus-read-only" />}
-        </div>
-        <TestFeedback result={testResult} testId="interface-modbus-test-result" />
-      </Card.Body>
-    </Card>
+        )}
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          onClick={() => runTest()}
+          disabled={testing || saving}
+          title="Connects to the server and reads the register at the start address. Nothing is written."
+          data-testid="interface-modbus-test"
+        >
+          <BusyLabel busy={testing} busyText="Testing…">
+            Test connection
+          </BusyLabel>
+        </Button>
+        {!canEdit && <ReadOnlyHint permission="module_interface_modbus_edit" testId="interface-modbus-read-only" />}
+      </div>
+      <TestFeedback result={testResult} testId="interface-modbus-test-result" />
+    </FoldPanel>
   );
 };
 
@@ -576,126 +572,123 @@ const EsendexSmsCard = () => {
   }
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid="interface-sms">
-      <Card.Body>
-        <h5 className="mb-1">SMS (Esendex)</h5>
-        <p className="text-muted small">
-          Esendex gateway used to send SMS notifications. Credentials can also
-          be set via <code>ESENDEX_*</code> env vars until saved here.
-        </p>
-        <Row className="g-3">
-          <Col md={6}>
-            <Form.Label className="small text-muted">
-              Account reference
-            </Form.Label>
-            <Form.Control
-              size="sm"
-              placeholder="EX0000000"
-              value={form.account_reference ?? ''}
-              onChange={set('account_reference')}
-              data-testid="interface-sms-account-reference"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={3}>
-            <Form.Label className="small text-muted">Username</Form.Label>
-            <Form.Control
-              size="sm"
-              value={form.username ?? ''}
-              onChange={set('username')}
-              data-testid="interface-sms-username"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={3}>
-            <Form.Label className="small text-muted">Password</Form.Label>
-            <Form.Control
-              size="sm"
-              type="password"
-              placeholder={config?.password ? PASSWORD_MASK : ''}
-              value={form.password ?? ''}
-              onChange={set('password')}
-              data-testid="interface-sms-password"
-              disabled={!canEdit}
-            />
-          </Col>
-          <Col md={6}>
-            <Form.Label className="small text-muted">From (sender id)</Form.Label>
-            <Form.Control
-              size="sm"
-              placeholder="Progeo"
-              value={form.from ?? ''}
-              onChange={set('from')}
-              data-testid="interface-sms-from"
-              disabled={!canEdit}
-            />
-          </Col>
-        </Row>
+    <FoldPanel testId="interface-sms" title="SMS (Esendex)">
+      <p className="text-muted small">
+        Esendex gateway used to send SMS notifications. Credentials can also
+        be set via <code>ESENDEX_*</code> env vars until saved here.
+      </p>
+      <Row className="g-3">
+        <Col md={6}>
+          <Form.Label className="small text-muted">
+            Account reference
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            placeholder="EX0000000"
+            value={form.account_reference ?? ''}
+            onChange={set('account_reference')}
+            data-testid="interface-sms-account-reference"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={3}>
+          <Form.Label className="small text-muted">Username</Form.Label>
+          <Form.Control
+            size="sm"
+            value={form.username ?? ''}
+            onChange={set('username')}
+            data-testid="interface-sms-username"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={3}>
+          <Form.Label className="small text-muted">Password</Form.Label>
+          <Form.Control
+            size="sm"
+            type="password"
+            placeholder={config?.password ? PASSWORD_MASK : ''}
+            value={form.password ?? ''}
+            onChange={set('password')}
+            data-testid="interface-sms-password"
+            disabled={!canEdit}
+          />
+        </Col>
+        <Col md={6}>
+          <Form.Label className="small text-muted">From (sender id)</Form.Label>
+          <Form.Control
+            size="sm"
+            placeholder="Progeo"
+            value={form.from ?? ''}
+            onChange={set('from')}
+            data-testid="interface-sms-from"
+            disabled={!canEdit}
+          />
+        </Col>
+      </Row>
 
-        <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
-          {canEdit && (
+      <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
+        {canEdit && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={save}
+            disabled={saving || sending}
+            data-testid="interface-sms-save"
+          >
+            {saving ? 'Saving…' : 'Save SMS config'}
+          </Button>
+        )}
+        {!canEdit && (
+          <ReadOnlyHint
+            permission="module_interface_sms_edit"
+            action="zum Bearbeiten und zum Versenden"
+            testId="interface-sms-read-only"
+          />
+        )}
+      </div>
+
+      {canEdit && (
+        <div className="mt-3 p-3 border rounded bg-light" data-testid="interface-sms-test-send">
+          <div className="small fw-semibold mb-2">Send a test SMS</div>
+          <div className="d-flex flex-wrap align-items-end gap-2">
+            <Form.Control
+              size="sm"
+              className="interface-test-to"
+              data-testid="interface-sms-test-to"
+              type="tel"
+              placeholder="+49 151 2345678"
+              value={smsTo}
+              onChange={(event) => {
+                setSmsTo(event.target.value);
+                setTestResult(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  sendTestSms();
+                }
+              }}
+            />
             <Button
               size="sm"
-              variant="primary"
-              onClick={save}
-              disabled={saving || sending}
-              data-testid="interface-sms-save"
+              variant="success"
+              onClick={sendTestSms}
+              disabled={sending || saving || !smsTo.trim()}
+              title="Sends one real SMS via Esendex (costs one SMS)."
+              data-testid="interface-sms-test-button"
             >
-              {saving ? 'Saving…' : 'Save SMS config'}
+              <BusyLabel busy={sending} busyText="Sending…">
+                Send test SMS
+              </BusyLabel>
             </Button>
-          )}
-          {!canEdit && (
-            <ReadOnlyHint
-              permission="module_interface_sms_edit"
-              action="zum Bearbeiten und zum Versenden"
-              testId="interface-sms-read-only"
-            />
-          )}
-        </div>
-
-        {canEdit && (
-          <div className="mt-3 p-3 border rounded bg-light" data-testid="interface-sms-test-send">
-            <div className="small fw-semibold mb-2">Send a test SMS</div>
-            <div className="d-flex flex-wrap align-items-end gap-2">
-              <Form.Control
-                size="sm"
-                className="interface-test-to"
-                data-testid="interface-sms-test-to"
-                type="tel"
-                placeholder="+49 151 2345678"
-                value={smsTo}
-                onChange={(event) => {
-                  setSmsTo(event.target.value);
-                  setTestResult(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    sendTestSms();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                variant="success"
-                onClick={sendTestSms}
-                disabled={sending || saving || !smsTo.trim()}
-                title="Sends one real SMS via Esendex (costs one SMS)."
-                data-testid="interface-sms-test-button"
-              >
-                <BusyLabel busy={sending} busyText="Sending…">
-                  Send test SMS
-                </BusyLabel>
-              </Button>
-            </div>
-            <div className="small text-muted mt-1">
-              Sends a real SMS to the given number using the config above –
-              even if it is not saved yet.
-            </div>
           </div>
-        )}
-        <TestFeedback result={testResult} testId="interface-sms-test-result" />
-      </Card.Body>
-    </Card>
+          <div className="small text-muted mt-1">
+            Sends a real SMS to the given number using the config above –
+            even if it is not saved yet.
+          </div>
+        </div>
+      )}
+      <TestFeedback result={testResult} testId="interface-sms-test-result" />
+    </FoldPanel>
   );
 };
 
@@ -878,91 +871,88 @@ const MessengerCard = ({ service }: { service: MessengerService }) => {
   }
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid={cardTestId}>
-      <Card.Body>
-        <h5 className="mb-1">Messenger: {title}</h5>
-        <p className="text-muted small">{description}</p>
-        <Row className="g-3">
-          {fields.map((field) => (
-            <Col md={field.md} key={field.key}>
-              <Form.Label className="small text-muted">{field.label}</Form.Label>
-              <Form.Control
-                size="sm"
-                type={field.secret ? 'password' : 'text'}
-                placeholder={field.secret ? (config?.[field.key] ? PASSWORD_MASK : '') : field.placeholder}
-                value={form[field.key] ?? ''}
-                onChange={(event) => setForm((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                data-testid={childTestId(cardTestId, field.key)}
-                disabled={!canEdit}
-              />
-            </Col>
-          ))}
-        </Row>
+    <FoldPanel testId={cardTestId} title={`Messenger: ${title}`}>
+      <p className="text-muted small">{description}</p>
+      <Row className="g-3">
+        {fields.map((field) => (
+          <Col md={field.md} key={field.key}>
+            <Form.Label className="small text-muted">{field.label}</Form.Label>
+            <Form.Control
+              size="sm"
+              type={field.secret ? 'password' : 'text'}
+              placeholder={field.secret ? (config?.[field.key] ? PASSWORD_MASK : '') : field.placeholder}
+              value={form[field.key] ?? ''}
+              onChange={(event) => setForm((prev) => ({ ...prev, [field.key]: event.target.value }))}
+              data-testid={childTestId(cardTestId, field.key)}
+              disabled={!canEdit}
+            />
+          </Col>
+        ))}
+      </Row>
 
-        <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
-          {canEdit && (
+      <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
+        {canEdit && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={save}
+            disabled={saving || sending}
+            data-testid={childTestId(cardTestId, 'save')}
+          >
+            {saving ? 'Saving…' : `Save ${title} config`}
+          </Button>
+        )}
+        {!canEdit && (
+          <ReadOnlyHint
+            permission="module_interface_sms_edit"
+            action="zum Bearbeiten und zum Versenden"
+            testId={childTestId(cardTestId, 'read-only')}
+          />
+        )}
+      </div>
+
+      {service === 'signal' && <SignalLinkPanel canEdit={canEdit} />}
+
+      {canEdit && (
+        <div className="mt-3 p-3 border rounded bg-light" data-testid={childTestId(cardTestId, 'test-send')}>
+          <div className="small fw-semibold mb-2">Send a test message</div>
+          <div className="d-flex flex-wrap align-items-end gap-2">
+            <Form.Control
+              size="sm"
+              className="interface-test-to"
+              data-testid={childTestId(cardTestId, 'test-to')}
+              placeholder={toPlaceholder}
+              value={to}
+              onChange={(event) => {
+                setTo(event.target.value);
+                setTestResult(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  sendTest();
+                }
+              }}
+            />
             <Button
               size="sm"
-              variant="primary"
-              onClick={save}
-              disabled={saving || sending}
-              data-testid={childTestId(cardTestId, 'save')}
+              variant="success"
+              onClick={sendTest}
+              disabled={sending || saving || !to.trim()}
+              title={`Sends one real ${title} message.`}
+              data-testid={childTestId(cardTestId, 'test-button')}
             >
-              {saving ? 'Saving…' : `Save ${title} config`}
+              <BusyLabel busy={sending} busyText="Sending…">
+                Send test message
+              </BusyLabel>
             </Button>
-          )}
-          {!canEdit && (
-            <ReadOnlyHint
-              permission="module_interface_sms_edit"
-              action="zum Bearbeiten und zum Versenden"
-              testId={childTestId(cardTestId, 'read-only')}
-            />
-          )}
-        </div>
-
-        {service === 'signal' && <SignalLinkPanel canEdit={canEdit} />}
-
-        {canEdit && (
-          <div className="mt-3 p-3 border rounded bg-light" data-testid={childTestId(cardTestId, 'test-send')}>
-            <div className="small fw-semibold mb-2">Send a test message</div>
-            <div className="d-flex flex-wrap align-items-end gap-2">
-              <Form.Control
-                size="sm"
-                className="interface-test-to"
-                data-testid={childTestId(cardTestId, 'test-to')}
-                placeholder={toPlaceholder}
-                value={to}
-                onChange={(event) => {
-                  setTo(event.target.value);
-                  setTestResult(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    sendTest();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                variant="success"
-                onClick={sendTest}
-                disabled={sending || saving || !to.trim()}
-                title={`Sends one real ${title} message.`}
-                data-testid={childTestId(cardTestId, 'test-button')}
-              >
-                <BusyLabel busy={sending} busyText="Sending…">
-                  Send test message
-                </BusyLabel>
-              </Button>
-            </div>
-            <div className="small text-muted mt-1">
-              Uses the config above – even if it is not saved yet.
-            </div>
           </div>
-        )}
-        <TestFeedback result={testResult} testId={childTestId(cardTestId, 'test-result')} />
-      </Card.Body>
-    </Card>
+          <div className="small text-muted mt-1">
+            Uses the config above – even if it is not saved yet.
+          </div>
+        </div>
+      )}
+      <TestFeedback result={testResult} testId={childTestId(cardTestId, 'test-result')} />
+    </FoldPanel>
   );
 };
 

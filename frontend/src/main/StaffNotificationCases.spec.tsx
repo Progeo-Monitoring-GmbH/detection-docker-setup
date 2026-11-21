@@ -118,6 +118,31 @@ describe('StaffNotificationCases', () => {
     expect(container.querySelector('[data-testid="staff-notifications-legend"]')).not.toBeNull();
   });
 
+  it('turns the phase summary on its side on phones', async () => {
+    const desktop = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      ...desktop(query),
+      matches: query.includes('max-width'),
+    })) as typeof window.matchMedia;
+    try {
+      await act(async () => {
+        root.render(
+          <MemoryRouter>
+            <StaffNotificationCases />
+          </MemoryRouter>,
+        );
+      });
+      const summary = container.querySelector('[data-testid="staff-notifications-summary"]')!;
+      // Offline / alarm as the two columns, a phase per row (+ resolved).
+      expect(summary.querySelectorAll('thead th')).toHaveLength(3);
+      const firstRow = summary.querySelector('tbody tr')!;
+      expect(firstRow.textContent).toContain('staff_notifications_phase_open');
+      expect([...firstRow.querySelectorAll('td')].map((cell) => cell.textContent)).toEqual(['3', '0']);
+    } finally {
+      window.matchMedia = desktop;
+    }
+  });
+
   it('closes a case only after its confirmation', async () => {
     await act(async () => {
       root.render(

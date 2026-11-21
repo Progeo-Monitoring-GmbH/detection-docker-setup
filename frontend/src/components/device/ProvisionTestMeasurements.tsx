@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import usePermissions from '../../../hooks/usePermissions';
 import axiosConfig from '../../axiosConfig';
+import BoldTrans from '../ui/kit/BoldTrans';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import DeviceCommandsDialog from './DeviceCommandsDialog';
 import {
@@ -661,7 +662,7 @@ const ProvisionTestMeasurements = ({
               data-testid="provision-test-clear"
             >
               <Trash className="me-2" />
-              Test-Messungen bereinigen
+              {t('provision_test_clear')}
             </Button>
           )}
           {onClose && (
@@ -703,10 +704,15 @@ const ProvisionTestMeasurements = ({
 
         <ConfirmDialog
           show={confirmClear}
-          title="Test-Messungen bereinigen"
-          message={`Delete the ${measurements.length} listed test measurement(s) of ${deviceHash} - and any alarms they raised? This cannot be undone.`}
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
+          title={t('provision_test_clear')}
+          message={
+            <BoldTrans
+              i18nKey="provision_test_clear_message"
+              values={{ count: measurements.length, device: deviceHash }}
+            />
+          }
+          confirmLabel={t('provision_test_clear_confirm')}
+          cancelLabel={t('provision_test_clear_cancel')}
           onConfirm={clearMeasurements}
           onCancel={() => setConfirmClear(false)}
           confirming={clearing}

@@ -15,14 +15,13 @@ import ClimateChart, {
 } from '../components/device/ClimateChart';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PlotHelp from '../components/ui/PlotHelp';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import TimeRangeSelect from './TimeRangeSelect';
 import {
   availableTimeRanges,
   bucketLabel,
   effectiveTimeRange,
   TIME_RANGE_DAYS,
   timeRangeCandidates,
-  timeRangeLabelKey,
   type TimeRange,
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
@@ -280,14 +279,11 @@ const LocationClimatePanels = ({
       {(controlledRange == null || bucket || isSuperuser) && (
         <div className="climate-toolbar" data-testid={childTestId(testId, 'toolbar')}>
           {controlledRange == null && (
-            <SegmentedControl
+            <TimeRangeSelect
               testId={childTestId(testId, 'range')}
-              options={availableRanges.map((value) => ({
-                value,
-                label: t(timeRangeLabelKey(value)),
-              }))}
+              ranges={availableRanges}
               value={range}
-              onChange={(value) => setSelectedRange(value as TimeRange)}
+              onChange={setSelectedRange}
             />
           )}
           {bucket && (

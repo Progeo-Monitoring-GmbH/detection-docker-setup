@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
-import PanelCard from '../components/ui/kit/PanelCard';
+import FoldPanel from '../components/ui/kit/FoldPanel';
 import { WIZARD_ANCHORS, type WizardStep } from './lageplanWizardAnchors';
 import type {
   WizardConfirmAction,
@@ -50,6 +50,22 @@ export const Chip = ({
   </span>
 );
 
+/** The i18n key of each step's short explanation (shown under its title, folded too). */
+const STEP_HINTS: Record<WizardStep, string> = {
+  location: 'lageplan_wizard_hint_location',
+  devices: 'lageplan_wizard_hint_devices',
+  plans: 'lageplan_wizard_hint_plans',
+  points: 'lageplan_wizard_hint_points',
+  align: 'lageplan_wizard_hint_align',
+  dmTransfer: 'lageplan_wizard_hint_dm_transfer',
+  heatLimits: 'lageplan_wizard_hint_heat_limits',
+  klemmliste: 'lageplan_wizard_hint_klemmliste',
+};
+
+/**
+ * One step of the wizard: a FoldPanel, folded by default - unfolded when a
+ * link pointed at it (#anchor, TargetStepContext).
+ */
 export const StepCard = ({
   number,
   step,
@@ -65,11 +81,13 @@ export const StepCard = ({
   actions?: ReactNode;
   children: ReactNode;
 }) => {
+  const { t } = useTranslation();
   const targeted = useContext(TargetStepContext) === WIZARD_ANCHORS[step];
   return (
-    <PanelCard
+    <FoldPanel
       id={WIZARD_ANCHORS[step]}
       className={targeted ? 'lageplan-step--target' : undefined}
+      openOn={targeted}
       title={
         <span className="lageplan-step-title">
           <span
@@ -84,11 +102,12 @@ export const StepCard = ({
           {title}
         </span>
       }
+      hint={t(STEP_HINTS[step])}
       actions={actions}
       testId={`lageplan-wizard-step-${number}`}
     >
       {children}
-    </PanelCard>
+    </FoldPanel>
   );
 };
 

@@ -117,6 +117,8 @@ const DeviceCommandsDialog = ({
   const [params, setParams] = useState<ParamRow[]>([paramRow(SET_PARAMS[0].key)]);
   const [updatePath, setUpdatePath] = useState(DEFAULT_CONFIG_PATH);
   const [updateContent, setUpdateContent] = useState('');
+  // The file editor ("Datei aktualisieren") only after "Config überschreiben".
+  const [updateOpen, setUpdateOpen] = useState(false);
   const [logHour, setLogHour] = useState(() => new Date().getHours());
   const [result, setResult] = useState<{ id: number; command: string; value: unknown } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,10 +222,13 @@ const DeviceCommandsDialog = ({
     queue('update', { path: updatePath.trim() || DEFAULT_CONFIG_PATH, content: updateContent }, () => {
       // Not kept in the page longer than needed (it holds credentials).
       setUpdateContent('');
+      setUpdateOpen(false);
     });
 
   const allowed = (command: string) =>
     canEdit && (data?.available ?? []).some((choice) => choice.command === command && choice.allowed);
+  // Sending files (the config, with credentials): superusers only.
+  const canUpdate = isSuperuser && allowed('update');
 
   const configContent = (value: unknown) =>
     value && typeof value === 'object' && typeof (value as { content?: unknown }).content === 'string'
@@ -394,6 +399,16 @@ const DeviceCommandsDialog = ({
                         testKey={command}
                       />
                     ))}
+                    {canUpdate && (
+                      <PillButton
+                        variant="accent"
+                        active={updateOpen}
+                        label={t('device_commands_update_open')}
+                        title={t('device_commands_update_open_hint')}
+                        onClick={() => setUpdateOpen(!updateOpen)}
+                        testId={childTestId(testId, 'update-open')}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -520,14 +535,14 @@ const DeviceCommandsDialog = ({
                         onClick={() => setAsk({ kind: 'send-params' })}
                         testId={childTestId(testId, 'send-params')}
                       />
-                      <span className="device-commands-hint">{t('device_commands_params_hint')}</span>
                     </div>
+                    <span className="device-commands-hint">{t('device_commands_params_hint')}</span>
                   </div>
                 </div>
               )}
 
-              {isSuperuser && allowed('update') && (
-                <div>
+              {canUpdate && updateOpen && (
+                <div data-testid={childTestId(testId, 'update')}>
                   <div className="device-commands-section-title">{t('device_command_update')}</div>
                   <div className="device-commands-stack">
                     <input
@@ -557,8 +572,14 @@ const DeviceCommandsDialog = ({
                         onClick={() => setAsk({ kind: 'send-update' })}
                         testId={childTestId(testId, 'send-update')}
                       />
-                      <span className="device-commands-hint">{t('device_commands_update_hint')}</span>
+                      <PillButton
+                        variant="ghost"
+                        label={t('device_commands_update_close')}
+                        onClick={() => setUpdateOpen(false)}
+                        testId={childTestId(testId, 'update-close')}
+                      />
                     </div>
+                    <span className="device-commands-hint">{t('device_commands_update_hint')}</span>
                   </div>
                 </div>
               )}
@@ -568,7 +589,7 @@ const DeviceCommandsDialog = ({
                   <div className="device-commands-section-title device-commands-section-title--split">
                     <span>{t('device_commands_result_title', { command: commandLabel(result.command), id: result.id })}</span>
                     <span className="device-commands-result-actions">
-                      {resultConfig && allowed('update') && (
+                      {resultConfig && canUpdate && (
                         <PillButton
                           variant="ghost"
                           label={t('device_commands_result_edit')}
@@ -576,6 +597,7 @@ const DeviceCommandsDialog = ({
                           onClick={() => {
                             setUpdatePath(resultConfig.path || DEFAULT_CONFIG_PATH);
                             setUpdateContent(resultConfig.content);
+                            setUpdateOpen(true);
                             setResult(null);
                           }}
                         />
