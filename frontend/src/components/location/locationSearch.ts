@@ -74,11 +74,11 @@ export const matchesLocationSearch = (
   return words.every((word) => haystack.includes(word));
 };
 
-/** "Street 1, 12345 City" - empty if the location has no address. */
-export const locationAddressLine = (location: SearchableLocation) =>
-  [location.address, [location.plz, location.city].filter(Boolean).join(' ')]
-    .filter(Boolean)
-    .join(', ');
+/** "Street 1, 12345 City" - the parts that exist (blank ones too skipped), '' without any. */
+export const locationAddressLine = ({ address, plz, city }: Pick<SearchableLocation, 'address' | 'plz' | 'city'>) => {
+  const place = [plz?.trim(), city?.trim()].filter(Boolean).join(' ');
+  return [address?.trim(), place].filter(Boolean).join(', ');
+};
 
 /** "Name (#project id)" - the label of a location in pickers. */
 export const locationLabel = (location: SearchableLocation) => {

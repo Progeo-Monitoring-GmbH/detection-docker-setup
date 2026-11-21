@@ -9,8 +9,8 @@ from progeo.v1.viewsets.data_transfer_viewset import DataTransferViewSet
 from progeo.v1.viewsets.database_usage_viewset import DatabaseUsageViewSet
 from progeo.v1.viewsets.demo_viewset import DemoViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
-from progeo.v1.viewsets.escalation_viewset import EscalationViewSet
 from progeo.v1.viewsets.e2e_viewset import E2EInfoView, E2ENotificationLinkView
+from progeo.v1.viewsets.escalation_viewset import EscalationViewSet
 from progeo.v1.viewsets.favorite_viewset import FavoriteViewSet
 from progeo.v1.viewsets.firmware_viewset import (
     FirmwareBundleUploadView,

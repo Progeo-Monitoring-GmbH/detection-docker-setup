@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { repeatedTestId } from '../../testIds';
 import './LanguageSwitch.css';
 
-export const LANGUAGES = [
+const LANGUAGES = [
   { code: 'de', label: 'DE', name: 'Deutsch' },
   { code: 'en', label: 'EN', name: 'English' },
 ] as const;

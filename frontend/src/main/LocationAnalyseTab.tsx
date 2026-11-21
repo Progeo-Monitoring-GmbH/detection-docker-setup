@@ -1,1539 +1,190 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router';
-import { planFromParams } from './planParam';
-import { useSnackbar } from 'notistack';
+import { useCallback, useMemo, useState } from 'react';
+import { useOutletContext } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import axiosConfig from '../axiosConfig';
-import { downloadResponse, openResponseInNewTab } from '../helper';
-import {
-  showRequestError,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
-import usePermissions from '../../hooks/usePermissions';
-import {
-  type HeatProfile,
-  heatProfileQuery,
-  type SensorHeatmapResponse,
-} from '../components/device/sensorHeatmapTypes';
-import {
-  type MeasurementCompareRow,
-  toggledSensor,
-} from '../components/device/MeasurementSamplesCompareChart.tsx';
-import { frameAt } from '../components/device/FrameSlider';
-import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
-import LocationClimatePanels from './LocationClimatePanels';
-import LocationClimateHeatmap from './LocationClimateHeatmap';
-import { isLorawanProject } from './projectType';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import type { ProfileRange } from './NoiseProfilePanel';
+import { useFullscreen } from '../components/ui/kit/Fullscreen';
+import AnalyseActions from './AnalyseActions';
+import AnalyseClimateSection from './AnalyseClimateSection';
+import AnalyseDeviceSection from './AnalyseDeviceSection';
+import AnalyseFrameControl from './AnalyseFrameControl';
+import AnalyseNoiseBadge from './AnalyseNoiseBadge';
+import { noiseBadgeOf } from './analyseNoiseView';
+import { pageKeyHintsOf, pageTipsOf } from './analysePageHelp';
+import { sensorThresholdsOf } from './analyseSelection';
+import useAnalyseArchive from './useAnalyseArchive';
+import useAnalyseCompare from './useAnalyseCompare';
+import useAnalyseExports from './useAnalyseExports';
+import useAnalyseFrames from './useAnalyseFrames';
+import useAnalyseHotkeys from './useAnalyseHotkeys';
 import {
-  availableTimeRanges,
-  effectiveTimeRange,
-  TIME_RANGE_DAYS,
-  timeRangeCandidates,
-  timeRangeLabelKey,
-  type TimeRange,
-} from './timeRanges';
-import useMeasurementRange from './useMeasurementRange';
-import { staffFlags } from './access';
-import { smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
-import { compareOffsetsFor, heatmapChange } from './analyseCompare';
-import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import { Funnel } from 'react-bootstrap-icons';
-import { getBackendUrl } from '../backendUrl';
-import { usePreloadLageplanImages } from '../components/device/useLageplanImage';
-import { announceKey, type KeyHint } from '../components/ui/KeyHints';
-import { downloadBlob } from '../download';
-import NoiseProfilePanel, {
-  type NoiseViewState,
-  type ProfileRange,
-} from './NoiseProfilePanel';
-import NoiseProfileEditor from './NoiseProfileEditor';
-import ThresholdMixerToggle from './ThresholdMixerToggle';
-import { mixerSensorsFromLoaded } from './thresholdMixer';
+  SENSOR_HISTORY_DAYS,
+  useAnalyseHeatmap,
+  useAnalyseMeasurements,
+  useSensorHistory,
+} from './useAnalyseLoads';
+import { useAnalysePlans } from './useAnalysePlans';
 import {
-  disabledPairsOf,
-  overrideKey,
-  sensorOrderOf,
-} from './analyseSensorSwitch';
-import {
-  addedSensor,
-  focusedPositionOf,
-  type SensorFocus,
-} from './analyseFocus';
-import {
-  cleanRows,
-  type NoiseProfile,
-  type NoiseProfileDraft,
-  noiseMaskOf,
-  noiseProfileCsv,
-  rateNoiseProfile,
-  spanParts,
-} from './noiseProfiles';
+  useAnalyseAccess,
+  useAnalysePeriod,
+  useLocationChoice,
+} from './useAnalyseSettings';
+import useAnalyseShown from './useAnalyseShown';
+import useNoiseProfileState from './useNoiseProfileState';
+import useSensorSelection from './useSensorSelection';
+import useSensorSwitch from './useSensorSwitch';
 import './LocationAnalyseTab.css';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-import {
-  type CachedLoad,
-  cachedPeriod,
-  cutHeatmap,
-  cutMeasurements,
-  type MeasurementsLoad,
-  withLoad,
-} from './analyseCache';
-import { useFullscreen } from '../components/ui/kit/Fullscreen';
-import AnalyseActions, { type ArchiveDialogState } from './AnalyseActions';
-import AnalyseFrameControl from './AnalyseFrameControl';
-import AnalyseHeatmapCard from './AnalyseHeatmapCard';
-import AnalyseMeasurementsCard from './AnalyseMeasurementsCard';
-
-const DEFAULT_RESOLUTION = 300;
-
-/** Staff: the selected sensors' history (second plot) - the last 3 months,
- * in as many measurements as the backend gives (its limit). */
-const SENSOR_HISTORY_DAYS = TIME_RANGE_DAYS['90d'];
-const MAX_HISTORY_MEASUREMENTS = 2000;
-
-type AnalyseDevice = { id: number; display_name: string };
-
 const MOBILE_WIDTH = 860;
-
-/** Frame steps of the arrow keys: ←/→ one frame, ↑/↓ ten. */
-const FRAME_KEY_STEPS: Record<string, number> = {
-  ArrowLeft: -1,
-  ArrowRight: 1,
-  ArrowUp: 10,
-  ArrowDown: -10,
-};
-
-/** Keys typed into a form control keep their normal meaning. */
-const isFormTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  // The frame slider is a range input: the global handler owns its arrows
-  // too (preventing the browser's own one-step move, so ↑/↓ can do 10).
-  if (target instanceof HTMLInputElement && target.type === 'range') {
-    return false;
-  }
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
-};
 
 /**
  * Analyse route: the location heatmap plus the measurements of all its
  * devices over the selected period (last 24 h / 7 / 30 days; staff also the
  * last quarter, half year and year) - only periods the data reaches into.
- * Reuses the existing heatmap + measurement endpoints and components.
+ * Reuses the existing heatmap + measurement endpoints and components; the
+ * state lives in the useAnalyse* hooks, LoRaWAN objects get their climate
+ * heatmap and charts (AnalyseClimateSection), all others the heatmap and
+ * samples (AnalyseDeviceSection).
  */
 const LocationAnalyseTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
-  // LoRaWAN objects have no samples - a humidity/temperature heatmap of the
-  // placed sensors and their charts replace the heatmap and samples chart.
-  const isLorawan = isLorawanProject(location?.project_type);
-  // smartex® dm: the sensors are band lines on the plan - no heat field.
-  const auth = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
+  const access = useAnalyseAccess(location);
+  const { isLorawan, isStaff, offerNoiseProfiles, rawQuery } = access;
+  const period = useAnalysePeriod(locationId, isStaff);
+  const { range, days, resolution, meanWindow, heatProfile } = period;
   // The heatmap on the whole screen (phones: the only way to read it).
   const heatmapFullscreen = useFullscreen();
-  // Battery charts are device maintenance - staff (and superusers) only.
-  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
-
-  // One period for the heatmap and the charts (also LoRaWAN's); an
-  // unavailable selection falls back to the longest offered one.
-  const measurementRange = useMeasurementRange(locationId, false);
-  const rangeOptions = useMemo(
-    () =>
-      availableTimeRanges(
-        measurementRange,
-        timeRangeCandidates({ staff: isStaff }),
-      ),
-    [isStaff, measurementRange],
-  );
-  const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
-  const range = effectiveTimeRange(selectedRange, rangeOptions);
-  // How many measurements a period is loaded with, and over how many
-  // neighbouring ones every value is averaged (1: not) - less noise.
-  const [resolution, setResolution] = useState<number>(DEFAULT_RESOLUTION);
-  const [meanWindow, setMeanWindow] = useState(1);
-  // Staff: the heatmap's value per sensor (|WP - EP|, WP, EP, WP + EP).
-  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
-  // The comparison with the past: the same period this many days earlier
-  // (null: none) - offered only as far back as the data reaches.
-  const [compareDays, setCompareDays] = useState<number | null>(null);
-  const [openedAt] = useState(() => Date.now());
-  // The time (epoch ms) of the page's one frame slider - the heatmap and the
-  // measurements show the frame holding it. null: the newest measurement.
-  const [frameTime, setFrameTime] = useState<number | null>(null);
+  // The heatmap card is foldable - its height is the page's largest block.
+  const [heatmapOpen, setHeatmapOpen] = useState(true);
   // The measurements' zoomed time span - a band on the slider.
   const [chartZoom, setChartZoom] = useState<{
     from: number;
     to: number;
   } | null>(null);
-  // The sensors (pair index) the measurements' second plot follows - picked
-  // there or on the heatmap.
-  const [sensors, setSensors] = useState<number[]>([]);
-  // The one of them picked last - a white ring on the plan (the others lila).
-  const [sensorFocus, setSensorFocus] = useState<SensorFocus | null>(null);
-  const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
-  const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
-  // Measurements in the period, of which `measurements` are shown.
-  const [measurementTotal, setMeasurementTotal] = useState(0);
   // The chart shows one device: the picked one (of this location), else the
   // backend's default - the device that measured last.
-  const [devices, setDevices] = useState<AnalyseDevice[]>([]);
-  const [shownDevice, setShownDevice] = useState<number | null>(null);
-  const [pickedDevice, setPickedDevice] = useState<{
-    locationId: unknown;
-    id: number;
-  } | null>(null);
-  const deviceId =
-    pickedDevice?.locationId === locationId ? pickedDevice.id : null;
-  const [heatmapLoading, setHeatmapLoading] = useState(true);
-  const [measurementsLoading, setMeasurementsLoading] = useState(true);
-  // The heatmap card is foldable - its height is the page's largest block.
-  const [heatmapOpen, setHeatmapOpen] = useState(true);
-  // The Lageplan the heatmap shows - only its sensors are loaded
-  // (?lageplan=). Picked in the heatmap's switcher or with the keys 1-9;
-  // else the first (the main plan).
-  const plans = useMemo(
-    () =>
-      (location?.lageplans ?? []).filter(
-        (plan): plan is typeof plan & { id: number } => plan.id != null,
-      ),
-    [location?.lageplans],
-  );
-  // Every plan's image in the background - switching plans then draws at once.
-  usePreloadLageplanImages(
-    useMemo(
-      () =>
-        plans.flatMap((plan) => (plan.url ? [getBackendUrl(plan.url)] : [])),
-      [plans],
-    ),
-  );
-  const [pickedPlan, setPickedPlan] = useState<{
-    locationId: unknown;
-    id: number;
-  } | null>(null);
-  // ?plan= (a merged project's group bar, planParam.ts) - else the first plan.
-  const [searchParams] = useSearchParams();
-  const urlPlan = planFromParams(searchParams);
-  const planId =
-    pickedPlan?.locationId === locationId &&
-    plans.some((plan) => plan.id === pickedPlan.id)
-      ? pickedPlan.id
-      : plans.some((plan) => plan.id === urlPlan)
-        ? urlPlan
-        : (plans[0]?.id ?? null);
-  const pickPlan = useCallback(
-    (id: number) => setPickedPlan({ locationId, id }),
-    [locationId],
-  );
-  const planQuery = planId != null ? `&lageplan=${planId}` : '';
-  // Only the newest request may set the data - switching periods quickly
-  // must not let a slower, older response win.
-  const heatmapRequest = useRef(0);
-  const measurementsRequest = useRef(0);
-  const [exportMsg, setExportMsg] = useState<string | null>(null);
-  // LoRaWAN: the device hovered on the heatmap or in a chart - highlighted in both.
-  const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
-  const [exportingPdf, setExportingPdf] = useState(false);
-  // Staff: the shown device's last 3 months for the second plot - by
-  // location and device, so another one's history is never shown.
-  const [sensorHistory, setSensorHistory] = useState<{
-    key: string;
-    rows: MeasurementCompareRow[];
-  } | null>(null);
-  const [sensorHistoryLoading, setSensorHistoryLoading] = useState(false);
-  const sensorHistoryRequest = useRef(0);
-  const sensorHistoryKey = `${locationId}:${shownDevice}`;
-  const sensorHistoryRows =
-    sensorHistory?.key === sensorHistoryKey ? sensorHistory.rows : null;
-  // Not while the period itself already reaches as far back.
-  const offerSensorHistory =
-    isStaff && TIME_RANGE_DAYS[range] < SENSOR_HISTORY_DAYS;
-
-  // Staff: the Störungsprofile of the location's devices (noiseProfiles.ts).
-  // Their measurements are loaded raw (?raw=1) and cleaned here - by the
-  // active profile, the one tried out ("Anwenden") or the draft being
-  // edited; everyone else gets them cleaned by the backend.
-  const offerNoiseProfiles = isStaff && !isLorawan;
-  const rawQuery = offerNoiseProfiles ? '&raw=1' : '';
-  const [noiseProfileLoad, setNoiseProfileLoad] = useState<{
-    locationId: unknown;
-    profiles: NoiseProfile[];
-  } | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
-    null,
-  );
-  const [testedProfileId, setTestedProfileId] = useState<number | null>(null);
+  const [deviceId, pickDevice] = useLocationChoice<number>(locationId);
+  // Bumped when a profile, threshold or sensor changed: the heatmap reloads.
+  const [noiseRevision, setNoiseRevision] = useState(0);
   // The span a new profile is made from - picked with S + drag on the
   // measurements' time plots, moved / resized under the frame slider.
-  const [rangeLoad, setRangeLoad] = useState<{
-    locationId: unknown;
-    range: ProfileRange;
-  } | null>(null);
-  const profileRange =
-    rangeLoad?.locationId === locationId ? rangeLoad.range : null;
-  const setProfileRange = useCallback(
-    (range: ProfileRange | null) =>
-      setRangeLoad(range ? { locationId, range } : null),
-    [locationId],
-  );
-  const [draft, setDraft] = useState<NoiseProfileDraft | null>(null);
-  const [draftPreview, setDraftPreview] = useState(true);
-  const [noiseBusy, setNoiseBusy] = useState(false);
-  // Bumped when a profile changed: the heatmap (cleaned by the backend) reloads.
-  const [noiseRevision, setNoiseRevision] = useState(0);
-  // Switching the selected sensors off / on (ProgeoMeasurePoint.disabled -
-  // never an alarm, drawn gray). POST measurepoints needs module_locations_edit.
-  const { hasPermission } = usePermissions();
-  const canSwitchSensors = hasPermission('module_locations_edit') && !isLorawan;
-  // Saved here, before the heatmap brings them: "<location>:<device>:<pair>" -> disabled.
-  const [disabledOverrides, setDisabledOverrides] = useState<
-    Record<string, boolean>
-  >({});
-  const [switchingSensors, setSwitchingSensors] = useState(false);
-  const [confirmDisable, setConfirmDisable] = useState(false);
-
-  const exportCsv = () => {
-    void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/`);
-    setExportMsg(t('analyse_export_csv_done'));
-  };
-
-  const exportPdf = () => {
-    setExportingPdf(true);
-    void downloadResponse(
-      auth,
-      `/v1/location/${locationId}/export_pdf/`,
-      `${location?.project_id ?? locationId}-report.pdf`,
-    ).then((ok) => {
-      setExportingPdf(false);
-      if (ok) {
-        setExportMsg(t('analyse_export_pdf_done'));
-      }
-    });
-  };
-
-  const days = TIME_RANGE_DAYS[range];
-  const query = `days=${days}&limit=${resolution}`;
-  // The loads by period - switching back, or to a shorter period inside a
-  // complete longer load, needs no request (analyseCache).
-  const heatmapCache = useRef(
-    new Map<string, CachedLoad<SensorHeatmapResponse>[]>(),
-  );
-  const measurementsCache = useRef(
-    new Map<string, CachedLoad<MeasurementsLoad>[]>(),
+  const [profileRange, setProfileRange] =
+    useLocationChoice<ProfileRange>(locationId);
+  const clearProfileRange = useCallback(
+    () => setProfileRange(null),
+    [setProfileRange],
   );
 
-  // ------------------------------------------------------------- Störungsprofile
-  const noiseProfiles = useMemo(
-    () =>
-      noiseProfileLoad?.locationId === locationId
-        ? noiseProfileLoad.profiles
-        : [],
-    [noiseProfileLoad, locationId],
+  const { plans, planId, pickPlan, planQuery } = useAnalysePlans(
+    location,
+    locationId,
   );
-  // Those of the shown device - a profile belongs to one device.
-  const deviceProfiles = useMemo(
-    () => noiseProfiles.filter((profile) => profile.device === shownDevice),
-    [noiseProfiles, shownDevice],
-  );
-  const activeProfile =
-    deviceProfiles.find((profile) => profile.is_active) ?? null;
-  const testedProfile =
-    deviceProfiles.find((profile) => profile.id === testedProfileId) ?? null;
-  // The picked profile, else the active one.
-  const selectedProfile =
-    deviceProfiles.find((profile) => profile.id === selectedProfileId) ??
-    activeProfile;
-  const shownDraft = draft && draft.device === shownDevice ? draft : null;
-  const noiseView: NoiseViewState = shownDraft
-    ? draftPreview
-      ? 'draft'
-      : 'raw'
-    : testedProfile
-      ? 'test'
-      : activeProfile
-        ? 'active'
-        : 'none';
-  // The mask the measurements are cleaned with here (staff load them raw).
-  const displayMask = useMemo(() => {
-    if (!offerNoiseProfiles) {
-      return null;
-    }
-    if (noiseView === 'draft') {
-      return noiseMaskOf(shownDraft);
-    }
-    if (noiseView === 'test') {
-      return noiseMaskOf(testedProfile);
-    }
-    return noiseView === 'active' ? noiseMaskOf(activeProfile) : null;
-  }, [offerNoiseProfiles, noiseView, shownDraft, testedProfile, activeProfile]);
-  // The draft without its preview: the raw values with its masks as lines.
-  const maskLines = useMemo(
-    () =>
-      offerNoiseProfiles && noiseView === 'raw' && shownDraft
-        ? { ep: shownDraft.mask_e, wp: shownDraft.mask_w }
-        : null,
-    [offerNoiseProfiles, noiseView, shownDraft],
-  );
-  // The heatmap is cleaned by the backend: the raw values, the tried-out
-  // profile, else (also for a draft - not saved yet) the active ones.
-  const heatNoiseQuery = !offerNoiseProfiles
-    ? ''
-    : noiseView === 'raw'
-      ? '&raw=1'
-      : noiseView === 'test' && testedProfile
-        ? `&noise_profile=${testedProfile.id}`
-        : '';
-
-  const loadHeatmap = useCallback(() => {
-    if (isLorawan) {
-      return;
-    }
-    const cacheKey = `${locationId}:${planQuery}:${heatProfile}:${heatNoiseQuery}`;
-    const cached = cachedPeriod(
-      heatmapCache.current.get(cacheKey),
-      days,
-      resolution,
-      Date.now(),
-      (value, fromMs) => cutHeatmap(value, fromMs) ?? value,
-    );
-    const current = ++heatmapRequest.current;
-    if (cached) {
-      setHeatmap(cached);
-      setHeatmapLoading(false);
-      return;
-    }
-    setHeatmapLoading(true);
-    const isCurrent = () => current === heatmapRequest.current;
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/heatmap/?${query}${planQuery}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
-      (response) => {
-        const data = (response?.data || null) as SensorHeatmapResponse | null;
-        if (data) {
-          const frames = data.timestamps?.length ?? 0;
-          const now = Date.now();
-          heatmapCache.current.set(
-            cacheKey,
-            withLoad(
-              heatmapCache.current.get(cacheKey),
-              {
-                days,
-                limit: resolution,
-                complete: (data.total ?? frames) <= frames,
-                loadedAt: now,
-                value: data,
-              },
-              now,
-            ),
-          );
-        }
-        if (isCurrent()) {
-          setHeatmap(data);
-          setHeatmapLoading(false);
-        }
-      },
-      (error) => {
-        if (isCurrent()) {
-          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
-          setHeatmapLoading(false);
-        }
-      },
-    );
-    // noiseRevision: a changed profile - the cache was cleared, load again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    auth,
-    days,
-    enqueueSnackbar,
+  const exports = useAnalyseExports(locationId, location?.project_id);
+  const loadOptions = { locationId, enabled: !isLorawan, days, resolution };
+  const loads = useAnalyseMeasurements({ ...loadOptions, deviceId, rawQuery });
+  const { measurements, devices, shownDevice } = loads;
+  const noise = useNoiseProfileState({
+    locationId,
+    offer: offerNoiseProfiles,
+    shownDevice,
+  });
+  const { displayMask, heatNoiseQuery } = noise;
+  const heatmapLoad = useAnalyseHeatmap({
+    ...loadOptions,
+    planQuery,
     heatProfile,
     heatNoiseQuery,
-    isLorawan,
-    locationId,
-    noiseRevision,
-    planQuery,
-    query,
-    resolution,
-  ]);
+    revision: noiseRevision,
+  });
+  const { heatmap, clearHeatmapCache } = heatmapLoad;
+  const invalidateHeatmap = useCallback(() => {
+    clearHeatmapCache();
+    setNoiseRevision((revision) => revision + 1);
+  }, [clearHeatmapCache]);
+  const sensorHistory = useSensorHistory({ locationId, shownDevice, rawQuery });
+  const shown = useAnalyseShown({
+    heatmap,
+    heatmapLoading: heatmapLoad.heatmapLoading,
+    planId,
+    measurements,
+    historyRows: sensorHistory.rows,
+    displayMask,
+    meanWindow,
+  });
 
-  // Switching the device reloads only the measurements.
-  const loadMeasurements = useCallback(() => {
-    if (isLorawan) {
-      return;
-    }
-    const show = (load: MeasurementsLoad) => {
-      setMeasurements(load.rows);
-      setMeasurementTotal(load.total);
-      setDevices(load.devices);
-      setShownDevice(load.device);
-      setMeasurementsLoading(false);
-    };
-    const cacheKey = `${locationId}:${deviceId ?? 'default'}`;
-    const cached = cachedPeriod(
-      measurementsCache.current.get(cacheKey),
-      days,
-      resolution,
-      Date.now(),
-      cutMeasurements,
-    );
-    const current = ++measurementsRequest.current;
-    if (cached) {
-      show(cached);
-      return;
-    }
-    setMeasurementsLoading(true);
-    const isCurrent = () => current === measurementsRequest.current;
-    const device = deviceId != null ? `&device=${deviceId}` : '';
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/?${query}${device}${rawQuery}`,
-      (response) => {
-        const rows = (response?.data?.measurements ||
-          []) as MeasurementCompareRow[];
-        const load: MeasurementsLoad = {
-          rows,
-          total: Number(response?.data?.total ?? rows.length),
-          devices: (response?.data?.devices || []) as AnalyseDevice[],
-          device: (response?.data?.device ?? null) as number | null,
-        };
-        const now = Date.now();
-        measurementsCache.current.set(
-          cacheKey,
-          withLoad(
-            measurementsCache.current.get(cacheKey),
-            {
-              days,
-              limit: resolution,
-              complete: load.total <= rows.length,
-              loadedAt: now,
-              value: load,
-            },
-            now,
-          ),
-        );
-        if (isCurrent()) {
-          show(load);
-        }
-      },
-      (error) => {
-        if (isCurrent()) {
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load measurements',
-            error,
-          );
-          setMeasurementsLoading(false);
-        }
-      },
-    );
-  }, [
-    auth,
-    days,
-    deviceId,
-    enqueueSnackbar,
-    isLorawan,
-    locationId,
-    query,
-    rawQuery,
-    resolution,
-  ]);
+  const frames = useAnalyseFrames({ isLorawan, heatmap, measurements });
+  const { frameTime, setFrameTime, frameSeconds } = frames;
 
-  const toggleSensorHistory = () => {
-    if (sensorHistoryRows) {
-      setSensorHistory(null);
-      return;
-    }
-    setSensorHistoryLoading(true);
-    const current = ++sensorHistoryRequest.current;
-    const key = sensorHistoryKey;
-    const device = shownDevice != null ? `&device=${shownDevice}` : '';
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/?days=${SENSOR_HISTORY_DAYS}&limit=${MAX_HISTORY_MEASUREMENTS}${device}${rawQuery}`,
-      (response) => {
-        if (current === sensorHistoryRequest.current) {
-          setSensorHistory({
-            key,
-            rows: (response?.data?.measurements ||
-              []) as MeasurementCompareRow[],
-          });
-          setSensorHistoryLoading(false);
-        }
-      },
-      (error) => {
-        if (current === sensorHistoryRequest.current) {
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load the sensor history',
-            error,
-          );
-          setSensorHistoryLoading(false);
-        }
-      },
-    );
-  };
-
-  useEffect(() => {
-    loadHeatmap();
-  }, [loadHeatmap]);
-
-  useEffect(() => {
-    loadMeasurements();
-  }, [loadMeasurements]);
-
-  // What the heatmap and the charts show: the loads, averaged over
-  // `meanWindow` neighbouring measurements.
-  const shownHeatmap = useMemo(
-    () => smoothHeatmap(heatmap, meanWindow),
-    [heatmap, meanWindow],
-  );
-  // Another plan's heatmap loads - the shown one stays (busy) until it is there.
-  const switchingPlan =
-    heatmapLoading &&
-    shownHeatmap != null &&
-    (shownHeatmap.lageplan ?? null) !== planId;
-  // Cleaned first (staff: by displayMask), then smoothed.
-  const shownMeasurements = useMemo(
-    () => smoothMeasurements(cleanRows(measurements, displayMask), meanWindow),
-    [measurements, displayMask, meanWindow],
-  );
-  const shownSensorHistory = useMemo(
-    () =>
-      sensorHistoryRows
-        ? smoothMeasurements(
-            cleanRows(sensorHistoryRows, displayMask),
-            meanWindow,
-          )
-        : null,
-    [sensorHistoryRows, displayMask, meanWindow],
-  );
-
-  // The slider's frames: the heatmap's - the measurements (sampled a little
-  // differently) show the one nearest to it; without a heatmap theirs.
-  const heatmapFrames = useMemo(
-    () => [...(heatmap?.timestamps ?? [])].sort((a, b) => a - b),
-    [heatmap],
-  );
-  const chartFrames = useMemo(
-    () =>
-      measurements
-        .flatMap((row) => {
-          const ms = parseTimestamp(row.last_fetched);
-          return ms == null ? [] : [ms / 1000];
-        })
-        .sort((a, b) => a - b),
-    [measurements],
-  );
-  // LoRaWAN: the climate heatmap's frames, without one the charts' readings.
-  const [climateHeatmapFrames, setClimateHeatmapFrames] = useState<number[]>(
-    [],
-  );
-  const [climateChartFrames, setClimateChartFrames] = useState<number[]>([]);
-  const frameSeconds = isLorawan
-    ? climateHeatmapFrames.length
-      ? climateHeatmapFrames
-      : climateChartFrames
-    : heatmapFrames.length
-      ? heatmapFrames
-      : chartFrames;
-  const frameIndex =
-    frameTime == null
-      ? frameSeconds.length - 1
-      : frameAt(frameSeconds, frameTime);
-  const mobile =
-    typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
-  // Keys 1-9 pick the heatmap's Lageplan - while there is more than one.
-  const planHotkeys = !isLorawan && plans.length > 1;
-  // The plan switcher of /status (LocationPlanPanel) - each pill shows its
-  // key (1-9); first in the heatmap's toolbar row.
-  const planSwitcher =
-    plans.length > 1 ? (
-      <SegmentedControl
-        options={plans.map((plan, index) => ({
-          value: String(plan.id),
-          label: plan.name || t('status_plan_view', { index: index + 1 }),
-          hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
-          title:
-            planHotkeys && index < 9
-              ? t('analyse_plan_key', { key: index + 1 })
-              : undefined,
-        }))}
-        value={String(planId)}
-        onChange={(value) => pickPlan(Number(value))}
-        testId="analyse-heatmap-plans"
-      />
-    ) : null;
-  // The keys of the whole page (the profile plot lists its own).
-  const pageKeyHints: KeyHint[] = [
-    { id: 'play', keys: [t('key_space')], label: t('key_hint_play') },
-    { id: 'frame-step', keys: ['← / →'], label: t('key_hint_frame_step') },
-    { id: 'frame-jump', keys: ['↑ / ↓'], label: t('key_hint_frame_jump') },
-    ...(planHotkeys
-      ? [
-          {
-            id: 'plan',
-            keys: [`1 … ${Math.min(plans.length, 9)}`],
-            label: t('key_hint_plan'),
-          },
-        ]
-      : []),
-    ...(offerNoiseProfiles
-      ? [
-          {
-            id: 'range-select',
-            keys: ['S', t('key_drag')],
-            label: t('key_hint_range_select'),
-          },
-          { id: 'range-clear', keys: ['C'], label: t('key_hint_range_clear') },
-        ]
-      : []),
-    { keys: [t('key_ctrl'), t('key_wheel')], label: t('key_hint_zoom') },
-  ];
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const step = FRAME_KEY_STEPS[event.key];
-      if (
-        step == null ||
-        !frameSeconds.length ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        isFormTarget(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      announceKey(Math.abs(step) === 1 ? 'frame-step' : 'frame-jump');
-      const last = frameSeconds.length - 1;
-      const current =
-        frameTime == null ? last : frameAt(frameSeconds, frameTime);
-      const next = Math.min(Math.max(current + step, 0), last);
-      if (next !== current) {
-        setFrameTime(frameSeconds[next] * 1000);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [frameSeconds, frameTime]);
-
-  // 1-9: the heatmap shows that Lageplan (the switcher numbers them).
-  useEffect(() => {
-    if (!planHotkeys) {
-      return undefined;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      const index = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
-      if (
-        index < 0 ||
-        index >= plans.length ||
-        event.repeat ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey ||
-        isFormTarget(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      announceKey('plan');
-      pickPlan(plans[index].id);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [planHotkeys, plans, pickPlan]);
-
-  // C: the span picked for a new profile is cleared (not with Ctrl - copy).
-  useEffect(() => {
-    if (!offerNoiseProfiles || !profileRange) {
-      return undefined;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== 'c' ||
-        event.repeat ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey ||
-        isFormTarget(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setProfileRange(null);
-      announceKey('range-clear');
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [offerNoiseProfiles, profileRange, setProfileRange]);
-
-  const loading = heatmapLoading || measurementsLoading;
-
-  // ---------------------------------------------------------------- comparison
-  const compareOptions = useMemo(
-    () => compareOffsetsFor(measurementRange?.first, days, openedAt),
-    [measurementRange, days, openedAt],
-  );
-  const compare =
-    compareOptions.find((offset) => offset.days === compareDays) ?? null;
-  const compareOffsetMs = compare ? compare.days * DAY_MS : 0;
-  // The comparison's loads, for the settings they were loaded with.
-  const compareKey = compare
-    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}:${heatNoiseQuery}:${noiseRevision}:${planQuery}`
-    : null;
-  const [compareHeatmap, setCompareHeatmap] = useState<{
-    key: string;
-    value: SensorHeatmapResponse | null;
-  } | null>(null);
-  const [compareRows, setCompareRows] = useState<{
-    key: string;
-    rows: MeasurementCompareRow[];
-  } | null>(null);
-  const compareRequest = useRef(0);
-  const loadCompare = useCallback(() => {
-    if (!compare || !compareKey || isLorawan) {
-      return;
-    }
-    const current = ++compareRequest.current;
-    const isCurrent = () => current === compareRequest.current;
-    // The same period, ending `compare.days` ago.
-    const to = encodeURIComponent(
-      new Date(Date.now() - compare.days * DAY_MS).toISOString(),
-    );
-    const period = `days=${days}&limit=${resolution}&to=${to}`;
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/heatmap/?${period}${planQuery}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
-      (response) => {
-        if (isCurrent()) {
-          setCompareHeatmap({
-            key: compareKey,
-            value: (response?.data || null) as SensorHeatmapResponse | null,
-          });
-        }
-      },
-      (error) => {
-        if (isCurrent()) {
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load the comparison',
-            error,
-          );
-          setCompareHeatmap({ key: compareKey, value: null });
-        }
-      },
-    );
-    const device = shownDevice != null ? `&device=${shownDevice}` : '';
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/?${period}${device}${rawQuery}`,
-      (response) => {
-        if (isCurrent()) {
-          setCompareRows({
-            key: compareKey,
-            rows: (response?.data?.measurements ||
-              []) as MeasurementCompareRow[],
-          });
-        }
-      },
-      (error) => {
-        if (isCurrent()) {
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load the comparison',
-            error,
-          );
-          setCompareRows({ key: compareKey, rows: [] });
-        }
-      },
-    );
-  }, [
-    auth,
-    compare,
-    compareKey,
-    days,
-    enqueueSnackbar,
-    heatNoiseQuery,
+  const comparison = useAnalyseCompare({
+    ...loadOptions,
+    measurementRange: period.measurementRange,
     heatProfile,
-    isLorawan,
-    locationId,
+    shownDevice,
+    heatNoiseQuery,
+    revision: noiseRevision,
     planQuery,
     rawQuery,
-    resolution,
+    displayMask,
+    meanWindow,
+    shownHeatmap: shown.shownHeatmap,
+  });
+
+  // The plan's sensors and the measurements' second plot (analyseSelection).
+  const points = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
+  const selection = useSensorSelection({
+    points,
     shownDevice,
-  ]);
-
-  useEffect(() => {
-    loadCompare();
-  }, [loadCompare]);
-
-  const compareHeatmapShown =
-    compareHeatmap?.key === compareKey ? compareHeatmap.value : null;
-  const compareRowsShown = useMemo(
-    () =>
-      compareRows?.key === compareKey
-        ? smoothMeasurements(
-            cleanRows(compareRows.rows, displayMask),
-            meanWindow,
-          )
-        : null,
-    [compareRows, compareKey, displayMask, meanWindow],
-  );
-  const compareLoading =
-    compare != null &&
-    (compareHeatmap?.key !== compareKey || compareRows?.key !== compareKey);
-  // The heatmap while comparing: every sensor's change since then.
-  const changeHeatmap = useMemo(
-    () =>
-      compare && compareHeatmapShown
-        ? heatmapChange(
-            shownHeatmap,
-            smoothHeatmap(compareHeatmapShown, meanWindow),
-            compareOffsetMs,
-          )
-        : null,
-    [compare, compareHeatmapShown, shownHeatmap, meanWindow, compareOffsetMs],
-  );
-  const compareLabel = compare ? t(`analyse_compare_${compare.key}`) : '';
-
-  // A sensor clicked on the plan (pos = sensor_order) is added to the
-  // measurements' second plot - as the pair of its device: a location's
-  // sensors can be split over devices, each counting its pairs from 1.
-  // Shows that device if needed.
-  // The plan's sensors (pos) of the second plot's selection: the pairs of
-  // the shown device - the active sensors, drawn with a lila ring, in sync
-  // with the plot; the focused one (picked last) with a white ring.
-  const selectedPositions = useMemo(
-    () =>
-      (heatmap?.sensor_points ?? []).flatMap((point) => {
-        const ofShown = point.device == null || point.device === shownDevice;
-        return ofShown && sensors.includes((point.pair ?? point.pos) - 1)
-          ? [point.pos]
-          : [];
-      }),
-    [heatmap, sensors, shownDevice],
-  );
-  const focusedPosition = focusedPositionOf(
-    heatmap?.sensor_points ?? [],
-    sensorFocus,
-    sensors,
-    shownDevice,
-  );
-  // A selection change from the charts: a single added sensor gets the focus.
-  const changeSensors = (next: number[]) => {
-    const added = addedSensor(sensors, next);
-    if (added != null) {
-      setSensorFocus({ device: shownDevice, pair: added });
-    }
-    setSensors(next);
-  };
-
+    deviceIds: devices.map((device) => device.id),
+    onDevice: pickDevice,
+  });
   // The alarm thresholds on the first measurement plot: the location's, and
   // the own ones of the shown device's sensors (pair index).
   const alarmThreshold =
     heatmap?.location?.alarm_threshold ?? location?.alarm_threshold ?? null;
   const sensorThresholds = useMemo(
-    () =>
-      new Map(
-        (heatmap?.sensor_points ?? []).flatMap((point) => {
-          const ofShown = point.device == null || point.device === shownDevice;
-          return ofShown && point.threshold != null
-            ? [[(point.pair ?? point.pos) - 1, point.threshold] as const]
-            : [];
-        }),
-      ),
-    [heatmap, shownDevice],
+    () => sensorThresholdsOf(points, shownDevice),
+    [points, shownDevice],
   );
-  // The shown device's disabled sensors (pair index, like sensorThresholds):
-  // drawn gray - what the heatmap says, switched here since then on top.
-  const disabledSensors = useMemo(
-    () =>
-      disabledPairsOf(
-        heatmap?.sensor_points ?? [],
-        locationId,
-        shownDevice,
-        disabledOverrides,
-      ),
-    [heatmap, shownDevice, locationId, disabledOverrides],
-  );
-
-  const selectedEnabled = sensors.filter((pair) => !disabledSensors.has(pair));
-  const selectedDisabled = sensors.filter((pair) => disabledSensors.has(pair));
-
-  /** Switch the selected sensors off (`disabled`) or on - the ones not already so. */
-  const switchSensors = (disabled: boolean) => {
-    const targets = (disabled ? selectedEnabled : selectedDisabled).flatMap(
-      (pair) => {
-        const order = sensorOrderOf(
-          heatmap?.sensor_points ?? [],
-          shownDevice,
-          pair,
-          devices.length,
-        );
-        return order == null ? [] : [{ pair, order }];
-      },
-    );
-    setConfirmDisable(false);
-    if (!targets.length) {
-      enqueueSnackbar(t('analyse_sensors_switch_unknown'), {
-        variant: 'warning',
-      });
-      return;
-    }
-    setSwitchingSensors(true);
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/measurepoints/`,
-      {
-        points: targets.map(({ order }) => ({ sensor_order: order, disabled })),
-      },
-      () => {
-        setSwitchingSensors(false);
-        setDisabledOverrides((overrides) => {
-          const next = { ...overrides };
-          targets.forEach(({ pair }) => {
-            next[overrideKey(locationId, shownDevice, pair)] = disabled;
-          });
-          return next;
-        });
-        // The heatmap (plan, thresholds panel) brings the new state.
-        heatmapCache.current.clear();
-        setNoiseRevision((revision) => revision + 1);
-        showSuccessBar(
-          enqueueSnackbar,
-          t(disabled ? 'analyse_sensors_disabled' : 'analyse_sensors_enabled', {
-            count: targets.length,
-            sensors: targets.map(({ pair }) => pair + 1).join(', '),
-          }),
-        );
-      },
-      (error) => {
-        setSwitchingSensors(false);
-        showRequestError(
-          enqueueSnackbar,
-          t('analyse_sensors_switch_failed'),
-          error,
-        );
-      },
-    );
-  };
-
-  // ------------------------------------------------------------- Störungsprofile
-  const loadNoiseProfiles = useCallback(() => {
-    if (!offerNoiseProfiles) {
-      return;
-    }
-    const forLocation = locationId;
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/noise-profiles/`,
-      (response) =>
-        setNoiseProfileLoad({
-          locationId: forLocation,
-          profiles: (response?.data?.profiles || []) as NoiseProfile[],
-        }),
-      (error) =>
-        showRequestError(enqueueSnackbar, t('noise_profile_error'), error),
-    );
-  }, [auth, enqueueSnackbar, locationId, offerNoiseProfiles, t]);
-
-  useEffect(() => {
-    loadNoiseProfiles();
-  }, [loadNoiseProfiles]);
-
-  // Every profile of the shown device (and the draft) rated for the loaded
-  // raw measurements - against the alarm thresholds of their sensors.
-  const thresholdOf = useCallback(
-    (pair: number) => sensorThresholds.get(pair) ?? alarmThreshold ?? null,
-    [sensorThresholds, alarmThreshold],
-  );
-  const noiseRatings = useMemo(
-    () =>
-      new Map(
-        offerNoiseProfiles
-          ? deviceProfiles.map((profile) => [
-              profile.id,
-              rateNoiseProfile(measurements, noiseMaskOf(profile), thresholdOf),
-            ])
-          : [],
-      ),
-    [offerNoiseProfiles, deviceProfiles, measurements, thresholdOf],
-  );
-  const draftRating = useMemo(
-    () =>
-      offerNoiseProfiles && shownDraft
-        ? rateNoiseProfile(measurements, noiseMaskOf(shownDraft), thresholdOf)
-        : null,
-    [offerNoiseProfiles, shownDraft, measurements, thresholdOf],
-  );
-
-  /** POST noise-profiles/<path>/ - then the profiles and the heatmap load again. */
-  const noiseRequest = (
-    path: string,
-    data: object,
-    done?: (response: { data?: { profile?: NoiseProfile } }) => void,
-  ) => {
-    setNoiseBusy(true);
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/noise-profiles/${path}/`,
-      data,
-      (response) => {
-        setNoiseBusy(false);
-        heatmapCache.current.clear();
-        setNoiseRevision((revision) => revision + 1);
-        loadNoiseProfiles();
-        done?.(response);
-      },
-      (error) => {
-        setNoiseBusy(false);
-        showRequestError(enqueueSnackbar, t('noise_profile_error'), error);
-      },
-    );
-  };
-
-  // A new draft: per sensor the minimum EP / WP of every measurement (not
-  // only the loaded ones) of the selected span.
-  const createNoiseProfile = (span: ProfileRange | null = profileRange) => {
-    if (shownDevice == null || !span) {
-      return;
-    }
-    const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
-    setNoiseBusy(true);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&from=${iso(span.from)}&to=${iso(span.to)}`,
-      (response) => {
-        setNoiseBusy(false);
-        const data = response?.data ?? {};
-        setDraft({
-          id: null,
-          device: shownDevice,
-          // With the span it was made from: "Profil 06.11.2026 · 7 Tage, 5 Std."
-          name: t('noise_profile_default_name', {
-            date: new Date().toLocaleDateString(),
-            span: spanParts(span.to - span.from)
-              .map(({ unit, count }) => t(`span_${unit}`, { count }))
-              .join(', '),
-          }),
-          mask_e: (data.mask_e || []) as number[],
-          mask_w: (data.mask_w || []) as number[],
-          source_from: data.source_from ?? null,
-          source_to: data.source_to ?? null,
-          source_count: Number(data.source_count ?? 0),
-        });
-        setDraftPreview(true);
-      },
-      (error) => {
-        setNoiseBusy(false);
-        showRequestError(enqueueSnackbar, t('noise_profile_error'), error);
-      },
-    );
-  };
-
-  const editNoiseProfile = (profile: NoiseProfile) => {
-    setDraft({
-      id: profile.id,
-      device: profile.device,
-      name: profile.name,
-      mask_e: [...profile.mask_e],
-      mask_w: [...profile.mask_w],
-      source_from: profile.source_from,
-      source_to: profile.source_to,
-      source_count: profile.source_count,
-    });
-    setDraftPreview(true);
-  };
-
-  const saveNoiseProfile = () => {
-    if (!draft) {
-      return;
-    }
-    noiseRequest('save', { ...draft, name: draft.name.trim() }, (response) => {
-      setDraft(null);
-      setSelectedProfileId(response?.data?.profile?.id ?? null);
-      enqueueSnackbar(t('noise_profile_saved'), { variant: 'success' });
-    });
-  };
-
-  const downloadNoiseProfile = (profile: NoiseProfile) =>
-    downloadBlob(
-      new Blob([noiseProfileCsv(profile)], { type: 'text/csv' }),
-      `${location?.project_id ?? locationId}-stoerungsprofil-${profile.id}.csv`,
-    );
-
-  // The raw measurement of the slider's frame - faint lines in the profile plot.
-  const referenceSamples = useMemo(() => {
-    if (!shownDraft || !measurements.length) {
-      return null;
-    }
-    // The one nearest to the frame - no frame picked: the newest one.
-    const rank = (ms: number) =>
-      frameTime == null ? -ms : Math.abs(ms - frameTime);
-    let samples: number[] = [];
-    let best = Number.POSITIVE_INFINITY;
-    for (const row of measurements) {
-      const ms = parseTimestamp(row.last_fetched);
-      if (ms != null && Array.isArray(row.samples) && rank(ms) < best) {
-        samples = row.samples;
-        best = rank(ms);
-      }
-    }
-    return {
-      ep: samples.filter((_, index) => index % 2 === 0).map(Number),
-      wp: samples.filter((_, index) => index % 2 === 1).map(Number),
-    };
-  }, [shownDraft, measurements, frameTime]);
-
-  // The thresholds panel works on the data loaded here - no request, no
-  // period of its own: the heatmap's points and thresholds, the maxima of the
-  // shown device's measurements cleaned by the profile being rated (the
-  // draft, else the picked or active one), the other devices' from the heatmap.
-  const ratedProfile = shownDraft ?? selectedProfile;
-  const thresholdData = useMemo(() => {
-    if (!offerNoiseProfiles || !heatmap) {
-      return null;
-    }
-    const rows = cleanRows(measurements, noiseMaskOf(ratedProfile));
-    return {
-      sensors: mixerSensorsFromLoaded({
-        points: heatmap.sensor_points ?? [],
-        heatData:
-          !heatmap.profile || heatmap.profile === 'diff' ? heatmap.data : null,
-        rows,
-        shownDevice,
-      }),
-      note: t(
-        ratedProfile ? 'thresholds_source_profile' : 'thresholds_source_raw',
-        {
-          name: ratedProfile?.name ?? '',
-          period: t(timeRangeLabelKey(range)),
-          count: measurements.length,
-        },
-      ),
-    };
-  }, [
-    offerNoiseProfiles,
-    heatmap,
-    measurements,
-    ratedProfile,
+  const sensorSwitch = useSensorSwitch({
+    locationId,
+    points,
     shownDevice,
-    range,
-    t,
-  ]);
+    deviceCount: devices.length,
+    sensors: selection.sensors,
+    onSwitched: invalidateHeatmap,
+  });
+  const archive = useAnalyseArchive({
+    locationId,
+    profileRange,
+    shownDevice,
+    // Load everything again - staff who hide archived ones no longer see them.
+    onArchived: () => {
+      clearHeatmapCache();
+      loads.clearMeasurementsCache();
+      sensorHistory.clear();
+      heatmapLoad.loadHeatmap();
+      loads.loadMeasurements();
+      comparison.loadCompare();
+    },
+  });
 
-  // Thresholds saved in the panel: the heatmap brings the new ones (and the
-  // ratings count against them).
-  const onThresholdsSaved = useCallback(() => {
-    heatmapCache.current.clear();
-    setNoiseRevision((revision) => revision + 1);
-  }, []);
+  // Keys 1-9 pick the heatmap's Lageplan - while there is more than one.
+  const planHotkeys = !isLorawan && plans.length > 1;
+  useAnalyseHotkeys({
+    frameSeconds,
+    frameTime,
+    onFrameTime: setFrameTime,
+    planHotkeys,
+    plans,
+    onPlan: pickPlan,
+    rangeClear: offerNoiseProfiles && profileRange != null,
+    onRangeClear: clearProfileRange,
+  });
 
-  const noisePanel = offerNoiseProfiles ? (
-    <NoiseProfilePanel
-      deviceName={
-        devices.find((device) => device.id === shownDevice)?.display_name ??
-        null
-      }
-      profiles={deviceProfiles}
-      ratings={noiseRatings}
-      selectedId={selectedProfile?.id ?? null}
-      onSelect={setSelectedProfileId}
-      testedId={testedProfile?.id ?? null}
-      onTest={setTestedProfileId}
-      view={noiseView}
-      busy={noiseBusy}
-      range={profileRange}
-      onClearRange={() => setProfileRange(null)}
-      // "Letzte 7 Tage": the span, and its draft right away.
-      onPickRange={(span) => {
-        setProfileRange(span);
-        createNoiseProfile(span);
-      }}
-      onCreate={() => createNoiseProfile()}
-      onEdit={editNoiseProfile}
-      onActivate={(profile) =>
-        noiseRequest('activate', { id: profile.id }, () => {
-          setTestedProfileId(null);
-          enqueueSnackbar(
-            t('noise_profile_activated', { name: profile.name }),
-            { variant: 'success' },
-          );
-        })
-      }
-      onDeactivate={() =>
-        noiseRequest('deactivate', { device: shownDevice }, () =>
-          enqueueSnackbar(t('noise_profile_deactivated'), {
-            variant: 'success',
-          }),
-        )
-      }
-      onDelete={(profile) =>
-        noiseRequest('delete', { id: profile.id }, () => {
-          setSelectedProfileId((id) => (id === profile.id ? null : id));
-          setTestedProfileId((id) => (id === profile.id ? null : id));
-        })
-      }
-      onDownload={downloadNoiseProfile}
-      draftName={shownDraft ? shownDraft.name : null}
-      draftRating={draftRating}
-      editor={
-        shownDraft ? (
-          <NoiseProfileEditor
-            draft={shownDraft}
-            onChange={setDraft}
-            onSave={saveNoiseProfile}
-            onCancel={() => setDraft(null)}
-            saving={noiseBusy}
-            preview={draftPreview}
-            onPreviewChange={setDraftPreview}
-            reference={referenceSamples}
-          />
-        ) : null
-      }
-      thresholds={
-        <ThresholdMixerToggle
-          locationId={locationId}
-          initialObjectThreshold={alarmThreshold}
-          onSaved={onThresholdsSaved}
-          loaded={thresholdData}
-        />
-      }
-    />
-  ) : null;
-
-  // ------------------------------------------------------------- archiving
-  // Staff: the measurements of the picked span (S + drag, the band under the
-  // frame slider) archived - only staff see them then (ProgeoMeasurement.archived)
-  // - or restored. Of the shown device or of every device of the location.
-  const [archiveDialog, setArchiveDialog] = useState<ArchiveDialogState | null>(
-    null,
-  );
-  const [archiveCounts, setArchiveCounts] = useState<{
-    key: string;
-    total: number;
-    archived: number;
-  } | null>(null);
-  const [archiving, setArchiving] = useState(false);
-  const archiveParams = (allDevices: boolean) =>
-    profileRange
-      ? {
-          from: new Date(profileRange.from).toISOString(),
-          to: new Date(profileRange.to).toISOString(),
-          ...(allDevices || shownDevice == null
-            ? {}
-            : { device: String(shownDevice) }),
-        }
-      : null;
-  const archiveParamsNow = archiveDialog
-    ? archiveParams(archiveDialog.allDevices)
+  const badge = offerNoiseProfiles
+    ? noiseBadgeOf(t, noise.noiseView, noise.activeProfile, noise.testedProfile)
     : null;
-  const archiveKey = archiveParamsNow
-    ? new URLSearchParams(archiveParamsNow).toString()
-    : null;
-  const archiveCountsShown =
-    archiveCounts?.key === archiveKey ? archiveCounts : null;
-
-  // How many measurements the dialog's choice covers.
-  useEffect(() => {
-    if (!archiveKey) {
-      return;
-    }
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/archive/?${archiveKey}`,
-      (response) =>
-        setArchiveCounts({
-          key: archiveKey,
-          total: Number(response?.data?.total ?? 0),
-          archived: Number(response?.data?.archived ?? 0),
-        }),
-      (error) =>
-        showRequestError(enqueueSnackbar, t('analyse_archive_error'), error),
-    );
-  }, [archiveKey, auth, enqueueSnackbar, locationId, t]);
-
-  const applyArchive = () => {
-    if (!archiveDialog || !archiveParamsNow) {
-      return;
-    }
-    const { archive } = archiveDialog;
-    setArchiving(true);
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/measurements/archive/`,
-      { ...archiveParamsNow, archived: archive },
-      (response: { data?: { changed?: number } }) => {
-        setArchiving(false);
-        setArchiveDialog(null);
-        setArchiveCounts(null);
-        enqueueSnackbar(
-          t(archive ? 'analyse_archive_done' : 'analyse_archive_restored', {
-            count: response?.data?.changed ?? 0,
-          }),
-          { variant: 'success' },
-        );
-        // Load everything again - staff who hide archived ones no longer see them.
-        heatmapCache.current.clear();
-        measurementsCache.current.clear();
-        setSensorHistory(null);
-        loadHeatmap();
-        loadMeasurements();
-        loadCompare();
-      },
-      (error) => {
-        setArchiving(false);
-        showRequestError(enqueueSnackbar, t('analyse_archive_error'), error);
-      },
-    );
-  };
-  const shownDeviceName =
-    devices.find((device) => device.id === shownDevice)?.display_name ?? null;
-
-  // An area dragged on the plan: its sensors (of the shown device, else of
-  // the first other one - shown then) become the second plot's selection.
-  const selectPlanArea = (positions: number[]) => {
-    const picked = positions.map((pos) => {
-      const point = heatmap?.sensor_points?.find(
-        (candidate) => candidate.pos === pos,
-      );
-      return { device: point?.device ?? null, pair: (point?.pair ?? pos) - 1 };
-    });
-    const pairsOf = (entries: typeof picked) =>
-      [...new Set(entries.map((entry) => entry.pair))].sort((a, b) => a - b);
-    const ofShown = picked.filter(
-      (entry) => entry.device == null || entry.device === shownDevice,
-    );
-    if (ofShown.length) {
-      setSensors(pairsOf(ofShown));
-      return;
-    }
-    const other = picked.find((entry) =>
-      devices.some((candidate) => candidate.id === entry.device),
-    );
-    if (other?.device != null) {
-      setPickedDevice({ locationId, id: other.device });
-      setSensors(
-        pairsOf(picked.filter((entry) => entry.device === other.device)),
-      );
-    }
-  };
-
-  const selectPlanSensor = (pos: number) => {
-    const point = heatmap?.sensor_points?.find(
-      (candidate) => candidate.pos === pos,
-    );
-    const pairIndex = (point?.pair ?? pos) - 1;
-    const device = point?.device ?? null;
-    if (
-      device != null &&
-      device !== shownDevice &&
-      devices.some((candidate) => candidate.id === device)
-    ) {
-      setPickedDevice({ locationId, id: device });
-      setSensors([pairIndex]);
-      setSensorFocus({ device, pair: pairIndex });
-      return;
-    }
-    // Also an already active sensor: a click focuses it.
-    setSensorFocus({ device: shownDevice, pair: pairIndex });
-    setSensors((selected) =>
-      selected.includes(pairIndex)
-        ? selected
-        : [...selected, pairIndex].sort((a, b) => a - b),
-    );
-  };
-
-  // Staff: which Störungsprofil the shown values are cleaned with - right in
-  // the frame picker; a click scrolls to the profile panel.
-  const noiseBadgeOf = (): {
-    text: string;
-    hint: string;
-    color: string;
-    background: string;
-  } | null => {
-    if (!offerNoiseProfiles) {
-      return null;
-    }
-    if (noiseView === 'active' && activeProfile) {
-      return {
-        text: t('noise_badge_active', { name: activeProfile.name }),
-        hint: t('noise_badge_active_hint', { name: activeProfile.name }),
-        color: '#1e7b34',
-        background: 'rgba(141, 193, 96, 0.2)',
-      };
-    }
-    if (noiseView === 'test' && testedProfile) {
-      return {
-        text: t('noise_badge_test', { name: testedProfile.name }),
-        hint: t('noise_badge_test_hint'),
-        color: '#8a5a00',
-        background: 'rgba(251, 188, 21, 0.25)',
-      };
-    }
-    if (noiseView === 'draft') {
-      return {
-        text: t('noise_badge_draft'),
-        hint: t('noise_badge_draft_hint'),
-        color: '#a3401f',
-        background: 'rgba(235, 99, 59, 0.15)',
-      };
-    }
-    return null;
-  };
-  const badge = noiseBadgeOf();
-  const noiseBadge = badge ? (
-    <button
-      type="button"
-      className="btn btn-sm d-inline-flex align-items-center gap-1 py-0 fw-semibold text-truncate analyse-noise-badge"
-      style={{
-        color: badge.color,
-        background: badge.background,
-        border: `1px solid ${badge.color}`,
-      }}
-      title={badge.hint}
-      data-testid="noise-profile-badge"
-      onClick={() =>
-        document
-          .querySelector('[data-testid="noise-profile-panel"]')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    >
-      <Funnel size={11} aria-hidden="true" />
-      <span className="text-truncate">{badge.text}</span>
-    </button>
-  ) : null;
-
-  // The usage help's tips: what is useful in the page's current state.
-  const pageTips = [
-    ...(offerNoiseProfiles
-      ? [
-          shownDraft
-            ? t('usage_tip_draft')
-            : profileRange
-              ? t('usage_tip_range_selected')
-              : t('usage_tip_range_pick'),
-          ...(noiseView === 'active' && activeProfile
-            ? [t('usage_tip_active', { name: activeProfile.name })]
-            : []),
-        ]
-      : []),
-    t('usage_tip_frames'),
-  ];
 
   return (
     <div
@@ -1542,165 +193,118 @@ const LocationAnalyseTab = () => {
     >
       <AnalyseActions
         offerNoiseProfiles={offerNoiseProfiles}
-        exportMessage={exportMsg}
-        exportingPdf={exportingPdf}
-        onExportCsv={exportCsv}
-        onExportRawCsv={() => {
-          void openResponseInNewTab(
-            auth,
-            `/v1/location/${locationId}/export_csv/?raw=1`,
-          );
-          setExportMsg(t('analyse_export_csv_done'));
-        }}
-        onExportPdf={exportPdf}
+        exportMessage={exports.exportMsg}
+        exportingPdf={exports.exportingPdf}
+        onExportCsv={exports.exportCsv}
+        onExportRawCsv={exports.exportRawCsv}
+        onExportPdf={exports.exportPdf}
         onOpenArchive={() =>
-          setArchiveDialog({ allDevices: false, archive: true })
+          archive.setArchiveDialog({ allDevices: false, archive: true })
         }
         profileRange={profileRange}
-        confirmDisable={confirmDisable}
-        onConfirmDisableChange={setConfirmDisable}
-        selectedEnabled={selectedEnabled}
-        switchingSensors={switchingSensors}
-        onSwitchSensors={switchSensors}
-        archiveDialog={archiveDialog}
-        onArchiveDialogChange={setArchiveDialog}
-        archiveCounts={archiveCountsShown}
+        confirmDisable={sensorSwitch.confirmDisable}
+        onConfirmDisableChange={sensorSwitch.setConfirmDisable}
+        selectedEnabled={sensorSwitch.selectedEnabled}
+        switchingSensors={sensorSwitch.switchingSensors}
+        onSwitchSensors={sensorSwitch.switchSensors}
+        archiveDialog={archive.archiveDialog}
+        onArchiveDialogChange={archive.setArchiveDialog}
+        archiveCounts={archive.archiveCounts}
         shownDevice={shownDevice}
-        shownDeviceName={shownDeviceName}
-        archiving={archiving}
-        onApplyArchive={applyArchive}
+        shownDeviceName={loads.shownDeviceName}
+        archiving={archive.archiving}
+        onApplyArchive={archive.applyArchive}
       />
 
       <AnalyseFrameControl
-        mobile={mobile}
+        mobile={
+          typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH
+        }
         isLorawan={isLorawan}
-        rangeOptions={rangeOptions}
+        rangeOptions={period.rangeOptions}
         range={range}
         onRangeChange={(value) => {
-          setSelectedRange(value);
+          period.setSelectedRange(value);
           setFrameTime(null);
         }}
         resolution={resolution}
-        onResolutionChange={setResolution}
+        onResolutionChange={period.setResolution}
         meanWindow={meanWindow}
-        onMeanWindowChange={setMeanWindow}
-        compareOptions={compareOptions}
-        compare={compare}
-        onCompareChange={setCompareDays}
-        loading={loading}
+        onMeanWindowChange={period.setMeanWindow}
+        compareOptions={comparison.compareOptions}
+        compare={comparison.compare}
+        onCompareChange={comparison.setCompareDays}
+        loading={heatmapLoad.heatmapLoading || loads.measurementsLoading}
         hasLoadedData={Boolean(heatmap || measurements.length > 0)}
-        noiseBadge={noiseBadge}
+        noiseBadge={badge ? <AnalyseNoiseBadge badge={badge} /> : null}
         frameSeconds={frameSeconds}
-        frameIndex={frameIndex}
+        frameIndex={frames.frameIndex}
         onTimeChange={setFrameTime}
         chartZoom={chartZoom}
         selection={offerNoiseProfiles ? profileRange : null}
         onSelectionChange={offerNoiseProfiles ? setProfileRange : undefined}
-        keyHints={pageKeyHints}
-        tips={pageTips}
+        keyHints={pageKeyHintsOf(t, {
+          planHotkeys,
+          planCount: plans.length,
+          offerNoiseProfiles,
+        })}
+        tips={pageTipsOf(t, {
+          offerNoiseProfiles,
+          hasDraft: noise.shownDraft != null,
+          hasRange: profileRange != null,
+          noiseView: noise.noiseView,
+          activeName: noise.activeProfile?.name ?? null,
+        })}
       />
 
       {isLorawan ? (
-        <>
-          <LocationClimateHeatmap
-            locationId={locationId}
-            range={range}
-            hoveredDeviceId={hoveredDeviceId}
-            onHoverDevice={setHoveredDeviceId}
-            time={frameTime}
-            onTimeChange={setFrameTime}
-            onFramesChange={setClimateHeatmapFrames}
-          />
-          <LocationClimatePanels
-            testId="analyse-climate-panels"
-            locationId={locationId}
-            range={range}
-            showBattery={isStaff}
-            hoveredDeviceId={hoveredDeviceId}
-            onHoverDevice={setHoveredDeviceId}
-            frameTime={
-              frameSeconds.length ? frameSeconds[frameIndex] * 1000 : null
-            }
-            onFramesChange={setClimateChartFrames}
-          />
-        </>
+        <AnalyseClimateSection
+          locationId={locationId}
+          range={range}
+          showBattery={isStaff}
+          time={frameTime}
+          onTimeChange={setFrameTime}
+          frameTime={frames.frameMs}
+          onHeatmapFrames={frames.setClimateHeatmapFrames}
+          onChartFrames={frames.setClimateChartFrames}
+        />
       ) : (
-        <>
-          <AnalyseHeatmapCard
-            locationId={locationId}
-            planId={planId}
-            isStaff={isStaff}
-            state={heatmapFullscreen}
-            heatmapLoading={heatmapLoading}
-            heatmapOpen={heatmapOpen}
-            onToggleOpen={() => setHeatmapOpen((open) => !open)}
-            compare={compare != null}
-            compareLabel={compareLabel}
-            shownHeatmap={shownHeatmap}
-            changeHeatmap={changeHeatmap}
-            switchingPlan={switchingPlan}
-            planSwitcher={planSwitcher}
-            selectedPositions={selectedPositions}
-            focusedPosition={focusedPosition}
-            onAreaSelect={selectPlanArea}
-            onSensorClick={selectPlanSensor}
-            time={frameTime}
-            onTimeChange={setFrameTime}
-            profile={heatProfile}
-            onProfileChange={setHeatProfile}
-            onPlanChange={pickPlan}
-          />
-
-          {compare && (
-            <MeasurementComparePlot
-              rows={shownMeasurements}
-              pastRows={compareRowsShown ?? []}
-              time={frameTime}
-              offsetMs={compareOffsetMs}
-              label={compareLabel}
-              loading={compareLoading}
-              onClose={() => setCompareDays(null)}
-              selectedSensors={sensors}
-              onSensorSelect={(sensor) =>
-                changeSensors(toggledSensor(sensors, sensor))
-              }
-            />
-          )}
-
-          {noisePanel}
-
-          <AnalyseMeasurementsCard
-            devices={devices}
-            shownDevice={shownDevice}
-            onDeviceChange={(id) => setPickedDevice({ locationId, id })}
-            canSwitchSensors={canSwitchSensors}
-            sensors={sensors}
-            selectedEnabled={selectedEnabled}
-            selectedDisabled={selectedDisabled}
-            switchingSensors={switchingSensors}
-            onRequestDisable={() => setConfirmDisable(true)}
-            onEnable={() => switchSensors(false)}
-            measurementTotal={measurementTotal}
-            measurements={measurements}
-            measurementsLoading={measurementsLoading}
-            shownMeasurements={shownMeasurements}
-            onChartZoom={setChartZoom}
-            frameTime={frameTime}
-            onFrameTimeChange={setFrameTime}
-            onSensorsChange={changeSensors}
-            offerSensorHistory={offerSensorHistory}
-            shownSensorHistory={shownSensorHistory}
-            sensorHistoryLoading={sensorHistoryLoading}
-            onToggleSensorHistory={toggleSensorHistory}
-            threshold={alarmThreshold}
-            sensorThresholds={sensorThresholds}
-            disabledSensors={disabledSensors}
-            maskLines={maskLines}
-            offerNoiseProfiles={offerNoiseProfiles}
-            profileRange={profileRange}
-            onProfileRangeChange={setProfileRange}
-          />
-        </>
+        <AnalyseDeviceSection
+          locationId={locationId}
+          projectId={location?.project_id}
+          isStaff={isStaff}
+          canSwitchSensors={access.canSwitchSensors}
+          offerNoiseProfiles={offerNoiseProfiles}
+          range={range}
+          heatmapFullscreen={heatmapFullscreen}
+          heatmapOpen={heatmapOpen}
+          onToggleHeatmap={() => setHeatmapOpen((open) => !open)}
+          plans={plans}
+          planId={planId}
+          planHotkeys={planHotkeys}
+          onPlanChange={pickPlan}
+          heatProfile={heatProfile}
+          onHeatProfileChange={period.setHeatProfile}
+          heatmap={heatmapLoad}
+          loads={loads}
+          shown={shown}
+          comparison={comparison}
+          noise={noise}
+          selection={selection}
+          sensorSwitch={sensorSwitch}
+          sensorHistory={sensorHistory}
+          // Not while the period itself already reaches as far back.
+          offerSensorHistory={isStaff && days < SENSOR_HISTORY_DAYS}
+          alarmThreshold={alarmThreshold}
+          sensorThresholds={sensorThresholds}
+          frameTime={frameTime}
+          onFrameTimeChange={setFrameTime}
+          onChartZoom={setChartZoom}
+          profileRange={profileRange}
+          onProfileRangeChange={setProfileRange}
+          onDeviceChange={pickDevice}
+          onNoiseChanged={invalidateHeatmap}
+        />
       )}
     </div>
   );

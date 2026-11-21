@@ -60,6 +60,8 @@ describe('labels', () => {
     expect(locationAddressLine(location)).toBe('Hauptstraße 5, 10115 Berlin');
     expect(locationAddressLine({ city: 'Berlin' })).toBe('Berlin');
     expect(locationAddressLine({})).toBe('');
+    // Blank parts are skipped, not joined as ", ".
+    expect(locationAddressLine({ address: ' ', plz: null, city: 'Berlin' })).toBe('Berlin');
   });
 
   it('labels by name and project id, falling back to address and id', () => {

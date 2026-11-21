@@ -348,11 +348,11 @@ const LocationEinstellungenTab = () => {
             <div className="einstell-grid">
               {canEditProduct && projectTypeOptions.length > 0 ? (
                 <label className="einstell-field">
-                  <span className="einstell-field-label">{t('einstell_product')}</span>
+                  <span className="progeo-field-label">{t('einstell_product')}</span>
                   <select
                     value={projectType}
                     onChange={(event) => saveProjectType(event.target.value)}
-                    className="einstell-select"
+                    className="progeo-control"
                     data-testid="einstell-product"
                   >
                     {projectType === '' && <option value="">–</option>}
@@ -419,7 +419,7 @@ const LocationEinstellungenTab = () => {
                 }
               }}
               aria-label={t('einstell_language')}
-              className="einstell-select"
+              className="progeo-control"
               data-testid="einstell-language-select"
             >
               {LOCATION_LANGUAGES.map((option) => (

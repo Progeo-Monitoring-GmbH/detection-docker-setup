@@ -143,31 +143,16 @@
   margin: 0;
 }
 
-.auth-field-label {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-/* The soft-surface input of the kit (LabeledInput), uncontrolled for
-   react-hook-form. */
-.auth-field {
+/* The kit's soft control (.progeo-control, kit.css), a bit taller and full
+   width; uncontrolled for react-hook-form. Two classes: these win over the
+   kit's whichever stylesheet loads last (the auth pages are lazy chunks). */
+.progeo-control.auth-field {
   height: 42px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  padding: 0 13px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--progeo-blue);
   width: 100%;
 }
 
 /* Room for the show/hide button. */
-.auth-field--password {
+.progeo-control.auth-field--password {
   padding-right: 44px;
 }
 
@@ -175,7 +160,7 @@
   opacity: 0.8;
 }
 
-.auth-field--textarea {
+.progeo-control.auth-field--textarea {
   height: auto;
   padding: 10px 13px;
   resize: vertical;

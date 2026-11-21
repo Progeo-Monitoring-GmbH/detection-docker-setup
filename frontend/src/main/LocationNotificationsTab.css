@@ -2,23 +2,6 @@
    the test-alarm button and its confirm dialog. Theme variables:
    scss/main.css. */
 
-.benach-test-button {
-  height: 36px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 10px;
-  background: var(--progeo-orange);
-  color: #fff;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
-}
-
 .benach-denied {
   color: #8b8383;
   font-size: 13px;

@@ -174,7 +174,7 @@ export type Slice = { index: number; top: number; height: number };
  * The shortest part worth its own frame: a rest below it is not cut off but
  * stays with the part before (a few px strip of a page is no screen to review).
  */
-export const MIN_SLICE_HEIGHT = 75;
+const MIN_SLICE_HEIGHT = 75;
 
 /**
  * The parts of an image `height` px tall, `sliceHeight` each - the last one

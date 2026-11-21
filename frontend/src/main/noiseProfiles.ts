@@ -67,7 +67,7 @@ export const applyNoiseMask = (samples: ReadonlyArray<number>, mask: NoiseMask):
 };
 
 /** |WP - EP| of every pair. */
-export const pairValues = (samples: ReadonlyArray<number>): number[] => {
+const pairValues = (samples: ReadonlyArray<number>): number[] => {
   const pairs = new Array<number>(Math.floor(samples.length / 2));
   for (let pair = 0; pair < pairs.length; pair += 1) {
     pairs[pair] = Math.abs(Number(samples[pair * 2 + 1]) - Number(samples[pair * 2]));

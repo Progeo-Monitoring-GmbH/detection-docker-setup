@@ -16,7 +16,7 @@ import './LageplanKlemmliste.css';
 type Auth = ReturnType<typeof useAuth>;
 
 /** A MEA document of the location's Airtable project (helper/airtable_documents.py). */
-export type MeaDocument = {
+type MeaDocument = {
   id: string;
   name: string;
   /** "klemmliste": named like one (Klemmliste*, Pin_Assignment*, ...); "pdf": any other PDF - readable too. */

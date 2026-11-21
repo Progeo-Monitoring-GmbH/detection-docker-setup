@@ -26,7 +26,7 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, {
   type Severity,
 } from '../components/ui/kit/SeverityBadge';
-import { matchesLocationSearch } from '../components/location/locationSearch';
+import { locationAddressLine, matchesLocationSearch } from '../components/location/locationSearch';
 import { repeatedTestId } from '../testIds';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
 import {
@@ -40,7 +40,6 @@ import {
   LOCATION_LIST_CLASS,
   LocationNameCell,
   TwoLineCell,
-  locationAddressLine,
 } from '../components/location/LocationListCells';
 import { getProjectTypeLabel } from './projectType';
 import { untaggedRowClick } from './wholeRowClick';
@@ -75,7 +74,7 @@ export const verwaltungRowKey = (
 type Kpis = { ok: number; beobachten: number; alarm: number; kritisch: number };
 
 /** Rows per admin_overview request: the first chunk shows at once, the rest follows. */
-export const VERWALTUNG_CHUNK_SIZE = 200;
+const VERWALTUNG_CHUNK_SIZE = 200;
 
 /** The KPI tiles over the rows loaded so far. */
 export const verwaltungKpis = (

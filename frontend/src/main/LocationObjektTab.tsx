@@ -250,13 +250,13 @@ const LocationObjektTab = () => {
           <div className="objekt-grid">
             {canEditProduct && projectTypeOptions.length > 0 ? (
               <label className="objekt-field">
-                <span className="objekt-field-label">
+                <span className="progeo-field-label">
                   {t('objekt_field_project_type')}
                 </span>
                 <select
                   value={form.project_type}
                   onChange={(event) => set('project_type')(event.target.value)}
-                  className="objekt-select"
+                  className="progeo-control"
                   data-testid="objekt-project-type"
                 >
                   {projectTypeOptions.map((option) => (

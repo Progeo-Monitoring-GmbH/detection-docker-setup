@@ -55,24 +55,6 @@ export function getBasename(_path) {
   return _path.split(/[\\/]/).pop();
 }
 
-export async function standardFetchData(
-  auth,
-  url,
-  setter,
-  header = {},
-  callBackError = defaultErrorCallback,
-) {
-  return await axiosConfig.perform_get(
-    auth,
-    url,
-    (response) => {
-      setter(response.data);
-    },
-    callBackError,
-    header,
-  );
-}
-
 export async function openResponseInNewTab(auth, url) {
   await axiosConfig.perform_get(
     auth,

@@ -6,7 +6,7 @@ import {
   type LocationGroup,
 } from './LocationGroupBar';
 import {
-  locationLabel,
+  selectedLocationLabel,
   mergeBlocker,
   selectionLabel,
 } from './locationSelection';
@@ -17,10 +17,10 @@ const t = ((key: string, options?: Record<string, unknown>) =>
 
 describe('the overview selection', () => {
   it('labels the locations with their project number', () => {
-    expect(locationLabel({ id: 1, project_id: 4700, name: 'Halle Nord' })).toBe(
+    expect(selectedLocationLabel({ id: 1, project_id: 4700, name: 'Halle Nord' })).toBe(
       '#4700 Halle Nord',
     );
-    expect(locationLabel({ id: 2, name: 'Ohne Nummer' })).toBe('Ohne Nummer');
+    expect(selectedLocationLabel({ id: 2, name: 'Ohne Nummer' })).toBe('Ohne Nummer');
     const many = [1, 2, 3, 4, 5].map((id) => ({ id, project_id: 4700 + id }));
     expect(selectionLabel(many, t)).toBe(
       '#4701, #4702, #4703 selection_more {"count":2}',

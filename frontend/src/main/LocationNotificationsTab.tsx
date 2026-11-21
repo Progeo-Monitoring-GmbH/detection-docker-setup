@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { useProgeoRole } from './roleModel';
@@ -44,7 +45,7 @@ const DAYS_WINDOW = 90;
  * Status -> Heatmap at the time of an event (`?at=<ISO>`, read by the
  * status view): a click on an event of the history opens it there.
  */
-export const statusAtPath = (locationId: string | number, at: string) =>
+const statusAtPath = (locationId: string | number, at: string) =>
   `/location/${locationId}/status?at=${encodeURIComponent(at)}`;
 
 /** Messenger events carry the service (signal/whatsapp/matrix) as title. */
@@ -205,17 +206,17 @@ const LocationNotificationsTab = () => {
       title={t('benach_title')}
       actions={
         isStaff && (
-          <button
-            type="button"
+          <PillButton
+            variant="accent"
             onClick={openTest}
-            className="benach-test-button"
-            data-testid="benach-test-button"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z" />
-            </svg>
-            {t('benach_test_button')}
-          </button>
+            testId="benach-test-button"
+            icon={
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z" />
+              </svg>
+            }
+            label={t('benach_test_button')}
+          />
         )
       }
     >

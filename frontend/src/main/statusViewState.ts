@@ -2,10 +2,12 @@ import {
   HEAT_PROFILES,
   type HeatProfile,
 } from '../components/device/sensorHeatmapTypes';
+import { rangeContaining } from './statusAt';
 import {
   LATEST_RANGE,
   TIME_RANGE_DAYS,
   type StatusRange,
+  type TimeRange,
   isTimeRange,
 } from './timeRanges';
 
@@ -86,7 +88,7 @@ const compact = (state: StatusViewState): StatusViewState | null => {
 // -- as URL ------------------------------------------------------------------------------
 
 /** The query of the status page showing `state`. */
-export const statusViewSearch = (
+const statusViewSearch = (
   state: StatusViewState | null | undefined,
 ): string => {
   const params = new URLSearchParams();
@@ -178,3 +180,64 @@ export const statusViewKey = (state: StatusViewState) =>
 export const rangeReaches = (range: StatusRange, at: number, now: number) =>
   isTimeRange(range) &&
   now - at <= TIME_RANGE_DAYS[range] * 24 * 60 * 60 * 1000 * 0.95;
+
+/** The range to switch to for showing `at`: null while `range` reaches back
+ * to it, else the shortest of `candidates` that does (rangeContaining). */
+export const rangeForMoment = (
+  range: StatusRange,
+  at: number,
+  now: number,
+  candidates: readonly TimeRange[],
+): TimeRange | null =>
+  rangeReaches(range, at, now) ? null : rangeContaining(at, now, candidates);
+
+/**
+ * Where the URL's settings put the page: the requested range and step - or,
+ * with a moment (?at=, `focusAt`) the requested range doesn't reach back to,
+ * the shortest of `candidates` that does, its default step (null) and the
+ * roof view unless a view was asked for (`roof`).
+ */
+const statusViewFocus = (
+  requested: StatusViewState,
+  focusAt: number | null,
+  now: number,
+  candidates: readonly TimeRange[],
+): { range: StatusRange | null; step: number | null; roof: boolean } => {
+  const range = requested.range ?? null;
+  if (focusAt == null || (range && rangeReaches(range, focusAt, now))) {
+    return { range, step: requested.step ?? null, roof: false };
+  }
+  return {
+    range: rangeContaining(focusAt, now, candidates),
+    step: null,
+    roof: !requested.view,
+  };
+};
+
+/**
+ * The page's settings by the URL (see statusViewFocus) - undefined: keep
+ * the current one. The heat profile is staff's only; the step goes with
+ * the range (null: the range's default).
+ */
+export const requestedSettings = (
+  requested: StatusViewState,
+  focusAt: number | null,
+  now: number,
+  candidates: readonly TimeRange[],
+  isStaff: boolean,
+): {
+  view?: 'roof' | 'zeitreihe';
+  sensor?: number;
+  profile?: HeatProfile;
+  range?: StatusRange;
+  step?: number | null;
+} => {
+  const focus = statusViewFocus(requested, focusAt, now, candidates);
+  return {
+    view: requested.view ?? (focus.roof ? 'roof' : undefined),
+    sensor: requested.sensor,
+    profile: isStaff ? requested.profile : undefined,
+    range: focus.range ?? undefined,
+    step: focus.range ? focus.step : undefined,
+  };
+};

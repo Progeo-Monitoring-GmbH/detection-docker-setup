@@ -8,7 +8,7 @@
 export const MIN_COLUMN = 14;
 export const MAX_COLUMN = 64;
 /** Ctrl + wheel may zoom out this far (all of many sensors at once). */
-export const MIN_ZOOM_COLUMN = 3;
+const MIN_ZOOM_COLUMN = 3;
 
 /** The spread of WP − EP per sensor over the period (measurementBands.signedBands). */
 export type SensorSpread = {

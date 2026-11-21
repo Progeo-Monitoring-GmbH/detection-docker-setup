@@ -98,26 +98,6 @@
   gap: 5px;
 }
 
-.profile-field-label {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-.profile-select {
-  height: 40px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  padding: 0 13px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--progeo-blue);
-}
-
 /* Stacked buttons as wide as the widest one ("Request access" and "Change
    password" end at the same line): one max-content column, items stretched. */
 .profile-actions {
@@ -126,20 +106,9 @@
   gap: 8px;
 }
 
-/* The access / 2FA actions: real buttons with an icon, not text links. */
-.profile-button.profile-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.profile-button.profile-action--open {
+/* The open password form's button (PillButton, kit.css) keeps an orange ring. */
+.progeo-pill.profile-action--open {
   box-shadow: inset 0 0 0 1px var(--progeo-orange);
-}
-
-.profile-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .profile-status-row {
@@ -173,16 +142,11 @@
   margin: 0;
 }
 
-.profile-textarea {
+/* .progeo-control (kit.css) with a textarea's height and padding. */
+.progeo-control.profile-textarea {
   width: 100%;
+  height: auto;
   padding: 10px 13px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  color: var(--progeo-blue);
-  font-family: inherit;
-  font-size: 14px;
   resize: vertical;
 }
 
@@ -239,25 +203,4 @@
   position: sticky;
   bottom: 0;
   background: var(--progeo-panel-bg);
-}
-
-.profile-button {
-  height: 38px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 10px;
-  background: var(--progeo-surface);
-  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
-  color: var(--progeo-blue);
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.profile-button--primary {
-  padding: 0 18px;
-  background: var(--progeo-orange);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.26);
 }

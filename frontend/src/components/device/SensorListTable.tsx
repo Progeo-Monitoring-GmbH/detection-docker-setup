@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { childTestId, repeatedTestId } from '../../testIds';
+import { progeoTableStyles } from '../ui/kit/SearchableDataTable';
 import './SensorListTable.css';
 
 export type SensorListRow = {
@@ -42,34 +43,6 @@ const byNumber = (pick: (row: SensorListRow) => number | null) => (a: SensorList
     return left == null && right == null ? 0 : left == null ? 1 : -1;
   }
   return left - right;
-};
-
-const tableStyles = {
-  table: { style: { backgroundColor: 'transparent' } },
-  headRow: {
-    style: {
-      minHeight: '36px',
-      backgroundColor: 'transparent',
-      borderBottomColor: 'var(--progeo-track-soft)',
-    },
-  },
-  headCells: {
-    style: {
-      fontSize: '10.5px',
-      letterSpacing: '.06em',
-      textTransform: 'uppercase' as const,
-      color: '#8B8383',
-      fontWeight: 500,
-    },
-  },
-  rows: {
-    style: {
-      minHeight: '36px',
-      fontSize: '12.5px',
-      backgroundColor: 'transparent',
-      '&:not(:last-of-type)': { borderBottomColor: 'var(--progeo-track-soft)' },
-    },
-  },
 };
 
 /**
@@ -160,7 +133,7 @@ const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTable
         columns={columns}
         data={rows}
         keyField="key"
-        customStyles={tableStyles}
+        customStyles={progeoTableStyles}
         defaultSortFieldId="sensor"
         highlightOnHover
         dense

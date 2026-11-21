@@ -7,7 +7,7 @@
 import { alarmKey, rainEventKey, type RainEvent } from './alarmUtils';
 
 /** Chunks loading at the same time after the first. */
-export const ALARM_CHUNK_CONCURRENCY = 3;
+const ALARM_CHUNK_CONCURRENCY = 3;
 
 export type AlarmChunk<Row> = { alarms: Row[]; rainEvents: RainEvent[]; chunks: number };
 

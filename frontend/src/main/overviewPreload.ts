@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from 'react';
  */
 
 /** Ids per request. */
-export const PRELOAD_CHUNK = 100;
+const PRELOAD_CHUNK = 100;
 /** Chunks loading at the same time. */
-export const PRELOAD_CONCURRENCY = 2;
+const PRELOAD_CONCURRENCY = 2;
 
 /** The queue alone - no React, so it is tested by itself. */
 export class PreloadQueue {

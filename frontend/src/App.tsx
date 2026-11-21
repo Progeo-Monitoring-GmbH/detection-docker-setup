@@ -15,7 +15,7 @@ import {
 
 import CoreRoutes from './CoreRoutes';
 import { ActivityTracking } from './activity/useActivityTracking';
-import QaAwardToasts from './main/QaAwardToasts';
+import { QaAwardToasts } from './main/QaAwardToasts';
 
 import './i18n';
 import './App.css';

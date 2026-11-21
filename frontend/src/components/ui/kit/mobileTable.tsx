@@ -63,5 +63,3 @@ export const useMobileColumns = <T,>(columns: TableColumn<T>[], keep?: string[])
     expandable,
   };
 };
-
-export default MobileRowDetails;

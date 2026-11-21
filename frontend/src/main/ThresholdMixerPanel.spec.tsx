@@ -271,6 +271,62 @@ describe('ThresholdMixerPanel', () => {
     expect(container.querySelector('[data-handle="2"]')).toBeNull();
   });
 
+  it('switches a sensor off and on again by clicking its bar - no marker', async () => {
+    render();
+    // Sensor 3 (inherits, max 80): its bar spans y 160..240.
+    pointer('pointerdown', 150, 200);
+    pointer('pointermove', 150, 202); // a jitter is still a click
+    pointer('pointerup', 150, 202);
+    expect(container.querySelector('[data-sensor="3"]')!.getAttribute('data-disabled')).toBe('true');
+    expect(bar(3).getAttribute('fill')).toBe('#c9c8c2');
+    expect(container.querySelector('[data-handle="3"]')).toBeNull();
+    expect(changesText()).toContain('einstell_mixer_changes:{"count":1}');
+    expect(changesText()).toContain('einstell_mixer_change_disabled');
+
+    // Again: on - nothing left to save.
+    pointer('pointerdown', 150, 200);
+    pointer('pointerup', 150, 200);
+    expect(container.querySelector('[data-sensor="3"]')!.getAttribute('data-disabled')).toBeNull();
+    expect(changesText()).toContain('einstell_mixer_no_changes');
+
+    // Off once more and saved like the selection's "disable".
+    pointer('pointerdown', 150, 230);
+    pointer('pointerup', 150, 230);
+    await act(async () => {
+      button('einstell_mixer_save').click();
+    });
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.post).toHaveBeenCalledWith('/v1/location/7/measurepoints/', {
+      points: [{ sensor_order: 3, disabled: true }],
+    });
+  });
+
+  it('enables a disabled sensor by clicking its gray bar', () => {
+    api.sensors[2] = { ...api.sensors[2], disabled: true };
+    render();
+    expect(bar(3).getAttribute('fill')).toBe('#c9c8c2');
+    pointer('pointerdown', 150, 200);
+    pointer('pointerup', 150, 200);
+    expect(bar(3).getAttribute('fill')).toBe('#A9BCCF');
+    expect(changesText()).toContain('einstell_mixer_change_enabled');
+  });
+
+  it('drags a new marker out of a bar', () => {
+    render();
+    drag(150, 200, 120);
+    expect(container.querySelector('[data-sensor="3"]')!.getAttribute('data-disabled')).toBeNull();
+    expect(changesText()).toContain('einstell_mixer_changes:{"count":1}');
+    expect(changesText()).toContain('→ 120 mV');
+  });
+
+  it('tells editors in the tooltip that a bar click switches the sensor off', () => {
+    render();
+    pointer('pointermove', 150, 200);
+    expect(container.querySelector('[data-testid="threshold-mixer-tooltip"]')!.textContent).toContain(
+      'einstell_mixer_bar_hint',
+    );
+  });
+
   it('grabs the object line over a sensor without a marker', () => {
     render();
     // Sensor 3 inherits; y 140 is the line (100).
@@ -333,6 +389,9 @@ describe('ThresholdMixerPanel', () => {
     render(false);
     drag(150, 120, 100);
     dragObject(140, 116);
+    pointer('pointerdown', 150, 200); // a bar click switches nothing off either
+    pointer('pointerup', 150, 200);
+    expect(container.querySelector('[data-disabled]')).toBeNull();
     expect(container.querySelector('[data-testid="threshold-changes"]')).toBeNull();
     expect(container.textContent).not.toContain('einstell_mixer_selected');
   });

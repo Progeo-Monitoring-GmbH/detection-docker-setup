@@ -685,26 +685,26 @@ const LocationRechteTab = () => {
         }
         actions={
           canAdd && (
-            <button
-              type="button"
+            <PillButton
+              variant="accent"
               onClick={() => setAddOpen((open) => !open)}
-              className="location-rechte-add-button"
-              data-testid="rechte-add-button"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              {t('rechte_add_user')}
-            </button>
+              testId="rechte-add-button"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              }
+              label={t('rechte_add_user')}
+            />
           )
         }
       >
@@ -777,16 +777,14 @@ const LocationRechteTab = () => {
                   </div>
                 )}
                 <div className="location-rechte-add-actions">
-                  <button
-                    type="button"
-                    className="location-rechte-add-button"
-                    data-testid="rechte-add-confirm"
+                  <PillButton
+                    variant="accent"
+                    testId="rechte-add-confirm"
                     onClick={addUser}
                     disabled={!inviteValid || adding}
-                  >
-                    {adding && <Spinner animation="border" size="sm" />}
-                    {t('rechte_add_confirm')}
-                  </button>
+                    icon={adding ? <Spinner animation="border" size="sm" /> : undefined}
+                    label={t('rechte_add_confirm')}
+                  />
                   <button
                     type="button"
                     className="location-rechte-revoke location-rechte-cancel"

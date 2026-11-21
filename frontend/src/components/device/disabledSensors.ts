@@ -10,21 +10,3 @@
 export const DISABLED_SENSOR_FILL = '#c9c8c2';
 /** Its outline / text where the fill is too light. */
 export const DISABLED_SENSOR_STROKE = '#8e8d87';
-
-type PointLike = {
-  sensor_order?: number | null;
-  pos?: number | null;
-  disabled?: boolean | null;
-};
-
-/** The sensor orders (sensor_order, or pos of the heatmap's points) that are disabled. */
-export const disabledOrdersOf = (points: ReadonlyArray<PointLike> | null | undefined): Set<number> => {
-  const orders = new Set<number>();
-  (points ?? []).forEach((point) => {
-    const order = point.sensor_order ?? point.pos;
-    if (point.disabled && order != null) {
-      orders.add(order);
-    }
-  });
-  return orders;
-};

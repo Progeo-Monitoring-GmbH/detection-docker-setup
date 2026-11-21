@@ -24,7 +24,7 @@ const HEAT_CUTOFF = 0.001;
  */
 export type GridDomain = { lo: number; hi: number };
 
-export const UNIT_DOMAIN: GridDomain = { lo: 0, hi: 1 };
+const UNIT_DOMAIN: GridDomain = { lo: 0, hi: 1 };
 
 /** How far beyond the unit square the grid follows the sensors - a stray
  * point far off the plan must not stretch the grid over nothing. */

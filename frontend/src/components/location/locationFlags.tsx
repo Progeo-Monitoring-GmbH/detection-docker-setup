@@ -38,7 +38,7 @@ export type ReadinessLevel = 'ready' | 'almost' | 'progress' | 'open';
 export const readinessLevel = (score: number): ReadinessLevel =>
   score >= 100 ? 'ready' : score >= 80 ? 'almost' : score >= 50 ? 'progress' : 'open';
 
-export const checklistPath = (locationId: number) => `/checklist/location/?location=${locationId}`;
+const checklistPath = (locationId: number) => `/checklist/location/?location=${locationId}`;
 
 export const LOCATION_OFF_CLASS = 'location-row-off';
 

@@ -6,7 +6,7 @@ import axiosConfig from '../../axiosConfig';
 import { showRequestError } from '../ui/Snackbar.jsx';
 import type { SensorHeatmapLageplanData } from './sensorHeatmapTypes';
 
-export type HeatSigma = 'auto' | number;
+type HeatSigma = 'auto' | number;
 
 /** How long a σ change rests before it is stored - the slider sends many. */
 const SAVE_DELAY_MS = 600;

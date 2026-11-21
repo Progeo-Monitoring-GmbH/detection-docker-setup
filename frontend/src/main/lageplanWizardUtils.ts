@@ -37,20 +37,6 @@ export type WizardLocation = PickableLocation & {
 export type WizardSensor = PlacedSensor & { lageplanId: number | null };
 export type PointSource = 'cad' | 'json' | 'txt' | 'manual';
 
-export type PlanSourceMeta = {
-  fileName: string;
-  imageUrl: string;
-  offset_x: number;
-  offset_y: number;
-  scale_x: number;
-  scale_y: number;
-  flip_x: boolean;
-  flip_y: boolean;
-  reference_x: number | null;
-  reference_y: number | null;
-  meters_per_pixel: number | null;
-};
-
 export type WizardConfirmAction =
   { kind: 'plan'; plan: WizardLageplan } | { kind: 'points' };
 

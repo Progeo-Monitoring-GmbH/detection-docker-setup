@@ -8,6 +8,7 @@ import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import FoldPanel from '../components/ui/kit/FoldPanel';
+import PillButton from '../components/ui/kit/PillButton';
 import { WIZARD_ANCHORS, type WizardStep } from './lageplanWizardAnchors';
 import type {
   WizardConfirmAction,
@@ -31,6 +32,42 @@ export const Notice = ({
     data-testid={testId}
   >
     {children}
+  </div>
+);
+
+/** The wizard's title row: what it does, "Processing…", the reset. */
+export const LageplanWizardHead = ({
+  isProcessing,
+  onReset,
+}: {
+  isProcessing: boolean;
+  onReset: () => void;
+}) => (
+  <div className="lageplan-wizard-head">
+    <div>
+      <div className="lageplan-wizard-title">Lageplan wizard</div>
+      <div className="lageplan-muted">
+        Pick a location, choose or add a Lageplan, set the measure points and
+        align them on the plan.
+      </div>
+    </div>
+    {isProcessing && (
+      <span
+        className="d-flex align-items-center gap-2 lageplan-muted"
+        data-testid="lageplan-wizard-processing"
+      >
+        <Spinner animation="border" size="sm" />
+        Processing…
+      </span>
+    )}
+    <div className="ms-auto">
+      <PillButton
+        variant="ghost"
+        label="Reset"
+        onClick={onReset}
+        testId="lageplan-wizard-reset"
+      />
+    </div>
   </div>
 );
 

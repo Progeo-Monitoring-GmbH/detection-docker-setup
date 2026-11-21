@@ -59,7 +59,7 @@ const BUTTON_CLASS = 'd-inline-flex align-items-center noise-profile-btn';
 /** The panel's inner blocks: one surface, radius and padding. */
 
 /** The quick spans next to "Neu aus Zeitraum" (days up to now). */
-export const QUICK_RANGE_DAYS = [7, 30] as const;
+const QUICK_RANGE_DAYS = [7, 30] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Whether `range` is the quick span of `days` (it ends about now: within a minute of its length). */

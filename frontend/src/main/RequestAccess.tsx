@@ -133,7 +133,7 @@ const RequestAccess = () => {
           </div>
         ) : (
           <label key={field.name} className="auth-label">
-            <span className="auth-field-label">
+            <span className="progeo-field-label">
               {t(field.label)}
               {!field.required && ` (${t('access_optional')})`}
             </span>
@@ -141,7 +141,7 @@ const RequestAccess = () => {
               type={field.type || 'text'}
               autoComplete={field.autoComplete}
               required={field.required}
-              className="auth-field"
+              className="progeo-control auth-field"
               data-testid={testId('request-access', field.name)}
               {...register(field.name)}
             />
@@ -152,12 +152,12 @@ const RequestAccess = () => {
         ))}
 
         <label className="auth-label">
-          <span className="auth-field-label">
+          <span className="progeo-field-label">
             {t('access_message')} ({t('access_optional')})
           </span>
           <textarea
             rows={3}
-            className="auth-field auth-field--textarea"
+            className="progeo-control auth-field auth-field--textarea"
             data-testid="request-access-message"
             {...register('message')}
           />

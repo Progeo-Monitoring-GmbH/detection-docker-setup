@@ -51,7 +51,7 @@ const DEFAULT_LABELS: SearchableDataTableLabels = {
  */
 export const ROW_CLICK = { 'data-tag': 'allowRowEvents' } as const;
 
-/** The progeo look of DataTable (as SensorListTable): transparent rows on the
+/** The progeo look of DataTable (SensorListTable and the others use it): transparent rows on the
  * panel surface, small uppercase grey headers. */
 export const progeoTableStyles = {
   table: { style: { backgroundColor: 'transparent' } },

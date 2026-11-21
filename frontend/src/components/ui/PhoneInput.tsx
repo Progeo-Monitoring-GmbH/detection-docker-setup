@@ -64,7 +64,7 @@ const PhoneInput = ({
 
   const CLASSES = {
     field: { wrapper: 'progeo-field', label: 'progeo-field-label', input: 'progeo-field-input', select: 'progeo-field-input' },
-    auth: { wrapper: 'auth-label', label: 'auth-field-label', input: 'auth-field', select: 'auth-field' },
+    auth: { wrapper: 'auth-label', label: 'progeo-field-label', input: 'progeo-control auth-field', select: 'progeo-control auth-field' },
     bootstrap: { wrapper: '', label: 'form-label', input: 'form-control', select: 'form-select' },
   }[variant];
   const inputClass = CLASSES.input;

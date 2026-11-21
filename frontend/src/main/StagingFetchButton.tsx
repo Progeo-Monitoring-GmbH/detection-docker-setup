@@ -14,7 +14,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import { SCREEN_REVIEW_URL } from './screenReview';
 
 /** GET/POST /v1/screen-review/fetch/ (backend helper/screen_review_fetch.py). */
-export type FetchState = {
+type FetchState = {
   status: 'idle' | 'queued' | 'running' | 'done' | 'failed';
   runs?: string[];
   files?: number;
@@ -25,7 +25,7 @@ export type FetchState = {
 
 const POLL_MS = 3000;
 
-export const isFetching = (state: FetchState | null) =>
+const isFetching = (state: FetchState | null) =>
   state?.status === 'queued' || state?.status === 'running';
 
 /**

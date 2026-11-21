@@ -5,7 +5,7 @@
  * `{ code: "login_throttled", retry_after: <seconds> }`.
  */
 
-export const LOGIN_THROTTLED_CODE = 'login_throttled';
+const LOGIN_THROTTLED_CODE = 'login_throttled';
 
 interface FailedRequest {
   response?: {

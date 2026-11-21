@@ -132,7 +132,7 @@ const formatTime = (time: number, withYear = false) =>
   formatDate(time, withYear ? 'dateTime' : 'dayMonthTime');
 
 /** "1.00x" - "1,00x" in German: the locale's decimal separator; >= 10 without decimals. */
-export const formatRatio = (ratio: number, locale?: string) => {
+const formatRatio = (ratio: number, locale?: string) => {
   const digits = ratio < 10 ? 2 : 0;
   try {
     return `${ratio.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })}x`;

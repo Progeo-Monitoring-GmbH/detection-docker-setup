@@ -91,7 +91,7 @@ def back_out(x, overshoot=1.7):
 
 
 def mix(a, b, x):
-    return tuple(int(round(av + (bv - av) * x)) for av, bv in zip(a, b))
+    return tuple(round(av + (bv - av) * x) for av, bv in zip(a, b))
 
 
 def shade(color, factor):
@@ -461,10 +461,10 @@ def scene_test(canvas, t, duration):
 # ---------------------------------------------------------------------------- rendering
 
 def render_frames(step, width, height, fps):
-    name, duration, scene_name = STEPS[step]
+    _name, duration, scene_name = STEPS[step]
     scene = globals()[scene_name]
     background = Background(width, height, seed=step * 13)
-    count = int(round(duration * fps))
+    count = round(duration * fps)
     fade = 0.35  # seconds of fade at both ends - the clip loops seamlessly
     for index in range(count):
         t = index / fps

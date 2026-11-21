@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PhoneInput from '../components/ui/PhoneInput';
 import { formatPhone, isValidE164 } from '../components/ui/phone';
@@ -14,7 +15,7 @@ import { isDemoReadOnlyError } from './demo';
 import MatrixSetupModal, { type MatrixAccount } from './MatrixSetupModal';
 import './NotificationChannelCard.css';
 
-export type MobileChannel = 'sms' | 'matrix';
+type MobileChannel = 'sms' | 'matrix';
 
 type ProfileContact = {
   mobile?: string | null;
@@ -23,7 +24,7 @@ type ProfileContact = {
 };
 
 /** The channel the profile has now: the ProGeo chat once it is the messenger, else SMS. */
-export const currentChannel = (profile: ProfileContact): MobileChannel =>
+const currentChannel = (profile: ProfileContact): MobileChannel =>
   profile.messenger === 'matrix' ? 'matrix' : 'sms';
 
 /**
@@ -133,14 +134,12 @@ const NotificationChannelCard = () => {
               ? t('channel_summary_matrix', { id: matrix?.user_id || '' })
               : t('channel_summary_sms', { number: formatPhone(savedMobile) })}
           </span>
-          <button
-            type="button"
-            className="channel-button"
+          <PillButton
+            variant="surface"
             onClick={() => setEditing(true)}
-            data-testid="notification-channel-change"
-          >
-            {t('channel_change')}
-          </button>
+            testId="notification-channel-change"
+            label={t('channel_change')}
+          />
         </div>
       ) : (
         <div className="channel-form" data-testid="notification-channel-form">
@@ -172,28 +171,24 @@ const NotificationChannelCard = () => {
             </div>
           </div>
           <div className="channel-actions">
-            <button
-              type="button"
-              className="channel-button channel-button--primary"
+            <PillButton
+              variant="accent"
               onClick={save}
               disabled={!canSave}
-              data-testid="notification-channel-save"
-            >
-              {channel === 'matrix' ? t('channel_save_matrix') : t('channel_save')}
-            </button>
+              testId="notification-channel-save"
+              label={channel === 'matrix' ? t('channel_save_matrix') : t('channel_save')}
+            />
             {(savedMobile || savedChannel === 'matrix') && (
-              <button
-                type="button"
-                className="channel-button"
+              <PillButton
+                variant="surface"
                 onClick={() => {
                   setMobile(savedMobile);
                   setChannel(savedChannel);
                   setEditing(false);
                 }}
-                data-testid="notification-channel-cancel"
-              >
-                {t('rechte_cancel')}
-              </button>
+                testId="notification-channel-cancel"
+                label={t('rechte_cancel')}
+              />
             )}
           </div>
         </div>

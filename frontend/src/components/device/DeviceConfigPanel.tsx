@@ -337,7 +337,7 @@ const DeviceConfigPanel = ({
             onChange={(event) =>
               setField('measurement_interval_sec', Number(event.target.value))
             }
-            className="device-config-select"
+            className="progeo-control"
             data-testid={childTestId(testId, 'interval')}
           >
             {INTERVAL_OPTIONS.map((option) => (
@@ -356,7 +356,7 @@ const DeviceConfigPanel = ({
             onChange={(event) =>
               void changePullResistance(Number(event.target.value))
             }
-            className="device-config-select"
+            className="progeo-control"
             data-testid={childTestId(testId, 'resistance')}
           >
             {/* A value on the device outside the known choices stays visible. */}

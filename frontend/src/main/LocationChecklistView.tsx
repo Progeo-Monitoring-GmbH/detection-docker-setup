@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useSearchParams } from 'react-router';
+import { Link } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { Badge, ProgressBar, Spinner } from 'react-bootstrap';
 import {
@@ -40,6 +40,7 @@ import { wizardPath } from './lageplanWizardAnchors';
 import QaScoreboard from './QaScoreboard';
 import { QA_CHECKED_EVENT } from './qaScoreboardData';
 import { repeatedTestId } from '../testIds';
+import useLocationParam from './useLocationParam';
 import './LocationChecklistView.css';
 
 /**
@@ -78,7 +79,7 @@ type Readiness = {
 };
 
 /** A field Airtable would change: the value now and Airtable's (the product with its name). */
-export type AirtableChange = {
+type AirtableChange = {
   field: string;
   old: { value: string | number | null; label: string | number | null };
   new: { value: string | number | null; label: string | number | null };
@@ -94,7 +95,7 @@ type AirtableLink = {
 };
 
 /** The confirmed changes as the backend takes them: {field: Airtable's value}. */
-export const acceptedChanges = (
+const acceptedChanges = (
   changes: AirtableChange[],
   denied: Set<string>,
 ) =>
@@ -263,10 +264,7 @@ const LocationChecklistView = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const locationParam = Number(searchParams.get('location'));
-  const locationId =
-    Number.isInteger(locationParam) && locationParam > 0 ? locationParam : null;
+  const { locationId, selectLocation } = useLocationParam();
 
   const [locations, setLocations] = useState<PickableLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
@@ -459,16 +457,6 @@ const LocationChecklistView = () => {
     void loadReadiness(locationId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
-
-  const selectLocation = (location: PickableLocation | null) => {
-    const next = new URLSearchParams(searchParams);
-    if (location) {
-      next.set('location', String(location.id));
-    } else {
-      next.delete('location');
-    }
-    setSearchParams(next, { replace: true });
-  };
 
   const checkTitle = (key: string) => t(`readiness_check_${key}`);
 

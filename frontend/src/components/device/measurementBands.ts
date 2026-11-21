@@ -52,7 +52,7 @@ export type SignedBands = {
 };
 
 /** The `fraction` quantile of ascending `sorted` (linear between neighbours, like numpy's default). */
-export const quantileOf = (sorted: readonly number[], fraction: number): number => {
+const quantileOf = (sorted: readonly number[], fraction: number): number => {
   if (!sorted.length) {
     return Number.NaN;
   }

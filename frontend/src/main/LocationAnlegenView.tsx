@@ -24,7 +24,7 @@ type NrCheck = {
 };
 
 /** What the Objekt-Nr. field shows below itself. */
-export type NrHint =
+type NrHint =
   | { kind: 'empty' }
   | { kind: 'invalid' }
   | { kind: 'checking' }

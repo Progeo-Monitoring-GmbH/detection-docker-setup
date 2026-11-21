@@ -13,6 +13,7 @@ import {
   Trash3,
 } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { useSnackbar } from 'notistack';
@@ -250,6 +251,46 @@ const adminEditUrl = (
 ) =>
   `/aadmin/progeo/${model}/${row.id}/change/?db=${encodeURIComponent(row.database)}`;
 
+/** "vor 5 Min." with the exact time as tooltip - devices and locations alike. */
+const lastMeasurementColumn = <T extends { last_measurement_at: string | null }>(
+  t: TFunction,
+  now: number,
+): TableColumn<T> => ({
+  name: t('device_stats_col_last_measurement'),
+  selector: (row) => row.last_measurement_at ?? '',
+  sortable: true,
+  cell: (row) => (
+    <span className="small" title={formatDate(row.last_measurement_at, 'dateTime')}>
+      {formatRelativeTime(row.last_measurement_at, now)}
+    </span>
+  ),
+  width: '135px',
+});
+
+/** The pencil to the row's Django admin change form (superusers only). */
+const adminEditColumn = <T extends { id: number; database: string }>(
+  t: TFunction,
+  model: 'progeodevice' | 'progeolocation',
+  testId: string,
+): TableColumn<T> => ({
+  name: '',
+  sortable: false,
+  button: true,
+  cell: (row) => (
+    <a
+      href={adminEditUrl(model, row)}
+      target="_blank"
+      rel="noreferrer"
+      title={t('device_stats_admin_edit')}
+      aria-label={t('device_stats_admin_edit')}
+      {...repeatedTestId(testId, `${row.database}-${row.id}`)}
+    >
+      <PencilSquare size={14} />
+    </a>
+  ),
+  width: '40px',
+});
+
 /** Re-render the relative "last measurement" labels every 30 s. */
 const useNow = (intervalMs = 30_000) => {
   const [now, setNow] = useState(() => Date.now());
@@ -385,45 +426,8 @@ const DeviceList = ({
       minWidth: '130px',
       wrap: true,
     },
-    {
-      name: t('device_stats_col_last_measurement'),
-      selector: (row) => row.last_measurement_at ?? '',
-      sortable: true,
-      cell: (row) => (
-        <span
-          className="small"
-          title={formatDate(row.last_measurement_at, 'dateTime')}
-        >
-          {formatRelativeTime(row.last_measurement_at, now)}
-        </span>
-      ),
-      width: '135px',
-    },
-    ...(showAdminEdit
-      ? [
-          {
-            name: '',
-            sortable: false,
-            button: true,
-            cell: (row: StatisticsDevice) => (
-              <a
-                href={adminEditUrl('progeodevice', row)}
-                target="_blank"
-                rel="noreferrer"
-                title={t('device_stats_admin_edit')}
-                aria-label={t('device_stats_admin_edit')}
-                {...repeatedTestId(
-                  'device-stats-device-admin-edit',
-                  `${row.database}-${row.id}`,
-                )}
-              >
-                <PencilSquare size={14} />
-              </a>
-            ),
-            width: '40px',
-          },
-        ]
-      : []),
+    lastMeasurementColumn(t, now),
+    ...(showAdminEdit ? [adminEditColumn<StatisticsDevice>(t, 'progeodevice', 'device-stats-device-admin-edit')] : []),
   ];
 
   return (
@@ -530,20 +534,7 @@ const LocationList = ({
       cell: (row) => <span className="small">{row.device_count}</span>,
       width: '90px',
     },
-    {
-      name: t('device_stats_col_last_measurement'),
-      selector: (row) => row.last_measurement_at ?? '',
-      sortable: true,
-      cell: (row) => (
-        <span
-          className="small"
-          title={formatDate(row.last_measurement_at, 'dateTime')}
-        >
-          {formatRelativeTime(row.last_measurement_at, now)}
-        </span>
-      ),
-      width: '135px',
-    },
+    lastMeasurementColumn(t, now),
     {
       name: t('device_stats_col_points'),
       selector: (row) => row.point_count,
@@ -632,31 +623,7 @@ const LocationList = ({
           },
         ]
       : []),
-    ...(showAdminEdit
-      ? [
-          {
-            name: '',
-            sortable: false,
-            button: true,
-            cell: (row: StatisticsLocation) => (
-              <a
-                href={adminEditUrl('progeolocation', row)}
-                target="_blank"
-                rel="noreferrer"
-                title={t('device_stats_admin_edit')}
-                aria-label={t('device_stats_admin_edit')}
-                {...repeatedTestId(
-                  'device-stats-location-admin-edit',
-                  `${row.database}-${row.id}`,
-                )}
-              >
-                <PencilSquare size={14} />
-              </a>
-            ),
-            width: '40px',
-          },
-        ]
-      : []),
+    ...(showAdminEdit ? [adminEditColumn<StatisticsLocation>(t, 'progeolocation', 'device-stats-location-admin-edit')] : []),
   ];
 
   return (

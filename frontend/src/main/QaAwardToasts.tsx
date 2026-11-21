@@ -15,7 +15,7 @@ import {
 } from './qaScoreboardData';
 
 /** How often new points are looked for while the live socket is down. */
-export const QA_POLL_MS = 60_000;
+const QA_POLL_MS = 60_000;
 /** The socket's heartbeat comes every 20 s (backend) - silence this long: reconnect. */
 const SOCKET_WATCHDOG_MS = 60_000;
 const RECONNECT_MIN_MS = 5_000;
@@ -151,5 +151,3 @@ export const QaAwardToasts = () => {
 
   return null;
 };
-
-export default QaAwardToasts;

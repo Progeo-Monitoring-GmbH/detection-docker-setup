@@ -95,13 +95,13 @@ const LoginForm = () => {
           data-testid="login-otp-form"
         >
           <label className="auth-label">
-            <span className="auth-field-label">{t('login_otp_code')}</span>
+            <span className="progeo-field-label">{t('login_otp_code')}</span>
             <input
               type="text"
               autoComplete="one-time-code"
               autoFocus
               required
-              className="auth-field"
+              className="progeo-control auth-field"
               data-testid="login-otp"
               {...register('otp')}
             />
@@ -149,26 +149,26 @@ const LoginForm = () => {
       >
         <label className="auth-label">
           {/* Login with the email address only (backend CaseInsensitiveEmailBackend). */}
-          <span className="auth-field-label">{t('login_email')}</span>
+          <span className="progeo-field-label">{t('login_email')}</span>
           <input
             type="email"
             autoComplete="username"
             autoFocus
             required
-            className="auth-field"
+            className="progeo-control auth-field"
             data-testid="login-username"
             {...register('username')}
           />
         </label>
 
         <label className="auth-label">
-          <span className="auth-field-label">{t('login_password')}</span>
+          <span className="progeo-field-label">{t('login_password')}</span>
           <span className="auth-password-wrap">
             <input
               type={showPasswd ? 'text' : 'password'}
               autoComplete="current-password"
               required
-              className="auth-field auth-field--password"
+              className="progeo-control auth-field auth-field--password"
               data-testid="login-password"
               {...register('password')}
             />

@@ -17,7 +17,7 @@ const useLatest = (value) => {
 };
 
 /** The key that turns dragging into "zoom to this area". */
-export const AREA_ZOOM_KEY = 'z';
+const AREA_ZOOM_KEY = 'z';
 
 const isTypingTarget = (target) =>
   target instanceof HTMLElement &&

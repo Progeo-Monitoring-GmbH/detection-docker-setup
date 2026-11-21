@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate } from 'react-router';
 import {
   Activity,
   ArrowClockwise,
@@ -30,6 +30,7 @@ import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { staffFlags } from './access';
 import { repeatedTestId } from '../testIds';
+import useLocationParam from './useLocationParam';
 import './DeviceListView.css';
 
 type HashKind = 'project' | 'mac' | 'legacy';
@@ -126,7 +127,6 @@ const DeviceListView = () => {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
-  const [searchParams, setSearchParams] = useSearchParams();
   // Ping is a staff tool (is_staff_admin in the backend).
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   // Controller commands: staff or module_devices_commands (also queueing them).
@@ -160,8 +160,7 @@ const DeviceListView = () => {
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
 
-  const locationParam = Number(searchParams.get('location'));
-  const locationId = Number.isInteger(locationParam) && locationParam > 0 ? locationParam : null;
+  const { locationId, selectLocation } = useLocationParam();
 
   const loadLocations = () =>
     axiosConfig.perform_get(
@@ -232,16 +231,6 @@ const DeviceListView = () => {
     void loadOverview(locationId, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
-
-  const selectLocation = (location: PickableLocation | null) => {
-    const next = new URLSearchParams(searchParams);
-    if (location) {
-      next.set('location', String(location.id));
-    } else {
-      next.delete('location');
-    }
-    setSearchParams(next, { replace: true });
-  };
 
   // -- delete ------------------------------------------------------------------
 

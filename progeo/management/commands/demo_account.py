@@ -12,6 +12,7 @@ from django.core.management.base import CommandError
 from django.db import connections, transaction
 from django.utils import timezone
 
+from progeo.helper import e2e
 from progeo.helper.demo import (
     DEMO_ACCOUNT_HASH,
     DEMO_ACCOUNT_NAME,
@@ -21,7 +22,6 @@ from progeo.helper.demo import (
     DEMO_USERNAME,
     demo_email,
 )
-from progeo.helper import e2e
 from progeo.helper.project_db_signals import _delete_in_project_db
 from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand

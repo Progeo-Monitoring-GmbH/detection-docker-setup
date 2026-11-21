@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
  * fewer columns, KPIs two by two, the top bar as icons). The CSS uses the
  * same width in its @media rules.
  */
-export const PHONE_QUERY = '(max-width: 640px)';
+const PHONE_QUERY = '(max-width: 640px)';
 
 type Store = { subscribe: (onChange: () => void) => () => void; snapshot: () => boolean };
 

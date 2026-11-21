@@ -71,7 +71,7 @@ const MagicLinkLogin = () => {
       <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')} testId="page-magic-link-login">
         <form onSubmit={onLogin} className="auth-form" data-testid="magic-link-login-otp-form">
           <label className="auth-label">
-            <span className="auth-field-label">{t('login_otp_code')}</span>
+            <span className="progeo-field-label">{t('login_otp_code')}</span>
             <input
               type="text"
               autoComplete="one-time-code"
@@ -79,7 +79,7 @@ const MagicLinkLogin = () => {
               required
               value={otp}
               onChange={(event) => setOtp(event.target.value)}
-              className="auth-field"
+              className="progeo-control auth-field"
               data-testid="magic-link-login-otp"
             />
           </label>

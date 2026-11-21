@@ -10,7 +10,7 @@ import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import './AlarmHistoryTable.css';
 
-export const ALARM_HISTORY_PAGE_SIZE = 25;
+const ALARM_HISTORY_PAGE_SIZE = 25;
 
 type AlarmHistoryTableProps = {
   entries: AlarmHistoryEntry[];

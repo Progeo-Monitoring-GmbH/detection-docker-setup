@@ -3,7 +3,9 @@ import {
   clearStatusView,
   currentStatusView,
   parseStatusView,
+  rangeForMoment,
   rangeReaches,
+  requestedSettings,
   statusViewPath,
   updateStatusView,
   type StatusViewState,
@@ -101,5 +103,78 @@ describe('"Letzte Messung" (range=latest)', () => {
     const now = Date.now();
     expect(rangeReaches('latest', now - 1_000, now)).toBe(false);
     expect(rangeReaches('24h', now - 1_000, now)).toBe(true);
+  });
+});
+
+describe('requestedSettings (the URL applied on the page)', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+  const candidates = ['24h', '7d', '30d', '1y'] as const;
+  const settings = (
+    requested: Parameters<typeof requestedSettings>[0],
+    at: number | null,
+    { staff = false, ranges = candidates as readonly ('24h' | '7d' | '30d' | '1y')[] } = {},
+  ) => requestedSettings(requested, at, now, ranges, staff);
+
+  it('takes what is asked for without a moment', () => {
+    expect(
+      settings({ view: 'zeitreihe', range: '30d', step: 7200, sensor: 3 }, null),
+    ).toEqual({ view: 'zeitreihe', range: '30d', step: 7200, sensor: 3 });
+    expect(settings({}, null)).toEqual({});
+  });
+
+  it('takes the heat profile for staff only', () => {
+    expect(settings({ profile: 'wp' }, null).profile).toBeUndefined();
+    expect(settings({ profile: 'wp' }, null, { staff: true }).profile).toBe('wp');
+  });
+
+  it('keeps range and step while the range reaches back to the moment', () => {
+    const at = Date.parse('2026-11-15T12:00:00Z');
+    expect(settings({ range: '7d', step: 3600 }, at)).toEqual({
+      range: '7d',
+      step: 3600,
+    });
+  });
+
+  it('picks the shortest range reaching the moment - its default step, the roof view', () => {
+    const at = Date.parse('2026-11-01T12:00:00Z');
+    expect(settings({ range: '7d', step: 3600 }, at)).toEqual({
+      view: 'roof',
+      range: '30d',
+      step: null,
+    });
+    expect(settings({}, at)).toEqual({ view: 'roof', range: '30d', step: null });
+  });
+
+  it('keeps a requested view', () => {
+    const at = Date.parse('2026-11-01T12:00:00Z');
+    expect(settings({ view: 'zeitreihe', range: 'latest' }, at)).toEqual({
+      view: 'zeitreihe',
+      range: '30d',
+      step: null,
+    });
+  });
+
+  it('changes no range without candidates', () => {
+    const at = Date.parse('2026-11-01T12:00:00Z');
+    expect(settings({}, at, { ranges: [] })).toEqual({ view: 'roof' });
+  });
+});
+
+describe('rangeForMoment ("Erstes Auftreten anzeigen")', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+
+  it('stays while the range reaches back to the moment', () => {
+    expect(
+      rangeForMoment('7d', Date.parse('2026-11-15T12:00:00Z'), now, ['24h', '7d', '30d']),
+    ).toBeNull();
+  });
+
+  it('switches to the shortest offered range that does', () => {
+    expect(
+      rangeForMoment('7d', Date.parse('2026-11-01T12:00:00Z'), now, ['24h', '7d', '30d']),
+    ).toBe('30d');
+    expect(
+      rangeForMoment('latest', now - 60_000, now, ['24h', '7d']),
+    ).toBe('24h');
   });
 });

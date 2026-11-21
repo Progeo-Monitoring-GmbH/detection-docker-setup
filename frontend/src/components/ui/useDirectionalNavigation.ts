@@ -109,7 +109,7 @@ const ARROWS_BY_DIRECTION: Record<Direction, true> = {
 };
 
 /** A swipe's at least this long (px), and clearly more one way than the other. */
-export const SWIPE_MIN = 50;
+const SWIPE_MIN = 50;
 
 /**
  * Which way a finger moved by (dx, dy): the content follows it, so a swipe

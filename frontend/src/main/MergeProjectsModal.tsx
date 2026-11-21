@@ -9,7 +9,7 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import LabeledInput from '../components/ui/kit/LabeledInput';
-import { locationLabel, type SelectedLocation } from './locationSelection';
+import { selectedLocationLabel, type SelectedLocation } from './locationSelection';
 import './LocationSelection.css';
 
 /** Answer of GET /v1/location-selection/project-id/ - never names who uses a number. */
@@ -120,7 +120,7 @@ const MergeProjectsModal = ({
           data-testid="merge-projects-parts"
         >
           {locations.map((location) => (
-            <li key={location.id}>{locationLabel(location)}</li>
+            <li key={location.id}>{selectedLocationLabel(location)}</li>
           ))}
         </ul>
         <div className="location-selection-names">

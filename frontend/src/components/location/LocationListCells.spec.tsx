@@ -13,7 +13,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const { locationAddressLine, isRecentMeasurement, LocationNameCell, TwoLineCell } = await import(
+const { isRecentMeasurement, LocationNameCell, TwoLineCell } = await import(
   './LocationListCells'
 );
 
@@ -29,17 +29,6 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-});
-
-describe('locationAddressLine', () => {
-  it('joins street, postcode and city - only the parts that exist', () => {
-    expect(locationAddressLine({ address: 'Hauptstr. 1', plz: '12345', city: 'Berlin' })).toBe(
-      'Hauptstr. 1, 12345 Berlin',
-    );
-    expect(locationAddressLine({ address: ' ', plz: null, city: 'Berlin' })).toBe('Berlin');
-    expect(locationAddressLine({ address: 'Hauptstr. 1' })).toBe('Hauptstr. 1');
-    expect(locationAddressLine({})).toBe('');
-  });
 });
 
 describe('isRecentMeasurement', () => {

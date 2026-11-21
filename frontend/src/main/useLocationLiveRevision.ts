@@ -4,11 +4,11 @@ import axiosConfig from '../axiosConfig';
 import { getWsBaseUrl } from '../backendUrl';
 
 /** The socket of a location's status pages (backend LocationStatusConsumer). */
-export const locationStatusSocketPath = (locationId: number) =>
+const locationStatusSocketPath = (locationId: number) =>
   `/ws/location/${locationId}/status/`;
 
 /** The cheap "is there new data?" check of a location. */
-export const latestMeasurementUrl = (locationId: number) =>
+const latestMeasurementUrl = (locationId: number) =>
   `/v1/location/${locationId}/latest-measurement/`;
 
 /** The backend's heartbeat comes every 20 s - silence this long: reconnect. */
@@ -27,7 +27,7 @@ export const CLOSE_UNAUTHENTICATED = 4401;
 /** The check runs this often while the socket is down... */
 export const LIVE_CHECK_MS = 60_000;
 /** ...and this often while it is up - in case an announcement got lost. */
-export const LIVE_CHECK_SOCKET_MS = 5 * 60_000;
+const LIVE_CHECK_SOCKET_MS = 5 * 60_000;
 
 /** The SPA's login (a JWT): the socket's first message - a browser can't
  * send headers with a websocket, and magic-link logins have no session. */
@@ -272,5 +272,3 @@ export const useLocationLiveRevision = (
 
   return revision;
 };
-
-export default useLocationLiveRevision;

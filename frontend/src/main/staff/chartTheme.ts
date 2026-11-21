@@ -12,10 +12,10 @@ import type { Config } from 'plotly.js';
 
 export const SERIES = '#1f62a3';
 export const ACCENT = '#eb633b';
-export const INK = '#3f3f3c';
-export const MUTED = '#6b6a64';
-export const GRID = '#e1e0d9';
-export const AXIS = '#c3c2b7';
+const INK = '#3f3f3c';
+const MUTED = '#6b6a64';
+const GRID = '#e1e0d9';
+const AXIS = '#c3c2b7';
 
 export const STATUS_COLORS = {
   active: '#0ca30c',

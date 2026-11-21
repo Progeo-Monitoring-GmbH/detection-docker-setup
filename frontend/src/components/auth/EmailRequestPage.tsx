@@ -77,7 +77,7 @@ const EmailRequestPage = ({
       {notice}
       <form onSubmit={onSubmit} className="auth-form" data-testid="email-request-form">
         <label className="auth-label">
-          <span className="auth-field-label">{t('access_email')}</span>
+          <span className="progeo-field-label">{t('access_email')}</span>
           <input
             type="email"
             autoComplete="email"
@@ -85,7 +85,7 @@ const EmailRequestPage = ({
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="auth-field"
+            className="progeo-control auth-field"
             data-testid="email-request-email"
           />
         </label>

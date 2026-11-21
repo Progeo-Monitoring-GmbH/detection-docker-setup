@@ -36,26 +36,6 @@
   min-width: 0;
 }
 
-.objekt-field-label {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-.objekt-select {
-  height: 40px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  padding: 0 13px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--progeo-blue);
-}
-
 .objekt-save {
   height: 40px;
   padding: 0 20px;

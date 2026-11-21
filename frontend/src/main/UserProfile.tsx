@@ -9,6 +9,7 @@ import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import PhoneInput from '../components/ui/PhoneInput';
 import { isPhoneSavable } from '../components/ui/phone';
@@ -444,13 +445,13 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                   <PhoneInput label={t('profile_mobile')} value={mobile} onChange={setMobile} testId="user-profile-mobile" />
                 </div>
                 <label className="profile-field">
-                  <span className="profile-field-label">
+                  <span className="progeo-field-label">
                     {t('profile_language')}
                   </span>
                   <select
                     value={language}
                     onChange={(event) => setLanguage(event.target.value)}
-                    className="profile-select"
+                    className="progeo-control"
                     data-testid="user-profile-language"
                   >
                     <option value="de">Deutsch</option>
@@ -464,34 +465,35 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
               <div className="profile-section-label">{t('profile_section_access')}</div>
               <div className="profile-actions">
                 {!isDemo && (
-                  <button type="button" className="profile-button profile-action" onClick={openRequest} data-testid="user-profile-request-access">
-                    <Envelope size={15} aria-hidden="true" />
-                    {t('profile_request_access')}
-                  </button>
+                  <PillButton
+                    variant="surface"
+                    onClick={openRequest}
+                    testId="user-profile-request-access"
+                    icon={<Envelope size={15} aria-hidden="true" />}
+                    label={t('profile_request_access')}
+                  />
                 )}
                 {hasUsablePassword ? (
-                  <button
-                    type="button"
-                    className={`profile-button profile-action${passwordMode === 'change' ? ' profile-action--open' : ''}`}
+                  <PillButton
+                    variant="surface"
+                    className={passwordMode === 'change' ? 'profile-action--open' : undefined}
                     onClick={() => togglePasswordMode('change')}
-                    aria-expanded={passwordMode === 'change'}
-                    data-testid="user-profile-change-password"
-                  >
-                    <Key size={15} aria-hidden="true" />
-                    {t('profile_change_password')}
-                  </button>
+                    ariaExpanded={passwordMode === 'change'}
+                    testId="user-profile-change-password"
+                    icon={<Key size={15} aria-hidden="true" />}
+                    label={t('profile_change_password')}
+                  />
                 ) : (
-                  <button
-                    type="button"
-                    className={`profile-button profile-action${passwordMode === 'set' ? ' profile-action--open' : ''}`}
+                  <PillButton
+                    variant="surface"
+                    className={passwordMode === 'set' ? 'profile-action--open' : undefined}
                     onClick={() => togglePasswordMode('set')}
                     disabled={!twoFactorEnabled}
-                    aria-expanded={passwordMode === 'set'}
-                    data-testid="user-profile-set-password"
-                  >
-                    <Key size={15} aria-hidden="true" />
-                    {t('profile_set_password')}
-                  </button>
+                    ariaExpanded={passwordMode === 'set'}
+                    testId="user-profile-set-password"
+                    icon={<Key size={15} aria-hidden="true" />}
+                    label={t('profile_set_password')}
+                  />
                 )}
               </div>
               {!hasUsablePassword && (
@@ -565,15 +567,13 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     type="password"
                     testId="user-profile-confirm-password"
                   />
-                  <button
-                    type="button"
-                    className="profile-button profile-button--primary profile-action"
+                  <PillButton
+                    variant="accent"
                     onClick={changePassword}
                     disabled={isSavingPassword || !isPasswordInputValid}
-                    data-testid="user-profile-save-password"
-                  >
-                    {isSavingPassword ? t('profile_saving') : t('profile_save_password')}
-                  </button>
+                    testId="user-profile-save-password"
+                    label={isSavingPassword ? t('profile_saving') : t('profile_save_password')}
+                  />
                 </div>
               )}
             </section>
@@ -590,15 +590,13 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                   </span>
                 </div>
                 <div className="profile-actions">
-                  <button
-                    type="button"
-                    className="profile-button profile-action"
+                  <PillButton
+                    variant="surface"
                     onClick={() => setTwoFactorOpen(true)}
-                    data-testid="user-profile-two-factor-open"
-                  >
-                    <ShieldLock size={15} aria-hidden="true" />
-                    {twoFactorEnabled ? t('tfa_manage_button') : t('tfa_setup_button')}
-                  </button>
+                    testId="user-profile-two-factor-open"
+                    icon={<ShieldLock size={15} aria-hidden="true" />}
+                    label={twoFactorEnabled ? t('tfa_manage_button') : t('tfa_setup_button')}
+                  />
                 </div>
               </section>
             )}
@@ -621,23 +619,19 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         )}
 
         <div className="profile-foot">
-          <button
-            type="button"
+          <PillButton
+            variant="accent"
             onClick={save}
             disabled={saving || loading}
-            className="profile-button profile-button--primary"
-            data-testid="user-profile-save"
-          >
-            {saving ? t('profile_saving') : t('profile_save_settings')}
-          </button>
-          <button
-            type="button"
+            testId="user-profile-save"
+            label={saving ? t('profile_saving') : t('profile_save_settings')}
+          />
+          <PillButton
+            variant="surface"
             onClick={onHide}
-            className="profile-button"
-            data-testid="user-profile-footer-close"
-          >
-            {t('profile_close')}
-          </button>
+            testId="user-profile-footer-close"
+            label={t('profile_close')}
+          />
         </div>
       </div>
 
@@ -671,7 +665,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                   rows={3}
                   value={requestMessage}
                   onChange={(event) => setRequestMessage(event.target.value)}
-                  className="profile-textarea"
+                  className="progeo-control profile-textarea"
                   data-testid="user-profile-request-access-message"
                 />
               </label>

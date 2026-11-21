@@ -17,7 +17,7 @@ import type { HeatLimitation, SensorHeatmapLageplanData } from './sensorHeatmapT
 import './HeatLimitationEditor.css';
 
 /** The area being drawn: a new one (id null) or a copy of an existing one. */
-export type HeatLimitationDraft = { id: string | null; name: string; points: Point[] };
+type HeatLimitationDraft = { id: string | null; name: string; points: Point[] };
 
 const DRAFT_COLOR = plotTheme.brandOrange;
 const AREA_COLOR = plotTheme.brandBlue;

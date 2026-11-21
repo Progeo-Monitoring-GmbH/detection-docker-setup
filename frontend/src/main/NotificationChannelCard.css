@@ -76,26 +76,3 @@
   padding-left: 36px;
 }
 
-.channel-button {
-  height: 36px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 10px;
-  background: var(--progeo-surface);
-  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
-  color: var(--progeo-blue);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.channel-button--primary {
-  background: var(--progeo-orange);
-  color: #fff;
-}
-
-.channel-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}

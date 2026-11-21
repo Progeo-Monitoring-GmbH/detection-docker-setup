@@ -23,18 +23,6 @@
   gap: 5px;
 }
 
-.device-config-select {
-  height: 40px;
-  padding: 0 13px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  color: var(--progeo-blue);
-  font-family: inherit;
-  font-size: 14px;
-}
-
 /* PE geschaltet: text and hint beside the yes / no switch. */
 .device-config-switch {
   display: flex;

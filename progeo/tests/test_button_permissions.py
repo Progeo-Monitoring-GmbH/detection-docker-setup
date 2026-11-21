@@ -2,12 +2,10 @@
 the admin panel's sections and the user actions - without them the backend
 refuses, staff included (decorator.holds_permission); only superusers pass.
 grant_button_permissions gave them to everyone who could act before."""
-from io import StringIO
 
 import pytest
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
-from django.core.management import call_command
 from django.test import RequestFactory
 
 from progeo.helper.button_permissions import implied_permissions

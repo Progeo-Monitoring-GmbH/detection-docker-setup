@@ -5,7 +5,7 @@ import type { StatusViewState } from './statusViewState';
 import { timeRangeLabelKey } from './timeRanges';
 
 /** A Zeitreihe entry id as a short label: "sensor-3" -> "#3", "3:0" -> "#3.1". */
-export const sensorEntryLabel = (id: string) => {
+const sensorEntryLabel = (id: string) => {
   const whole = /^sensor-(\d+)$/.exec(id);
   if (whole) {
     return `#${whole[1]}`;

@@ -11,7 +11,7 @@ import { childTestId } from '../../testIds';
 import './LegacyGprsConfigPanel.css';
 
 /** The answer's interval has 4 digits (seconds). */
-export const LEGACY_MAX_INTERVAL = 9999;
+const LEGACY_MAX_INTERVAL = 9999;
 
 type LegacyValues = {
   interval: number | null;
@@ -244,7 +244,7 @@ const LegacyGprsConfigPanel = ({
               onChange={(event) =>
                 setField('interval', Number(event.target.value))
               }
-              className="legacy-config-select"
+              className="progeo-control"
               data-testid={childTestId(testId, 'interval')}
             >
               {legacyIntervalOptions(form.interval).map((option) => (
@@ -263,7 +263,7 @@ const LegacyGprsConfigPanel = ({
             onChange={(event) =>
               setField('pull_resistance', Number(event.target.value))
             }
-            className="legacy-config-select"
+            className="progeo-control"
             data-testid={childTestId(testId, 'resistance')}
           >
             {RESISTANCE_OPTIONS.map((option) => (

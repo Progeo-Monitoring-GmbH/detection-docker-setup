@@ -92,7 +92,7 @@ type LocationPlanPanelProps = {
  * plan's aspect), but stays within about three quarters of the window - a
  * tall plan keeps empty bands beside it instead of needing a scroll.
  */
-export const planMaxHeight = (windowHeight: number) =>
+const planMaxHeight = (windowHeight: number) =>
   Math.round(Math.min(900, Math.max(420, windowHeight * 0.75)));
 
 const usePlanMaxHeight = () => {

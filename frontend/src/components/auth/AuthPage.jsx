@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { COMPANY, telHref } from '../../main/company';
 import LanguageSwitch from '../ui/LanguageSwitch';
+// The kit's field classes (progeo-control, progeo-field-label) first, then
+// the auth pages' own sizes on top.
+import '../ui/kit/kit.css';
 import './Auth.css';
 
 /**

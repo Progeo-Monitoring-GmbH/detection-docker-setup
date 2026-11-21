@@ -109,7 +109,7 @@ type ApplyResult = {
 type Filter = 'all' | 'applied' | Action;
 
 /** The threshold the location should have now: the scanned one, or the one applied from this file. */
-export const expectedThreshold = (entry: FineTuneEntry) =>
+const expectedThreshold = (entry: FineTuneEntry) =>
   entry.applied?.new ?? entry.current_threshold;
 
 /** Where the slider starts: the proposal, else the threshold now. */

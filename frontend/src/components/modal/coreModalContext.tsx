@@ -29,4 +29,4 @@ const ModalProvider = ({ children }) => {
   );
 };
 
-export { CoreModalContext, ModalProvider };
+export { ModalProvider };

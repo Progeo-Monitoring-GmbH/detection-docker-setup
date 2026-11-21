@@ -26,7 +26,10 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper import device_commands, firmware_update
-from progeo.helper.alarm_evaluation import evaluate_live_sample, evaluate_measurement_instantly
+from progeo.helper.alarm_evaluation import (
+    evaluate_live_sample,
+    evaluate_measurement_instantly,
+)
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log

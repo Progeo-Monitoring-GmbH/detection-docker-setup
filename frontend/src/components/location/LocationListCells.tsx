@@ -13,20 +13,9 @@ import './locationList.css';
  */
 export const LOCATION_LIST_CLASS = 'location-list';
 
-type AddressParts = {
-  address?: string | null;
-  plz?: string | null;
-  city?: string | null;
-};
-
-/** "Hauptstr. 1, 12345 Berlin" - the parts that exist, '' without any. */
-export const locationAddressLine = ({ address, plz, city }: AddressParts): string => {
-  const place = [plz?.trim(), city?.trim()].filter(Boolean).join(' ');
-  return [address?.trim(), place].filter(Boolean).join(', ');
-};
 
 /** A measurement this recent counts as "online" (green) in the lists. */
-export const RECENT_MEASUREMENT_HOURS = 24;
+const RECENT_MEASUREMENT_HOURS = 24;
 
 /** Is `timestamp` within RECENT_MEASUREMENT_HOURS before `now`? */
 export const isRecentMeasurement = (timestamp: string | null | undefined, now: number = Date.now()): boolean => {

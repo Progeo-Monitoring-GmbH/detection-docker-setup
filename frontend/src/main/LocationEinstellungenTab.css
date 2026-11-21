@@ -40,26 +40,6 @@
   gap: 5px;
 }
 
-.einstell-field-label {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-.einstell-select {
-  height: 40px;
-  border: none;
-  border-radius: 11px;
-  background: var(--progeo-surface);
-  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
-  padding: 0 13px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--progeo-blue);
-}
-
 .einstell-row-text {
   flex: 1;
   min-width: 180px;

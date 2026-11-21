@@ -5,7 +5,7 @@ import './kit.css';
 import './FoldPanel.css';
 
 /** The fold toggle's test id - one per panel, told apart by data-test-key (the panel's test id). */
-export const FOLD_TOGGLE_TEST_ID = 'fold-toggle';
+const FOLD_TOGGLE_TEST_ID = 'fold-toggle';
 
 type FoldPanelProps = {
   /** The header - the toggle's label (a click on it folds / unfolds). */

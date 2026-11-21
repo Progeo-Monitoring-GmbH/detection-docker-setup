@@ -173,6 +173,11 @@
   color: #6e6868;
 }
 
+.progeo-pill--surface:not(.progeo-pill--active) {
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+}
+
 .progeo-pill--accent:not(.progeo-pill--active) {
   background: var(--progeo-orange);
   box-shadow: var(--progeo-shadow-chrome);
@@ -341,8 +346,12 @@
   color: #a39c9c;
 }
 
+/* The soft form control: no border, the panel surface, a light shadow -
+   selects of the settings / profile tabs, the auth pages' inputs (Auth.css
+   adds their size) and, as .progeo-field-input, LabeledInput's input. A
+   select keeps .progeo-control alone: it would match :read-only below. */
+.progeo-control,
 .progeo-field-input {
-  width: 100%;
   height: 40px;
   padding: 0 13px;
   border: none;
@@ -352,6 +361,10 @@
   color: var(--progeo-blue);
   font-family: inherit;
   font-size: 14px;
+}
+
+.progeo-field-input {
+  width: 100%;
   font-weight: 400;
 }
 

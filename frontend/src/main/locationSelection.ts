@@ -15,7 +15,7 @@ export type SelectedLocation = {
 };
 
 /** "#4700 Halle Nord" - the project number first, as in the overview. */
-export const locationLabel = (location: SelectedLocation) =>
+export const selectedLocationLabel = (location: SelectedLocation) =>
   [
     location.project_id != null ? `#${location.project_id}` : null,
     location.name,
@@ -25,7 +25,7 @@ export const locationLabel = (location: SelectedLocation) =>
 
 /** The selection in one line: up to three names, then "+ n more". */
 export const selectionLabel = (locations: SelectedLocation[], t: TFunction) => {
-  const shown = locations.slice(0, 3).map(locationLabel).join(', ');
+  const shown = locations.slice(0, 3).map(selectedLocationLabel).join(', ');
   const more = locations.length - 3;
   return more > 0 ? `${shown} ${t('selection_more', { count: more })}` : shown;
 };

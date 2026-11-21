@@ -36,7 +36,7 @@ const StepText = ({ step }: { step: ModalStep }) => {
 };
 
 /** How a dialog is opened on its page: the steps in order, then the dialog's test id. */
-export const ModalSteps = ({
+const ModalSteps = ({
   modal,
   device,
   role,

@@ -23,7 +23,6 @@ export {
   formatDuration,
   isAlarmActive,
   parseTimestamp,
-  type TimelineAlarm,
 } from './alarmUtils';
 import { formatDate } from './dateFormat';
 import { childTestId } from '../testIds';

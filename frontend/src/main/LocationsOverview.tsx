@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { matchesLocationSearch } from '../components/location/locationSearch';
+import { locationAddressLine, matchesLocationSearch } from '../components/location/locationSearch';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
@@ -40,7 +40,6 @@ import {
   LocationNameCell,
   TwoLineCell,
   isRecentMeasurement,
-  locationAddressLine,
 } from '../components/location/LocationListCells';
 
 import { untaggedRowClick } from './wholeRowClick';
@@ -497,7 +496,7 @@ const LocationMobileStateCell = ({
  * loading (sortLoadedFirst puts those last). The table sorts through this
  * (sortServer), so the rows on screen are known and loaded first.
  */
-export const sortValueOf = (
+const sortValueOf = (
   columnId: string,
   row: LocationRow,
   summary: LocationAlarmSummary | undefined,
