@@ -20,7 +20,11 @@ STAGING_SCREENS_REMOTE_PATH = detection-docker-setup/media/uploads/e2e
 media mount).
 
 A run is downloaded into <run>.part/ and renamed when complete - the
-gallery never lists half a run (screen_review.RUN_RE ignores the .part).
+gallery never lists half a run (no run's name has a dot, screen_review.is_run_name).
+
+Folders made by hand (screenshots from elsewhere, screen_review.py) come
+along like the capture's runs: every folder with a run's name that holds at
+least one screenshot - in pc/, mobile/ or beside them.
 """
 import shutil
 import stat
@@ -97,28 +101,71 @@ def _remote_runs(sftp, base) -> list:
         names = sftp.listdir(base)
     except OSError as exc:
         raise FetchError(f"{base} on the staging server: {exc}") from exc
-    return sorted(name for name in names if screen_review.RUN_RE.match(name))
+    # The capture's runs (date stamps) first, oldest first; then the folders made by hand.
+    dated = sorted(name for name in names if screen_review.RUN_RE.match(name))
+    by_hand = sorted(name for name in names if screen_review.is_run_name(name) and name not in dated
+                     and _has_screenshot(sftp, f"{base}/{name}"))
+    return dated + by_hand
+
+
+def _is_dir(entry) -> bool:
+    return stat.S_ISDIR(entry.st_mode or 0)
+
+
+def _is_file(entry) -> bool:
+    return stat.S_ISREG(entry.st_mode or 0)
+
+
+def _screenshot_files(entries) -> list:
+    """The names of a remote folder's files a run consists of: its
+    screenshots and the element lists of those (screen_review_elements) -
+    nothing else of the folder comes along."""
+    images = {entry.filename for entry in entries if _is_file(entry) and screen_review.is_image_name(entry.filename)}
+    lists = {entry.filename for entry in entries
+             if _is_file(entry) and screen_review_elements.image_name_of(entry.filename) in images}
+    return sorted(images | lists)
+
+
+def _has_screenshot(sftp, folder) -> bool:
+    """Whether the remote `folder` is a run made by hand: a directory with a
+    screenshot in it, its pc/ or its mobile/ (not just any folder there)."""
+    try:
+        entries = sftp.listdir_attr(folder)
+    except OSError:
+        return False  # a file, or unreadable
+    if any(_is_file(entry) and screen_review.is_image_name(entry.filename) for entry in entries):
+        return True
+    for entry in entries:
+        if entry.filename in _FOLDERS and _is_dir(entry):
+            try:
+                inner = sftp.listdir_attr(f"{folder}/{entry.filename}")
+            except OSError:
+                continue
+            if any(_is_file(image) and screen_review.is_image_name(image.filename) for image in inner):
+                return True
+    return False
 
 
 def _download_run(sftp, base, run, target):
     """The run's manifest and screenshots into `target` (a fresh folder)."""
     target.mkdir(parents=True)
     count = 0
-    for entry in sftp.listdir_attr(f"{base}/{run}"):
+    entries = sftp.listdir_attr(f"{base}/{run}")
+    for entry in entries:
         source = f"{base}/{run}/{entry.filename}"
-        if entry.filename == "manifest.json" and stat.S_ISREG(entry.st_mode or 0):
+        if entry.filename == "manifest.json" and _is_file(entry):
             sftp.get(source, str(target / entry.filename))
             count += 1
-        elif entry.filename in _FOLDERS and stat.S_ISDIR(entry.st_mode or 0):
+        elif entry.filename in _FOLDERS and _is_dir(entry):
             folder = target / entry.filename
             folder.mkdir()
-            for image in sftp.listdir_attr(source):
-                # Screenshots and their element lists (screen_review_elements) only -
-                # nothing else of the remote folder comes along.
-                name = screen_review_elements.image_name_of(image.filename) or image.filename
-                if stat.S_ISREG(image.st_mode or 0) and screen_review.parse_image_name(name):
-                    sftp.get(f"{source}/{image.filename}", str(folder / image.filename))
-                    count += 1
+            for name in _screenshot_files(sftp.listdir_attr(source)):
+                sftp.get(f"{source}/{name}", str(folder / name))
+                count += 1
+    # A folder made by hand: screenshots beside pc/ and mobile/.
+    for name in _screenshot_files(entries):
+        sftp.get(f"{base}/{run}/{name}", str(target / name))
+        count += 1
     return count
 
 

@@ -44,7 +44,8 @@ class ScreenReviewViewSet(viewsets.ViewSet):
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
     lookup_field = "run"
-    lookup_value_regex = r"\d{4}-\d{2}-\d{2}_\d{6}"
+    # A capture's date stamp, or a folder made by hand (screen_review.RUN_NAME_RE).
+    lookup_value_regex = r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}"
 
     @require_staff_permissions("module_admin_screen_review")
     def list(self, request, *args, **kwargs):
@@ -109,7 +110,7 @@ class ScreenReviewViewSet(viewsets.ViewSet):
         return RequestSuccess({"deleted": run})
 
     @require_staff_permissions("module_admin_screen_review")
-    @action(detail=True, methods=["GET"], url_path=r"image/(?P<file>[A-Za-z0-9.\-]+)")
+    @action(detail=True, methods=["GET"], url_path=r"image/(?P<file>[A-Za-z0-9._\-]+)")
     def image(self, request, run=None, file=None, *args, **kwargs):
         try:
             path = review.image_path(run, file)

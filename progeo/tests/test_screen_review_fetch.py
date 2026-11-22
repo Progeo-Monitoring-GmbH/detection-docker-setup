@@ -206,3 +206,61 @@ def test_the_command_checks_and_fetches(staging):
     assert "fetched 1 run(s)" in out.getvalue() and (staging.local / STAGING_RUN / "manifest.json").exists()
     assert fetch.state()["status"] == "done"
 
+
+# ---------------------------------------------------------------------------- folders made by hand
+# Screenshots from elsewhere (screen_review.py): any folder name, any PNG
+# name, in pc/, mobile/ or beside them.
+
+HAND_RUN = "android-lua-flasher"
+
+
+@pytest.fixture
+def hand_made(staging):
+    runs = staging.sftp.home / "detection-docker-setup" / "media" / "uploads" / "e2e"
+    run = runs / HAND_RUN
+    (run / "mobile").mkdir(parents=True)
+    (run / "00-login.png").write_bytes(b"png-login")
+    (run / "00-login.elements.json").write_text('{"elements": []}')
+    (run / "orphan.elements.json").write_text("x")  # of no screenshot
+    (run / "mobile" / "05b-profile-editor.png").write_bytes(b"png-editor")
+    (run / "has space.png").write_bytes(b"x")  # no name for a URL
+    (run / "private.key").write_text("x")
+    (run / "sub").mkdir()
+    (run / "sub" / "nested.png").write_bytes(b"x")  # only pc/, mobile/ and the folder itself
+    # No runs: a download in progress, a folder without a screenshot, a file.
+    (runs / "half.part" / "pc").mkdir(parents=True)
+    (runs / "half.part" / "pc" / "one.png").write_bytes(b"x")
+    (runs / "empty-folder").mkdir()
+    (runs / "stray.png").write_bytes(b"x")
+    return run
+
+
+def test_a_folder_made_by_hand_is_fetched_with_its_screenshots(staging, hand_made):
+    result = fetch.fetch_runs()
+
+    assert result["runs"] == [STAGING_RUN, HAND_RUN] and result["skipped"] == [LOCAL_RUN]
+    run = staging.local / HAND_RUN
+    assert (run / "00-login.png").read_bytes() == b"png-login"
+    assert (run / "mobile" / "05b-profile-editor.png").read_bytes() == b"png-editor"
+    assert (run / "00-login.elements.json").exists()
+    assert sorted(path.relative_to(run).as_posix() for path in run.rglob("*") if path.is_file()) == [
+        "00-login.elements.json", "00-login.png", "mobile/05b-profile-editor.png"]
+    assert sorted(path.name for path in staging.local.iterdir()) == [LOCAL_RUN, STAGING_RUN, HAND_RUN]
+    # The gallery shows it.
+    from progeo.helper import screen_review
+
+    assert [image["file"] for image in screen_review.run_images(HAND_RUN)] == ["05b-profile-editor.png", "00-login.png"]
+
+
+def test_check_lists_the_folders_made_by_hand(staging, hand_made):
+    found = fetch.check()
+
+    assert found["remote"] == [LOCAL_RUN, STAGING_RUN, HAND_RUN]
+    assert staging.sftp.gets == []
+
+
+def test_a_named_run_made_by_hand_is_fetched_alone(staging, hand_made):
+    result = fetch.fetch_runs([HAND_RUN])
+
+    assert result["runs"] == [HAND_RUN]
+    assert not (staging.local / STAGING_RUN).exists()

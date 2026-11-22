@@ -20,6 +20,13 @@ File names: {pc|mobile}-{user|staff}-{de|en}-{action}.png, a dialog on that
 page {...}-{action}--{dialog}.png (runs before the languages: without
 {de|en} - German, the only language then).
 
+Screenshots from elsewhere - another app's, put into media/uploads/e2e/ by
+hand - are reviewed the same way: any folder (letters, digits, "-" and "_",
+at most 32 characters) is a run, any PNG in it, in its pc/ or its mobile/
+(letters, digits, ".", "-" and "_") a screenshot. A name without our pattern
+is its own action, as "user" in German; its device is its folder's, for a
+PNG beside the folders its shape's (portrait: mobile). describe_image().
+
 export_zip() gives the commented screenshots (arrows and areas drawn in,
 numbered) and a PROMPT.md - what to change on which screen, for whoever (or
 whatever) works on it next.
@@ -41,7 +48,15 @@ IMAGE_RE = re.compile(
     # The action and the dialog: kebab-case words, joined by "--".
     r"([a-z0-9]+(?:-[a-z0-9]+)*)(?:--([a-z0-9]+(?:-[a-z0-9]+)*))?\.png$"
 )
-MAX_IMAGE_NAME = 260
+# A run made by hand: any folder with a name that is safe in a URL and fits
+# ScreenReviewNote.run. Not "fetch" (the API's own route) and no "x.part"
+# (a download in progress has a dot, screen_review_fetch).
+RUN_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+RESERVED_RUN_NAMES = ("fetch",)
+# A screenshot without our name pattern: any PNG with a name safe in a URL.
+LOOSE_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
+# ScreenReviewNote.image holds 200 characters.
+MAX_IMAGE_NAME = 200
 DEVICES = ("pc", "mobile")
 ROLES = ("user", "staff")
 LANGUAGES = ("de", "en")
@@ -149,8 +164,22 @@ def new_run_dir(now=None) -> Path:
     return path
 
 
+def is_run_name(name) -> bool:
+    """A run's folder name: a capture's date stamp or a folder made by hand."""
+    return isinstance(name, str) and bool(RUN_NAME_RE.match(name)) and name not in RESERVED_RUN_NAMES
+
+
+def run_created(path: Path) -> datetime:
+    """When a run was made: the date in its name, for a folder made by hand its time."""
+    if RUN_RE.match(path.name):
+        created = datetime.strptime(path.name, "%Y-%m-%d_%H%M%S")
+    else:
+        created = datetime.fromtimestamp(path.stat().st_mtime)
+    return timezone.make_aware(created) if settings.USE_TZ else created
+
+
 def run_dir(run: str) -> Path:
-    if not isinstance(run, str) or not RUN_RE.match(run):
+    if not is_run_name(run):
         raise ReviewError("Unknown run")
     path = root() / run
     if not path.is_dir():
@@ -168,6 +197,48 @@ def parse_image_name(name: str):
         return None
     device, role, language, action, modal = match.groups()
     return device, role, language or DEFAULT_LANGUAGE, action, modal
+
+
+def is_image_name(name) -> bool:
+    """A screenshot's file name - ours (parse_image_name) or any PNG name that is safe in a URL."""
+    return (isinstance(name, str) and len(name) <= MAX_IMAGE_NAME and ".." not in name
+            and bool(LOOSE_IMAGE_RE.match(name)))
+
+
+def describe_image(name: str, folder=None, size=None):
+    """(device, role, language, action, modal) of any screenshot: from its
+    name where it follows our pattern. Else the file's name is its action, as
+    "user" in German, on the device of its folder (`folder`: "pc"/"mobile") -
+    a PNG beside the folders: on a phone when it is higher than wide (`size`).
+    None if it is no screenshot's name."""
+    parsed = parse_image_name(name)
+    if parsed is not None:
+        return parsed
+    if not is_image_name(name):
+        return None
+    if folder in DEVICES:
+        device = folder
+    else:
+        width, height = size or (None, None)
+        device = "mobile" if width and height and height > width else "pc"
+    action = re.sub(r"[^a-z0-9]+", "-", name[:-len(".png")].lower()).strip("-") or "screen"
+    return device, ROLES[0], DEFAULT_LANGUAGE, action, None
+
+
+def _image_files(folder: Path) -> list:
+    """[(path, "pc" | "mobile" | None)] - the screenshots of a run's folder:
+    the PNGs of pc/ and mobile/ and those beside them. A name is one
+    screenshot: of two files with the same name the first counts."""
+    found, seen = [], set()
+    for device, base in [(device, folder / device) for device in DEVICES] + [(None, folder)]:
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob("*.png")):
+            if path.name in seen or not path.is_file() or not is_image_name(path.name):
+                continue
+            seen.add(path.name)
+            found.append((path, device))
+    return found
 
 
 STEP_VERBS = ("click", "check", "uncheck", "hover", "fill", "select", "upload", "press", "wait")
@@ -241,14 +312,16 @@ def step_text(step: dict) -> str:
 
 
 def image_path(run: str, name: str) -> Path:
-    """The screenshot `name` of `run` - only a valid name of that run's folders."""
-    parsed = parse_image_name(name)
-    if parsed is None:
+    """The screenshot `name` of `run` - only a valid name, in the run's pc/,
+    mobile/ or the folder itself (where _image_files lists it)."""
+    if not is_image_name(name):
         raise ReviewError("Unknown image")
-    path = run_dir(run) / parsed[0] / name
-    if not path.is_file():
-        raise ReviewError("Unknown image")
-    return path
+    folder = run_dir(run)
+    for base in [folder / device for device in DEVICES] + [folder]:
+        path = base / name
+        if path.is_file():
+            return path
+    raise ReviewError("Unknown image")
 
 
 def _size(path: Path):
@@ -279,29 +352,26 @@ def run_images(run: str) -> list:
     listed = {}
     data = _manifest(folder)
     for entry in data.get("images", []) if isinstance(data.get("images"), list) else []:
-        if isinstance(entry, dict) and parse_image_name(entry.get("file", "")):
+        if isinstance(entry, dict) and is_image_name(entry.get("file", "")):
             listed[entry["file"]] = entry
     images = []
-    for device in DEVICES:
-        for path in sorted((folder / device).glob("*.png")):
-            parsed = parse_image_name(path.name)
-            if parsed is None:
-                continue
-            entry = dict(listed.get(path.name, {}))
-            # The image's own size (its header) - the review's coordinates are its pixels.
-            entry["width"], entry["height"] = _size(path)
-            images.append({
-                "file": path.name, "device": parsed[0], "role": parsed[1], "language": parsed[2],
-                "action": parsed[3],
-                "path": entry.get("path"),
-                # Where it was taken - runs before the dialogs: the route's path.
-                "url": _text(entry.get("url"), 500) or entry.get("path"),
-                "modal": _clean_modal(entry, parsed[4]),
-                "viewport": entry.get("viewport"),
-                "width": entry.get("width"), "height": entry.get("height"),
-                "errors": [str(error)[:300] for error in entry.get("errors", [])][:5],
-                "persona": _clean_persona(entry.get("persona")),
-            })
+    for path, device in _image_files(folder):
+        entry = dict(listed.get(path.name, {}))
+        # The image's own size (its header) - the review's coordinates are its pixels.
+        entry["width"], entry["height"] = _size(path)
+        parsed = describe_image(path.name, device, (entry["width"], entry["height"]))
+        images.append({
+            "file": path.name, "device": parsed[0], "role": parsed[1], "language": parsed[2],
+            "action": parsed[3],
+            "path": entry.get("path"),
+            # Where it was taken - runs before the dialogs: the route's path.
+            "url": _text(entry.get("url"), 500) or entry.get("path"),
+            "modal": _clean_modal(entry, parsed[4]),
+            "viewport": entry.get("viewport"),
+            "width": entry.get("width"), "height": entry.get("height"),
+            "errors": [str(error)[:300] for error in entry.get("errors", [])][:5],
+            "persona": _clean_persona(entry.get("persona")),
+        })
     return images
 
 
@@ -348,16 +418,11 @@ def list_runs() -> list:
         notes[run] = notes.get(run, 0) + 1
     runs = []
     for path in root().iterdir():
-        if not path.is_dir() or not RUN_RE.match(path.name):
+        if not path.is_dir() or not is_run_name(path.name):
             continue
-        count = sum(1 for device in DEVICES for image in (path / device).glob("*.png")
-                    if parse_image_name(image.name))
-        created = datetime.strptime(path.name, "%Y-%m-%d_%H%M%S")
-        if settings.USE_TZ:
-            created = timezone.make_aware(created)
-        runs.append({"run": path.name, "created": created.isoformat(), "images": count,
+        runs.append({"run": path.name, "created": run_created(path).isoformat(), "images": len(_image_files(path)),
                      "notes": notes.get(path.name, 0)})
-    return sorted(runs, key=lambda entry: entry["run"], reverse=True)
+    return sorted(runs, key=lambda entry: (entry["created"], entry["run"]), reverse=True)
 
 
 # -- notes ------------------------------------------------------------------------------

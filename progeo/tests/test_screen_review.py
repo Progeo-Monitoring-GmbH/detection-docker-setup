@@ -34,8 +34,8 @@ def run(uploads):
     _png(folder / "pc" / "pc-staff-en-location-overview.png", (1440, 2600))
     _png(folder / "mobile" / "mobile-user-login.png", (390, 900))
     _png(folder / "pc" / "pc-staff-en-staff-admin--staff-user-edit-dialog.png", (1440, 900))
-    # Not a screenshot of the run: left out.
-    _png(folder / "pc" / "notes.png", (10, 10))
+    # No name for a URL: left out.
+    _png(folder / "pc" / "not a screenshot.png", (10, 10))
     (folder / "manifest.json").write_text(json.dumps({"run": RUN, "images": [
         {"file": "pc-staff-en-location-overview.png", "path": "/location/overview/", "viewport": [1440, 900],
          "width": 1, "height": 1, "errors": ["TypeError: x is undefined"]},
@@ -173,7 +173,7 @@ def test_a_run_without_failures_in_its_manifest_has_none(run):
     ("../2026-11-18_235532", "pc-staff-en-location-overview.png"),
     (RUN, "../../secret.png"),
     (RUN, "pc-staff-missing.png"),
-    (RUN, "notes.png"),
+    (RUN, "not a screenshot.png"),
 ])
 def test_only_screenshots_of_a_run_are_served(run, run_name, image):
     with pytest.raises(review.ReviewError):
@@ -534,3 +534,94 @@ def test_the_prompt_names_the_elements_under_a_comment_and_who_was_signed_in(api
     assert "- Signed in as: staff `staff.weber` (staff, superuser" in prompt
     targets = {entry["comment"]: entry["targets"] for entry in json.loads(archive.read("notes.json"))["notes"]}
     assert targets["Weg"] == {"area": ['`<button>` "Mit Airtable abgleichen"']}
+
+
+# ---------------------------------------------------------------------------- screenshots from elsewhere
+# Folders somebody put into media/uploads/e2e/ by hand - e.g. the screenshots
+# of another app: any folder name, any PNG name, in pc/, mobile/ or loose.
+
+LOOSE_RUN = "android-lua-flasher"
+
+
+@pytest.fixture
+def loose_run(uploads):
+    folder = uploads / "e2e" / LOOSE_RUN
+    _png(folder / "00-login.png", (1080, 2160))
+    _png(folder / "05b-profile-editor-values-middle.png", (1080, 2160))
+    _png(folder / "Wide_Screen.png", (1920, 1080))
+    _png(folder / "pc" / "settings.png", (300, 900))  # the folder says pc, whatever its shape
+    _png(folder / "mobile" / "mobile-staff-en-login.png", (390, 900))  # our pattern still counts
+    (folder / "readme.txt").write_text("not an image", encoding="utf-8")
+    _png(folder / "sub" / "nested.png", (10, 10))  # only pc/, mobile/ and the folder itself
+    _png(folder / "has space.png", (10, 10))  # no name for a URL
+    return folder
+
+
+def test_images_without_our_name_pattern_are_listed(loose_run):
+    images = {image["file"]: image for image in review.run_images(LOOSE_RUN)}
+
+    assert set(images) == {"00-login.png", "05b-profile-editor-values-middle.png", "Wide_Screen.png",
+                           "settings.png", "mobile-staff-en-login.png"}
+    middle = images["05b-profile-editor-values-middle.png"]
+    # Portrait: a phone. The action is the file's name; role and language are the defaults.
+    assert (middle["device"], middle["role"], middle["language"], middle["action"], middle["modal"]) == (
+        "mobile", "user", "de", "05b-profile-editor-values-middle", None)
+    assert (middle["width"], middle["height"]) == (1080, 2160)
+    assert (images["Wide_Screen.png"]["device"], images["Wide_Screen.png"]["action"]) == ("pc", "wide-screen")
+    assert images["settings.png"]["device"] == "pc"
+    named = images["mobile-staff-en-login.png"]
+    assert (named["device"], named["role"], named["language"], named["action"]) == ("mobile", "staff", "en", "login")
+
+
+def test_a_folder_without_a_date_is_a_run(loose_run, run):
+    runs = {entry["run"]: entry for entry in review.list_runs()}
+
+    assert set(runs) == {RUN, LOOSE_RUN}
+    assert runs[LOOSE_RUN]["images"] == 5
+    assert runs[LOOSE_RUN]["created"]  # the folder's time
+    assert review.list_runs()[0]["run"] == LOOSE_RUN  # just made: newest first
+
+
+@pytest.mark.parametrize("name", ["x.part", ".hidden", "fetch", "a b", "x" * 33])
+def test_folders_that_are_no_runs(uploads, name):
+    _png(uploads / "e2e" / name / "one.png", (10, 10))
+
+    assert review.list_runs() == []
+    with pytest.raises(review.ReviewError):
+        review.run_dir(name)
+
+
+@pytest.mark.parametrize("image", ["../00-login.png", "sub/nested.png", "nested.png", "readme.txt", "has space.png",
+                                   "missing.png", "..png", "manifest.json"])
+def test_only_the_pngs_of_a_loose_run_are_served(loose_run, image):
+    with pytest.raises(review.ReviewError):
+        review.image_path(LOOSE_RUN, image)
+
+
+def test_loose_images_are_found_in_their_folder(loose_run):
+    assert review.image_path(LOOSE_RUN, "00-login.png") == loose_run / "00-login.png"
+    assert review.image_path(LOOSE_RUN, "settings.png") == loose_run / "pc" / "settings.png"
+    assert review.image_path(LOOSE_RUN, "mobile-staff-en-login.png") == loose_run / "mobile" / "mobile-staff-en-login.png"
+
+
+def test_a_loose_run_works_through_the_api(api_client, loose_run, staff):
+    url = f"/v1/screen-review/{LOOSE_RUN}/"
+
+    listed = api_client.get("/v1/screen-review/").json()["runs"]
+    assert [entry["run"] for entry in listed] == [LOOSE_RUN]
+    detail = api_client.get(url)
+    assert detail.status_code == 200, detail.content
+    assert len(detail.json()["images"]) == 5
+    image = api_client.get(f"{url}image/Wide_Screen.png/")
+    assert image.status_code == 200
+    assert image["Content-Type"] == "image/png"
+
+    note = api_client.post(f"{url}notes/", {"image": "05b-profile-editor-values-middle.png", "kind": "area",
+                                            "action": "remove", "comment": "weg damit",
+                                            "geometry": {"x": 10, "y": 20, "w": 100, "h": 50}}, format="json")
+    assert note.status_code == 200, note.content
+
+    exported = api_client.get(f"{url}export/")
+    assert exported.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
+    assert "screens/05b-profile-editor-values-middle.png" in names
