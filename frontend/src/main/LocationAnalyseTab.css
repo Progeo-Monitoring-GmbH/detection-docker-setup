@@ -29,7 +29,6 @@
   box-shadow: var(--progeo-shadow-panel);
 }
 
-/* Header toggle: a link button in the brand blue in every state. */
 /* Staff: the Lageplan wizard of this location - a gradient pill whose wand
    sparkles on hover. */
 .analyse-wizard-link {
@@ -69,13 +68,6 @@
   .analyse-wizard-link-icon {
     transition: none;
   }
-}
-
-.btn.analyse-heatmap-toggle {
-  --bs-btn-color: var(--progeo-blue);
-  --bs-btn-hover-color: var(--progeo-blue);
-  --bs-btn-active-color: var(--progeo-blue);
-  --bs-btn-disabled-color: var(--progeo-blue);
 }
 
 /* Bootstrap's form-select is full width; this one fits its content. */

@@ -1,0 +1,169 @@
+/* The sections of a device config as cards (ConfigSectionCards.tsx). The
+   colours are the ones of the staff admin's permission groups (StaffAdmin.css). */
+
+.config-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.config-section {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--config-section-border);
+  border-left: 4px solid var(--config-section-accent);
+  border-radius: 6px;
+  background: var(--config-section-bg);
+}
+
+.config-section--blue {
+  --config-section-accent: #3976a8;
+  --config-section-border: #b8d0e3;
+  --config-section-bg: #f3f8fc;
+}
+
+.config-section--teal {
+  --config-section-accent: #299481;
+  --config-section-border: #b8ddd6;
+  --config-section-bg: #f1f9f7;
+}
+
+.config-section--purple {
+  --config-section-accent: #7856a8;
+  --config-section-border: #d0c3e1;
+  --config-section-bg: #f7f4fb;
+}
+
+.config-section--amber {
+  --config-section-accent: #c18019;
+  --config-section-border: #e6d2ad;
+  --config-section-bg: #fcf8f0;
+}
+
+.config-section--red {
+  --config-section-accent: #c25362;
+  --config-section-border: #e4c2c7;
+  --config-section-bg: #fcf5f6;
+}
+
+.config-section--cyan {
+  --config-section-accent: #38829c;
+  --config-section-border: #bdd8e0;
+  --config-section-bg: #f3f9fa;
+}
+
+.config-section--green {
+  --config-section-accent: #578b3b;
+  --config-section-border: #c9dbc0;
+  --config-section-bg: #f6faf3;
+}
+
+.config-section--grey {
+  --config-section-accent: #737981;
+  --config-section-border: #cdd0d3;
+  --config-section-bg: #f7f8f9;
+}
+
+.config-section-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.config-section-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--config-section-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.config-section-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--config-section-accent);
+  cursor: pointer;
+}
+
+.config-section-action:hover:not(:disabled) {
+  background: var(--config-section-border);
+}
+
+.config-section-action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.config-section-rows {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.config-section-row {
+  display: flex;
+  gap: 8px;
+}
+
+.config-section-row dt {
+  flex: 0 0 42%;
+  overflow: hidden;
+  color: var(--bs-secondary-color);
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+/* The values are what is checked. */
+.config-section-row dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* A section that is not in the config yet. */
+.config-section.config-section--add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  border-style: dashed;
+  border-left-width: 1px;
+  background: none;
+  color: var(--config-section-accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.config-section.config-section--add:hover:not(:disabled) {
+  background: var(--config-section-bg);
+}
+
+.config-section.config-section--add:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The dialog: one input per row, no wider than they need. */
+.config-section-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: min(300px, 100%);
+}
+
+.config-section-label {
+  color: var(--bs-secondary-color);
+  font-size: 11.5px;
+}

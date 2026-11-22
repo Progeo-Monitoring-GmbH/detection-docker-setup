@@ -229,6 +229,8 @@ const QaScoreboard = () => {
 
   return (
     <PanelCard
+      // Minimizes itself (collapsed).
+      foldable={false}
       title={
         <span className="qa-scoreboard-title">
           <Trophy aria-hidden="true" /> {t('qa_scoreboard_title')}

@@ -39,8 +39,50 @@
   padding: 20px;
 }
 
-.progeo-panel-head + .progeo-panel-body {
+/* :where(): the fold wrapper (PanelCard.tsx) adds no specificity. */
+.progeo-panel-head + :where(.progeo-panel-fold-body) > .progeo-panel-body {
   padding: 0 20px 18px;
+}
+
+/* The fold toggle of a high panel (PanelCard.tsx): a chevron before the
+   title, turned down while the panel is unfolded. */
+.progeo-panel-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0 -6px 0 -6px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #8b8383;
+  cursor: pointer;
+}
+
+.progeo-panel-fold:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.progeo-panel-fold:focus-visible {
+  outline: 2px solid var(--progeo-blue);
+  outline-offset: 1px;
+}
+
+.progeo-panel-fold svg {
+  transition: transform 0.2s ease;
+}
+
+.progeo-panel-fold--open svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progeo-panel-fold svg {
+    transition: none;
+  }
 }
 
 /* Inside another panel: no chrome of its own. */
@@ -56,7 +98,7 @@
 }
 
 .progeo-panel--flat .progeo-panel-body,
-.progeo-panel--flat .progeo-panel-head + .progeo-panel-body {
+.progeo-panel--flat .progeo-panel-head + :where(.progeo-panel-fold-body) > .progeo-panel-body {
   padding: 0;
 }
 

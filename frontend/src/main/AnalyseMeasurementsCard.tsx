@@ -1,9 +1,10 @@
-import { Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Button, Form, Spinner } from 'react-bootstrap';
 import { ToggleOff, ToggleOn } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
+import PanelCard from '../components/ui/kit/PanelCard';
 import type { ProfileRange } from './NoiseProfilePanel';
 
 type AnalyseMeasurementsCardProps = {
@@ -72,10 +73,11 @@ const AnalyseMeasurementsCard = ({
   const { t } = useTranslation();
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid="analyse-measurements">
-      <Card.Body>
-        <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
-          <h5 className="mb-0">{t('analyse_measurements_title')}</h5>
+    <PanelCard
+      testId="analyse-measurements"
+      title={t('analyse_measurements_title')}
+      actions={
+        <div className="d-flex flex-wrap align-items-center gap-3">
           {devices.length > 1 && (
             <Form.Select
               size="sm"
@@ -133,67 +135,70 @@ const AnalyseMeasurementsCard = ({
           {/* Disabling is only offered for picked sensors - without this
               line nobody finds out that a click on a column (or a sensor on
               the plan) is what brings the button up. */}
-          {canSwitchSensors && sensors.length === 0 && measurements.length > 0 && (
-            <span
-              className="text-muted small"
-              data-testid="analyse-sensor-switch-hint"
-            >
-              {t('analyse_sensors_pick_hint')}
-            </span>
-          )}
+          {canSwitchSensors &&
+            sensors.length === 0 &&
+            measurements.length > 0 && (
+              <span
+                className="text-muted small"
+                data-testid="analyse-sensor-switch-hint"
+              >
+                {t('analyse_sensors_pick_hint')}
+              </span>
+            )}
         </div>
-        {measurementTotal > measurements.length && (
-          <div
-            className="text-muted small mb-2"
-            data-testid="analyse-measurements-spread"
-          >
-            {t('analyse_spread', {
-              count: measurements.length,
-              total: measurementTotal,
-            })}
-          </div>
-        )}
-        {measurementsLoading && measurements.length === 0 ? (
-          <div
-            className="d-flex justify-content-center align-items-center py-5 text-muted"
-            data-testid="analyse-measurements-loading"
-          >
-            <Spinner animation="border" className="me-2" /> {t('ui_loading')}
-          </div>
-        ) : measurements.length === 0 ? (
-          <div
-            className="text-muted py-4 text-center"
-            data-testid="analyse-measurements-empty"
-          >
-            {t('analyse_no_measurements')}
-          </div>
-        ) : (
-          <MeasurementSamplesCompareChart
-            rows={shownMeasurements}
-            frameSlider
-            hideFrameSlider
-            onVisibleRangeChange={onChartZoom}
-            sliderPlayKey={false}
-            hideChrome
-            time={frameTime}
-            onTimeChange={onFrameTimeChange}
-            sensors={sensors}
-            onSensorsChange={onSensorsChange}
-            sensorHistoryRows={offerSensorHistory ? shownSensorHistory : null}
-            onToggleSensorHistory={
-              offerSensorHistory ? onToggleSensorHistory : null
-            }
-            isLoadingSensorHistory={sensorHistoryLoading}
-            threshold={threshold}
-            sensorThresholds={sensorThresholds}
-            disabledSensors={disabledSensors}
-            maskLines={maskLines}
-            selectedRange={offerNoiseProfiles ? profileRange : null}
-            onRangeSelect={offerNoiseProfiles ? onProfileRangeChange : null}
-          />
-        )}
-      </Card.Body>
-    </Card>
+      }
+    >
+      {measurementTotal > measurements.length && (
+        <div
+          className="text-muted small mb-2"
+          data-testid="analyse-measurements-spread"
+        >
+          {t('analyse_spread', {
+            count: measurements.length,
+            total: measurementTotal,
+          })}
+        </div>
+      )}
+      {measurementsLoading && measurements.length === 0 ? (
+        <div
+          className="d-flex justify-content-center align-items-center py-5 text-muted"
+          data-testid="analyse-measurements-loading"
+        >
+          <Spinner animation="border" className="me-2" /> {t('ui_loading')}
+        </div>
+      ) : measurements.length === 0 ? (
+        <div
+          className="text-muted py-4 text-center"
+          data-testid="analyse-measurements-empty"
+        >
+          {t('analyse_no_measurements')}
+        </div>
+      ) : (
+        <MeasurementSamplesCompareChart
+          rows={shownMeasurements}
+          frameSlider
+          hideFrameSlider
+          onVisibleRangeChange={onChartZoom}
+          sliderPlayKey={false}
+          hideChrome
+          time={frameTime}
+          onTimeChange={onFrameTimeChange}
+          sensors={sensors}
+          onSensorsChange={onSensorsChange}
+          sensorHistoryRows={offerSensorHistory ? shownSensorHistory : null}
+          onToggleSensorHistory={
+            offerSensorHistory ? onToggleSensorHistory : null
+          }
+          isLoadingSensorHistory={sensorHistoryLoading}
+          threshold={threshold}
+          sensorThresholds={sensorThresholds}
+          disabledSensors={disabledSensors}
+          maskLines={maskLines}
+          selectedRange={offerNoiseProfiles ? profileRange : null}
+          onRangeSelect={offerNoiseProfiles ? onProfileRangeChange : null}
+        />
+      )}
+    </PanelCard>
   );
 };
 

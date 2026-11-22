@@ -64,7 +64,7 @@ def _preview(client, location, **settings):
 def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
         "model": "smartex mx", "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
-        "rpi": False, "wifi_ssid": "", "wifi_pwd": "",
+        "rpi": False, "wifi_ssid": "", "wifi_pwd": "", "router_user": "", "router_pwd": "",
         # No bundle on the server: the built-in firmware version.
         "firmware_bundle": None, "firmware_version": provisioning.FIRMWARE_VERSION,
     }
@@ -148,6 +148,19 @@ def test_render_config_escapes_lua_strings():
     assert "poll_sec" not in config
     assert "    rpi = false," in config
     assert "    rpi = true," in provisioning.render_config({**plan, "rpi": True})
+
+
+def test_the_router_section_is_optional(staff_client, location):
+    assert "router" not in _preview(staff_client, location)["config"]
+
+    config = _preview(staff_client, location, router_user=' ad"min ', router_pwd="se cret ")["config"]
+
+    assert '  router = {\n    user = "ad\\"min",\n    pwd = "se cret ",\n  },\n  device = {' in config
+    # A preview signed before the section existed still renders.
+    plan = {**provisioning.parse_settings({}), "project_id": 1, "device_hash": "1-01", "token": "t", "url": "u"}
+    del plan["router_user"], plan["router_pwd"]
+    assert "router" not in provisioning.render_config(plan)
+    assert "router = {" in provisioning.render_config({**plan, "router_pwd": "only"})
 
 
 def test_sample_url_follows_the_setting(settings):

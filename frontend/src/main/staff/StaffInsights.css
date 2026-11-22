@@ -20,7 +20,7 @@
   padding: 12px 16px;
 }
 
-.staff-insights .progeo-panel-head + .progeo-panel-body {
+.staff-insights .progeo-panel-head + :where(.progeo-panel-fold-body) > .progeo-panel-body {
   padding: 0 16px 12px;
 }
 
@@ -51,7 +51,7 @@
 
 /* A KPI strip as a panel's whole body: flat, edge to edge below the title,
    separated by a hairline - no panel inside a panel. */
-.staff-insights .progeo-panel-head + .progeo-panel-body.staff-insights-strip {
+.staff-insights .progeo-panel-head + :where(.progeo-panel-fold-body) > .progeo-panel-body.staff-insights-strip {
   padding: 0;
 }
 

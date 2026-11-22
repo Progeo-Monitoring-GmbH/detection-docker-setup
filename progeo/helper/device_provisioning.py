@@ -160,6 +160,9 @@ def parse_settings(data) -> dict:
         "rpi": _bool_field(data, "rpi"),
         "wifi_ssid": str(data.get("wifi_ssid") or "").strip(),
         "wifi_pwd": str(data.get("wifi_pwd") or ""),
+        # The optional router section: the login of the site's router.
+        "router_user": str(data.get("router_user") or "").strip(),
+        "router_pwd": str(data.get("router_pwd") or ""),
         **resolve_firmware(str(data.get("firmware") or "").strip()),
     }
 
@@ -224,6 +227,12 @@ def render_config(plan) -> str:
         f"    ssid = {lua_string(plan['wifi_ssid'])},",
         f"    pwd = {lua_string(plan['wifi_pwd'])},",
         "  },",
+        # Optional (and unknown to a preview signed before it existed).
+        *(["  router = {",
+           f"    user = {lua_string(plan.get('router_user') or '')},",
+           f"    pwd = {lua_string(plan.get('router_pwd') or '')},",
+           "  },"]
+          if plan.get("router_user") or plan.get("router_pwd") else []),
         "  device = {",
         f"    model = {lua_string(plan_model(plan))},",
         f"    version = {lua_string(CONFIG_VERSION)},",

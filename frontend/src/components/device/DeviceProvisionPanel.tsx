@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect, useState } from 'react';
-import { Alert, Button, Col, Form, Row, Spinner } from 'react-bootstrap';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Spinner } from 'react-bootstrap';
 import { CheckCircle, Clipboard, FileEarmarkCode, QrCode as QrCodeIcon } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
+import ConfigSectionCards, { type ConfigSection, maskedSecret } from './ConfigSectionCards';
 import { bundleVersionLabel, type FirmwareBundle } from './firmwareBundle';
 import { repeatedTestId } from '../../testIds';
 import './DeviceProvisionPanel.css';
@@ -34,6 +35,10 @@ type ProvisionSettings = {
   rpi: boolean;
   wifi_ssid: string;
   wifi_pwd: string;
+  /** The optional router section: the login of the site's router. */
+  router: boolean;
+  router_user: string;
+  router_pwd: string;
 };
 
 type QrCode = { payload: string; image: string };
@@ -68,6 +73,9 @@ const EMPTY_SETTINGS: ProvisionSettings = {
   rpi: false,
   wifi_ssid: '',
   wifi_pwd: '',
+  router: false,
+  router_user: '',
+  router_pwd: '',
 };
 
 /** ASCII only, like the backend's ascii_model: "smartex® mx-va" -> "smartex mx-va". */
@@ -80,11 +88,12 @@ const asciiModel = (label: string) =>
 
 /**
  * "Gerät hinzufügen" of the device overview (formerly /device/provision/):
- * set the measurement settings and the device.model of a new smartex
- * controller for `locationId`, generate its config (device_hash + transfer
- * token come from the backend) and confirm - the device is then filed under
- * the location and can send its samples. `onCreated` gets the new device
- * (the overview shows its test measurements).
+ * the config of a new smartex controller for `locationId`, one card per
+ * section (ConfigSectionCards) - a card's pencil opens a small dialog to
+ * change its values, a router section can be added. Generate the config
+ * (device_hash + transfer token come from the backend) and confirm - the
+ * device is then filed under the location and can send its samples.
+ * `onCreated` gets the new device (the overview shows its test measurements).
  */
 const DeviceProvisionPanel = ({
   locationId,
@@ -108,6 +117,7 @@ const DeviceProvisionPanel = ({
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [showConfigQr, setShowConfigQr] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // A new (or no) config: its QR code is generated again on request.
@@ -154,14 +164,7 @@ const DeviceProvisionPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, location?.model]);
 
-  const updateSetting = <K extends keyof ProvisionSettings>(key: K, value: ProvisionSettings[K]) => {
-    setSettings((current) => ({ ...current, [key]: value }));
-    // Any change makes the generated config stale - generate it again.
-    setPreview(null);
-    setConfirmed(false);
-  };
-
-  const generate = () => {
+  const generate = (next: ProvisionSettings = settings) => {
     setLoading(true);
     setPreview(null);
     setConfirmed(false);
@@ -170,16 +173,18 @@ const DeviceProvisionPanel = ({
       '/v1/device/provision/preview/',
       {
         location: locationId,
-        model: asciiModel(settings.model),
+        model: asciiModel(next.model),
         // '': the backend's default bundle (or its fallback version without any).
-        firmware: settings.firmware,
-        sensors: Number(settings.sensors),
-        interval_sec: Number(settings.interval_sec),
-        pulldown_resistance: Number(settings.pulldown_resistance),
-        protective_earth: settings.protective_earth ? 1 : 0,
-        rpi: settings.rpi,
-        wifi_ssid: settings.wifi_ssid,
-        wifi_pwd: settings.wifi_pwd,
+        firmware: next.firmware,
+        sensors: Number(next.sensors),
+        interval_sec: Number(next.interval_sec),
+        pulldown_resistance: Number(next.pulldown_resistance),
+        protective_earth: next.protective_earth ? 1 : 0,
+        rpi: next.rpi,
+        wifi_ssid: next.wifi_ssid,
+        wifi_pwd: next.wifi_pwd,
+        router_user: next.router ? next.router_user : '',
+        router_pwd: next.router ? next.router_pwd : '',
       },
       (response) => {
         setPreview((response?.data || null) as ProvisionPreview | null);
@@ -190,6 +195,20 @@ const DeviceProvisionPanel = ({
         setLoading(false);
       },
     );
+  };
+
+  /** A section's dialog was saved. A config on screen is stale now: it is
+   * generated again - unless its device is already created (the next
+   * "Generate config" starts a new one). */
+  const applySettings = (patch: Partial<ProvisionSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    if (preview && !confirmed) {
+      generate(next);
+    } else {
+      setPreview(null);
+      setConfirmed(false);
+    }
   };
 
   const confirm = () => {
@@ -233,19 +252,13 @@ const DeviceProvisionPanel = ({
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
     <figure className="m-0 text-center" {...repeatedTestId('device-provision-portal-qr', caption)}>
-      <img src={code.image} alt={title} width={130} height={130} className="device-provision-qr" />
+      <img src={code.image} alt={title} width={110} height={110} className="device-provision-qr" />
       <figcaption className="device-provision-caption">
         <strong>{title}</strong>
         <br />
         <code>{caption}</code>
       </figcaption>
     </figure>
-  );
-
-  const label = (text: string) => (
-    <Form.Label className="device-provision-label text-muted mb-0">
-      {text}
-    </Form.Label>
   );
 
   // "v1.0.0 (FW: v1.6.1) · latest in stable" - the full bundle id on hover.
@@ -259,27 +272,171 @@ const DeviceProvisionPanel = ({
       .filter(Boolean)
       .join(' · ');
 
-  const facts: [string, ReactNode][] = preview
-    ? [
-        ['Device hash', <code key="hash" data-testid="device-provision-hash">{preview.device_hash}</code>],
-        [t('provision_model'), <code key="model">{preview.model}</code>],
-        [
-          t('provision_firmware'),
-          <span key="firmware">
-            <code>{preview.firmware_version}</code>
-            {preview.firmware_bundle && <span className="text-muted ms-1">({preview.firmware_bundle})</span>}
-          </span>,
-        ],
-        ['Location', `${location?.name || '-'} (project ${preview.project_id})`],
-        [
-          'URL',
-          <code key="url" className="text-break">
-            {preview.url}
-          </code>,
-        ],
-        ['Token', <code key="token" data-testid="device-provision-token">{preview.token}</code>],
-      ]
-    : [];
+  // What only the backend knows: shown once the config is generated.
+  const generated = (value: string | undefined, testId?: string) =>
+    value ? (
+      <code data-testid={testId}>{value}</code>
+    ) : (
+      <span className="device-provision-pending">{t('provision_generated_later')}</span>
+    );
+
+  const resistanceLabel =
+    resistances.find((option) => String(option.value) === settings.pulldown_resistance)?.label ?? '';
+  const chosenBundle = bundles.find((bundle) => bundle.id === settings.firmware);
+
+  const routerSection: ConfigSection = {
+    name: 'router',
+    tone: 'cyan',
+    rows: [
+      { key: 'user', value: settings.router_user },
+      { key: 'pwd', value: maskedSecret(settings.router_pwd) },
+    ],
+    fields: [
+      { key: 'user', kind: 'text', testId: 'device-provision-router-user' },
+      { key: 'pwd', kind: 'password', testId: 'device-provision-router-pwd' },
+    ],
+    values: { user: settings.router_user, pwd: settings.router_pwd },
+    // An empty section would not be written into the config.
+    valid: (values) => String(values.user).trim() !== '' || String(values.pwd) !== '',
+    onSave: (values) =>
+      applySettings({ router: true, router_user: String(values.user).trim(), router_pwd: String(values.pwd) }),
+    onRemove: () => applySettings({ router: false, router_user: '', router_pwd: '' }),
+  };
+
+  const sections: ConfigSection[] = [
+    {
+      name: 'wifi',
+      tone: 'blue',
+      rows: [
+        { key: 'ssid', value: settings.wifi_ssid },
+        { key: 'pwd', value: maskedSecret(settings.wifi_pwd) },
+      ],
+      fields: [
+        { key: 'ssid', kind: 'text', testId: 'device-provision-wifi-ssid' },
+        { key: 'pwd', kind: 'password', testId: 'device-provision-wifi-pwd' },
+      ],
+      values: { ssid: settings.wifi_ssid, pwd: settings.wifi_pwd },
+      onSave: (values) => applySettings({ wifi_ssid: String(values.ssid).trim(), wifi_pwd: String(values.pwd) }),
+    },
+    ...(settings.router ? [routerSection] : []),
+    {
+      name: 'device',
+      tone: 'teal',
+      rows: [
+        { key: 'model', value: settings.model },
+        { key: 'project_id', value: location ? String(location.project_id) : '' },
+        { key: 'device_hash', value: generated(preview?.device_hash, 'device-provision-hash') },
+      ],
+      fields: [
+        {
+          key: 'model',
+          kind: 'select',
+          testId: 'device-provision-model',
+          // A default the list lacks stays selectable.
+          options: [...(settings.model && !models.includes(settings.model) ? [settings.model] : []), ...models].map(
+            (model) => ({ value: model, label: model }),
+          ),
+        },
+      ],
+      values: { model: settings.model },
+      onSave: (values) => applySettings({ model: String(values.model) }),
+    },
+    {
+      name: 'measurement',
+      tone: 'purple',
+      rows: [
+        {
+          key: 'pulldown_resistance',
+          value: resistanceLabel ? `${resistanceLabel} (${settings.pulldown_resistance})` : settings.pulldown_resistance,
+        },
+        { key: 'interval_sec', value: settings.interval_sec },
+        { key: 'sensors', value: settings.sensors },
+        { key: 'protective_earth', value: settings.protective_earth ? '1' : '0' },
+      ],
+      fields: [
+        {
+          key: 'pulldown_resistance',
+          kind: 'select',
+          testId: 'device-provision-resistance',
+          options: resistances.map((option) => ({
+            value: String(option.value),
+            label: `${option.label} (${option.value})`,
+          })),
+        },
+        { key: 'interval_sec', kind: 'number', min: 10, max: 86400, testId: 'device-provision-interval' },
+        { key: 'sensors', kind: 'number', min: 1, testId: 'device-provision-sensors' },
+        { key: 'protective_earth', kind: 'switch', testId: 'device-provision-protective-earth' },
+      ],
+      values: {
+        pulldown_resistance: settings.pulldown_resistance,
+        interval_sec: settings.interval_sec,
+        sensors: settings.sensors,
+        protective_earth: settings.protective_earth,
+      },
+      onSave: (values) =>
+        applySettings({
+          pulldown_resistance: String(values.pulldown_resistance),
+          interval_sec: String(values.interval_sec).trim(),
+          sensors: String(values.sensors).trim(),
+          protective_earth: values.protective_earth === true,
+        }),
+    },
+    {
+      name: 'control',
+      tone: 'amber',
+      rows: [
+        { key: 'url', value: generated(preview?.url) },
+        { key: 'token', value: generated(preview?.token, 'device-provision-token') },
+        { key: 'rpi', value: settings.rpi ? 'true' : 'false' },
+      ],
+      fields: [{ key: 'rpi', kind: 'switch', testId: 'device-provision-rpi' }],
+      values: { rpi: settings.rpi },
+      onSave: (values) => applySettings({ rpi: values.rpi === true }),
+    },
+    {
+      name: 'firmware',
+      tone: 'green',
+      rows: [
+        {
+          key: 'version',
+          value:
+            preview?.firmware_version ||
+            chosenBundle?.firmware ||
+            (bundles.length === 0 ? t('provision_firmware_none', { version: firmwareFallback }) : ''),
+        },
+        ...(bundles.length ? [{ key: 'bundle', value: preview?.firmware_bundle || settings.firmware }] : []),
+      ],
+      // No bundle on the server: the config gets the built-in version.
+      fields: bundles.length
+        ? [
+            {
+              key: 'bundle',
+              kind: 'select',
+              testId: 'device-provision-firmware',
+              options: bundles.map((bundle) => ({ value: bundle.id, label: bundleOption(bundle), title: bundle.id })),
+            },
+          ]
+        : [],
+      values: { bundle: settings.firmware },
+      onSave: (values) => applySettings({ firmware: String(values.bundle) }),
+    },
+    // The controller's setup network - the same for every device.
+    ...(preview
+      ? [
+          {
+            name: 'portal',
+            tone: 'grey' as const,
+            rows: [],
+            body: (
+              <div className="device-provision-portal">
+                {portalQrCode('Setup portal Wi-Fi', preview.portal.wifi.ssid, preview.portal.wifi)}
+                {portalQrCode('Controller', preview.portal.frontend.url, preview.portal.frontend)}
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <PanelCard
@@ -305,196 +462,42 @@ const DeviceProvisionPanel = ({
         </Alert>
       ) : (
         <>
-          <Row className="g-2 align-items-end">
-            <Col sm={6} lg={3}>
-              <Form.Group controlId="provision-model">
-                {label(t('provision_model'))}
-                <Form.Select
-                  size="sm"
-                  value={settings.model}
-                  onChange={(event) => updateSetting('model', event.target.value)}
-                  data-testid="device-provision-model"
-                >
-                  {/* A default the list lacks stays selectable. */}
-                  {settings.model && !models.includes(settings.model) && (
-                    <option value={settings.model}>{settings.model}</option>
-                  )}
-                  {models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
-            </Col>
-            <Col sm={6} lg={3}>
-              <Form.Group controlId="provision-firmware">
-                {label(t('provision_firmware'))}
-                {bundles.length === 0 ? (
-                  // No bundle on the server: the config gets the built-in version.
-                  <Form.Select size="sm" disabled value="" data-testid="device-provision-firmware">
-                    <option value="">{t('provision_firmware_none', { version: firmwareFallback })}</option>
-                  </Form.Select>
-                ) : (
-                  <Form.Select
-                    size="sm"
-                    value={settings.firmware}
-                    title={settings.firmware || undefined}
-                    onChange={(event) => updateSetting('firmware', event.target.value)}
-                    data-testid="device-provision-firmware"
-                  >
-                    {bundles.map((bundle) => (
-                      <option key={bundle.id} value={bundle.id} title={bundle.id}>
-                        {bundleOption(bundle)}
-                      </option>
-                    ))}
-                  </Form.Select>
-                )}
-              </Form.Group>
-            </Col>
-            <Col xs={6} sm={3} lg={2}>
-              <Form.Group controlId="provision-sensors">
-                {label('Sensors')}
-                <Form.Control
-                  size="sm"
-                  type="number"
-                  min={1}
-                  value={settings.sensors}
-                  onChange={(event) => updateSetting('sensors', event.target.value)}
-                  data-testid="device-provision-sensors"
-                />
-              </Form.Group>
-            </Col>
-            <Col xs={6} sm={3} lg={2}>
-              <Form.Group controlId="provision-interval">
-                {label('Interval (sec)')}
-                <Form.Control
-                  size="sm"
-                  type="number"
-                  min={10}
-                  max={86400}
-                  value={settings.interval_sec}
-                  onChange={(event) => updateSetting('interval_sec', event.target.value)}
-                  data-testid="device-provision-interval"
-                />
-              </Form.Group>
-            </Col>
-            <Col sm={6} lg={2}>
-              <Form.Group controlId="provision-resistance">
-                {label('Pull-down')}
-                <Form.Select
-                  size="sm"
-                  value={settings.pulldown_resistance}
-                  onChange={(event) => updateSetting('pulldown_resistance', event.target.value)}
-                  data-testid="device-provision-resistance"
-                >
-                  {resistances.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label} ({option.value})
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
-            </Col>
-            <Col sm={6} lg={3}>
-              <Form.Group controlId="provision-ssid">
-                {label('WiFi SSID (optional)')}
-                <Form.Control
-                  size="sm"
-                  value={settings.wifi_ssid}
-                  onChange={(event) => updateSetting('wifi_ssid', event.target.value)}
-                  data-testid="device-provision-wifi-ssid"
-                />
-              </Form.Group>
-            </Col>
-            <Col sm={6} lg={3}>
-              <Form.Group controlId="provision-pwd">
-                {label('WiFi password (optional)')}
-                <Form.Control
-                  size="sm"
-                  type="password"
-                  autoComplete="new-password"
-                  value={settings.wifi_pwd}
-                  onChange={(event) => updateSetting('wifi_pwd', event.target.value)}
-                  data-testid="device-provision-wifi-pwd"
-                />
-              </Form.Group>
-            </Col>
-            <Col xs="auto" className="pb-1">
-              <Form.Check
-                type="switch"
-                id="provision-protective-earth"
-                label="Protective earth"
-                className="small mb-0"
-                checked={settings.protective_earth}
-                onChange={(event) => updateSetting('protective_earth', event.target.checked)}
-                data-testid="device-provision-protective-earth"
-              />
-            </Col>
-            <Col xs="auto" className="pb-1">
-              <Form.Check
-                type="switch"
-                id="provision-rpi"
-                label="Raspberry Pi"
-                className="small mb-0"
-                checked={settings.rpi}
-                onChange={(event) => updateSetting('rpi', event.target.checked)}
-                data-testid="device-provision-rpi"
-              />
-            </Col>
-            <Col xs="auto" className="ms-lg-auto">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={generate}
-                disabled={loading || !settings.model}
-                data-testid="device-provision-generate"
-              >
-                {loading && !preview ? (
-                  <Spinner size="sm" animation="border" className="me-2" />
-                ) : (
-                  <FileEarmarkCode className="me-2" />
-                )}
-                Generate config
-              </Button>
-            </Col>
-          </Row>
+          <ConfigSectionCards
+            testId="device-provision-sections"
+            sections={sections}
+            addable={settings.router ? [] : [routerSection]}
+            disabled={loading}
+          />
 
-          {preview && (
-            <div className="mt-3" data-testid="device-provision-preview">
-              <div className="device-provision-facts" data-testid="device-provision-facts">
-                {facts.map(([name, value]) => (
-                  <div key={name} className="device-provision-fact">
-                    <span className="text-muted me-2">{name}</span>
-                    {value}
-                  </div>
-                ))}
-              </div>
-
-              <Row className="g-2 mb-2">
-                <Col lg={9}>
-                  <Form.Control
-                    as="textarea"
-                    readOnly
-                    rows={14}
-                    value={preview.config}
-                    className="device-provision-config font-monospace"
-                    onFocus={(event) => event.target.select()}
-                    data-testid="device-provision-config"
-                  />
-                </Col>
-                <Col lg={3}>
-                  <div className="d-flex flex-wrap flex-lg-column align-items-center gap-2">
-                    {portalQrCode('Setup portal Wi-Fi', preview.portal.wifi.ssid, preview.portal.wifi)}
-                    {portalQrCode('Controller', preview.portal.frontend.url, preview.portal.frontend)}
-                  </div>
-                </Col>
-              </Row>
-
-              <div className="d-flex flex-wrap align-items-center gap-2">
+          <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
+            <Button
+              size="sm"
+              variant={preview ? 'outline-secondary' : 'primary'}
+              onClick={() => generate()}
+              disabled={loading || !settings.model}
+              data-testid="device-provision-generate"
+            >
+              {loading && !preview ? (
+                <Spinner size="sm" animation="border" className="me-2" />
+              ) : (
+                <FileEarmarkCode className="me-2" />
+              )}
+              Generate config
+            </Button>
+            {preview && (
+              <>
                 <Button size="sm" variant="outline-secondary" onClick={copyConfig} data-testid="device-provision-copy">
                   <Clipboard className="me-2" />
                   Copy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  onClick={() => setShowConfig((shown) => !shown)}
+                  data-testid="device-provision-show-config"
+                >
+                  <FileEarmarkCode className="me-2" />
+                  {t(showConfig ? 'provision_config_hide' : 'provision_config_show')}
                 </Button>
                 <Button
                   size="sm"
@@ -514,16 +517,28 @@ const DeviceProvisionPanel = ({
                   )}
                   Confirm
                 </Button>
-                {confirmed ? (
-                  <span className="device-provision-ready small" data-testid="device-provision-ready">
-                    <CheckCircle className="me-1" />
-                    Device <code>{preview.device_hash}</code> is created and linked to its location - it is ready to
-                    send its data.
-                  </span>
-                ) : (
-                  <span className="small text-muted" data-testid="device-provision-not-saved">Nothing is saved yet: the token only works once you confirm.</span>
-                )}
-              </div>
+              </>
+            )}
+            {!preview ? (
+              <span className="small text-muted">{t('provision_generate_hint')}</span>
+            ) : confirmed ? (
+              <span className="device-provision-ready small" data-testid="device-provision-ready">
+                <CheckCircle className="me-1" />
+                Device <code>{preview.device_hash}</code> is created and linked to its location - it is ready to
+                send its data.
+              </span>
+            ) : (
+              <span className="small text-muted" data-testid="device-provision-not-saved">Nothing is saved yet: the token only works once you confirm.</span>
+            )}
+          </div>
+
+          {preview && (showConfig || showConfigQr) && (
+            <div className="mt-2" data-testid="device-provision-preview">
+              {showConfig && (
+                <pre className="device-provision-config mb-0" data-testid="device-provision-config">
+                  {preview.config}
+                </pre>
+              )}
 
               {showConfigQr && (
                 <figure className="mt-3 mb-0 text-center" data-testid="device-provision-config-qr">
