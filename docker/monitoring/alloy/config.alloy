@@ -44,6 +44,13 @@ loki.process "progeo" {
     replace    = ""
   }
 
+  // No device tokens in Loki. The backend masks them itself (progeo/logging.py:
+  // mask_sensitive, sanitize_query); this catches a line that slips through.
+  stage.replace {
+    expression = "(?i)\\btoken=([^&'\"\\s<>*]+)"
+    replace    = "***"
+  }
+
   // One entry per record instead of one per line: a traceback after
   // "[2026-11-22 07:51:15] [ERROR] ..." and the " pair_values=[...]" lines of
   // a console message stay with their first line (and get its level). A new
@@ -74,10 +81,12 @@ loki.process "progeo" {
   // DEBG TRAC BLAT), "INFO Backing Up ...", "ERROR:    Exception in ASGI
   // application" (uvicorn)
   stage.regex {
-    expression = "^(?:\\S+ \\S+ )?(?P<lvl_plain>DEBUG|INFO|WARNING|ERROR|CRITICAL|CRIT|ERRO|WARN|DEBG|TRAC|BLAT):? |\\[(?P<lvl_bracket>DEBUG|INFO|WARNING|ERROR|CRITICAL)\\]"
+    expression = "^(?:\\S+ \\S+ )?(?P<lvl_plain>DEBUG|INFO|WARNING|ERROR|CRITICAL|CRIT|ERRO|WARN|DEBG|TRAC|BLAT):? |\\[(?P<lvl_bracket>DEBUG|INFO|WARNING|ERROR|CRITICAL|RUNTIME)\\]"
   }
 
-  // Lines without a level (shell output, "[RUNTIME]" timings): level="unknown".
+  // "[RUNTIME]" (calc_runtime: one line per timed request, most of
+  // backend.log) is a level of its own, so it can be filtered out.
+  // Lines without a level (shell output, other console tags): level="unknown".
   stage.template {
     source   = "level"
     template = "{{ $l := or .lvl_json .lvl_bracket .lvl_plain \"unknown\" }}{{ if eq $l \"CRIT\" }}CRITICAL{{ else if eq $l \"ERRO\" }}ERROR{{ else if eq $l \"WARN\" }}WARNING{{ else if eq $l \"DEBG\" \"TRAC\" \"BLAT\" }}DEBUG{{ else }}{{ $l }}{{ end }}"

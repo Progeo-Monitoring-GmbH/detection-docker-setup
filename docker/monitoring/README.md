@@ -112,7 +112,9 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
   - Database sizes come from a second exporter (`progeo-postgres-sizes-exporter`, job `postgres-sizes`), scraped only every 15 minutes: `pg_database_size()` of every database costs the server about 3s of work.
 - **Overview:** [overview.json](grafana/dashboards/overview.json) combines API, Celery, cron jobs, Alertmanager notifications, log warnings/errors, Docker/host and PostgreSQL on one page.
 - **Log files:** [alloy/config.alloy](alloy/config.alloy) tails `logs/backend/*.log` and `errors.jsonl` (mounted read-only) and labels each line with `file` and `level`.
-  - `level` comes from `[INFO]`, `INFO ...` or the JSON `level`; lines without one (shell output, `[RUNTIME]` timings) get `level="unknown"`.
+  - `level` comes from `[INFO]`, `INFO ...` or the JSON `level`; lines without one (shell output, other console tags) get `level="unknown"`.
+  - `[RUNTIME]` lines (one per timed request, most of `backend.log`) get `level="RUNTIME"`, so they can be filtered out.
+  - `token=...` values are masked before a line is sent to Loki. The backend masks them in its own log lines too (`mask_sensitive` in `progeo/logging.py`); Alloy catches what slips through.
   - In `backend*.log` and `celery*.log` a traceback and the other follow-up lines of a record are one entry with its first line, and carry its level.
   - [errors.json](grafana/dashboards/errors.json) ("Errors and warnings") groups warnings and errors by message: numbers and ids become `N`, each message has its count, first and last occurrence, and a click shows its lines. "New messages" are those that did not occur in the 7 days before the selected range.
     - Every record is counted once: `errors.jsonl` holds all WARNING+ records of the Python loggers, so their copies in `backend.err.log` and `celery*.log` are left out. 4xx client errors (scanners, expired tokens) are not in `errors.jsonl`; they have their own collapsed row.

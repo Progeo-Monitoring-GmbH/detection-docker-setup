@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from progeo.helper.basics import ilog
+from progeo.logging import mask_sensitive
 
 
 def has_test_coverage(wrapped_function):
@@ -22,7 +23,8 @@ def calc_runtime(func):
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        ilog(f"{total_time:.4f}s\t\trequest='{func.__name__}{args}' kwargs={kwargs}", tag="[RUNTIME]")
+        # args holds the request, whose repr shows the URL with the device's token.
+        ilog(mask_sensitive(f"{total_time:.4f}s\t\trequest='{func.__name__}{args}' kwargs={kwargs}"), tag="[RUNTIME]")
         return result
 
     return _wrapper

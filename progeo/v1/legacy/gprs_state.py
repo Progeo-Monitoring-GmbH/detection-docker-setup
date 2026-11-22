@@ -4,7 +4,7 @@ controllers (gprs.py) - fetched periodically, not per request.
 An answer needs, per project: interval, pulldown and sensor count of its
 legacy device (raw_hash = project id), PE of its location and its active
 alarms. With ~3 requests/s these are not queried per request: the beat task
-refresh_legacy_gprs_state (every 15 minutes) reads them for every project of
+refresh_legacy_gprs_state (hourly) reads them for every project of
 gprs_table.py - one device and one alarm query per database, one location
 query - and stores a snapshot in the cache. Every process keeps its copy for
 LOCAL_TTL seconds, so an answer costs no database query. Only without a
@@ -20,7 +20,7 @@ device: ingestion never sets it for these controllers, so a device it
 Changes reach the answers with the next refresh; the configuration editor
 (gprs_config.py) updates its projects in the snapshot right away
 (refresh_projects). Alarms appear in the answer
-(reset code, sensor number) up to one refresh interval late.
+(reset code, sensor number) up to one refresh interval - an hour - late.
 """
 
 import time
@@ -33,9 +33,9 @@ from progeo.v1.legacy.gprs_port import NO_ALARM, DeviceConfig
 from progeo.v1.legacy.gprs_table import SCRIPTS
 
 SNAPSHOT_KEY = "legacy-gprs:state"
-# Three refresh intervals (15 min, celery.py): a missed run or two changes
+# Three refresh intervals (1 h, celery.py): a missed run or two changes
 # nothing; after that requests load their projects themselves.
-SNAPSHOT_TIMEOUT = 45 * 60
+SNAPSHOT_TIMEOUT = 3 * 60 * 60
 LOCAL_TTL = 60
 PULLDOWNS = {8, 24, 40, 72, 136}  # ProgeoDevice.Resistance
 MISSING_WARNING_EVERY = 60

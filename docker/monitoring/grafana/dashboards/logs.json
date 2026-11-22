@@ -65,7 +65,7 @@
         "name": "level",
         "label": "Level",
         "type": "custom",
-        "query": "CRITICAL,ERROR,WARNING,INFO,DEBUG,unknown",
+        "query": "CRITICAL,ERROR,WARNING,INFO,DEBUG,RUNTIME,unknown",
         "multi": true,
         "includeAll": true,
         "allValue": ".+",
@@ -96,7 +96,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Lines by level",
-      "description": "\"unknown\" = lines without a level, e.g. traceback lines or shell output of the cron jobs.",
+      "description": "RUNTIME = one line per timed request (calc_runtime), most of backend.log. \"unknown\" = lines without a level, e.g. shell output of the cron jobs.",
       "datasource": {
         "type": "loki",
         "uid": "loki"

@@ -16,6 +16,7 @@ from progeo.logging import (
     SanitizeURLFilter,
     SharedRotatingFileHandler,
     SkipClientErrorsFilter,
+    mask_sensitive,
     process_role,
     sanitize_query,
 )
@@ -150,3 +151,36 @@ def test_json_formatter_omits_optional_fields_when_not_supplied():
 
     assert data["message"] == "message"
     assert {"path", "exception", "stack"}.isdisjoint(data)
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("<ASGIRequest: POST '/v1/device/sample/query/?token=Cf4hqJQ4Jm9N'>", "<ASGIRequest: POST '/v1/device/sample/query/?token=***'>"),
+    ("/v1/x/?a=1&TOKEN=abc&event=status", "/v1/x/?a=1&TOKEN=***&event=status"),
+    ("kwargs={'token': 'abc', 'pk': 7}", "kwargs={'token': '***', 'pk': 7}"),
+    ('{"token": "abc"}', '{"token": "***"}'),
+    ("no secrets, tokens=3 of 5", "no secrets, tokens=3 of 5"),
+])
+def test_mask_sensitive_hides_token_values_in_free_text(text, expected):
+    assert mask_sensitive(text) == expected
+
+
+def test_calc_runtime_logs_no_token(monkeypatch):
+    """The [RUNTIME] line prints the request's repr - its URL carries the device token."""
+    from progeo import decorator
+
+    logged = []
+    monkeypatch.setattr(decorator, "ilog", lambda message, tag: logged.append((tag, message)))
+
+    class Request:
+        def __repr__(self):
+            return "<ASGIRequest: POST '/v1/device/sample/query/?token=Cf4hqJQ4Jm9N'>"
+
+    @decorator.calc_runtime
+    def view(request, token=None):
+        return "ok"
+
+    assert view(Request(), token="Cf4hqJQ4Jm9N") == "ok"
+    (tag, message), = logged
+    assert tag == "[RUNTIME]"
+    assert "Cf4hqJQ4Jm9N" not in message
+    assert "token=***" in message and "'token': '***'" in message

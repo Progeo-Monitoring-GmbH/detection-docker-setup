@@ -27,6 +27,18 @@ def sanitize_query(query: str) -> str:
     return urlencode(cleaned)
 
 
+# "token=abc" (a URL inside any text) and "'token': 'abc'" (the repr of a dict).
+_SENSITIVE_NAMES = "|".join(sorted(re.escape(name) for name in SENSITIVE_PARAMS))
+_SENSITIVE_QUERY_RE = re.compile(rf"\b({_SENSITIVE_NAMES})=[^&'\"\s<>]+", re.IGNORECASE)
+_SENSITIVE_ITEM_RE = re.compile(rf"(['\"](?:{_SENSITIVE_NAMES})['\"]\s*:\s*)(['\"])[^'\"]*\2", re.IGNORECASE)
+
+
+def mask_sensitive(text: str) -> str:
+    """Mask SENSITIVE_PARAMS values in free text, e.g. the repr of a request or of kwargs."""
+    text = _SENSITIVE_QUERY_RE.sub(r"\1=***", text)
+    return _SENSITIVE_ITEM_RE.sub(r"\1\2***\2", text)
+
+
 def process_role() -> str:
     """Short name of the running process, e.g. 'celery worker', 'manage.py evaluate_measurements', 'daphne'."""
     args = [os.path.basename(arg) for arg in sys.argv[:2] if not arg.startswith("-")]
