@@ -753,6 +753,32 @@ services:
     networks:
       monitoring_net:
 
+  # CPU and memory of the processes inside progeo-backend (web server, celery
+  # workers, cron jobs) - cAdvisor only sees their sum. Needs the host's
+  # process list (pid: host, /proc) and counts only the processes that
+  # docker/monitoring/process-exporter/config.yml names. root + SYS_PTRACE:
+  # without them /proc/<pid>/smaps of other users' processes is unreadable and
+  # the memory of the 17 celery worker processes counts shared pages 17 times.
+  progeo-process-exporter:
+    image: ncabatoff/process-exporter:0.8.7
+    container_name: progeo-process-exporter
+    restart: unless-stopped
+    profiles: ['monitoring']
+    pid: host
+    user: '0:0'
+    cap_drop: ['ALL']
+    cap_add: ['SYS_PTRACE']
+    read_only: true
+    command:
+      - --procfs=/host/proc
+      - --config.path=/config/config.yml
+      - --threads=false
+    volumes:
+      - /proc:/host/proc:ro
+      - ./docker/monitoring/process-exporter/config.yml:/config/config.yml:ro
+    networks:
+      monitoring_net:
+
   # Host CPU, memory, disk and network. Runs in the host network namespace (for
   # the real network interfaces) and listens on the monitoring_net gateway only,
   # so it is reachable from the host and progeo-prometheus but not from outside.

@@ -156,5 +156,22 @@ do
   chmod 666 "$log_file" 2>/dev/null || true
 done
 
+# supervisord.conf is a template: the copy in /run gets the password of
+# supervisorctl's socket, new on every start and readable for root only
+# (cronjobs/staging-import.sh reads the same copy). Letters and digits only -
+# a "%" would be read as an expansion by supervisord.
+SUPERVISOR_CONF=/run/supervisord.conf
+supervisor_password="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
+if [ -z "$supervisor_password" ]; then
+  echo "Could not generate the supervisorctl password" >&2
+  exit 1
+fi
+(
+  umask 077
+  sed "s/__SUPERVISOR_PASSWORD__/$supervisor_password/" \
+    /home/progeo/detection-docker-setup/supervisord.conf > "$SUPERVISOR_CONF"
+) || exit 1
+unset supervisor_password
+
 # supervisord comes from the venv (requirements.txt), not from apk.
-exec "${VENV_ROOT:-/opt/venv}/bin/supervisord" -c /home/progeo/detection-docker-setup/supervisord.conf
+exec "${VENV_ROOT:-/opt/venv}/bin/supervisord" -c "$SUPERVISOR_CONF"

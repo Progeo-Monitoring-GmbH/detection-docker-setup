@@ -65,6 +65,13 @@ scrape_configs:
     static_configs:
       - targets: ['progeo-cadvisor:8080']
 
+  # CPU and memory by process group inside progeo-backend (api, celery worker,
+  # manage.py commands ...; docker/monitoring/process-exporter/config.yml).
+  - job_name: process
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['progeo-process-exporter:9256']
+
   # Host network namespace; listens only on the monitoring_net gateway.
   - job_name: node
     static_configs:

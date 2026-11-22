@@ -19,7 +19,6 @@ groups:
             {job="progeo-backend", level=~"ERROR|CRITICAL"}
               !~ "^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]"
               !~ "^ ?[0-9:.]+ +[[][A-Z]+[]]"
-              !~ "unix_http_server"
             [10m])) > 0
         labels:
           severity: warning

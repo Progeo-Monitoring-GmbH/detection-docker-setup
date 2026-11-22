@@ -336,7 +336,19 @@ def section_host(hours):
     mem_now = prom_by(mem, "name", 0)
     mem_max = prom_by("max_over_time((%s)[%s:5m])" % (mem, rng), "name", 0)
     restarts = prom_by('sum by (name) (changes(container_start_time_seconds{name=~"progeo-.+"}[%s])) > 0' % rng, "name", 0)
+    # progeo-process-exporter: the process groups inside progeo-backend.
+    group_cpu = "sum by (groupname) (rate(namedprocess_namegroup_cpu_seconds_total[5m]))"
+    group_mem = 'sum by (groupname) (namedprocess_namegroup_memory_bytes{memtype="proportionalResident"})'
+    group_cpu_avg = prom_by("avg_over_time((%s)[%s:5m])" % (group_cpu, rng), "groupname")
+    group_cpu_max = prom_by("max_over_time((%s)[%s:5m])" % (group_cpu, rng), "groupname")
+    group_mem_max = prom_by("max_over_time((%s)[%s:5m])" % (group_mem, rng), "groupname", 0)
     return {
+        "backend_process_groups": [{
+            "group": group,
+            "cpu_cores_avg": group_cpu_avg.get(group),
+            "cpu_cores_max": group_cpu_max.get(group),
+            "memory_bytes_max": group_mem_max.get(group),
+        } for group in sorted(set(group_cpu_max) | set(group_mem_max), key=lambda g: -(group_cpu_max.get(g) or 0))],
         "cpu_busy_share_now": prom_scalar(busy),
         "cpu_busy_share_max": prom_scalar("max_over_time((%s)[%s:5m])" % (busy, rng)),
         "cpu_cores": prom_scalar('count(node_cpu_seconds_total{mode="idle"})'),

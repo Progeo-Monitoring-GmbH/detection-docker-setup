@@ -1,0 +1,38 @@
+# progeo-process-exporter: CPU and memory of the processes inside progeo-backend.
+# That container runs the web server, the celery workers and the cron jobs
+# together - cAdvisor only sees their sum.
+#
+# The exporter runs in the host's process namespace and sees every process of
+# the host; only those a rule below matches are counted (first match wins).
+# Children that match no rule count for their parent: the worker processes of
+# uvicorn and celery, and whatever a cron job starts.
+# Check: docker exec progeo-process-exporter wget -qO- http://127.0.0.1:9256/metrics | grep namegroup_num_procs
+process_names:
+  # run-server.sh: "python -u -m uvicorn progeo.asgi:application ..." or "... -m daphne ..."
+  - name: 'api'
+    cmdline:
+      - '-m (uvicorn|daphne) .*progeo\.asgi'
+
+  - name: 'celery worker'
+    cmdline:
+      - 'celery -A progeo\.celery worker'
+
+  - name: 'celery beat'
+    cmdline:
+      - 'celery -A progeo\.celery beat'
+
+  # Management commands, from cron jobs or `docker exec`: one group per command
+  # ("manage.py evaluate_measurements").
+  - name: 'manage.py {{.Matches.cmd}}'
+    cmdline:
+      - 'manage\.py (?P<cmd>[a-z_]+)'
+
+  # The shell part of a cron job (cronjobs/daily.sh ...): pg_dump, rsync and
+  # the like count here, the manage.py commands above on their own.
+  - name: 'cron {{.Matches.job}}'
+    cmdline:
+      - 'cronjobs/(?P<job>[a-z-]+)\.sh'
+
+  - name: 'supervisord'
+    cmdline:
+      - 'supervisord -c .*supervisord\.conf'

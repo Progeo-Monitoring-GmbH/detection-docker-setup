@@ -18,7 +18,7 @@ The report shows symptoms. Treat every entry as a lead to check in the code, not
 | `cron_jobs` | Per job: last exit code, time since last success, duration, interval. |
 | `api` | Request rate, 5xx responses by view, slowest and busiest views. |
 | `database` | Connections, deadlocks, and the statements PostgreSQL spent the most time on. |
-| `host` | CPU, memory and disk of the host, and CPU, memory and restarts per container. |
+| `host` | CPU, memory and disk of the host, and CPU, memory and restarts per container. `backend_process_groups` splits the backend container into `api`, `celery worker`, `celery beat`, `manage.py <command>` and `cron <job>`. |
 | `notifications`, `backups` | Open notification cases, outbound mail/SMS, state of the backup transfer. |
 
 Each log message has `lines`, `first_seen`, `last_seen` and `new` (true = it did not occur in the 7 days before the period). `example` is its newest record: `logger`, `message`, `location` (file and line), `function`, `process`, and `exception` with the end of the traceback where one was recorded.

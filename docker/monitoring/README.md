@@ -16,6 +16,7 @@ Without that profile, nothing here is pulled or started.
 | progeo-redis-exporter | oliver006/redis_exporter | Redis health and length of the celery queue |
 | progeo-cadvisor | ghcr.io/google/cadvisor | CPU, memory and restarts per container |
 | progeo-node-exporter | prom/node-exporter | Host CPU, memory, disk and network |
+| progeo-process-exporter | ncabatoff/process-exporter | CPU and memory of the process groups inside `progeo-backend` (api, celery worker, cron jobs) |
 
 The backend exposes its own metrics at `/metrics` ([progeo/metrics.py](../../progeo/metrics.py)):
 
@@ -130,6 +131,12 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
 - **Celery task performance:** [celery.json](grafana/dashboards/celery.json) has a task filter and "Performance by task": runs, failures, average/median/p95 runtime and the worker time each task used. A click on a task filters the page by it.
   - Median and p95 are estimates between Flower's histogram buckets (`FLOWER_TASK_RUNTIME_METRIC_BUCKETS`).
   - `CeleryTaskSlow` fires when a task's average runtime of the last hour is above 5s and more than 3 times its average of the 7 days before.
+- **Spike investigation:** [spikes.json](grafana/dashboards/spikes.json) answers "what caused that CPU or memory peak". "Peaks by container" lists average and maximum per container; below it, CPU and memory by container share one time axis and one crosshair with what was running: API views by time spent, Celery task starts, cron jobs, PostgreSQL, disk, swapping and the logs.
+  - Drag over a spike to zoom in; every panel follows. Vertical lines mark container restarts (red), cron job starts (blue, without `measure`, which runs every 5 minutes) and alerts that started firing (orange).
+  - "Pressure" is the kernel's PSI: the share of time processes waited for CPU, memory or disk. Usage shows how much was used, pressure shows whether it was too little.
+  - `progeo-backend` is one container for the API, the Celery workers and the cron jobs. The row "Inside progeo-backend" splits its CPU and memory by process group: `api`, `celery worker`, `celery beat`, `manage.py <command>`, `cron <job>` and `supervisord`.
+    - The groups are the rules in [process-exporter/config.yml](process-exporter/config.yml); child processes count for their parent's group. A process that matches no rule is not counted.
+    - `progeo-process-exporter` runs in the host's process namespace (`pid: host`) as root with `SYS_PTRACE` and nothing else: it needs both to read the memory maps of other users' processes, so shared memory of the worker processes is counted once.
 - **Agent report:** the link "Generate Agent-Report" at the top of every dashboard downloads a zip with `report.json` and `PROMPT.md`.
   - `report.json` holds the firing alerts, errors and warnings grouped by message (with the newest record and its traceback), Celery tasks, cron jobs, API views, PostgreSQL statements, host and containers, notifications and backups of the last 24 hours (`/agent-report/?hours=72` for another period, at most 168).
   - [PROMPT.md](agent-report/PROMPT.md) tells a coding agent how to read it and how to work through the findings. Unpack the zip in the repository and point the agent at `agent-report/PROMPT.md`.
