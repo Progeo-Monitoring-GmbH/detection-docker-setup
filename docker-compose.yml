@@ -580,6 +580,8 @@ services:
       LOKI_RETENTION_PERIOD: ${LOKI_RETENTION_PERIOD:-30d}
     volumes:
       - ./docker/monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      # Alert rules on log lines ("fake" = Loki's tenant without auth).
+      - ./docker/monitoring/loki/rules:/etc/loki/rules/fake:ro
       - loki_data:/loki
     networks:
       monitoring_net:
@@ -601,6 +603,24 @@ services:
       - alloy_data:/var/lib/alloy/data
     depends_on:
       - progeo-loki
+    networks:
+      monitoring_net:
+
+  # "Generate Agent-Report" on the Grafana dashboards (nginx: /agent-report/,
+  # Django superusers only): asks Prometheus, Loki and Alertmanager for the
+  # server's state and answers with a zip - report.json and PROMPT.md, the
+  # instructions for a coding agent. docker/monitoring/agent-report/server.py
+  progeo-agent-report:
+    image: python:3.13-alpine
+    container_name: progeo-agent-report
+    restart: unless-stopped
+    profiles: ['monitoring']
+    user: '65534:65534'
+    command: ['python', '/app/server.py']
+    environment:
+      AGENT_REPORT_SERVER_NAME: ${ALERT_SERVER_NAME:-}
+    volumes:
+      - ./docker/monitoring/agent-report:/app:ro
     networks:
       monitoring_net:
 

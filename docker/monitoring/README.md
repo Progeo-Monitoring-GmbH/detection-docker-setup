@@ -11,6 +11,7 @@ Without that profile, nothing here is pulled or started.
 | progeo-loki | grafana/loki | Stores the lines of the backend's log files (`LOKI_RETENTION_PERIOD`, 30d) |
 | progeo-alloy | grafana/alloy | Tails `logs/backend/*.log` and `errors.jsonl` and pushes them to Loki |
 | progeo-flower | mher/flower | Celery tasks and workers (from the `-E` worker events) |
+| progeo-agent-report | python (alpine) | "Generate Agent-Report": the server's state as `report.json` with `PROMPT.md` for a coding agent |
 | progeo-postgres-exporter | prometheuscommunity/postgres-exporter | Connections, transactions, locks, sizes, `pg_stat_statements` |
 | progeo-redis-exporter | oliver006/redis_exporter | Redis health and length of the celery queue |
 | progeo-cadvisor | ghcr.io/google/cadvisor | CPU, memory and restarts per container |
@@ -110,7 +111,11 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
   - Database sizes come from a second exporter (`progeo-postgres-sizes-exporter`, job `postgres-sizes`), scraped only every 15 minutes: `pg_database_size()` of every database costs the server about 3s of work.
 - **Overview:** [overview.json](grafana/dashboards/overview.json) combines API, Celery, cron jobs, Alertmanager notifications, log warnings/errors, Docker/host and PostgreSQL on one page.
 - **Log files:** [alloy/config.alloy](alloy/config.alloy) tails `logs/backend/*.log` and `errors.jsonl` (mounted read-only) and labels each line with `file` and `level`.
-  - `level` comes from `[INFO]`, `INFO ...` or the JSON `level`; lines without one (traceback lines, shell output) get `level="unknown"`.
+  - `level` comes from `[INFO]`, `INFO ...` or the JSON `level`; lines without one (shell output, `[RUNTIME]` timings) get `level="unknown"`.
+  - In `backend*.log` and `celery*.log` a traceback and the other follow-up lines of a record are one entry with its first line, and carry its level.
+  - [errors.json](grafana/dashboards/errors.json) ("Errors and warnings") groups warnings and errors by message: numbers and ids become `N`, each message has its count, first and last occurrence, and a click shows its lines. "New messages" are those that did not occur in the 7 days before the selected range.
+    - Every record is counted once: `errors.jsonl` holds all WARNING+ records of the Python loggers, so their copies in `backend.err.log` and `celery*.log` are left out. 4xx client errors (scanners, expired tokens) are not in `errors.jsonl`; they have their own collapsed row.
+  - Alerts on log lines are in [loki/rules/alerts.yml](loki/rules/alerts.yml): `LogErrors` (any error line within 10 minutes) and `LogErrorBurst` (more than 20). Loki's ruler evaluates them and sends them to Alertmanager, so they are mailed like the Prometheus alerts.
   - Rotated copies (`*.log.prev`, `*.log.1`) are skipped, they hold the same lines again.
   - Lines carry the time Alloy read them, not the time in the line. On its first start Alloy begins at the end of each file, so older lines never reach Loki.
   - [logs.json](grafana/dashboards/logs.json) ("Progeo Logs") browses all lines by file, level and text; the overview shows only WARNING/ERROR/CRITICAL.
@@ -122,6 +127,14 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
   - Changes made in the UI can't be saved over them. Use "Save as" for your own copy, or edit the JSON.
 - **Celery queue backlog** is the length of the redis list `celery` in db 0.
   - Flower only knows tasks it has seen since its own start, so task counters reset when it restarts.
+- **Celery task performance:** [celery.json](grafana/dashboards/celery.json) has a task filter and "Performance by task": runs, failures, average/median/p95 runtime and the worker time each task used. A click on a task filters the page by it.
+  - Median and p95 are estimates between Flower's histogram buckets (`FLOWER_TASK_RUNTIME_METRIC_BUCKETS`).
+  - `CeleryTaskSlow` fires when a task's average runtime of the last hour is above 5s and more than 3 times its average of the 7 days before.
+- **Agent report:** the link "Generate Agent-Report" at the top of every dashboard downloads a zip with `report.json` and `PROMPT.md`.
+  - `report.json` holds the firing alerts, errors and warnings grouped by message (with the newest record and its traceback), Celery tasks, cron jobs, API views, PostgreSQL statements, host and containers, notifications and backups of the last 24 hours (`/agent-report/?hours=72` for another period, at most 168).
+  - [PROMPT.md](agent-report/PROMPT.md) tells a coding agent how to read it and how to work through the findings. Unpack the zip in the repository and point the agent at `agent-report/PROMPT.md`.
+  - [server.py](agent-report/server.py) (`progeo-agent-report`) builds it on request; nginx lets only Django superusers through. A section whose source can't be read is listed under `failed_sections`, the rest is still delivered.
+  - Without the browser, over the SSH tunnel: `python docker/monitoring/agent-report/server.py --write tmp/agent-report` with `PROMETHEUS_URL`, `LOKI_URL`, `ALERTMANAGER_URL` and `AGENT_REPORT_AUTH` set as described at the top of the file.
 - **Alerts:** a dead target (`ScrapeTargetDown`) suppresses the warnings of the same job.
   - The same unresolved alert is mailed again every 6h.
 - **Raspberry Pi:** cAdvisor needs the memory cgroup (`cgroup_enable=memory` in `/boot/firmware/cmdline.txt`).

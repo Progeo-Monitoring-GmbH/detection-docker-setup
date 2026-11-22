@@ -28,6 +28,14 @@
       ],
       "asDropdown": true,
       "title": "Progeo dashboards"
+    },
+    {
+      "type": "link",
+      "title": "Generate Agent-Report",
+      "url": "/agent-report/",
+      "icon": "doc",
+      "targetBlank": true,
+      "tooltip": "Downloads a zip with report.json (the server's state of the last 24 hours) and PROMPT.md (instructions for a coding agent)."
     }
   ],
   "panels": [

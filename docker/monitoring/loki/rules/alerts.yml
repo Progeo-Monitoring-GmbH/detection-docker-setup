@@ -1,0 +1,42 @@
+# Alerts on the backend's log lines. Evaluated by progeo-loki (ruler), sent by
+# progeo-alertmanager like the rules of progeo-prometheus (mail to ALERT_EMAIL).
+# Mounted as /etc/loki/rules/fake/alerts.yml ("fake" = Loki's tenant without auth).
+# Loki re-reads the file every minute. Check: Grafana -> Alerting -> Alert rules,
+# or  curl http://progeo-loki:3100/loki/api/v1/rules
+#
+# Every WARNING+ record of the Python loggers is in errors.jsonl; the two
+# line filters drop the copies of the same records in backend.err.log,
+# celery*.log and the cron logs (and with them the 4xx client errors, which
+# errors.jsonl leaves out on purpose). Same selection as the dashboard
+# "Errors and warnings".
+groups:
+  - name: logs
+    interval: 1m
+    rules:
+      - alert: LogErrors
+        expr: |
+          sum by (file) (count_over_time(
+            {job="progeo-backend", level=~"ERROR|CRITICAL"}
+              !~ "^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]"
+              !~ "^ ?[0-9:.]+ +[[][A-Z]+[]]"
+              !~ "unix_http_server"
+            [10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} error line(s) in {{ $labels.file }} within 10 minutes'
+          description: 'The backend logged errors. See the dashboard "Errors and warnings" (Different errors / Latest errors).'
+
+      - alert: LogErrorBurst
+        expr: |
+          sum(count_over_time(
+            {job="progeo-backend", level=~"ERROR|CRITICAL"}
+              !~ "^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]"
+              !~ "^ ?[0-9:.]+ +[[][A-Z]+[]]"
+            [10m])) > 20
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $value }} error lines in the backend logs within 10 minutes'
+          description: 'Errors are piling up. See the dashboard "Errors and warnings".'

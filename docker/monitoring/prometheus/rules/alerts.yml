@@ -104,6 +104,28 @@ groups:
         annotations:
           summary: 'Celery task {{ $labels.task }} failed {{ $value | humanize }} times within 15 minutes'
 
+      # Average runtime of the last hour against the task's own average of the
+      # 7 days before. Tasks under 5s are left out: there a factor of 3 is noise.
+      - alert: CeleryTaskSlow
+        expr: |
+          (
+            sum by (task) (increase(flower_task_runtime_seconds_sum[1h]))
+              / (sum by (task) (increase(flower_task_runtime_seconds_count[1h])) > 0)
+          ) > 5
+          and (
+            sum by (task) (increase(flower_task_runtime_seconds_sum[1h]))
+              / (sum by (task) (increase(flower_task_runtime_seconds_count[1h])) > 0)
+          ) > 3 * (
+            sum by (task) (increase(flower_task_runtime_seconds_sum[7d] offset 1h))
+              / (sum by (task) (increase(flower_task_runtime_seconds_count[7d] offset 1h)) > 0)
+          )
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Celery task {{ $labels.task }} runs {{ $value | humanizeDuration }} on average - more than 3 times its usual runtime'
+          description: 'See the dashboard "Celery" (Performance by task, Average runtime by task).'
+
       - alert: CeleryNoWorkerOnline
         expr: (sum(flower_worker_online) or vector(0)) == 0
         for: 5m

@@ -1,0 +1,1610 @@
+{
+  "uid": "progeo-errors",
+  "title": "Errors and warnings",
+  "description": "Errors and warnings of the backend's log files, grouped by message (Loki, shipped by progeo-alloy).",
+  "tags": [
+    "progeo"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "progeo"
+      ],
+      "asDropdown": true,
+      "title": "Progeo dashboards"
+    },
+    {
+      "type": "link",
+      "title": "Generate Agent-Report",
+      "url": "/agent-report/",
+      "icon": "doc",
+      "targetBlank": true,
+      "tooltip": "Downloads a zip with report.json (the server's state of the last 24 hours) and PROMPT.md (instructions for a coding agent)."
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "file",
+        "label": "File",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": "label_values({job=\"progeo-backend\"}, file)",
+        "definition": "label_values({job=\"progeo-backend\"}, file)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      },
+      {
+        "name": "pattern",
+        "label": "Message (regex)",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Errors",
+      "description": "ERROR and CRITICAL lines in the selected range. Counted once: errors.jsonl (every WARNING+ of the Python loggers) plus the lines other programs write (supervisord, uvicorn, shell output). The copies of the same records in backend.err.log and celery*.log are left out.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" [$__range])) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 1,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Errors, period before",
+      "description": "The same count for the equally long period before the selected range.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" [$__range] offset $__range)) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 2,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Different errors",
+      "description": "Error messages that differ in more than numbers and ids.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range]))) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 3,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Warnings",
+      "description": "WARNING lines in the selected range.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" [$__range])) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 4,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Different warnings",
+      "description": "Warning messages that differ in more than numbers and ids.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range]))) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 5,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "New messages",
+      "description": "Warnings and errors of the selected range that did not occur in the 7 days before it.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range])) unless sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [7d] offset $__range))) or vector(0)",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "id": 6,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Errors",
+      "collapsed": false,
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors over time",
+      "description": "By file and level.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (file, level) (count_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "legendFormat": "{{file}} {{level}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*CRITICAL.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 9,
+        "h": 9
+      }
+    },
+    {
+      "type": "table",
+      "title": "Different errors",
+      "description": "One row per message; numbers and ids are replaced by N. Click a message to see its lines at the bottom of the page.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range])), \"col\", \"lines\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "label_replace(min by (level, msg, rx) (min_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | label_format ts=`{{ __timestamp__ | unixEpoch }}` | unwrap ts [$__range]) by (level, msg, rx)) * 1000, \"col\", \"first seen\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "label_replace(max by (level, msg, rx) (max_over_time({job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | label_format ts=`{{ __timestamp__ | unixEpoch }}` | unwrap ts [$__range]) by (level, msg, rx)) * 1000, \"col\", \"last seen\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rx"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show the lines of this message (below)",
+                    "url": "/d/progeo-errors/errors-and-warnings?var-pattern=${__data.fields.rx:percentencode}&${file:queryparam}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 420
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "level"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICAL": {
+                        "color": "dark-red",
+                        "index": 0
+                      },
+                      "ERROR": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "WARNING": {
+                        "color": "orange",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lines"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 165
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 165
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "last seen",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "col"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": [
+                "Time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "level": 0,
+              "msg": 1,
+              "lines": 2,
+              "first seen": 3,
+              "last seen": 4,
+              "rx": 5
+            },
+            "renameByName": {
+              "msg": "message"
+            }
+          }
+        }
+      ],
+      "id": 9,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 5,
+        "w": 15,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Latest errors",
+      "description": "Newest first, with the traceback where the logger recorded one. Counted once: errors.jsonl (every WARNING+ of the Python loggers) plus the lines other programs write (supervisord, uvicorn, shell output). The copies of the same records in backend.err.log and celery*.log are left out.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"progeo-backend\", level=~\"ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json | drop __error__, __error_details__ | line_format `{{ if .message }}[{{ .logger }}] {{ .message }}  ({{ .process }}){{ if .exception }}\n{{ .exception }}{{ end }}{{ else }}{{ __line__ }}{{ end }}`",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "id": 10,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "Warnings",
+      "collapsed": false,
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Warnings over time (10 most frequent messages)",
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (msg) (count_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__auto])))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "legendFormat": "{{msg}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "type": "table",
+      "title": "Different warnings",
+      "description": "One row per message; numbers and ids are replaced by N. projects = how many project numbers (\"project 1234\") the message named. Click a message to see its lines at the bottom of the page.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range])), \"col\", \"lines\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "label_replace(count by (level, msg, rx) (sum by (level, msg, rx, project) (count_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | regexp `project (?P<project>[0-9]+)` | project != \"\" [$__range]))), \"col\", \"projects\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "label_replace(min by (level, msg, rx) (min_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | label_format ts=`{{ __timestamp__ | unixEpoch }}` | unwrap ts [$__range]) by (level, msg, rx)) * 1000, \"col\", \"first seen\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "label_replace(max by (level, msg, rx) (max_over_time({job=\"progeo-backend\", level=~\"WARNING\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | label_format ts=`{{ __timestamp__ | unixEpoch }}` | unwrap ts [$__range]) by (level, msg, rx)) * 1000, \"col\", \"last seen\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rx"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show the lines of this message (below)",
+                    "url": "/d/progeo-errors/errors-and-warnings?var-pattern=${__data.fields.rx:percentencode}&${file:queryparam}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 420
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "level"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICAL": {
+                        "color": "dark-red",
+                        "index": 0
+                      },
+                      "ERROR": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "WARNING": {
+                        "color": "orange",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lines"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "projects"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 165
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 165
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "lines",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "col"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": [
+                "Time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "level": true
+            },
+            "indexByName": {
+              "level": 0,
+              "msg": 1,
+              "lines": 2,
+              "projects": 3,
+              "first seen": 4,
+              "last seen": 5,
+              "rx": 6
+            },
+            "renameByName": {
+              "msg": "message"
+            }
+          }
+        }
+      ],
+      "id": 13,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 15,
+        "h": 11
+      }
+    },
+    {
+      "type": "table",
+      "title": "New messages (not seen in the 7 days before)",
+      "description": "Warnings and errors of the selected range whose message did not occur in the 7 days before it.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range])) unless sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\", file=~\"$file\"} !~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Za-z_.]+[]] [[]\" !~ \"^ ?[0-9:.]+ +[[][A-Z]+[]]\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [7d] offset $__range)), \"col\", \"lines\", \"level\", \".*\")",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rx"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show the lines of this message (below)",
+                    "url": "/d/progeo-errors/errors-and-warnings?var-pattern=${__data.fields.rx:percentencode}&${file:queryparam}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 420
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "level"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICAL": {
+                        "color": "dark-red",
+                        "index": 0
+                      },
+                      "ERROR": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "WARNING": {
+                        "color": "orange",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lines"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "lines",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "col"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": [
+                "Time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "level": 0,
+              "msg": 1,
+              "lines": 2,
+              "rx": 3
+            },
+            "renameByName": {
+              "msg": "message"
+            }
+          }
+        }
+      ],
+      "id": 14,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 34,
+        "w": 9,
+        "h": 11
+      }
+    },
+    {
+      "type": "row",
+      "title": "Lines",
+      "collapsed": false,
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "Lines of the selected message",
+      "description": "Filtered by \"Message (regex)\" at the top - a click on a message in the tables sets it. Empty = all warnings and errors. Searches every file, so a record may show up twice (errors.jsonl and the console log).",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\", file=~\"$file\"} |~ \"$pattern\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "id": 16,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 12
+      }
+    },
+    {
+      "type": "row",
+      "title": "Client errors (4xx, scanners) - backend.err.log only",
+      "collapsed": true,
+      "id": 17,
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Client errors over time",
+          "description": "400/401/403/404 answers and rejected Host headers. They are kept out of errors.jsonl on purpose (scanners, expired tokens).",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (level) (count_over_time({job=\"progeo-backend\", file=\"backend.err.log\", level=~\"WARNING|ERROR|CRITICAL\"} |~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Z]+[]] [[]django[.](request|security)\" !~ \"Internal Server Error\" [$__auto]))",
+              "queryType": "range",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "legendFormat": "{{level}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "sum"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 18,
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 59,
+            "w": 9,
+            "h": 10
+          }
+        },
+        {
+          "type": "table",
+          "title": "Different client errors",
+          "description": "One row per message; numbers and ids are replaced by N.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "label_replace(sum by (level, msg, rx) (count_over_time({job=\"progeo-backend\", file=\"backend.err.log\", level=~\"WARNING|ERROR|CRITICAL\"} |~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Z]+[]] [[]django[.](request|security)\" !~ \"Internal Server Error\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` [$__range])), \"col\", \"lines\", \"level\", \".*\")",
+              "queryType": "instant",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "expr": "label_replace(max by (level, msg, rx) (max_over_time({job=\"progeo-backend\", file=\"backend.err.log\", level=~\"WARNING|ERROR|CRITICAL\"} |~ \"^[[][0-9-]+ [0-9:]+[]] [[][A-Z]+[]] [[]django[.](request|security)\" !~ \"Internal Server Error\" | json jmsg=\"message\" | drop __error__, __error_details__ | label_format msg=`{{ or .jmsg __line__ }}` | label_format msg=`{{ regexReplaceAll \"(?s)[[:space:]]*[|]?[[:space:]]*[[:cntrl:]].*\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^[[:space:]]*[[]?[0-9][0-9:., -]+(UTC)?[]]?[[:space:]]*([[](WARNING|ERROR|CRITICAL)[]] )?\" .msg \"\" }}` | label_format msg=`{{ regexReplaceAll \"^([[]django[.a-zA-Z]*[]]) [^ ]+ \" .msg \"${1} \" }}` | label_format msg=`{{ regexReplaceAll \"[0-9a-f]{8}-[0-9a-f-]{27}|0x[0-9a-f]+|[0-9]+\" .msg \"N\" | trunc 160 }}` | label_format rx=`{{ regexReplaceAll \"[^a-zA-Z0-9 ]+\" .msg \".+?\" }}` | label_format rx=`{{ regexReplaceAll \"N\" .rx \".+?\" }}` | label_format ts=`{{ __timestamp__ | unixEpoch }}` | unwrap ts [$__range]) by (level, msg, rx)) * 1000, \"col\", \"last seen\", \"level\", \".*\")",
+              "queryType": "instant",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "format": "table"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "rx"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom.viz",
+                    "value": true
+                  },
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "message"
+                },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Show the lines of this message (below)",
+                        "url": "/d/progeo-errors/errors-and-warnings?var-pattern=${__data.fields.rx:percentencode}&${file:queryparam}&${__url_time_range}"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.minWidth",
+                    "value": 420
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "auto",
+                      "wrapText": true
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "level"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 95
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "CRITICAL": {
+                            "color": "dark-red",
+                            "index": 0
+                          },
+                          "ERROR": {
+                            "color": "red",
+                            "index": 1
+                          },
+                          "WARNING": {
+                            "color": "orange",
+                            "index": 2
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "lines"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 165
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {
+                "displayName": "lines",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns",
+                "valueLabel": "col"
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "exclude": {
+                  "names": [
+                    "Time"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {
+                  "level": 0,
+                  "msg": 1,
+                  "lines": 2,
+                  "last seen": 3,
+                  "rx": 4
+                },
+                "renameByName": {
+                  "msg": "message"
+                }
+              }
+            }
+          ],
+          "id": 19,
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "x": 9,
+            "y": 59,
+            "w": 15,
+            "h": 10
+          }
+        }
+      ]
+    }
+  ]
+}

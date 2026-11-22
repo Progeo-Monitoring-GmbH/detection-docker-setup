@@ -44,6 +44,22 @@ loki.process "progeo" {
     replace    = ""
   }
 
+  // One entry per record instead of one per line: a traceback after
+  // "[2026-11-22 07:51:15] [ERROR] ..." and the " pair_values=[...]" lines of
+  // a console message stay with their first line (and get its level). A new
+  // entry starts with "[2026-11-03 ", " 13:27:00.071 " or "INFO: " (uvicorn);
+  // at most 128 lines, sent 3s after the last one. Only the files of the
+  // Python processes - cron logs hold shell output without such a start.
+  stage.match {
+    selector = "{file=~\"backend.*[.]log|celery.*[.]log\"}"
+
+    stage.multiline {
+      firstline     = "^\\s?(\\[\\d{4}-\\d\\d-\\d\\d |\\d\\d:\\d\\d:\\d\\d[.,]\\d+ |[A-Z]+:? )"
+      max_wait_time = "3s"
+      max_lines     = 128
+    }
+  }
+
   // errors.jsonl: {"time": ..., "level": "ERROR", "logger": ..., "message": ...}
   stage.match {
     selector = "{file=\"errors.jsonl\"}"
@@ -55,12 +71,13 @@ loki.process "progeo" {
 
   // "[2026-11-03 12:25:46] [INFO] [daphne] - ...", " 13:27:00.071 [INFO] ...",
   // "2026-11-03 10:14:46,276 INFO reaped ..." (supervisord: CRIT ERRO WARN INFO
-  // DEBG TRAC BLAT), "INFO Backing Up ..."
+  // DEBG TRAC BLAT), "INFO Backing Up ...", "ERROR:    Exception in ASGI
+  // application" (uvicorn)
   stage.regex {
-    expression = "^(?:\\S+ \\S+ )?(?P<lvl_plain>DEBUG|INFO|WARNING|ERROR|CRITICAL|CRIT|ERRO|WARN|DEBG|TRAC|BLAT) |\\[(?P<lvl_bracket>DEBUG|INFO|WARNING|ERROR|CRITICAL)\\]"
+    expression = "^(?:\\S+ \\S+ )?(?P<lvl_plain>DEBUG|INFO|WARNING|ERROR|CRITICAL|CRIT|ERRO|WARN|DEBG|TRAC|BLAT):? |\\[(?P<lvl_bracket>DEBUG|INFO|WARNING|ERROR|CRITICAL)\\]"
   }
 
-  // Lines without a level (tracebacks, shell output): level="unknown".
+  // Lines without a level (shell output, "[RUNTIME]" timings): level="unknown".
   stage.template {
     source   = "level"
     template = "{{ $l := or .lvl_json .lvl_bracket .lvl_plain \"unknown\" }}{{ if eq $l \"CRIT\" }}CRITICAL{{ else if eq $l \"ERRO\" }}ERROR{{ else if eq $l \"WARN\" }}WARNING{{ else if eq $l \"DEBG\" \"TRAC\" \"BLAT\" }}DEBUG{{ else }}{{ $l }}{{ end }}"

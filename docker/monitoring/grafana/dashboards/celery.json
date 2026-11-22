@@ -15,7 +15,35 @@
     "to": "now"
   },
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "task",
+        "label": "Task",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(flower_events_total, task)",
+          "refId": "task"
+        },
+        "definition": "label_values(flower_events_total, task)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      }
+    ]
   },
   "annotations": {
     "list": []
@@ -28,6 +56,14 @@
       ],
       "asDropdown": true,
       "title": "Progeo dashboards"
+    },
+    {
+      "type": "link",
+      "title": "Generate Agent-Report",
+      "url": "/agent-report/",
+      "icon": "doc",
+      "targetBlank": true,
+      "tooltip": "Downloads a zip with report.json (the server's state of the last 24 hours) and PROMPT.md (instructions for a coding agent)."
     }
   ],
   "panels": [
@@ -385,7 +421,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (type) (rate(flower_events_total[$__rate_interval])) * 60",
+          "expr": "sum by (type) (rate(flower_events_total{task=~\"$task\"}[$__rate_interval])) * 60",
           "legendFormat": "{{type}}",
           "datasource": {
             "type": "prometheus",
@@ -440,7 +476,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (task) (increase(flower_events_total{type=\"task-failed\"}[$__rate_interval])) > 0",
+          "expr": "sum by (task) (increase(flower_events_total{type=\"task-failed\", task=~\"$task\"}[$__rate_interval])) > 0",
           "legendFormat": "{{task}}",
           "datasource": {
             "type": "prometheus",
@@ -495,7 +531,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, task) (rate(flower_task_runtime_seconds_bucket[1h])))",
+          "expr": "histogram_quantile(0.95, sum by (le, task) (rate(flower_task_runtime_seconds_bucket{task=~\"$task\"}[1h])))",
           "legendFormat": "{{task}}",
           "datasource": {
             "type": "prometheus",
@@ -550,7 +586,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (task) (flower_task_prefetch_time_seconds)",
+          "expr": "max by (task) (flower_task_prefetch_time_seconds{task=~\"$task\"})",
           "legendFormat": "{{task}}",
           "datasource": {
             "type": "prometheus",
@@ -599,113 +635,521 @@
       }
     },
     {
+      "id": 12,
       "type": "table",
-      "title": "Failed tasks (selected range)",
-      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Performance by task (selected range)",
+      "description": "One row per task that ran or failed in the selected range. total runtime = seconds of worker time the task used, so the top rows cost the most. Runtimes come from Flower's histogram: median and p95 are estimates between its bucket limits (0.1s ... 1h). Flower only knows tasks since its own start. Click a task to filter the page by it.",
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum by (task) (increase(flower_events_total{type=\"task-failed\"}[$__range])) > 0 or (sum by (task) (flower_events_total{type=\"task-failed\"}) unless sum by (task) (flower_events_total{type=\"task-failed\"} offset $__range)))",
-          "instant": true,
-          "format": "table",
+          "expr": "sum by (task) (increase(flower_events_total{type=\"task-succeeded\", task=~\"$task\"}[$__range])) > 0",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "(sum by (task) (increase(flower_events_total{type=\"task-failed\", task=~\"$task\"}[$__range])) > 0 or (sum by (task) (flower_events_total{type=\"task-failed\", task=~\"$task\"}) unless sum by (task) (flower_events_total{type=\"task-failed\", task=~\"$task\"} offset $__range)))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (task) (increase(flower_task_runtime_seconds_sum{task=~\"$task\"}[$__range])) / (sum by (task) (increase(flower_task_runtime_seconds_count{task=~\"$task\"}[$__range])) > 0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.5, sum by (le, task) (rate(flower_task_runtime_seconds_bucket{task=~\"$task\"}[$__range])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "expr": "histogram_quantile(0.95, sum by (le, task) (rate(flower_task_runtime_seconds_bucket{task=~\"$task\"}[$__range])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "expr": "sum by (task) (increase(flower_task_runtime_seconds_sum{task=~\"$task\"}[$__range])) > 0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "G",
+          "expr": "max by (task) (max_over_time(flower_task_prefetch_time_seconds{task=~\"$task\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "format": "table"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "failures",
-            "desc": true
-          }
-        ]
-      },
       "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
               "Time": true
             },
+            "indexByName": {
+              "task": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7
+            },
             "renameByName": {
-              "Value": "failures"
+              "Value #A": "succeeded",
+              "Value #B": "failed",
+              "Value #C": "avg runtime",
+              "Value #D": "median",
+              "Value #E": "p95",
+              "Value #F": "total runtime",
+              "Value #G": "max wait"
             }
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "succeeded",
+                "config": {
+                  "id": "isNotNull",
+                  "options": {}
+                }
+              },
+              {
+                "fieldName": "failed",
+                "config": {
+                  "id": "isNotNull",
+                  "options": {}
+                }
+              }
+            ]
           }
         }
       ],
-      "id": 12,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "task"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 330
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Filter the page by this task",
+                    "url": "/d/progeo-celery/celery?var-task=${__data.fields.task:percentencode}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg runtime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max wait"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total runtime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-BlPu"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "total runtime",
+            "desc": true
+          }
+        ]
       },
       "gridPos": {
         "x": 0,
         "y": 21,
+        "w": 24,
+        "h": 11
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Average runtime by task (1h window)",
+      "description": "Seconds per run, averaged over the runs of the last hour. A task that drifts upwards is getting slower.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (task) (increase(flower_task_runtime_seconds_sum{task=~\"$task\"}[1h])) / (sum by (task) (increase(flower_task_runtime_seconds_count{task=~\"$task\"}[1h])) > 0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
         "w": 12,
         "h": 8
       }
     },
     {
-      "type": "table",
-      "title": "Runs by task (selected range)",
-      "description": "",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (task) (increase(flower_events_total{type=\"task-succeeded\"}[$__range]))",
-          "instant": true,
-          "format": "table",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "succeeded",
-            "desc": true
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "renameByName": {
-              "Value": "succeeded"
-            }
-          }
-        }
-      ],
-      "id": 13,
+      "id": 20,
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "title": "Worker time by task",
+      "description": "Seconds of runtime per second, summed per task: 1 = one worker process busy with this task all the time.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (task) (rate(flower_task_runtime_seconds_sum{task=~\"$task\"}[$__rate_interval])) > 0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "gridPos": {
         "x": 12,
-        "y": 21,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Finished runs by task",
+      "description": "Succeeded and failed runs per interval.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (task) (increase(flower_events_total{type=\"task-succeeded\", task=~\"$task\"}[$__rate_interval])) > 0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{task}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (task) (increase(flower_events_total{type=\"task-failed\", task=~\"$task\"}[$__rate_interval])) > 0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{task}} failed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 22,
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "title": "Log lines naming the selected tasks",
+      "description": "celery.log, celery-worker.log and errors.jsonl without DEBUG, newest first. With \"All\" tasks: every line of these files.",
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{job=\"progeo-backend\", file=~\"celery.*[.]log|errors.jsonl\", level!=\"DEBUG\"} |~ \"${task:regex}\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
         "w": 12,
         "h": 8
       }
@@ -717,7 +1161,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 48,
         "w": 24,
         "h": 1
       },
@@ -773,7 +1217,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 49,
         "w": 12,
         "h": 8
       }
@@ -837,7 +1281,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 30,
+        "y": 49,
         "w": 12,
         "h": 8
       }
@@ -901,7 +1345,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 57,
         "w": 12,
         "h": 8
       }
@@ -965,7 +1409,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 38,
+        "y": 57,
         "w": 12,
         "h": 8
       }
