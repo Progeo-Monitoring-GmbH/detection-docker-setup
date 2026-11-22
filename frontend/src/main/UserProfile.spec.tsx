@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /** The login QR code in Mein Konto (module_profile_qr_code, /v1/user/qr-code/). */
 
 const QR = 'data:image/png;base64,QQ==';
+const NEW_QR = 'data:image/png;base64,Qg==';
 
 // What the backend answers, and what the profile asked it.
 const api = vi.hoisted(() => ({
@@ -31,6 +32,13 @@ vi.mock('../axiosConfig', () => ({
       failed: (error: unknown) => void,
     ) => {
       api.posts.push(url);
+      if (url === '/v1/user/qr-code/revoke/') {
+        if (api.qrFails) {
+          failed({ response: { status: 403, data: { reason: 'Missing required permissions' } } });
+        } else {
+          ok({ data: { success: true, qr: NEW_QR } });
+        }
+      }
       if (url === '/v1/user/qr-code/') {
         if (api.qrFails) {
           failed({ response: { status: 403, data: { reason: 'Missing required permissions' } } });
@@ -56,11 +64,12 @@ vi.mock('../../hooks/usePermissions', () => ({
 vi.mock('notistack', () => ({ useSnackbar: () => hooks.snackbar }));
 vi.mock('react-i18next', () => ({ useTranslation: () => hooks.translation }));
 const errors = vi.hoisted(() => [] as string[]);
+const successes = vi.hoisted(() => [] as string[]);
 vi.mock('../components/ui/Snackbar.jsx', () => ({
   errorReason: (error: { response?: { data?: { reason?: string } } }) => error?.response?.data?.reason || '',
   showErrorBar: (_enqueue: unknown, message: string) => errors.push(message),
   showInfoBar: () => undefined,
-  showSuccessBar: () => undefined,
+  showSuccessBar: (_enqueue: unknown, message: string) => successes.push(message),
 }));
 // Not what this is about.
 vi.mock('./TwoFactorSettings', () => ({ default: () => null }));
@@ -90,6 +99,7 @@ beforeEach(() => {
   api.qrFails = false;
   api.posts.length = 0;
   errors.length = 0;
+  successes.length = 0;
   hooks.auth = { user: { username: 'erika' } };
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -153,6 +163,51 @@ describe('login QR code in the user profile', () => {
     expect(errors).toEqual(['profile_qr_code_error: Missing required permissions']);
     expect(button()?.textContent).toContain('profile_qr_code_generate');
     expect(button()?.disabled).toBe(false);
+  });
+
+  it('offers no revoke without a token', () => {
+    open({ qr_code_exists: false });
+
+    expect(byTestId('user-profile-qr-code-revoke')).toBeNull();
+  });
+
+  it('revokes only after the confirmation and shows the new code', () => {
+    open({ qr_code_exists: true });
+    click(button());
+    expect(image()?.getAttribute('src')).toBe(QR);
+
+    click(byTestId('user-profile-qr-code-revoke'));
+
+    // The dialog explains the consequences; nothing is sent yet.
+    expect(byTestId('user-profile-qr-code-revoke-dialog')?.textContent).toContain('profile_qr_code_revoke_text');
+    expect(api.posts).toEqual(['/v1/user/qr-code/']);
+
+    click(byTestId('user-profile-qr-code-revoke-dialog-cancel'));
+
+    expect(byTestId('user-profile-qr-code-revoke-dialog')).toBeNull();
+    expect(api.posts).toEqual(['/v1/user/qr-code/']);
+    expect(image()?.getAttribute('src')).toBe(QR);
+
+    click(byTestId('user-profile-qr-code-revoke'));
+    click(byTestId('user-profile-qr-code-revoke-dialog-confirm'));
+
+    expect(api.posts).toEqual(['/v1/user/qr-code/', '/v1/user/qr-code/revoke/']);
+    expect(byTestId('user-profile-qr-code-revoke-dialog')).toBeNull();
+    expect(image()?.getAttribute('src')).toBe(NEW_QR);
+    expect(successes).toEqual(['profile_qr_code_revoked']);
+  });
+
+  it('keeps the shown code and says so when the revoke fails', () => {
+    open({ qr_code_exists: true });
+    click(button());
+    api.qrFails = true;
+
+    click(byTestId('user-profile-qr-code-revoke'));
+    click(byTestId('user-profile-qr-code-revoke-dialog-confirm'));
+
+    expect(image()?.getAttribute('src')).toBe(QR);
+    expect(errors).toEqual(['profile_qr_code_revoke_error: Missing required permissions']);
+    expect(byTestId('user-profile-qr-code-revoke-dialog')).toBeNull();
   });
 
   it('is hidden for the demo user', () => {

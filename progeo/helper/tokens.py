@@ -54,3 +54,17 @@ def drf_token_for_qr_code(user):
     token = Token.objects.using(DB).create(user_id=user.pk)
     ilog(f"[tokens] DRF token for the QR code of user {user.pk} created")
     return token, True
+
+
+def replace_drf_token(user):
+    """A new DRF token for `user`; the old one - leaked, say - stops working
+    at once, for the QR code and for every client that logged in with it."""
+    from django.db import transaction
+    from rest_framework.authtoken.models import Token
+
+    with transaction.atomic(using=DB):
+        deleted, _ = Token.objects.using(DB).filter(user_id=user.pk).delete()
+        token = Token.objects.using(DB).create(user_id=user.pk)
+    ilog(f"[tokens] DRF token of user {user.pk} revoked and replaced" if deleted
+         else f"[tokens] DRF token for the QR code of user {user.pk} created")
+    return token

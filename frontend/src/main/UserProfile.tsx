@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Spinner, ProgressBar } from 'react-bootstrap';
-import { Envelope, Key, QrCode, ShieldLock, X } from 'react-bootstrap-icons';
+import { ArrowRepeat, Envelope, Key, QrCode, ShieldLock, X } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 
@@ -149,6 +149,8 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   // The image (data URI) while it is shown; it holds the login token, so it is not kept.
   const [qrCode, setQrCode] = React.useState<string | null>(null);
   const [qrCodeLoading, setQrCodeLoading] = React.useState(false);
+  const [qrRevokeOpen, setQrRevokeOpen] = React.useState(false);
+  const [qrRevoking, setQrRevoking] = React.useState(false);
 
   const [username, setUsername] = React.useState('');
   const [firstName, setFirstName] = React.useState('');
@@ -239,6 +241,28 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
       (error) => {
         showErrorBar(enqueueSnackbar, `${t('profile_qr_code_error')}: ${errorReason(error)}`);
         setQrCodeLoading(false);
+      },
+    );
+  };
+
+  /** For a leaked code: the token is replaced, the new code is shown. */
+  const revokeQrCode = () => {
+    setQrRevoking(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/user/qr-code/revoke/',
+      {},
+      (response) => {
+        setQrCode(response?.data?.qr || null);
+        setQrCodeExists(true);
+        setQrRevoking(false);
+        setQrRevokeOpen(false);
+        showSuccessBar(enqueueSnackbar, t('profile_qr_code_revoked'));
+      },
+      (error) => {
+        showErrorBar(enqueueSnackbar, `${t('profile_qr_code_revoke_error')}: ${errorReason(error)}`);
+        setQrRevoking(false);
+        setQrRevokeOpen(false);
       },
     );
   };
@@ -648,6 +672,16 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     icon={<QrCode size={15} aria-hidden="true" />}
                     label={qrCodeLabel()}
                   />
+                  {qrCodeExists && (
+                    <PillButton
+                      variant="surface"
+                      onClick={() => setQrRevokeOpen(true)}
+                      disabled={qrCodeLoading || qrRevoking}
+                      testId="user-profile-qr-code-revoke"
+                      icon={<ArrowRepeat size={15} aria-hidden="true" />}
+                      label={t('profile_qr_code_revoke')}
+                    />
+                  )}
                 </div>
                 {qrCode && (
                   <>
@@ -733,6 +767,18 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
               </label>
             </div>
           }
+        />
+
+        <ConfirmDialog
+          testId="user-profile-qr-code-revoke-dialog"
+          show={qrRevokeOpen}
+          title={t('profile_qr_code_revoke_title')}
+          confirmLabel={t('profile_qr_code_revoke_confirm')}
+          cancelLabel={t('tfa_cancel')}
+          confirming={qrRevoking}
+          onCancel={() => setQrRevokeOpen(false)}
+          onConfirm={revokeQrCode}
+          message={<p className="profile-dialog-text">{t('profile_qr_code_revoke_text')}</p>}
         />
 
         <ConfirmDialog

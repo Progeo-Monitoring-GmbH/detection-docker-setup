@@ -228,6 +228,23 @@ class UserProfileViewSet(viewsets.ViewSet):
         token, created = drf_token_for_qr_code(request.user)
         return RequestSuccess({"qr": qr_code_data_uri(json.dumps({"token": token.key})), "created": created})
 
+    @action(detail=False, url_path="qr-code/revoke", methods=["POST"])
+    def qr_code_revoke(self, request, *args, **kwargs):
+        """For a leaked QR code: the token stops working at once and a new one
+        takes its place, returned as its QR code. Every client that logged in
+        with the old token (a scanned code, /auth/login/) is logged out.
+        Needs module_profile_qr_code. {qr}."""
+        import json
+
+        from progeo.decorator import missing_held_permissions, permission_denied_response
+        from progeo.helper.tokens import replace_drf_token
+
+        missing = missing_held_permissions(request.user, QR_CODE_PERMISSION)
+        if missing:
+            return permission_denied_response(missing)
+        token = replace_drf_token(request.user)
+        return RequestSuccess({"qr": qr_code_data_uri(json.dumps({"token": token.key}))})
+
     @action(detail=False, url_path="archived_measurements", methods=["POST"])
     def archived_measurements(self, request, *args, **kwargs):
         """Staff only: hide the archived measurements (they see them by

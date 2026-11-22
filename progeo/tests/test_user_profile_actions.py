@@ -320,3 +320,50 @@ def test_qr_code_is_a_png_image(api_client):
     response = api_client.post("/v1/user/qr-code/")
 
     assert response.json()["qr"].startswith("data:image/png;base64,iVBOR")
+
+
+def test_revoking_the_qr_code_replaces_the_token(api_client, monkeypatch):
+    from rest_framework.authtoken.models import Token
+    from rest_framework.test import APIClient
+
+    encoded = []
+    monkeypatch.setattr("progeo.v1.viewsets.user_profile_viewset.qr_code_data_uri",
+                        lambda payload: encoded.append(payload) or "data:image/png;base64,QQ==")
+    user = f.make_user(perms=("module_profile_qr_code",))
+    leaked = Token.objects.using(f.DB).create(user=user).key
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post("/v1/user/qr-code/revoke/")
+
+    assert response.status_code == 200, response.content
+    token = Token.objects.using(f.DB).get(user=user)
+    assert token.key != leaked
+    assert json.loads(encoded[0]) == {"token": token.key}
+    assert response.json()["qr"] == "data:image/png;base64,QQ=="
+    assert token.key not in response.content.decode() and leaked not in response.content.decode()
+    # The leaked token no longer logs in, the new one does.
+    assert APIClient().get("/v1/user/profile/", HTTP_AUTHORIZATION=f"Token {leaked}").status_code == 401
+    assert APIClient().get("/v1/user/profile/", HTTP_AUTHORIZATION=f"Token {token.key}").status_code == 200
+
+
+def test_revoking_without_a_token_creates_one(api_client):
+    from rest_framework.authtoken.models import Token
+
+    user = f.make_user(perms=("module_profile_qr_code",))
+    api_client.force_authenticate(user=user)
+
+    assert api_client.post("/v1/user/qr-code/revoke/").status_code == 200
+    assert Token.objects.using(f.DB).filter(user=user).count() == 1
+
+
+def test_revoking_the_qr_code_needs_the_permission(api_client):
+    from rest_framework.authtoken.models import Token
+
+    user = f.make_user(staff=True)
+    old = Token.objects.using(f.DB).create(user=user).key
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post("/v1/user/qr-code/revoke/")
+
+    assert response.status_code == 403
+    assert Token.objects.using(f.DB).get(user=user).key == old

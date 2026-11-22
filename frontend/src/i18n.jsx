@@ -134,6 +134,13 @@ i18n
           profile_qr_code_hint:
             'A device that scans this code is logged in as you. Do not show it to anyone else.',
           profile_qr_code_error: 'Could not load the QR code',
+          profile_qr_code_revoke: 'Revoke QR code',
+          profile_qr_code_revoke_title: 'Revoke the QR code?',
+          profile_qr_code_revoke_text:
+            'Use this when the code may have got into the wrong hands. The current code stops working at once: every device that logged in with it is logged out and has to scan the new code. A new QR code is generated.',
+          profile_qr_code_revoke_confirm: 'Revoke and generate a new one',
+          profile_qr_code_revoked: 'The old QR code no longer works. This is the new one.',
+          profile_qr_code_revoke_error: 'Could not revoke the QR code',
           profile_delete_account: 'Delete account',
           profile_delete_account_hint:
             'Your account and your personal data are deleted; the measurement data of the objects is kept.',
@@ -2971,6 +2978,13 @@ i18n
           profile_qr_code_hint:
             'Ein Gerät, das diesen Code scannt, ist als Sie angemeldet. Zeigen Sie ihn niemand anderem.',
           profile_qr_code_error: 'Der QR-Code konnte nicht geladen werden',
+          profile_qr_code_revoke: 'QR-Code widerrufen',
+          profile_qr_code_revoke_title: 'QR-Code widerrufen?',
+          profile_qr_code_revoke_text:
+            'Nutzen Sie dies, wenn der Code in falsche Hände geraten sein könnte. Der bisherige Code ist sofort ungültig: Jedes Gerät, das damit angemeldet wurde, wird abgemeldet und muss den neuen Code scannen. Es wird ein neuer QR-Code erzeugt.',
+          profile_qr_code_revoke_confirm: 'Widerrufen und neu erzeugen',
+          profile_qr_code_revoked: 'Der alte QR-Code ist nicht mehr gültig. Dies ist der neue.',
+          profile_qr_code_revoke_error: 'Der QR-Code konnte nicht widerrufen werden',
           profile_delete_account: 'Konto löschen',
           profile_delete_account_hint:
             'Ihr Konto und Ihre persönlichen Daten werden gelöscht, die Messdaten der Objekte bleiben erhalten.',

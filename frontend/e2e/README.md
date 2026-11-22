@@ -64,7 +64,7 @@ on the frontend's origin.
 - `profile-qr-code.e2e.ts` - the login QR code in Mein Konto
   (`module_profile_qr_code`): hidden and refused without the permission; with
   it (the `subscriber` role) the code is generated, shown, hidden and offered
-  again as "QR-Code zeigen".
+  again as "QR-Code zeigen"; revoking asks first and replaces the code.
 - `login-throttle.e2e.ts` - failed logins make the wait grow.
 - `destructive-*.e2e.ts` - every destructive button asks first and explains
   the consequences (`expectConfirmGuard()`); the requests are blocked
