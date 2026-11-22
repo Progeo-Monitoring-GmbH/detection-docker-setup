@@ -1924,7 +1924,7 @@ i18n
           consent_maps_title: 'External map services',
           consent_stats_title: 'Usage statistics',
           consent_stats_desc:
-            'Which pages of the portal you open and for how long, which buttons you click (the element, never its text) and when you log in - tied to your user account, deleted after 180 days, used only to improve the portal. In the public demo: how long and which areas are actively used. Staff accounts are not tracked. No cookies, no IP address, nothing passed on to third parties. You can withdraw at any time here.',
+            'Which pages of the portal you open and for how long, which buttons you click (the element, never its text), when you log in and what you use the portal with (device type with operating system, browser name, browser language and screen size - no version numbers) - tied to your user account, deleted after 180 days, used only to improve the portal. In the public demo: how long and which areas are actively used. Staff accounts are not tracked. No cookies, no IP address, nothing passed on to third parties. You can withdraw at any time here.',
           consent_maps_desc:
             'Loads map tiles from OpenStreetMap and Esri ArcGIS Online. Your IP address and the requested map area are transmitted to these providers, possibly to servers outside the EU.',
           consent_maps_blocked:
@@ -2112,6 +2112,16 @@ i18n
           ua_kind_login: 'Login',
           ua_kind_page: 'Page view',
           ua_kind_click: 'Click',
+          ua_kind_client: 'Device',
+          ua_client_device: 'Devices',
+          ua_client_browser: 'Browsers',
+          ua_client_language: 'Browser languages',
+          ua_client_screen: 'Screen resolutions',
+          ua_client_unknown: 'Unknown',
+          ua_client_other: 'Other',
+          ua_client_none: 'No data in this period yet.',
+          ua_client_note:
+            'Shares of the {{count}} sessions that reported their device. Recorded once per session: device class with system, browser name, language and screen size - no versions, no user agent.',
           sidebar_escalations: 'Escalations',
           toast_close: 'Close',
           toast_click_to_close: 'Click to close',
@@ -4793,7 +4803,7 @@ i18n
           consent_maps_title: 'Externe Kartendienste',
           consent_stats_title: 'Nutzungsstatistik',
           consent_stats_desc:
-            'Welche Seiten des Portals Sie wie lange aufrufen, welche Schaltflächen Sie anklicken (das Element, nie dessen Text) und wann Sie sich anmelden – bezogen auf Ihr Benutzerkonto, nach 180 Tagen gelöscht, nur zur Verbesserung des Portals. In der öffentlichen Demo: wie lange und welche Bereiche aktiv genutzt werden. Mitarbeiterkonten werden nicht erfasst. Ohne Cookies, ohne IP-Adresse, keine Weitergabe an Dritte. Jederzeit hier widerrufbar.',
+            'Welche Seiten des Portals Sie wie lange aufrufen, welche Schaltflächen Sie anklicken (das Element, nie dessen Text), wann Sie sich anmelden und womit Sie das Portal nutzen (Gerätetyp mit Betriebssystem, Browsername, Browser-Sprache und Bildschirmgröße – keine Versionsnummern) – bezogen auf Ihr Benutzerkonto, nach 180 Tagen gelöscht, nur zur Verbesserung des Portals. In der öffentlichen Demo: wie lange und welche Bereiche aktiv genutzt werden. Mitarbeiterkonten werden nicht erfasst. Ohne Cookies, ohne IP-Adresse, keine Weitergabe an Dritte. Jederzeit hier widerrufbar.',
           consent_maps_desc:
             'Lädt Kartenkacheln von OpenStreetMap und Esri ArcGIS Online. Dabei werden Ihre IP-Adresse und der angefragte Kartenausschnitt an diese Anbieter übermittelt, ggf. auch an Server außerhalb der EU.',
           consent_maps_blocked:
@@ -4981,6 +4991,16 @@ i18n
           ua_kind_login: 'Anmeldung',
           ua_kind_page: 'Seitenaufruf',
           ua_kind_click: 'Klick',
+          ua_kind_client: 'Gerät',
+          ua_client_device: 'Geräte',
+          ua_client_browser: 'Browser',
+          ua_client_language: 'Browser-Sprachen',
+          ua_client_screen: 'Bildschirmauflösungen',
+          ua_client_unknown: 'Unbekannt',
+          ua_client_other: 'Sonstige',
+          ua_client_none: 'In diesem Zeitraum liegen noch keine Daten vor.',
+          ua_client_note:
+            'Anteile der {{count}} Sitzungen, die ihr Gerät gemeldet haben. Einmal pro Sitzung erfasst: Geräteklasse mit System, Browsername, Sprache und Bildschirmgröße - keine Versionen, kein User-Agent.',
           sidebar_escalations: 'Eskalationen',
           toast_close: 'Schließen',
           toast_click_to_close: 'Zum Schließen klicken',

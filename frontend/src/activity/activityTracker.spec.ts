@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeConsent } from '../components/privacy/consent';
 import {
   clickTarget,
+  clientInfo,
   createActivityTracker,
   FLUSH_MS,
   MAX_BATCH,
@@ -119,7 +120,8 @@ describe('startsNewSession', () => {
 describe('createActivityTracker', () => {
   let sent: ActivityBatch[];
   let created: ReturnType<typeof createActivityTracker>[] = [];
-  const events = () => sent.flatMap((batch) => batch.events);
+  // Without the session's "client" event (tested on its own below).
+  const events = () => sent.flatMap((batch) => batch.events).filter((event) => event.kind !== 'client');
   const tracker = () => {
     const activity = createActivityTracker({ send: (batch) => sent.push(batch) });
     created.push(activity);
@@ -239,6 +241,74 @@ describe('createActivityTracker', () => {
     }
     vi.advanceTimersByTime(FLUSH_MS);
 
-    expect(sent.map((batch) => batch.events.length)).toEqual([MAX_BATCH, 5]);
+    // The clicks and the session's client event.
+    expect(sent.map((batch) => batch.events.length)).toEqual([MAX_BATCH, 6]);
+  });
+
+  it('says once per session what the portal is opened with', () => {
+    const activity = tracker();
+    activity.pageChanged('/alarms/7');
+    activity.setActive(true);
+    vi.advanceTimersByTime(FLUSH_MS);
+    activity.pageChanged('/map/');
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    const clients = sent.flatMap((batch) => batch.events).filter((event) => event.kind === 'client');
+    expect(clients).toEqual([
+      {
+        kind: 'client',
+        path: '/alarms/:id',
+        at: Date.parse('2026-11-13T10:00:00Z'),
+        ...clientInfo(window.navigator, window.screen),
+      },
+    ]);
+    // Classes only - the user agent stays in the browser.
+    expect(JSON.stringify(sent)).not.toContain(window.navigator.userAgent);
+  });
+});
+
+describe('clientInfo', () => {
+  const info = (userAgent: string, maxTouchPoints = 0) =>
+    clientInfo({ userAgent, language: 'de-DE', maxTouchPoints }, { width: 1920, height: 1080 });
+  const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)';
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
+
+  it.each([
+    [`${WINDOWS} Chrome/130.0.0.0 Safari/537.36`, 'Desktop Windows', 'Chrome'],
+    [`${WINDOWS} Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0`, 'Desktop Windows', 'Edge'],
+    [`${WINDOWS} Chrome/130.0.0.0 Safari/537.36 OPR/115.0.0.0`, 'Desktop Windows', 'Opera'],
+    ['Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0', 'Desktop Linux', 'Firefox'],
+    [MAC, 'Desktop macOS', 'Safari'],
+    [
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+      'Phone iOS',
+      'Safari',
+    ],
+    [
+      'Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+      'Phone Android',
+      'Samsung Internet',
+    ],
+    [
+      'Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      'Tablet Android',
+      'Chrome',
+    ],
+    ['SomeBot/1.0', 'Desktop', 'Other'],
+  ])('%s', (userAgent, device, browser) => {
+    expect(info(userAgent)).toEqual({ device, browser, language: 'de-DE', screen: '1920x1080' });
+  });
+
+  it('tells an iPad that asks for the desktop site from a Mac', () => {
+    expect(info(MAC, 5).device).toBe('Tablet iPadOS');
+  });
+
+  it('leaves out what the browser does not tell', () => {
+    expect(clientInfo({ userAgent: '', language: '', maxTouchPoints: 0 }, undefined)).toEqual({
+      device: '',
+      browser: '',
+      language: '',
+      screen: '',
+    });
   });
 });

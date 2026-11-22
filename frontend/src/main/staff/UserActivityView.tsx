@@ -15,7 +15,7 @@ import PillSelect from '../../components/ui/kit/PillSelect';
 import SearchableDataTable, { progeoTableStyles, type SearchableColumn } from '../../components/ui/kit/SearchableDataTable';
 import { PlotlyTouchScroll } from '../../components/ui/wheelZoom';
 import { formatDate } from '../dateFormat';
-import { ACCENT, baseLayout, formatDuration, median, plotConfig, SEQUENTIAL, SERIES } from './chartTheme';
+import { ACCENT, baseLayout, CATEGORICAL, formatDuration, median, OTHER, plotConfig, SEQUENTIAL, SERIES } from './chartTheme';
 import './StaffInsights.css';
 
 /** One tab session of GET /v1/activity/sessions/ (helper/activity.sessions). */
@@ -38,7 +38,14 @@ type SessionsResponse = { days: number; enabled: boolean; retention_days: number
 /** A path of GET /v1/activity/summary/ (helper/activity.summary). */
 type PageRow = { path: string; views: number; users: number; avg_ms: number | null; median_ms: number | null; total_ms: number | null };
 
-type ActivityEvent = { kind: 'login' | 'page' | 'click'; path: string; target: string; duration_ms: number | null; at: string };
+/** `clients` of the summary: per value the number of sessions, most used first ('' = unknown). */
+type ClientCount = { value: string; sessions: number };
+const CLIENT_FIELDS = ['device', 'browser', 'language', 'screen'] as const;
+type ClientField = (typeof CLIENT_FIELDS)[number];
+type Clients = { sessions: number } & Record<ClientField, ClientCount[]>;
+type Summary = { pages: PageRow[]; clients: Clients | null };
+
+type ActivityEvent = { kind: 'login' | 'page' | 'click' | 'client'; path: string; target: string; duration_ms: number | null; at: string };
 type SessionDetail = { session: string; user_id: number; username: string; events: ActivityEvent[] };
 
 /** GET /v1/activity/messaging/ (matrix_accounts.stats, login_links.usage_stats). */
@@ -153,17 +160,69 @@ const PageTimeChart = ({ rows, height }: { rows: Array<{ path: string; total_ms:
   );
 };
 
+/**
+ * The shares of one client field as a pie: the most used values in the fixed
+ * colour order, everything after them folded into "Other" (grey, last). Each
+ * slice is labelled with its name and share - never told apart by colour alone.
+ */
+const ClientPie = ({ field, counts }: { field: ClientField; counts: ClientCount[] }) => {
+  const { t } = useTranslation();
+  const named = (value: string) => value || t('ua_client_unknown');
+  const top = counts.slice(0, CATEGORICAL.length);
+  const rest = counts.slice(CATEGORICAL.length).reduce((sum, row) => sum + row.sessions, 0);
+  const slices = [
+    ...top.map((row, index) => ({ label: named(row.value), sessions: row.sessions, color: CATEGORICAL[index] })),
+    ...(rest > 0 ? [{ label: t('ua_client_other'), sessions: rest, color: OTHER }] : []),
+  ];
+  return (
+    <PanelCard title={t(`ua_client_${field}`)} testId={`user-activity-client-${field}`}>
+      {slices.length === 0 ? (
+        <div className="small text-muted py-2" data-testid={`user-activity-client-${field}-empty`}>
+          {t('ua_client_none')}
+        </div>
+      ) : (
+        <PlotlyTouchScroll>
+          <Plot
+            data={[
+              {
+                type: 'pie',
+                labels: slices.map((slice) => slice.label),
+                values: slices.map((slice) => slice.sessions),
+                // The order given (most used first, clockwise from the top), not Plotly's.
+                sort: false,
+                direction: 'clockwise',
+                marker: { colors: slices.map((slice) => slice.color), line: { color: '#f3f1f0', width: 2 } },
+                textinfo: 'label+percent',
+                textposition: 'outside',
+                automargin: true,
+                hovertemplate: `%{label}<br>%{value} ${t('ua_sessions')} · %{percent}<extra></extra>`,
+              },
+            ]}
+            layout={baseLayout(CHART_HEIGHT, { margin: { l: 8, r: 8, t: 16, b: 16 } })}
+            config={plotConfig}
+            style={{ width: '100%' }}
+            useResizeHandler
+          />
+        </PlotlyTouchScroll>
+      )}
+    </PanelCard>
+  );
+};
+
 // ------------------------------------------------------------------ all sessions
 
 const AllSessions = ({
   sessions,
   pages,
+  clients,
   days,
   loadedAt,
   onOpen,
 }: {
   sessions: SessionsResponse;
   pages: PageRow[];
+  /** What the sessions were opened with (null: an older backend). */
+  clients: Clients | null;
   days: number;
   /** When the sessions arrived (epoch ms) - the last day of the per-day chart. */
   loadedAt: number;
@@ -323,6 +382,19 @@ const AllSessions = ({
         </PanelCard>
       </div>
 
+      {clients && (
+        <>
+          <div className="staff-insights-grid staff-insights-grid--pies" data-testid="user-activity-clients">
+            {CLIENT_FIELDS.map((field) => (
+              <ClientPie key={field} field={field} counts={clients[field]} />
+            ))}
+          </div>
+          <div className="staff-insights-note" data-testid="user-activity-clients-note">
+            {t('ua_client_note', { count: clients.sessions })}
+          </div>
+        </>
+      )}
+
       <PanelCard title={t('ua_sessions_title')} testId="user-activity-sessions">
         <SearchableDataTable
           columns={columns}
@@ -380,7 +452,7 @@ const OneSession = ({ session, onLoaded }: { session: string; onLoaded: (head: S
   const views = events.filter((event) => event.kind === 'page');
   const clicks = events.filter((event) => event.kind === 'click');
   // The pages in the order they were first opened - the timeline's rows.
-  const paths = [...new Set(events.filter((event) => event.kind !== 'login').map((event) => event.path))];
+  const paths = [...new Set(events.filter((event) => event.kind === 'page' || event.kind === 'click').map((event) => event.path))];
   const startMs = events.length ? Date.parse(events[0].at) : 0;
   const endMs = events.reduce((end, event) => Math.max(end, Date.parse(event.at) + (event.duration_ms ?? 0)), startMs);
   const visible = views.reduce((sum, event) => sum + (event.duration_ms ?? 0), 0);
@@ -395,7 +467,7 @@ const OneSession = ({ session, onLoaded }: { session: string; onLoaded: (head: S
     { name: t('ua_col_time'), selector: (row) => row.index, sortable: true, cell: (row) => <span className="small">{formatDate(row.at, 'dateTimeSeconds')}</span>, grow: 1.3 },
     { name: t('ua_col_kind'), selector: (row) => row.kind, sortable: true, cell: (row) => <span className="small">{t(`ua_kind_${row.kind}`)}</span> },
     { name: t('ua_col_page'), selector: (row) => row.path, sortable: true, grow: 2, cell: (row) => <code className="small">{row.path}</code> },
-    { name: t('ua_col_element'), selector: (row) => row.target, sortable: true, grow: 1.5, cell: (row) => (row.target ? <code className="small">{row.target}</code> : <span className="text-muted">–</span>) },
+    { name: t('ua_col_element'), selector: (row) => row.target, sortable: true, grow: 1.5, cell: (row) => (row.target ? <code className="small">{row.kind === 'client' ? row.target.split('|').filter(Boolean).join(' · ') : row.target}</code> : <span className="text-muted">–</span>) },
     { name: t('ua_col_visible'), selector: (row) => row.duration_ms ?? -1, sortable: true, right: true, cell: (row) => <span className="small staff-insights-num">{row.kind === 'page' ? formatDuration(row.duration_ms) : '–'}</span> },
   ];
 
@@ -490,7 +562,8 @@ const OneSession = ({ session, onLoaded }: { session: string; onLoaded: (head: S
  * Staff (sidebar: User activity): the usage analysis of the tracked users
  * (ProgeoActivity, only with their consent, never staff) - all sessions of a
  * period (how long they stayed, which pages, when) or one session with its
- * timeline (?session=<id>). Data: GET /v1/activity/sessions/, /summary/ and
+ * timeline (?session=<id>), and what the sessions were opened with (device,
+ * browser, language, screen - one pie each). Data: GET /v1/activity/sessions/, /summary/ and
  * /session/.
  */
 const UserActivityView = () => {
@@ -501,7 +574,7 @@ const UserActivityView = () => {
   const session = searchParams.get('session');
   const [days, setDays] = useState('30');
   const [sessions, setSessions] = useState<SessionsResponse | null>(null);
-  const [pages, setPages] = useState<PageRow[]>([]);
+  const [summary, setSummary] = useState<Summary>({ pages: [], clients: null });
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState(0);
   const [sessionHead, setSessionHead] = useState<(SessionHead & { session: string }) | null>(null);
@@ -536,7 +609,8 @@ const UserActivityView = () => {
       auth,
       `/v1/activity/summary/?days=${days}`,
       (response) => {
-        setPages(((response?.data as { pages?: PageRow[] })?.pages ?? []) as PageRow[]);
+        const data = (response?.data ?? {}) as Partial<Summary>;
+        setSummary({ pages: data.pages ?? [], clients: data.clients ?? null });
         done();
       },
       failed,
@@ -607,7 +681,7 @@ const UserActivityView = () => {
       ) : (
         // A stack of its own: the page's gap does not reach into this wrapper.
         <div className={loading ? 'staff-insights staff-insights-busy' : 'staff-insights'}>
-          <AllSessions sessions={sessions} pages={pages} days={Number(days)} loadedAt={loadedAt} onOpen={openSession} />
+          <AllSessions sessions={sessions} pages={summary.pages} clients={summary.clients} days={Number(days)} loadedAt={loadedAt} onOpen={openSession} />
         </div>
       )}
     </div>

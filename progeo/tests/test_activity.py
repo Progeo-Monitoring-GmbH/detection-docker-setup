@@ -234,6 +234,7 @@ def test_summary_aggregates(tracking):
 
     assert body["days"] == 30
     assert body["events"] == 10
+    assert body["clients"] == {"sessions": 0, "device": [], "browser": [], "language": [], "screen": []}
     assert body["users"] == 2
     assert body["pages"][0] == {"path": "/alarms/", "views": 3, "users": 2, "avg_ms": 3000, "median_ms": 2000,
                                  "total_ms": 9000}
@@ -265,3 +266,62 @@ def test_retention_task_runs_the_cleanup(tracking):
     from progeo.tasks import cleanup_activity
 
     assert cleanup_activity() == {"deleted": 0, "days": 180}
+
+
+# ---------------------------------------------------------------------------- what the portal is used with
+
+def test_the_client_of_a_session_is_stored_in_coarse_classes(tracking):
+    user = f.make_user()
+
+    response = _post(_client(user), [
+        {"kind": "client", "path": "/alarms/7", "device": "Desktop Windows", "browser": "Chrome",
+         "language": "de-DE", "screen": "1920x1080", "target": "ignored"},
+    ])
+
+    assert response.json()["stored"] == 1
+    row = _stored(user).get()
+    assert (row.kind, row.path, row.target) == ("client", "/alarms/:id", "Desktop Windows|Chrome|de-DE|1920x1080")
+    assert activity.client_info(row.target) == {
+        "device": "Desktop Windows", "browser": "Chrome", "language": "de-DE", "screen": "1920x1080"}
+
+
+def test_a_whole_user_agent_is_never_stored(tracking):
+    user = f.make_user()
+
+    _post(_client(user), [
+        {"kind": "client", "path": "/", "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "browser": "a|b",
+         "language": "deutsch, bitte", "screen": 1920},
+        {"kind": "client", "path": "/"},
+    ])
+
+    assert [row.target for row in _stored(user)] == ["|||", "|||"]
+    assert activity.client_info("|||") == {"device": "", "browser": "", "language": "", "screen": ""}
+    assert activity.client_info("") == {"device": "", "browser": "", "language": "", "screen": ""}
+
+
+def test_summary_counts_the_clients_per_session(tracking):
+    alice, bob = f.make_user(), f.make_user()
+    now = timezone.now()
+
+    def client(user, session, target, created_at=now):
+        return ProgeoActivity(user=user, session=session, kind="client", path="/", target=target, created_at=created_at)
+
+    ProgeoActivity.objects.using(f.DB).bulk_create([
+        client(alice, "session-a1", "Desktop Windows|Chrome|de-DE|1920x1080"),
+        # The same session again (a reload of the flag): counts once, the first.
+        client(alice, "session-a1", "Desktop Windows|Firefox|de-DE|1920x1080", now + datetime.timedelta(seconds=1)),
+        client(alice, "session-a2", "Phone Android|Chrome|de-DE|412x915"),
+        client(bob, "session-b1", "Desktop Windows|Edge|en-GB|"),
+        client(bob, "session-old", "Tablet iPadOS|Safari|fr|820x1180", now - datetime.timedelta(days=40)),
+    ])
+
+    body = _client(f.make_user(is_superuser=True)).get(f"{SUMMARY_URL}?days=30").json()
+
+    assert body["clients"] == {
+        "sessions": 3,
+        "device": [{"value": "Desktop Windows", "sessions": 2}, {"value": "Phone Android", "sessions": 1}],
+        "browser": [{"value": "Chrome", "sessions": 2}, {"value": "Edge", "sessions": 1}],
+        "language": [{"value": "de-DE", "sessions": 2}, {"value": "en-GB", "sessions": 1}],
+        "screen": [{"value": "", "sessions": 1}, {"value": "1920x1080", "sessions": 1},
+                   {"value": "412x915", "sessions": 1}],
+    }

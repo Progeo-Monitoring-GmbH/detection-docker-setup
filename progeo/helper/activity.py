@@ -15,10 +15,14 @@ for how long, what they click, when they log in.
     all of them (how long, how many pages) and one with its events.
 
 No IP address, no user agent, no text from the page: paths have their ids
-replaced again here and click targets are test ids (or a tag name).
+replaced again here and click targets are test ids (or a tag name). What the
+portal was used with comes once per session as a "client" event: device
+class with its system, browser name, browser language and screen size - the
+browser's own coarse classes (no versions), checked again here (CLIENT_FIELDS).
 """
 import datetime
 import re
+from collections import Counter
 
 from django.conf import settings
 from django.db.models import Aggregate, Avg, Count, FloatField, Max, Min, Q, Sum
@@ -31,7 +35,7 @@ from progeo.helper.basics import ilog
 # The users live in "default" - so do their events (also with PROJECT_DB_SPLIT).
 DB = "default"
 
-KINDS = ("login", "page", "click")
+KINDS = ("login", "page", "click", "client")
 MAX_EVENTS = 100
 SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 PATH_MAX = 255
@@ -52,6 +56,18 @@ _NUMERIC_SEGMENT = re.compile(r"^\d+$")
 _TOKEN_ROUTE = re.compile(r"^(/login/link/|/password/reset/|/access/verify/|/account/setup/|/notification/|/demo/login/)[^/]+")
 _TOKEN_MIN_LENGTH = 16
 _TARGET_FORBIDDEN = re.compile(r"[^A-Za-z0-9_.:-]")
+
+# A "client" event: what the session's browser says about itself - kept in
+# `target` as "device|browser|language|screen". Anything else than these
+# shapes (a whole user agent, say) is dropped: the part stays empty.
+_CLIENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .]{0,23}$")
+CLIENT_FIELDS = {
+    "device": _CLIENT_NAME,  # "Desktop Windows", "Phone Android"
+    "browser": _CLIENT_NAME,  # "Chrome", "Samsung Internet"
+    "language": re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8}){0,3}$"),  # "de-DE"
+    "screen": re.compile(r"^\d{2,5}x\d{2,5}$"),  # "1920x1080"
+}
+CLIENT_SEPARATOR = "|"
 
 
 def enabled() -> bool:
@@ -114,6 +130,20 @@ def _target(raw) -> str:
     return raw[:TARGET_MAX]
 
 
+def client_target(raw) -> str:
+    """The parts of a "client" event (CLIENT_FIELDS) as its `target`."""
+    return CLIENT_SEPARATOR.join(
+        value if isinstance(value := raw.get(field), str) and pattern.match(value) else ""
+        for field, pattern in CLIENT_FIELDS.items()
+    )
+
+
+def client_info(target) -> dict:
+    """{"device", "browser", "language", "screen"} of a stored "client" target ('' = unknown)."""
+    parts = (target or "").split(CLIENT_SEPARATOR)
+    return {field: parts[index] if index < len(parts) else "" for index, field in enumerate(CLIENT_FIELDS)}
+
+
 def _duration(raw) -> int | None:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw != raw:  # noqa: PLR0124 - NaN
         return None
@@ -144,7 +174,7 @@ def parse_event(raw, now) -> dict | None:
     return {
         "kind": kind,
         "path": path,
-        "target": _target(raw.get("target")) if kind == "click" else "",
+        "target": _target(raw.get("target")) if kind == "click" else client_target(raw) if kind == "client" else "",
         "duration_ms": _duration(raw.get("duration_ms")) if kind == "page" else None,
         "created_at": _created_at(raw.get("at"), now),
     }
@@ -204,6 +234,30 @@ class Median(Aggregate):
     output_field = FloatField()
 
 
+def clients(events) -> dict:
+    """What the sessions of `events` were opened with: per device, browser,
+    language and screen the number of sessions, most used first ('' =
+    unknown). A session counts once - with its first "client" event."""
+    from progeo.v1.models import ProgeoActivity
+
+    first = {}
+    for session, target in (
+        events.filter(kind=ProgeoActivity.Kind.CLIENT).order_by("created_at", "id").values_list("session", "target")
+    ):
+        first.setdefault(session, client_info(target))
+    return {
+        "sessions": len(first),
+        **{
+            field: [
+                {"value": value, "sessions": count}
+                for value, count in sorted(Counter(info[field] for info in first.values()).items(),
+                                           key=lambda item: (-item[1], item[0]))
+            ]
+            for field in CLIENT_FIELDS
+        },
+    }
+
+
 def summary_days(raw) -> int:
     try:
         days = int(raw)
@@ -219,7 +273,7 @@ def _ms(value):
 def summary(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
     """Usage of the last `days` days: page views with their average and
     median visible time per path, the most clicked targets, logins and
-    active users per day."""
+    active users per day, and what the sessions were opened with (clients)."""
     from progeo.v1.models import ProgeoActivity
 
     since = timezone.now() - datetime.timedelta(days=days)
@@ -249,6 +303,7 @@ def summary(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
         "days": days,
         "enabled": enabled(),
         "retention_days": retention_days(),
+        "clients": clients(events),
         "events": events.count(),
         "users": events.aggregate(users=Count("user", distinct=True))["users"],
         "pages": [

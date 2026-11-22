@@ -7,7 +7,7 @@ export const CONSENT_STORAGE_KEY = 'progeo_consent';
 
 // Bump whenever the categories or their description change materially - every
 // stored decision with an older version is discarded and the banner asks again.
-export const CONSENT_VERSION = 3; // 2: + statistics, 3: statistics also of logged-in users
+export const CONSENT_VERSION = 4; // 2: + statistics, 3: statistics also of logged-in users, 4: + device, browser, language, screen
 
 // Re-ask after 12 months, as recommended by most EU data protection authorities.
 export const CONSENT_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;

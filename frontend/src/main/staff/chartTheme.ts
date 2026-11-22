@@ -12,6 +12,13 @@ import type { Config } from 'plotly.js';
 
 export const SERIES = '#1f62a3';
 export const ACCENT = '#eb633b';
+/**
+ * Categories (pie slices) in their fixed order - never cycled: what comes
+ * after the last one is folded into "Other" (OTHER). Validated as a set; three
+ * are below 3:1 on the panel, so every slice carries its label.
+ */
+export const CATEGORICAL = [SERIES, ACCENT, '#1baf7a', '#eda100', '#e87ba4'] as const;
+export const OTHER = '#a8a7a1';
 const INK = '#3f3f3c';
 const MUTED = '#6b6a64';
 const GRID = '#e1e0d9';

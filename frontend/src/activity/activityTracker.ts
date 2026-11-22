@@ -14,11 +14,26 @@ import { readStoredTokens } from '../tokenRefresh';
  *
  * Nothing from the page's content leaves the browser: paths have their ids
  * and tokens replaced, a click is the element's data-testid or tag name.
+ * Once per session a "client" event says what the portal is used with
+ * (clientInfo): coarse classes worked out here - the user agent itself and
+ * version numbers stay in the browser.
  */
 
-type ActivityKind = 'login' | 'page' | 'click';
+type ActivityKind = 'login' | 'page' | 'click' | 'client';
 
-export type ActivityEvent = {
+/** What a session is opened with - '' where the browser does not tell. */
+export type ClientInfo = {
+  /** Device class and system: "Desktop Windows", "Phone Android", "Tablet iPadOS". */
+  device: string;
+  /** The browser's name, no version: "Chrome", "Firefox", "Safari", "Edge", ... */
+  browser: string;
+  /** The browser's language: "de-DE". */
+  language: string;
+  /** The screen in CSS pixels: "1920x1080". */
+  screen: string;
+};
+
+export type ActivityEvent = Partial<ClientInfo> & {
   kind: ActivityKind;
   path: string;
   target?: string;
@@ -96,6 +111,57 @@ export const clickTarget = (node: EventTarget | null): string | null => {
   }
   const testId = control.closest('[data-testid]')?.getAttribute('data-testid') || '';
   return VALID_TARGET.test(testId) ? testId.slice(0, TARGET_MAX) : control.tagName.toLowerCase();
+};
+
+// First match wins: Edge, Opera and Samsung Internet also say "Chrome", Chrome also "Safari".
+const BROWSERS: Array<[RegExp, string]> = [
+  [/Edg(e|A|iOS)?\//, 'Edge'],
+  [/OPR\/|Opera/, 'Opera'],
+  [/SamsungBrowser/, 'Samsung Internet'],
+  [/Firefox|FxiOS/, 'Firefox'],
+  [/Chrome|CriOS|Chromium/, 'Chrome'],
+  [/Safari/, 'Safari'],
+];
+
+const SYSTEMS: Array<[RegExp, string]> = [
+  [/Windows/, 'Windows'],
+  [/Android/, 'Android'],
+  [/iPhone|iPod/, 'iOS'],
+  [/iPad/, 'iPadOS'],
+  [/CrOS/, 'ChromeOS'],
+  [/Macintosh|Mac OS X/, 'macOS'],
+  [/Linux/, 'Linux'],
+];
+
+const firstMatch = (table: Array<[RegExp, string]>, text: string) =>
+  table.find(([pattern]) => pattern.test(text))?.[1] ?? '';
+
+/**
+ * The classes of this browser (backend: activity.CLIENT_FIELDS) - names
+ * only, read from the user agent here so that it never leaves the browser.
+ */
+export const clientInfo = (
+  nav: Pick<Navigator, 'userAgent' | 'language' | 'maxTouchPoints'>,
+  display: Pick<Screen, 'width' | 'height'> | undefined,
+): ClientInfo => {
+  const agent = nav.userAgent || '';
+  let system = firstMatch(SYSTEMS, agent);
+  // An iPad asks for the desktop site as a Mac - but a Mac has no touch screen.
+  if (system === 'macOS' && nav.maxTouchPoints > 1) {
+    system = 'iPadOS';
+  }
+  const kind =
+    system === 'iOS' || (system === 'Android' && /Mobile/.test(agent))
+      ? 'Phone'
+      : system === 'iPadOS' || system === 'Android'
+        ? 'Tablet'
+        : 'Desktop';
+  return {
+    device: agent ? `${kind} ${system}`.trim() : '',
+    browser: agent ? firstMatch(BROWSERS, agent) || 'Other' : '',
+    language: nav.language || '',
+    screen: display?.width && display?.height ? `${display.width}x${display.height}` : '',
+  };
 };
 
 /** When the tracking runs (useActivityTracking) - every condition must hold. */
@@ -283,6 +349,8 @@ export const createActivityTracker = ({
         session = newSessionId();
         listen(true);
         timer = setInterval(flush, FLUSH_MS);
+        // What this session is opened with - once, with its first batch.
+        push({ kind: 'client', path, ...clientInfo(win.navigator, win.screen), at: now() });
         emitPendingLogin();
         startPage();
         return;

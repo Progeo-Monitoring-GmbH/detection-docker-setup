@@ -139,3 +139,20 @@
   color: var(--progeo-blue);
   word-break: break-all;
 }
+
+/* The client pies (user activity): four in a row, two on a tablet, one on a phone. */
+.staff-insights-grid.staff-insights-grid--pies {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .staff-insights-grid.staff-insights-grid--pies {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .staff-insights-grid.staff-insights-grid--pies {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

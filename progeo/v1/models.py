@@ -2152,12 +2152,16 @@ class ProgeoActivity(models.Model):
     ("statistics"), never for staff. Kept in "default" next to the users and
     deleted after ACTIVITY_RETENTION_DAYS. No IP address, no user agent, no
     text from the page: `path` has its ids replaced (/location/:id/analyse),
-    `target` is the clicked element's data-testid (or its tag name)."""
+    `target` is the clicked element's data-testid (or its tag name). Once per
+    session a "client" event says what the portal was used with - `target`:
+    "device|browser|language|screen", coarse classes the browser worked out
+    itself ("Desktop Windows|Chrome|de-DE|1920x1080"), no versions."""
 
     class Kind(models.TextChoices):
         LOGIN = "login", "Login"
         PAGE = "page", "Page view"
         CLICK = "click", "Click"
+        CLIENT = "client", "Client"
 
     id = models.BigAutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
