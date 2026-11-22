@@ -52,6 +52,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_admin_panel", "Can access admin panel"),
     ("module_testsuite_enabled", "Can access testsuite module"),
     ("module_profile_mail_edit", "Can edit profile mail module"),
+    ("module_profile_qr_code", "Can show the QR code with the own login token in the profile"),
     ("module_notifications_enabled", "Can access notifications module"),
     ("module_notifications_edit", "Can edit notifications module"),
     ("module_notifications_add", "Can add notifications module"),

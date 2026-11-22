@@ -34,7 +34,7 @@ touches customer data (`e2e/roles.ts`, backend `progeo/helper/e2e.py`):
 | --- | --- | --- |
 | `customer` | `demo.erika.mustermann@progeo.com` | account member, a customer's usual rights (no edit/delete/revoke/invite) |
 | `single` | `demo.jonas.weber@progeo.com` | access to the smartex dm demo location (9001) only |
-| `subscriber` | `demo.max.mustermann@progeo.com` | account member with alarm mails (unsubscribe test) |
+| `subscriber` | `demo.max.mustermann@progeo.com` | account member with alarm mails (unsubscribe test) and the login QR code permission |
 
 Set it up once on staging:
 
@@ -61,6 +61,10 @@ on the frontend's origin.
 - `unsubscribe.e2e.ts` - the unsubscribe link of an alarm mail, with the
   subscription checked before and after (and switched on again).
 - `media.e2e.ts` - `/media/` needs a login, backups a superuser.
+- `profile-qr-code.e2e.ts` - the login QR code in Mein Konto
+  (`module_profile_qr_code`): hidden and refused without the permission; with
+  it (the `subscriber` role) the code is generated, shown, hidden and offered
+  again as "QR-Code zeigen".
 - `login-throttle.e2e.ts` - failed logins make the wait grow.
 - `destructive-*.e2e.ts` - every destructive button asks first and explains
   the consequences (`expectConfirmGuard()`); the requests are blocked

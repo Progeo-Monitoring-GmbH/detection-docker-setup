@@ -193,6 +193,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       'module_testsuite_enabled',
       'module_demo_enabled',
       'module_profile_mail_edit',
+      'module_profile_qr_code',
       'module_escalations_enabled',
       'module_reports_enabled',
       'module_alarms_enabled',

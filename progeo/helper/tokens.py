@@ -29,3 +29,28 @@ def revoke_user_tokens(user) -> int:
     if tokens:
         ilog(f"[tokens] {len(tokens)} refresh tokens of user {user_id} revoked")
     return len(tokens)
+
+
+def valid_drf_token(user):
+    """The DRF token of `user` that still logs in (ExpiringTokenAuthentication), else None."""
+    from rest_framework.authtoken.models import Token
+
+    from progeo.authentication import is_expired_drf_token
+
+    token = Token.objects.using(DB).filter(user_id=user.pk).first()
+    return None if token is None or is_expired_drf_token(token) else token
+
+
+def drf_token_for_qr_code(user):
+    """(token, created): the DRF token of `user` for the profile's QR code
+    (module_profile_qr_code). An existing one is kept - /auth/login/ hands out
+    the same - an expired one is replaced."""
+    from rest_framework.authtoken.models import Token
+
+    token = valid_drf_token(user)
+    if token is not None:
+        return token, False
+    Token.objects.using(DB).filter(user_id=user.pk).delete()
+    token = Token.objects.using(DB).create(user_id=user.pk)
+    ilog(f"[tokens] DRF token for the QR code of user {user.pk} created")
+    return token, True

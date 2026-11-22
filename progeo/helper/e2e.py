@@ -44,8 +44,9 @@ E2E_ROLE_PERMISSIONS = {
                  "module_notifications_enabled", "module_profile_mail_edit"),
     "single": ("module_navbar_enabled", "module_locations_enabled", "module_measurements_enabled",
                "module_notifications_enabled", "module_profile_mail_edit"),
+    # module_profile_qr_code: the login QR code test (profile-qr-code.e2e.ts).
     "subscriber": ("module_navbar_enabled", "module_locations_enabled", "module_measurements_enabled",
-                   "module_notifications_enabled", "module_profile_mail_edit"),
+                   "module_notifications_enabled", "module_profile_mail_edit", "module_profile_qr_code"),
 }
 E2E_OUTSIDER = "demo.e2e.outsider"
 E2E_TARGET_LOCATION = {"name": "E2E Zielobjekt (Test)", "project_id": 9099}

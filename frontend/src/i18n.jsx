@@ -126,6 +126,14 @@ i18n
           profile_request_access_sent: 'Your request has been sent to the ProGeo® team.',
           profile_request_access_error: 'Could not send the request',
           profile_request_access_too_many: 'Too many requests - please try again later.',
+          profile_qr_code_title: 'Login QR code',
+          profile_qr_code_generate: 'Generate QR code',
+          profile_qr_code_show: 'Show QR code',
+          profile_qr_code_hide: 'Hide QR code',
+          profile_qr_code_alt: 'QR code with your login token',
+          profile_qr_code_hint:
+            'A device that scans this code is logged in as you. Do not show it to anyone else.',
+          profile_qr_code_error: 'Could not load the QR code',
           profile_delete_account: 'Delete account',
           profile_delete_account_hint:
             'Your account and your personal data are deleted; the measurement data of the objects is kept.',
@@ -2955,6 +2963,14 @@ i18n
           profile_request_access_sent: 'Ihre Anfrage wurde an das ProGeo®-Team gesendet.',
           profile_request_access_error: 'Die Anfrage konnte nicht gesendet werden',
           profile_request_access_too_many: 'Zu viele Anfragen - bitte versuchen Sie es später erneut.',
+          profile_qr_code_title: 'Anmelde-QR-Code',
+          profile_qr_code_generate: 'QR-Code generieren',
+          profile_qr_code_show: 'QR-Code zeigen',
+          profile_qr_code_hide: 'QR-Code ausblenden',
+          profile_qr_code_alt: 'QR-Code mit Ihrem Anmelde-Token',
+          profile_qr_code_hint:
+            'Ein Gerät, das diesen Code scannt, ist als Sie angemeldet. Zeigen Sie ihn niemand anderem.',
+          profile_qr_code_error: 'Der QR-Code konnte nicht geladen werden',
           profile_delete_account: 'Konto löschen',
           profile_delete_account_hint:
             'Ihr Konto und Ihre persönlichen Daten werden gelöscht, die Messdaten der Objekte bleiben erhalten.',

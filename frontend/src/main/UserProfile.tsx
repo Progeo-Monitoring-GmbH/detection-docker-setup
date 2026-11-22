@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Spinner, ProgressBar } from 'react-bootstrap';
-import { Envelope, Key, ShieldLock, X } from 'react-bootstrap-icons';
+import { Envelope, Key, QrCode, ShieldLock, X } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 
@@ -28,6 +28,8 @@ type UserProfileResponse = {
   two_factor_enabled?: boolean;
   /** False for users invited per link - they never chose a password. */
   has_usable_password?: boolean;
+  /** The user already has a login token: "QR-Code zeigen" instead of "QR-Code generieren". */
+  qr_code_exists?: boolean;
 };
 
 /** "Erika Muster" - the user's name, else the login name. */
@@ -143,6 +145,10 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [twoFactorEnabled, setTwoFactorEnabled] = React.useState(false);
   const [twoFactorOpen, setTwoFactorOpen] = React.useState(false);
   const [hasUsablePassword, setHasUsablePassword] = React.useState(true);
+  const [qrCodeExists, setQrCodeExists] = React.useState(false);
+  // The image (data URI) while it is shown; it holds the login token, so it is not kept.
+  const [qrCode, setQrCode] = React.useState<string | null>(null);
+  const [qrCodeLoading, setQrCodeLoading] = React.useState(false);
 
   const [username, setUsername] = React.useState('');
   const [firstName, setFirstName] = React.useState('');
@@ -166,6 +172,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [deleting, setDeleting] = React.useState(false);
 
   const canEditEmail = hasPermission('module_profile_mail_edit');
+  const canShowQrCode = hasPermission('module_profile_qr_code');
   // The demo user keeps nothing - no 2FA, password, request or deletion of its own.
   const isDemo = isDemoUser(auth.user);
   const isEmailInputValid = isValidEmail(email);
@@ -204,6 +211,8 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setLanguage(data.language || 'de');
         setTwoFactorEnabled(Boolean(data.two_factor_enabled));
         setHasUsablePassword(data.has_usable_password !== false);
+        setQrCodeExists(Boolean(data.qr_code_exists));
+        setQrCode(null);
         setLoading(false);
       },
       (error) => {
@@ -214,6 +223,32 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, enqueueSnackbar]);
+
+  /** Creates the login token if there is none and shows it as a QR code. */
+  const loadQrCode = () => {
+    setQrCodeLoading(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/user/qr-code/',
+      {},
+      (response) => {
+        setQrCode(response?.data?.qr || null);
+        setQrCodeExists(true);
+        setQrCodeLoading(false);
+      },
+      (error) => {
+        showErrorBar(enqueueSnackbar, `${t('profile_qr_code_error')}: ${errorReason(error)}`);
+        setQrCodeLoading(false);
+      },
+    );
+  };
+
+  const qrCodeLabel = () => {
+    if (qrCode) {
+      return t('profile_qr_code_hide');
+    }
+    return qrCodeExists ? t('profile_qr_code_show') : t('profile_qr_code_generate');
+  };
 
   const resetPasswordForm = () => {
     setPasswordMode(null);
@@ -598,6 +633,33 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     label={twoFactorEnabled ? t('tfa_manage_button') : t('tfa_setup_button')}
                   />
                 </div>
+              </section>
+            )}
+
+            {!isDemo && canShowQrCode && (
+              <section data-testid="user-profile-qr-code">
+                <div className="profile-section-label">{t('profile_qr_code_title')}</div>
+                <div className="profile-actions">
+                  <PillButton
+                    variant="surface"
+                    onClick={() => (qrCode ? setQrCode(null) : loadQrCode())}
+                    disabled={qrCodeLoading}
+                    testId="user-profile-qr-code-button"
+                    icon={<QrCode size={15} aria-hidden="true" />}
+                    label={qrCodeLabel()}
+                  />
+                </div>
+                {qrCode && (
+                  <>
+                    <img
+                      src={qrCode}
+                      alt={t('profile_qr_code_alt')}
+                      className="profile-qr-code"
+                      data-testid="user-profile-qr-code-image"
+                    />
+                    <div className="profile-hint">{t('profile_qr_code_hint')}</div>
+                  </>
+                )}
               </section>
             )}
 

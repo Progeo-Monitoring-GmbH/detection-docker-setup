@@ -11,6 +11,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper import login_throttle, two_factor
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
+from progeo.helper.tokens import valid_drf_token
 
 LANGUAGE_SESSION_KEY = "django_language"
 
@@ -131,6 +132,15 @@ def _archived_setting(user, hide=None) -> dict:
     return {"hide_archived_measurements": hide}
 
 
+QR_CODE_PERMISSION = "module_profile_qr_code"
+
+
+def qr_code_data_uri(payload: str) -> str:
+    from progeo.v1.viewsets.setup_viewset import qr_code_data_uri as encode
+
+    return encode(payload)
+
+
 def _token_pair(user) -> dict:
     """Fresh JWTs - their claims (two_factor_setup_required) follow a 2FA change."""
     from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
@@ -196,8 +206,27 @@ class UserProfileViewSet(viewsets.ViewSet):
             "language_saved": bool(self._normalize_language(_stored_language(user))),
             "two_factor_enabled": two_factor.is_enabled(user),
             "has_usable_password": user.has_usable_password(),
+            # "QR-Code zeigen" instead of "QR-Code generieren" (qr_code below).
+            "qr_code_exists": valid_drf_token(user) is not None,
             **_archived_setting(user),
         })
+
+    @action(detail=False, url_path="qr-code", methods=["POST"])
+    def qr_code(self, request, *args, **kwargs):
+        """The user's own DRF token as a QR code of {"token": "..."} - for a
+        device that logs in by scanning it. Needs module_profile_qr_code
+        (staff too, decorator.holds_permission). Creates the token if there
+        is none; the token itself is only inside the image. {qr, created}."""
+        import json
+
+        from progeo.decorator import missing_held_permissions, permission_denied_response
+        from progeo.helper.tokens import drf_token_for_qr_code
+
+        missing = missing_held_permissions(request.user, QR_CODE_PERMISSION)
+        if missing:
+            return permission_denied_response(missing)
+        token, created = drf_token_for_qr_code(request.user)
+        return RequestSuccess({"qr": qr_code_data_uri(json.dumps({"token": token.key})), "created": created})
 
     @action(detail=False, url_path="archived_measurements", methods=["POST"])
     def archived_measurements(self, request, *args, **kwargs):

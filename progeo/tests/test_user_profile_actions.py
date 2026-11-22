@@ -1,6 +1,8 @@
 """Mein Konto actions (UserProfileViewSet): phone numbers in E.164
 (helper/phone_numbers.py), the notification channel choice, the request for
 access to another object and the self-service account deletion."""
+import json
+
 import pytest
 from django.contrib.auth.models import User
 
@@ -242,3 +244,79 @@ def test_profile_tells_whether_the_language_was_saved(api_client):
     api_client.force_authenticate(user=User.objects.using(f.DB).get(pk=user.pk))
     body = api_client.get("/v1/user/profile/").json()
     assert (body["language"], body["language_saved"]) == ("en", True)
+
+
+# ---------------------------------------------------------------------------- login QR code (module_profile_qr_code)
+
+def test_qr_code_needs_the_permission(api_client):
+    from rest_framework.authtoken.models import Token
+
+    user = f.make_user()
+    api_client.force_authenticate(user=user)
+
+    assert api_client.get("/v1/user/profile/").json()["qr_code_exists"] is False
+    response = api_client.post("/v1/user/qr-code/")
+
+    assert response.status_code == 403
+    assert response.json()["missing_permissions"] == ["module_profile_qr_code"]
+    assert not Token.objects.using(f.DB).filter(user=user).exists()
+
+
+def test_staff_need_the_qr_code_permission_too(api_client):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    assert api_client.post("/v1/user/qr-code/").status_code == 403
+
+
+def test_qr_code_creates_the_token_once_and_shows_it_again(api_client, monkeypatch):
+    from rest_framework.authtoken.models import Token
+
+    encoded = []
+    monkeypatch.setattr("progeo.v1.viewsets.user_profile_viewset.qr_code_data_uri",
+                        lambda payload: encoded.append(payload) or "data:image/png;base64,QQ==")
+    user = f.make_user(perms=("module_profile_qr_code",))
+    api_client.force_authenticate(user=user)
+    assert api_client.get("/v1/user/profile/").json()["qr_code_exists"] is False
+
+    first = api_client.post("/v1/user/qr-code/")
+
+    assert first.status_code == 200, first.content
+    token = Token.objects.using(f.DB).get(user=user)
+    assert first.json()["created"] is True
+    assert first.json()["qr"] == "data:image/png;base64,QQ=="
+    assert json.loads(encoded[0]) == {"token": token.key}
+    assert token.key not in first.content.decode()  # only inside the QR code
+    assert api_client.get("/v1/user/profile/").json()["qr_code_exists"] is True
+
+    second = api_client.post("/v1/user/qr-code/")
+
+    assert second.json()["created"] is False
+    assert json.loads(encoded[1]) == {"token": token.key}
+    assert Token.objects.using(f.DB).filter(user=user).count() == 1
+
+
+def test_qr_code_replaces_an_expired_token(api_client, settings):
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from rest_framework.authtoken.models import Token
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = f.make_user(perms=("module_profile_qr_code",))
+    old = Token.objects.using(f.DB).create(user=user)
+    Token.objects.using(f.DB).filter(pk=old.pk).update(created=timezone.now() - timedelta(days=31))
+    api_client.force_authenticate(user=user)
+    assert api_client.get("/v1/user/profile/").json()["qr_code_exists"] is False
+
+    response = api_client.post("/v1/user/qr-code/")
+
+    assert response.json()["created"] is True
+    assert Token.objects.using(f.DB).get(user=user).key != old.key
+
+
+def test_qr_code_is_a_png_image(api_client):
+    api_client.force_authenticate(user=f.make_user(perms=("module_profile_qr_code",)))
+
+    response = api_client.post("/v1/user/qr-code/")
+
+    assert response.json()["qr"].startswith("data:image/png;base64,iVBOR")

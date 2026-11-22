@@ -130,6 +130,16 @@
   color: #3f7a1c;
 }
 
+/* The login QR code (module_profile_qr_code): white, so a camera reads it in dark mode too. */
+.profile-qr-code {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 8px;
+}
+
 /* Form inside a ConfirmDialog (request access, delete account). */
 .profile-dialog-form {
   display: flex;
