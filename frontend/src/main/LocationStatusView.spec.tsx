@@ -208,7 +208,7 @@ describe('LocationStatusView', () => {
     expect((byTestId('status-range') as HTMLSelectElement).value).toBe('7d');
     expect(byTestId('status-step')).not.toBeNull();
     expect(panels.plan?.threshold).toBe(250);
-    // No request devices, no admin rights: no header.
+    // No request devices: no header.
     expect(byTestId('status-header')).toBeNull();
     expect(currentStatusView(4)).toEqual({ view: 'roof', range: '7d' });
   });
@@ -242,7 +242,7 @@ describe('LocationStatusView', () => {
     expect(api.get.mock.calls.some(([url]) => String(url).includes('latest=1'))).toBe(true);
   });
 
-  it('offers the measurement request with a device choice and the admin links to staff', async () => {
+  it('offers the measurement request with a device choice - the admin links are in the portal header', async () => {
     hooks.staff = true;
     hooks.permissions = new Set([
       'module_locations_django_edit',
@@ -256,10 +256,9 @@ describe('LocationStatusView', () => {
     await render();
 
     expect(byTestId('status-header')).not.toBeNull();
-    expect(byTestId('status-django-edit')?.getAttribute('href')).toBe(
-      '/aadmin/progeo/progeolocation/4/change/',
-    );
-    expect(byTestId('status-django-delete')).not.toBeNull();
+    // Moved to the portal header (LocationAdminActions).
+    expect(byTestId('status-django-edit')).toBeNull();
+    expect(byTestId('status-django-delete')).toBeNull();
     const select = byTestId('status-request-device') as HTMLSelectElement;
     expect([...select.options].map((option) => option.textContent)).toEqual([
       'Dach',

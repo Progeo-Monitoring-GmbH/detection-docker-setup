@@ -54,6 +54,7 @@ vi.mock('./FavoritesBar', () => ({ default: () => null }));
 vi.mock('./LocationGroupBar', () => ({ default: () => null }));
 vi.mock('./ImpersonationBanner', () => ({ default: () => null }));
 vi.mock('./FavoriteStar', () => ({ default: () => <span data-testid="favorite-star" /> }));
+vi.mock('./LocationAdminActions', () => ({ default: () => <span data-testid="admin-actions" /> }));
 
 const { default: LocationPortalLayout } = await import('./LocationPortalLayout');
 

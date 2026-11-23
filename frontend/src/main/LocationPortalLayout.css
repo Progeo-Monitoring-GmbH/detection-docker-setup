@@ -51,6 +51,15 @@
   min-width: 0;
 }
 
+/* Django admin edit / delete (LocationAdminActions): icon buttons right of
+   the escalation button. */
+.portal-admin-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
 @media (max-width: 640px) {
   .portal-header {
     flex-wrap: wrap;

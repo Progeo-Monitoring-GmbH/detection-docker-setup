@@ -142,7 +142,7 @@ test.describe('a customer without the rights', () => {
 
     // Customers get no delete control at all (locations are deleted by staff).
     await openPage(page, `/location/${target}/status`, 'page-location-status');
-    await expect(page.getByTestId('status-django-delete')).toHaveCount(0);
+    await expect(page.getByTestId('location-portal-django-delete')).toHaveCount(0);
   });
 
   test("cannot open another account's location", async ({ page, request, baseURL }) => {

@@ -4,7 +4,7 @@ import { ChevronRight } from 'react-bootstrap-icons';
 import './kit.css';
 
 /** A titled panel higher than this (px) gets a fold toggle. */
-export const FOLD_MIN_HEIGHT = 250;
+export const FOLD_MIN_HEIGHT = 500;
 
 /** The fold toggle's test id - one per panel, told apart by data-test-key (as FoldPanel's). */
 const FOLD_TOGGLE_TEST_ID = 'fold-toggle';

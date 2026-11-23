@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
-import { PencilSquare, Trash } from 'react-bootstrap-icons';
+import { Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -93,47 +92,6 @@ const useMeasurementRequest = (locationId: number) => {
   return { requesting, requestMeasurement };
 };
 
-/** Staff: the location in the Django admin - edit / delete. */
-const StatusAdminActions = ({
-  locationId,
-  canEdit,
-  canDelete,
-}: {
-  locationId: number;
-  canEdit: boolean;
-  canDelete: boolean;
-}) => {
-  const { t } = useTranslation();
-  return (
-    <div className="status-admin-actions">
-      {canEdit && (
-        <Button
-          as="a"
-          size="sm"
-          variant="outline-primary"
-          href={`/aadmin/progeo/progeolocation/${locationId}/change/`}
-          data-testid="status-django-edit"
-        >
-          <PencilSquare className="me-1" />
-          {t('status_edit_location_django')}
-        </Button>
-      )}
-      {canDelete && (
-        <Button
-          as="a"
-          size="sm"
-          variant="outline-danger"
-          href={`/aadmin/progeo/progeolocation/${locationId}/delete/`}
-          data-testid="status-django-delete"
-        >
-          <Trash className="me-1" />
-          {t('status_delete_location_django')}
-        </Button>
-      )}
-    </div>
-  );
-};
-
 /** "Request measurement" - with a device dropdown when there are several. */
 const MeasurementRequest = ({
   devices,
@@ -182,46 +140,32 @@ const MeasurementRequest = ({
   );
 };
 
-/** "Request measurement" and the Django admin links (the location's name
- * and address are in the portal's title, LocationPortalLayout). */
+/** "Request measurement" (the location's name and address, and the Django
+ * admin links for staff, are in the portal's header, LocationPortalLayout). */
 const LocationStatusHeader = ({
   locationId,
   canRequestMeasurement,
-  canEditInDjango,
-  canDeleteInDjango,
 }: {
   locationId: number;
   canRequestMeasurement: boolean;
-  canEditInDjango: boolean;
-  canDeleteInDjango: boolean;
 }) => {
   const { devices, selectedDeviceId, setSelectedDeviceId } =
     useRequestableDevices(locationId, canRequestMeasurement);
   const { requesting, requestMeasurement } = useMeasurementRequest(locationId);
   const showRequest = canRequestMeasurement && devices.length > 0;
-  const showAdmin = canEditInDjango || canDeleteInDjango;
-  if (!showRequest && !showAdmin) {
+  if (!showRequest) {
     return null;
   }
 
   return (
     <div className="status-header" data-testid="status-header">
-      {showAdmin && (
-        <StatusAdminActions
-          locationId={locationId}
-          canEdit={canEditInDjango}
-          canDelete={canDeleteInDjango}
-        />
-      )}
-      {showRequest && (
-        <MeasurementRequest
-          devices={devices}
-          selectedDeviceId={selectedDeviceId}
-          onSelectDevice={setSelectedDeviceId}
-          requesting={requesting}
-          onRequest={() => requestMeasurement(selectedDeviceId)}
-        />
-      )}
+      <MeasurementRequest
+        devices={devices}
+        selectedDeviceId={selectedDeviceId}
+        onSelectDevice={setSelectedDeviceId}
+        requesting={requesting}
+        onRequest={() => requestMeasurement(selectedDeviceId)}
+      />
     </div>
   );
 };

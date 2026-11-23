@@ -13,6 +13,7 @@ import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 import EscalationBanner from './EscalationBanner';
 import FavoriteStar from './FavoriteStar';
+import LocationAdminActions from './LocationAdminActions';
 import FavoritesBar from './FavoritesBar';
 import LocationGroupBar from './LocationGroupBar';
 import ImpersonationBanner from './ImpersonationBanner';
@@ -151,6 +152,8 @@ const LocationPortalLayout = () => {
                 <EscalationBanner locationId={locationId} />
               </div>
             )}
+            {/* Staff: edit / delete in the Django admin - beside the escalation, on every tab. */}
+            <LocationAdminActions locationId={locationId} />
           </div>
         )}
         {/* A merged project: the plans of all its parts in one bar. */}

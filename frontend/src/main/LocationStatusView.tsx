@@ -36,8 +36,7 @@ const LocationStatusView = ({
   locationId,
   demo = false,
 }: LocationStatusViewProps) => {
-  const { readOnlyDemo, isStaff, canEditInDjango, canDeleteInDjango } =
-    useStatusAccess(demo);
+  const { readOnlyDemo, isStaff } = useStatusAccess(demo);
   const settings = useStatusViewSettings(isStaff);
 
   // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
@@ -90,8 +89,6 @@ const LocationStatusView = ({
       <LocationStatusHeader
         locationId={locationId}
         canRequestMeasurement={!isLorawan && !readOnlyDemo}
-        canEditInDjango={canEditInDjango}
-        canDeleteInDjango={canDeleteInDjango}
       />
 
       {isLorawan ? (
