@@ -320,6 +320,8 @@ const LocationObjektTab = () => {
           </div>
         </PanelCard>
 
+        {/* Ansprechpartner: staff (and superusers) only. */}
+        {isStaffOrSuperuser && (
         <PanelCard title={t('objekt_section_contact')} testId="objekt-contact">
           <div className="objekt-grid">
             <LabeledInput
@@ -352,6 +354,7 @@ const LocationObjektTab = () => {
             />
           </div>
         </PanelCard>
+        )}
 
         {(canEditContact || canEditIdentity) && (
           <div>
