@@ -169,16 +169,10 @@ class UserProfileViewSet(viewsets.ViewSet):
 
     @staticmethod
     def _is_minimally_strong_password(password):
-        if not password or len(password) < 8:
-            return False
+        """helper/password_rules.py - "Add user" on /staff/ asks the same."""
+        from progeo.helper.password_rules import is_minimally_strong
 
-        has_lower = any(char.islower() for char in password)
-        has_upper = any(char.isupper() for char in password)
-        has_digit = any(char.isdigit() for char in password)
-        has_special = any(not char.isalnum() for char in password)
-
-        charset_count = sum([has_lower, has_upper, has_digit, has_special])
-        return charset_count >= 3
+        return is_minimally_strong(password)
 
     @staticmethod
     def _normalize_language(raw_language):

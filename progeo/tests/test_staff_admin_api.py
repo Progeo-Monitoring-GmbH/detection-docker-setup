@@ -266,7 +266,7 @@ def test_create_generates_a_password_and_grants_only_own_permissions(api_client,
 
     body = api_client.post(
         BASE,
-        {"username": f"  {name} ", "email": "new@progeo.com",
+        {"username": f"  {name} ", "email": f"{name}@progeo.com",
          "permissions": ["module_locations_enabled", "module_backup_enabled"]},
         format="json",
     ).json()
@@ -292,8 +292,8 @@ def test_create_with_explicit_password_does_not_echo_it(api_client, staff):
 @pytest.mark.parametrize(
     "payload, reason",
     [
-        ({"username": "   "}, "username is required"),
-        ({}, "username is required"),
+        ({"username": "   "}, "email is required"),
+        ({}, "email is required"),
         ({"username": "{taken}"}, "Username '{taken}' already exists"),
         ({"username": "{fresh}", "email": "not-an-email"}, "invalid email address"),
     ],
@@ -308,6 +308,54 @@ def test_create_validation(api_client, staff, payload, reason):
     assert response.status_code == 400
     assert response.json()["reason"] == reason.format(taken=taken)
     assert not User.objects.using(f.DB).filter(username=fresh).exists()
+
+
+def test_create_takes_the_email_address_as_login_name(api_client, staff):
+    """The portal sends no username any more - the address is the login name."""
+    email = f"{f.unique('mail')}@progeo.com"
+
+    body = api_client.post(BASE, {"email": email}, format="json").json()
+
+    assert body["success"] is True, body
+    assert User.objects.using(f.DB).get(pk=body["user"]["id"]).username == email
+
+
+def test_create_refuses_an_email_address_in_use(api_client, staff):
+    taken = f.make_user(email=f"{f.unique('taken')}@progeo.com").email
+
+    response = api_client.post(BASE, {"email": taken.upper()}, format="json").json()
+
+    assert response["reason"] == "A user with this email address already exists"
+    assert User.objects.using(f.DB).filter(email__iexact=taken).count() == 1
+
+
+@pytest.mark.parametrize("password", ["Ab1!xyz", "alllowercaseonly", "ALLUPPERCASE123", "lower-and-symbols!"])
+def test_create_refuses_a_weak_password(api_client, staff, password):
+    """As in the profile (helper/password_rules.py): 8 characters, three of four kinds."""
+    from progeo.helper.password_rules import WEAK_REASON
+
+    email = f"{f.unique('weak')}@progeo.com"
+
+    response = api_client.post(BASE, {"email": email, "password": password}, format="json")
+
+    assert (response.status_code, response.json()["reason"]) == (400, WEAK_REASON)
+    assert not User.objects.using(f.DB).filter(email=email).exists()
+
+
+def test_create_runs_the_password_validators_too(api_client, staff):
+    """Strong enough by the rule, but Django's validators refuse it (too like the address)."""
+    email = f"{f.unique('similar')}@progeo.com"
+
+    response = api_client.post(BASE, {"email": email, "password": f"{email}X1"}, format="json").json()
+
+    assert response["success"] is False
+    assert response["code"] == "password" and response["errors"]
+
+
+def test_generated_passwords_always_pass_the_rule():
+    from progeo.helper.password_rules import generate_password, is_minimally_strong
+
+    assert all(is_minimally_strong(generate_password()) for _ in range(500))
 
 
 def test_staff_cannot_create_superusers(api_client, staff):

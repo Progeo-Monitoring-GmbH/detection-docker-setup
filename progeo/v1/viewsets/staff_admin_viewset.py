@@ -1,5 +1,3 @@
-import secrets
-import string
 from collections import defaultdict
 from itertools import chain
 
@@ -13,6 +11,11 @@ from rest_framework.views import APIView
 from progeo.decorator import staff_permissions_denied
 from progeo.helper import account_members
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.password_rules import (
+    WEAK_REASON,
+    generate_password,
+    is_minimally_strong,
+)
 from progeo.helper.tokens import revoke_user_tokens
 from progeo.v1.models import (
     CUSTOMER_ADMIN_PERMISSION,
@@ -289,9 +292,8 @@ def _apply_permissions(user, requested_codes, grantable, keep_ungrantable=False)
 
 
 def _generate_password(length=16):
-    """Random password that satisfies the minimal strength rules (>=8 chars, >=3 charsets)."""
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+    """Random password that passes the strength rules (helper/password_rules.py)."""
+    return generate_password(length)
 
 
 class StaffUserListView(APIView):
@@ -386,18 +388,41 @@ class StaffUserListView(APIView):
         else:
             new_accounts = set()
 
-        if not username:
-            return RequestFailed({"reason": "username is required"})
-        if User.objects.using(_USER_DB).filter(username=username).exists():
-            return RequestFailed({"reason": f"Username '{username}' already exists"})
+        # The login name is the email address (made unique, like every other way
+        # users come in - access_requests._username_for); the portal sends no
+        # username any more, API callers still may.
+        if not email and not username:
+            return RequestFailed({"reason": "email is required"})
         if email:
             try:
                 validate_email(email)
             except ValidationError:
                 return RequestFailed({"reason": "invalid email address"})
+            if User.objects.using(_USER_DB).filter(email__iexact=email).exists():
+                return RequestFailed({"reason": "A user with this email address already exists"})
+        if not username:
+            from progeo.helper.access_requests import _username_for
 
-        password = data.get("password") or _generate_password()
-        generated = bool(data.get("password") is None)
+            username = _username_for(email)
+        elif User.objects.using(_USER_DB).filter(username=username).exists():
+            return RequestFailed({"reason": f"Username '{username}' already exists"})
+
+        # A password typed in has to be a good one (helper/password_rules.py,
+        # as in the profile); none - one is generated and shown once.
+        password = data.get("password") or ""
+        generated = not password
+        if generated:
+            password = _generate_password()
+        else:
+            from progeo.helper.access_requests import password_errors
+
+            # The reason is the text the page shows (Snackbar errorReason).
+            if not is_minimally_strong(password):
+                return RequestFailed({"reason": WEAK_REASON, "code": "weak_password"})
+            errors = password_errors(password, User(username=username, email=email),
+                                     getattr(request, "LANGUAGE_CODE", None))
+            if errors:
+                return RequestFailed({"reason": " ".join(errors), "code": "password", "errors": errors})
 
         grantable = _grantable_codes(request.user)
         is_staff = bool(data.get("is_staff", False)) and _is_staff_admin(request.user)

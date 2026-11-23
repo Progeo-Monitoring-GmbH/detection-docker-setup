@@ -41,6 +41,9 @@ import StaffMessaging from './StaffMessaging';
 import StaffNotificationCases from './StaffNotificationCases';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import HoverDetails from '../components/ui/kit/HoverDetails';
+import PasswordStrengthMeter, {
+  evaluatePasswordStrength,
+} from '../components/ui/PasswordStrengthMeter';
 import { staffFlags, useAccess } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
 import {
@@ -103,6 +106,10 @@ const EMPTY_RESPONSE: UsersResponse = {
   grantable_codes: [],
   all_permission_defs: [],
 };
+
+/** A plausible email address - a new user's login name. */
+const isValidEmail = (input: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim());
 
 /** Compact human-readable label for a permission code. */
 const permissionLabel = (code: string): string => {
@@ -222,7 +229,6 @@ const UserFormModal = ({
   testId: string;
 }) => {
   const { t } = useTranslation();
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isStaff, setIsStaff] = useState(false);
@@ -249,7 +255,6 @@ const UserFormModal = ({
     }
     setAsk(null);
     setCopied(null);
-    setUsername(user?.username || '');
     setEmail(user?.email || '');
     setPassword('');
     setIsStaff(Boolean(user?.is_staff));
@@ -298,8 +303,8 @@ const UserFormModal = ({
     if (!accountsLocked) {
       payload.accounts = selectedAccounts;
     }
+    // A new user's login name is their email address (the server derives it).
     if (isNew) {
-      payload.username = username;
       if (password) {
         payload.password = password;
       }
@@ -353,17 +358,6 @@ const UserFormModal = ({
       </Modal.Header>
       <Modal.Body>
         <Form>
-          {isNew && (
-            <Form.Group className="mb-3">
-              <Form.Label>{t('staff_field_username')}</Form.Label>
-              <Form.Control
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder={t('staff_field_username_placeholder')}
-                data-testid={childTestId(testId, 'username')}
-              />
-            </Form.Group>
-          )}
           <Form.Group className="mb-3">
             <Form.Label>{t('staff_field_email')}</Form.Label>
             <Form.Control
@@ -384,6 +378,15 @@ const UserFormModal = ({
                 placeholder={t('staff_field_password_placeholder')}
                 data-testid={childTestId(testId, 'password')}
               />
+              {/* Empty: the server generates one - typed: it has to be a good one. */}
+              {password && (
+                <div className="mt-2">
+                  <PasswordStrengthMeter
+                    password={password}
+                    testId={childTestId(testId, 'password')}
+                  />
+                </div>
+              )}
             </Form.Group>
           )}
 
@@ -647,7 +650,12 @@ const UserFormModal = ({
         <Button
           variant="primary"
           onClick={handleSubmit}
-          disabled={isNew && customerAdmin && noAccount}
+          disabled={
+            isNew &&
+            (!isValidEmail(email) ||
+              (password !== '' && !evaluatePasswordStrength(password).valid) ||
+              (customerAdmin && noAccount))
+          }
           data-testid={childTestId(testId, 'save')}
         >
           {t('staff_save')}
@@ -1101,28 +1109,33 @@ const StaffAdmin = () => {
     () =>
       [
         {
-          id: 'username',
-          name: t('staff_col_username'),
-          selector: (row) => row.username.toLowerCase(),
+          // The email address is the login name - no column of its own for
+          // the username. Older users without an address show it, muted.
+          id: 'email',
+          name: t('staff_col_email'),
+          selector: (row) => (row.email || row.username).toLowerCase(),
           sortable: true,
           cell: (row) => (
             <span
               className="d-inline-flex align-items-center"
-              {...repeatedTestId('staff-user-name', row.id)}
+              {...repeatedTestId('staff-user-email', row.id)}
             >
               <SessionDot user={row} />
-              {row.username}
+              {row.email ? (
+                row.email
+              ) : (
+                <span
+                  className="text-muted"
+                  title={t('staff_user_without_email')}
+                >
+                  {row.username}
+                </span>
+              )}
               {row.is_superuser && (
                 <ShieldLock className="ms-2 text-warning" size={14} />
               )}
             </span>
           ),
-        },
-        {
-          name: t('staff_col_email'),
-          selector: (row) => (row.email || '').toLowerCase(),
-          format: (row) => row.email || '-',
-          sortable: true,
         },
         {
           id: 'accounts',
@@ -1361,8 +1374,8 @@ const StaffAdmin = () => {
       canDeleteUser,
     ],
   );
-  // Phones: the name in the row, everything else (the actions too) in its expander.
-  const { columns, expandable } = useMobileColumns(allColumns, ['username']);
+  // Phones: the address in the row, everything else (the actions too) in its expander.
+  const { columns, expandable } = useMobileColumns(allColumns, ['email']);
 
   if (!canManageUsers) {
     return (
@@ -1542,7 +1555,7 @@ const StaffAdmin = () => {
             columns={columns}
             {...expandable}
             data={filteredUsers}
-            defaultSortFieldId="username"
+            defaultSortFieldId="email"
             pagination
             paginationResetDefaultPage={resetPage}
             paginationPerPage={15}
