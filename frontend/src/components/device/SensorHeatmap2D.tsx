@@ -248,6 +248,7 @@ const SensorHeatmap2D = ({
     absoluteScale,
     normalizeForced,
     hasLines,
+    hasNames,
     colorTable,
   } = useHeatmapScene({
     response,
@@ -416,6 +417,7 @@ const SensorHeatmap2D = ({
               state={display}
               areaSelectable={Boolean(onAreaSelect)}
               hasLines={hasLines}
+              hasNames={hasNames}
               heatOptions={staff && !fieldMode}
               normalizeForced={normalizeForced}
               profile={profile}

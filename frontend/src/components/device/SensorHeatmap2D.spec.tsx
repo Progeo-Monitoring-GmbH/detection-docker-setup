@@ -6,6 +6,11 @@ import SensorHeatmap2D from './SensorHeatmap2D';
 import { ownPartTestIds, toolbarHasOwnRow } from './SensorHeatmapParts';
 import type { SensorHeatmapResponse } from './sensorHeatmapTypes';
 
+const hooks = vi.hoisted(() => ({
+  auth: {} as { user?: { is_staff?: boolean } },
+}));
+vi.mock('../../../hooks/CoreAuthProvider', () => ({ useAuth: () => hooks.auth }));
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +43,7 @@ beforeEach(() => {
       HTMLElement.prototype as unknown as Record<string, () => boolean>
     ).hasPointerCapture = () => false;
   }
+  hooks.auth = {};
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -193,7 +199,8 @@ describe('SensorHeatmap2D', () => {
     expect(onHoverDevice).toHaveBeenLastCalledWith(11);
     expect(canvas().className).toContain('heatmap2d-canvas--pointer');
     const tooltip = byId('sensor-heatmap-sensor-tooltip')!.textContent;
-    expect(tooltip).toContain('Sensor #1');
+    // The sensor's own name (e.g. from the Klemmliste), not just its number.
+    expect(tooltip).toContain('Nord (#1)');
     expect(tooltip).toContain('30');
     expect(tooltip).toContain('40');
 
@@ -204,6 +211,42 @@ describe('SensorHeatmap2D', () => {
     pointer(canvas(), 'pointerout', x, y);
     expect(byId('sensor-heatmap-sensor-tooltip')).toBeNull();
     expect(onHoverDevice).toHaveBeenLastCalledWith(null);
+  });
+
+  it('falls back to the number in the tooltip of a sensor without a name', () => {
+    render({
+      response: {
+        ...RESPONSE,
+        sensor_points: RESPONSE.sensor_points!.map((point) => ({ ...point, name: null })),
+      },
+    });
+    findSensor(1);
+    expect(byId('sensor-heatmap-sensor-tooltip')!.textContent).toContain('Sensor #1');
+  });
+
+  it('offers staff a toggle for the sensor names', () => {
+    render();
+    expect(byId('heatmap-display-controls-names')).toBeNull();
+
+    hooks.auth = { user: { is_staff: true } };
+    render({ response: { ...RESPONSE } });
+    const names = byId('heatmap-display-controls-names')!;
+    expect(names.getAttribute('aria-pressed')).toBe('false');
+    act(() => names.click());
+    expect(byId('heatmap-display-controls-names')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('offers no names toggle without named sensors or in field mode', () => {
+    hooks.auth = { user: { is_staff: true } };
+    render({
+      response: {
+        ...RESPONSE,
+        sensor_points: RESPONSE.sensor_points!.map((point) => ({ ...point, name: null })),
+      },
+    });
+    expect(byId('heatmap-display-controls-names')).toBeNull();
+    render({ field: { unit: '%', decimals: 1 } });
+    expect(byId('heatmap-display-controls-names')).toBeNull();
   });
 
   it('marks a disabled sensor in its tooltip', () => {

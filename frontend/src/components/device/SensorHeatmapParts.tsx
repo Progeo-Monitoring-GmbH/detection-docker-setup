@@ -220,13 +220,14 @@ export const PlotMarks = ({
 /**
  * The floating display controls of the plot: dots, labels, the area
  * selection (with `areaSelectable`), dm band lines (with `hasLines`) and -
- * staff, not in field mode - the absolute scale and the profile (with
- * `onProfileChange`).
+ * staff, not in field mode - the sensor names (with `hasNames`), the
+ * absolute scale and the profile (with `onProfileChange`).
  */
 export const PlotDisplayControls = ({
   state,
   areaSelectable,
   hasLines,
+  hasNames,
   heatOptions,
   normalizeForced,
   profile,
@@ -237,7 +238,9 @@ export const PlotDisplayControls = ({
   state: HeatmapDisplayState;
   areaSelectable: boolean;
   hasLines: boolean;
-  /** Staff outside field mode: the scale and profile are offered. */
+  /** Some sensor has a name (ProgeoMeasurePoint.name). */
+  hasNames: boolean;
+  /** Staff outside field mode: the names, scale and profile are offered. */
   heatOptions: boolean;
   normalizeForced: boolean;
   profile: HeatProfile;
@@ -255,6 +258,11 @@ export const PlotDisplayControls = ({
     }
     lines={
       hasLines ? { value: state.showLines, onChange: state.setShowLines } : null
+    }
+    names={
+      heatOptions && hasNames
+        ? { value: state.showNames, onChange: state.setShowNames }
+        : null
     }
     normalize={
       heatOptions
@@ -274,8 +282,9 @@ export const PlotDisplayControls = ({
   />
 );
 
-/** The tooltip of the hovered sensor - in field mode the sensors are
- * devices, named as in the climate charts, with the reading's colour. */
+/** The tooltip of the hovered sensor, titled with its name (e.g. "A2-15"
+ * from the Klemmliste) - in field mode the sensors are devices, named as in
+ * the climate charts, with the reading's colour. */
 const HoveredSensorTooltip = ({
   sensor,
   value,
@@ -299,7 +308,7 @@ const HoveredSensorTooltip = ({
 }) => (
   <SensorTooltip
     sensorPos={sensor.pos}
-    name={fieldScale ? (sensor.label ?? sensor.name) : undefined}
+    name={fieldScale ? (sensor.label ?? sensor.name) : sensor.name}
     meters={meters}
     value={value}
     unit={fieldScale?.unit}

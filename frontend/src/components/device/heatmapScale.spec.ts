@@ -190,6 +190,10 @@ describe('sensorTexter', () => {
     expect([0, 1, 2].map(fieldText)).toEqual(['Klima Nord', 'Süd', '5']);
     expect([0, 1, 2].map(sensorTexter(layout, false))).toEqual(['3', '4', '5']);
   });
+
+  it('names the sensors with `names` (staff), the number without a name', () => {
+    expect([0, 1, 2].map(sensorTexter(layout, false, true))).toEqual(['Nord', 'Süd', '5']);
+  });
 });
 
 describe('readingColor', () => {

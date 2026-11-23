@@ -129,13 +129,15 @@ export const tickLabeler =
   };
 
 /** The text next to a sensor's marker: in field mode the sensors are devices,
- * named like their lines in the climate charts; otherwise the sensor number. */
+ * named like their lines in the climate charts; otherwise the sensor number -
+ * with `names` (staff) its name ("A2-15"), the number when it has none. */
 export const sensorTexter =
-  (layout: ChartLayout, fieldMode: boolean) => (index: number) => {
+  (layout: ChartLayout, fieldMode: boolean, names = false) => (index: number) => {
     const sensor = layout.sensors[index];
-    return fieldMode
-      ? (sensor.label ?? sensor.name ?? String(sensor.pos))
-      : String(sensor.pos);
+    if (fieldMode) {
+      return sensor.label ?? sensor.name ?? String(sensor.pos);
+    }
+    return names ? (sensor.name ?? String(sensor.pos)) : String(sensor.pos);
   };
 
 /** The readout's text for a heat (0..1) under the cursor. */

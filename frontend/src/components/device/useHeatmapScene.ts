@@ -36,6 +36,8 @@ import type {
 export type HeatmapDisplay = {
   showDots: boolean;
   showLabels: boolean;
+  /** Staff: every sensor labelled with its name ("A2-15") instead of its number. */
+  showNames: boolean;
   showLines: boolean;
   /** Staff: the absolute scale (to the period's highest value). */
   normalize: boolean;
@@ -44,12 +46,13 @@ export type HeatmapDisplay = {
 /**
  * What is drawn (the floating controls): the dots, their labels (off by
  * default - field mode names devices, so there they start on), the dm band
- * lines and - staff - the absolute scale; and the area selection mode (a
- * drag selects instead of moving the plan).
+ * lines and - staff - the sensor names and the absolute scale; and the area
+ * selection mode (a drag selects instead of moving the plan).
  */
 export const useHeatmapDisplay = (fieldMode: boolean) => {
   const [showDots, setShowDots] = useState(true);
   const [showLabels, setShowLabels] = useState(fieldMode);
+  const [showNames, setShowNames] = useState(false);
   const [showLines, setShowLines] = useState(true);
   const [normalize, setNormalize] = useState(false);
   const [areaMode, setAreaMode] = useState(false);
@@ -58,6 +61,8 @@ export const useHeatmapDisplay = (fieldMode: boolean) => {
     setShowDots,
     showLabels,
     setShowLabels,
+    showNames,
+    setShowNames,
     showLines,
     setShowLines,
     normalize,
@@ -246,6 +251,9 @@ export const useHeatmapScene = ({
   );
 
   const { showDots, showLabels, showLines } = display;
+  // The names are labels: shown on every sensor, whatever the labels toggle.
+  const showNames = display.showNames && !fieldMode;
+  const hasNames = useMemo(() => sensors.some((sensor) => Boolean(sensor.name)), [sensors]);
   const scene = useMemo<Scene | null>(
     () =>
       layout && frame
@@ -255,7 +263,7 @@ export const useHeatmapScene = ({
             image,
             heatCanvas,
             colorTable,
-            sensorText: sensorTexter(layout, fieldMode),
+            sensorText: sensorTexter(layout, fieldMode, showNames),
             scaleTitle: scaleTitle({
               fieldScale,
               heatTitle,
@@ -267,7 +275,7 @@ export const useHeatmapScene = ({
             scaleMarks,
             limits,
             showSensors: showDots,
-            showLabels,
+            showLabels: showLabels || showNames,
             showLines: hasLines && showLines,
           }
         : null,
@@ -287,6 +295,7 @@ export const useHeatmapScene = ({
       scaleMarks,
       showDots,
       showLabels,
+      showNames,
       hasLines,
       showLines,
     ],
@@ -302,6 +311,7 @@ export const useHeatmapScene = ({
     absoluteScale,
     normalizeForced,
     hasLines,
+    hasNames,
     colorTable,
   };
 };

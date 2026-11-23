@@ -15,13 +15,15 @@ type HeatmapDisplayControlsProps = {
   area?: Toggle | null;
   /** smartex® dm: the band lines - null without lines. */
   lines?: Toggle | null;
+  /** Staff: the sensors' names ("A2-15") as their labels - null: not offered. */
+  names?: Toggle | null;
   /** Staff: the absolute scale - the heat scaled to the period's highest
    * value, its ticks in mV - `forced` while the profile has no threshold to
    * scale against. null: not offered. */
   normalize?: (Toggle & { forced: boolean }) | null;
   /** Staff: the value per sensor the heat shows - null: not offered. */
   profile?: { value: HeatProfile; onChange: (value: HeatProfile) => void; loading?: boolean } | null;
-  /** data-testid of the controls; the toggles are "<testId>-dots" / "-labels" / "-lines" / "-area" / "-normalize", the select "-profile". */
+  /** data-testid of the controls; the toggles are "<testId>-dots" / "-labels" / "-names" / "-lines" / "-area" / "-normalize", the select "-profile". */
   testId?: string;
 };
 const ToggleButton = ({ label, title, toggle, disabled = false, testId }: {
@@ -48,13 +50,15 @@ const ToggleButton = ({ label, title, toggle, disabled = false, testId }: {
 /**
  * What the heatmap shows, floating over its top left (beside the zoom
  * buttons): the dots, their labels and - smartex® dm - the band lines; staff
- * also the absolute scale and the profile (|WP - EP|, WP, EP, WP + EP).
+ * also the sensor names, the absolute scale and the profile (|WP - EP|, WP,
+ * EP, WP + EP).
  */
 const HeatmapDisplayControls = ({
   dots,
   labels = null,
   area = null,
   lines = null,
+  names = null,
   normalize = null,
   profile = null,
   testId = 'heatmap-display-controls',
@@ -67,6 +71,7 @@ const HeatmapDisplayControls = ({
     >
       <ToggleButton label={t('heatmap_show_dots')} title={t('heatmap_show_dots_hint')} toggle={dots} testId={childTestId(testId, 'dots')} />
       {labels && <ToggleButton label={t('heatmap_show_labels')} title={t('heatmap_show_labels_hint')} toggle={labels} testId={childTestId(testId, 'labels')} />}
+      {names && <ToggleButton label={t('heatmap_show_names')} title={t('heatmap_show_names_hint')} toggle={names} testId={childTestId(testId, 'names')} />}
       {lines && <ToggleButton label={t('heatmap_show_lines')} title={t('heatmap_show_lines_hint')} toggle={lines} testId={childTestId(testId, 'lines')} />}
       {area && <ToggleButton label={t('heatmap_area_select')} title={t('heatmap_area_select_hint')} toggle={area} testId={childTestId(testId, 'area')} />}
       {normalize && (
