@@ -365,7 +365,23 @@ def _mirror_location(sender, instance, created, raw, using, **kwargs):
 
     # A project without a database (no device yet) simply stays in default -
     # the mirror below skips databases that don't exist.
-    _mirror_row(ProgeoLocation, instance.pk, _location_aliases(instance.pk))
+    aliases = _location_aliases(instance.pk)
+    _mirror_row(ProgeoLocation, instance.pk, aliases)
+    # Its parents along, in the same batch (the FK is checked at its commit): a
+    # merge hangs a part under the main project's location, which the part's
+    # database didn't have - "Key (parent_location_id)=... is not present".
+    for parent in _parent_ids(instance):
+        _mirror_row(ProgeoLocation, parent, aliases)
+
+
+def _parent_ids(location):
+    """The ids of `location`'s parent, its parent's parent, ... (in "default")."""
+    ids, parent = [], location.parent_location_id
+    while parent is not None and parent != location.pk and parent not in ids:
+        ids.append(parent)
+        parent = (ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=parent)
+                  .values_list("parent_location_id", flat=True).first())
+    return ids
 
 
 # Seconds until the second activation pass: other processes keep routing the

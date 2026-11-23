@@ -709,6 +709,31 @@ def test_a_deleted_user_goes_from_every_project_database_in_one_pass(django_capt
 
 @WITH_PROJECT_DBS
 @pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
+def test_a_location_hung_under_another_projects_location_takes_its_parent_along(django_capture_on_commit_callbacks):
+    """Regression (merging 4189 into 5983 on the server): the part got the
+    main project as its parent and was mirrored into its own database alone -
+    "Key (parent_location_id)=(1352) is not present", the mirror failed."""
+    from django.db import transaction
+
+    with override_settings(PROJECT_DB_SPLIT=False):
+        account = f.make_account()
+        grandparent = f.make_location(account, project_id=OTHER_PROJECT)
+        main = f.make_location(account, project_id=OTHER_PROJECT, parent_location=grandparent)
+        part = f.make_location(account, project_id=PROJECT)
+        mirror_shared(ALIAS, PROJECT)
+    assert not ProgeoLocation.objects.using(ALIAS).filter(pk=main.pk).exists()
+
+    with django_capture_on_commit_callbacks(execute=True), transaction.atomic(using=DEFAULT_DB_ALIAS):
+        part.parent_location = main
+        part.save(using=DEFAULT_DB_ALIAS, update_fields=["parent_location"])
+
+    assert ProgeoLocation.objects.using(ALIAS).filter(pk=part.pk, parent_location=main.pk).exists()
+    assert ProgeoLocation.objects.using(ALIAS).filter(pk=main.pk, parent_location=grandparent.pk).exists()
+    assert ProgeoLocation.objects.using(ALIAS).filter(pk=grandparent.pk).exists()
+
+
+@WITH_PROJECT_DBS
+@pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
 def test_a_rolled_back_savepoint_does_not_swallow_later_mirrors(django_capture_on_commit_callbacks):
     from django.db import transaction
 
