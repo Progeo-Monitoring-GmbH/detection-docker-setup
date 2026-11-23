@@ -3,15 +3,28 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.hoisted(() => ({ answers: {} as Record<string, unknown>, post: vi.fn() }));
+const api = vi.hoisted(() => ({
+  answers: {} as Record<string, unknown>,
+  post: vi.fn(),
+}));
 
 vi.mock('../../axiosConfig', () => ({
   default: {
-    perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void) =>
-      ok({ data: api.answers[url] ?? {} }),
-    perform_post: (_auth: unknown, url: string, body: unknown, ok: (response: unknown) => void) => {
+    perform_get: (
+      _auth: unknown,
+      url: string,
+      ok: (response: unknown) => void,
+    ) => ok({ data: api.answers[url] ?? {} }),
+    perform_post: (
+      _auth: unknown,
+      url: string,
+      body: unknown,
+      ok: (response: unknown) => void,
+    ) => {
       api.post(url, body);
       ok({ data: { applied: [], skipped: [] } });
     },
@@ -24,7 +37,15 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }));
 
 const module = await import('./ThresholdFineTuneView');
-const { default: ThresholdFineTuneView, safetyMargin, sliderRange, marginLevel, initialThreshold } = module;
+const {
+  default: ThresholdFineTuneView,
+  safetyMargin,
+  sliderRange,
+  sliderMarks,
+  sliderPosition,
+  marginLevel,
+  initialThreshold,
+} = module;
 type Entry = Parameters<typeof initialThreshold>[0];
 
 const FILE = 'fine_tune_20261121_080000.json';
@@ -36,7 +57,12 @@ const ENTRY = (overrides: Partial<Entry> = {}): Entry => ({
   current_threshold: 100,
   live_threshold: 100,
   max_value: 60,
-  max_at: { value: 60, sensor_order: 2, device_id: 1, at: '2026-11-20T10:00:00' },
+  max_at: {
+    value: 60,
+    sensor_order: 2,
+    device_id: 1,
+    at: '2026-11-20T10:00:00',
+  },
   action: 'lower',
   proposed: 75,
   change_percent: -25,
@@ -63,8 +89,52 @@ describe('helpers', () => {
 
   it('starts at the proposal and spans maximum, threshold and proposal', () => {
     expect(initialThreshold(ENTRY())).toBe(75);
-    expect(initialThreshold(ENTRY({ proposed: null, action: 'no_data', max_value: null }))).toBe(100);
+    expect(
+      initialThreshold(
+        ENTRY({ proposed: null, action: 'no_data', max_value: null }),
+      ),
+    ).toBe(100);
     expect(sliderRange(ENTRY())).toEqual({ min: 30, max: 160 });
+  });
+
+  it('marks maximum, threshold and proposal on the slider, a crowded label one row lower', () => {
+    const range = sliderRange(ENTRY()); // 30..160
+    expect(sliderPosition(30, range)).toBe(0);
+    expect(sliderPosition(500, range)).toBe(1);
+
+    expect(
+      sliderMarks(ENTRY(), range).map(({ kind, value, row }) => [
+        kind,
+        value,
+        row,
+      ]),
+    ).toEqual([
+      ['max', 60, 0],
+      ['proposed', 75, 0],
+      ['current', 100, 0],
+    ]);
+    const crowded = ENTRY({
+      max_value: 95,
+      current_threshold: 100,
+      live_threshold: 100,
+      proposed: 119,
+    });
+    expect(
+      sliderMarks(crowded, sliderRange(crowded)).map(({ kind, row }) => [
+        kind,
+        row,
+      ]),
+    ).toEqual([
+      ['max', 0],
+      ['current', 1], // 3.5 % of the track after the maximum
+      ['proposed', 0],
+    ]);
+    // Without a maximum or proposal: only the threshold now.
+    expect(
+      sliderMarks(ENTRY({ max_value: null, proposed: null }), range).map(
+        (mark) => mark.kind,
+      ),
+    ).toEqual(['current']);
   });
 });
 
@@ -89,12 +159,28 @@ beforeEach(() => {
   } as unknown as typeof ResizeObserver;
   api.post.mockClear();
   api.answers = {
-    '/v1/threshold-fine-tune/': { files: [{ file: FILE, created_at: '2026-11-21T08:00:00', locations: 1, applied: 0 }] },
+    '/v1/threshold-fine-tune/': {
+      files: [
+        {
+          file: FILE,
+          created_at: '2026-11-21T08:00:00',
+          locations: 1,
+          applied: 0,
+        },
+      ],
+    },
     [`/v1/threshold-fine-tune/${FILE}/`]: {
       findings: {
         file: FILE,
         created_at: '2026-11-21T08:00:00',
-        params: { days: 30, buffer_percent: 25, minimum: 30, max_raise_percent: 15, step_minutes: null, projects: null },
+        params: {
+          days: 30,
+          buffer_percent: 25,
+          minimum: 30,
+          max_raise_percent: 15,
+          step_minutes: null,
+          projects: null,
+        },
         summary: { lower: 1 },
         locations: [ENTRY()],
         stale: null,
@@ -118,20 +204,43 @@ const render = async () => {
 };
 
 const setNumber = (input: HTMLInputElement, value: string) => {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )!.set!;
   act(() => {
     setter.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
 
-const q = <T extends Element>(selector: string) => container.querySelector<T>(selector);
+const q = <T extends Element>(selector: string) =>
+  container.querySelector<T>(selector);
 
 describe('ThresholdFineTuneView', () => {
   it('shows the proposal with its safety margin', async () => {
     await render();
     expect(q<HTMLInputElement>('[data-testid="ftt-number"]')!.value).toBe('75');
     expect(q('[data-testid="ftt-margin"]')!.textContent).toContain('+25 %');
+    // The values on the slider, the unsafe range and the buffer as stripes.
+    const marks = [...document.querySelectorAll('[data-testid="ftt-mark"]')];
+    expect(
+      marks.map((mark) => [
+        mark.getAttribute('data-test-key'),
+        mark.textContent,
+      ]),
+    ).toEqual([
+      ['max', '60'],
+      ['proposed', '75'],
+      ['current', '100'],
+    ]);
+    // Range 30..160: the maximum at 23 %, the 25 % buffer (75) at 34.6 %.
+    expect(
+      q<HTMLElement>('[data-testid="ftt-zone-unsafe"]')!.style.width,
+    ).toMatch(/^23\.07/);
+    expect(
+      q<HTMLElement>('[data-testid="ftt-zone-buffer"]')!.style.width,
+    ).toMatch(/^11\.53/);
   });
 
   it('a changed threshold moves the margin, selects the row and is applied', async () => {
@@ -147,30 +256,52 @@ describe('ThresholdFineTuneView', () => {
     expect(apply.disabled).toBe(false);
 
     act(() => apply.click());
-    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="ftt-apply-confirm"]')!;
-    expect(document.querySelector('[data-testid="ftt-apply-row"]')!.textContent).toContain('100 → 57');
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-testid="ftt-apply-confirm"]',
+    )!;
+    expect(
+      document.querySelector('[data-testid="ftt-apply-row"]')!.textContent,
+    ).toContain('100 → 57');
     await act(async () => confirm.click());
 
-    expect(api.post).toHaveBeenCalledWith(`/v1/threshold-fine-tune/${FILE}/apply/`, {
-      thresholds: { 'default:7': 57 },
-    });
+    expect(api.post).toHaveBeenCalledWith(
+      `/v1/threshold-fine-tune/${FILE}/apply/`,
+      {
+        thresholds: { 'default:7': 57 },
+      },
+    );
   });
 
   it('removes the selected rows from the file', async () => {
     await render();
-    act(() => q<HTMLInputElement>('input[type="checkbox"][aria-label="Select row"]')!.click());
+    act(() =>
+      q<HTMLInputElement>(
+        'input[type="checkbox"][aria-label="Select row"]',
+      )!.click(),
+    );
     act(() => q<HTMLButtonElement>('[data-testid="ftt-remove"]')!.click());
-    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="ftt-remove-confirm"]')!.click());
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="ftt-remove-confirm"]')!
+        .click(),
+    );
 
-    expect(api.post).toHaveBeenCalledWith(`/v1/threshold-fine-tune/${FILE}/remove/`, { keys: ['default:7'] });
+    expect(api.post).toHaveBeenCalledWith(
+      `/v1/threshold-fine-tune/${FILE}/remove/`,
+      { keys: ['default:7'] },
+    );
   });
 
   it('refuses to apply stale findings', async () => {
-    const findings = api.answers[`/v1/threshold-fine-tune/${FILE}/`] as { findings: Record<string, unknown> };
+    const findings = api.answers[`/v1/threshold-fine-tune/${FILE}/`] as {
+      findings: Record<string, unknown>;
+    };
     findings.findings.stale = 'older than 7 day(s)';
     await render();
     setNumber(q<HTMLInputElement>('[data-testid="ftt-number"]')!, '80');
     expect(q('[data-testid="ftt-stale"]')).not.toBeNull();
-    expect(q<HTMLButtonElement>('[data-testid="ftt-apply"]')!.disabled).toBe(true);
+    expect(q<HTMLButtonElement>('[data-testid="ftt-apply"]')!.disabled).toBe(
+      true,
+    );
   });
 });

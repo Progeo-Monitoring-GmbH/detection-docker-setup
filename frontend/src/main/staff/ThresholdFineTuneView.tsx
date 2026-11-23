@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   createContext,
   useCallback,
   useContext,
@@ -136,6 +137,61 @@ export const sliderRange = (entry: FineTuneEntry) => {
   };
 };
 
+/** Where `value` sits on the slider of `range`, 0..1. */
+export const sliderPosition = (
+  value: number,
+  range: { min: number; max: number },
+) =>
+  (Math.min(range.max, Math.max(range.min, value)) - range.min) /
+  (range.max - range.min);
+
+/** Labels nearer than this (part of the track) share no row. */
+const LABEL_GAP = 0.1;
+
+type SliderMark = {
+  kind: 'max' | 'current' | 'proposed';
+  value: number;
+  position: number;
+  row: 0 | 1;
+};
+
+/**
+ * The marks on a location's slider: the true maximum (red), the threshold
+ * it has now (orange) and the proposal (green), left to right. A label too
+ * near the one before it moves to a second row.
+ */
+export const sliderMarks = (
+  entry: FineTuneEntry,
+  range: { min: number; max: number },
+): SliderMark[] => {
+  const marks = (
+    [
+      ['max', entry.max_value],
+      ['current', expectedThreshold(entry)],
+      ['proposed', entry.proposed],
+    ] as const
+  )
+    .filter(
+      (mark): mark is readonly [SliderMark['kind'], number] =>
+        mark[1] != null && mark[1] > 0,
+    )
+    .map(([kind, value]) => ({
+      kind,
+      value,
+      position: sliderPosition(value, range),
+      row: 0 as 0 | 1,
+    }))
+    .sort((a, b) => a.position - b.position);
+  let last = -1;
+  marks.forEach((mark) => {
+    mark.row = last >= 0 && mark.position - last < LABEL_GAP ? 1 : 0;
+    if (mark.row === 0) {
+      last = mark.position;
+    }
+  });
+  return marks;
+};
+
 /** "danger" below the maximum, "warn" below the scan's buffer, else "ok". */
 export const marginLevel = (margin: number | null, bufferPercent: number) =>
   margin == null
@@ -172,9 +228,19 @@ const chosenOf = (chosen: Record<string, number>, entry: FineTuneEntry) =>
 
 const ThresholdCell = ({ entry }: { entry: FineTuneEntry }) => {
   const { t } = useTranslation();
-  const { chosen, choose } = useContext(ChoiceContext);
+  const { chosen, choose, buffer } = useContext(ChoiceContext);
   const value = chosenOf(chosen, entry);
   const range = sliderRange(entry);
+  const marks = sliderMarks(entry, range);
+  // Below the maximum the location would alarm; up to the buffer above it is the safety margin.
+  const unsafeEnd =
+    entry.max_value != null ? sliderPosition(entry.max_value, range) : 0;
+  const bufferEnd =
+    entry.max_value != null
+      ? sliderPosition(entry.max_value * (1 + buffer / 100), range)
+      : 0;
+  const markTitle = (mark: SliderMark) =>
+    `${t(mark.kind === 'max' ? 'ftt_col_max' : mark.kind === 'current' ? 'ftt_col_current' : 'ftt_col_proposed')}: ${mark.value}`;
   const changed = value !== expectedThreshold(entry);
   const set = (raw: string) => {
     const next = Math.round(Number(raw));
@@ -188,16 +254,52 @@ const ThresholdCell = ({ entry }: { entry: FineTuneEntry }) => {
       data-testid="ftt-threshold"
       data-test-key={entry.key}
     >
-      <Form.Range
-        min={range.min}
-        max={range.max}
-        step={1}
-        value={Math.min(range.max, Math.max(range.min, value))}
-        onChange={(event) => set(event.target.value)}
-        aria-label={t('ftt_col_new')}
-        className="ftt-slider"
-        data-testid="ftt-slider"
-      />
+      <div className="ftt-rail">
+        <div className="ftt-track">
+          {unsafeEnd > 0 && (
+            <i
+              className="ftt-zone ftt-zone--unsafe"
+              style={{ width: `${unsafeEnd * 100}%` }}
+              title={t('ftt_zone_unsafe', { max: entry.max_value })}
+              data-testid="ftt-zone-unsafe"
+            />
+          )}
+          {bufferEnd > unsafeEnd && (
+            <i
+              className="ftt-zone ftt-zone--buffer"
+              style={{
+                left: `${unsafeEnd * 100}%`,
+                width: `${(bufferEnd - unsafeEnd) * 100}%`,
+              }}
+              title={t('ftt_zone_buffer', { buffer })}
+              data-testid="ftt-zone-buffer"
+            />
+          )}
+        </div>
+        {marks.map((mark) => (
+          <span
+            key={mark.kind}
+            className={`ftt-mark ftt-mark--${mark.kind}${mark.row ? ' ftt-mark--low' : ''}`}
+            style={{ '--ftt-at': mark.position } as CSSProperties}
+            title={markTitle(mark)}
+            data-testid="ftt-mark"
+            data-test-key={mark.kind}
+          >
+            <span className="ftt-mark-value">{mark.value}</span>
+            <i className="ftt-mark-tick" />
+          </span>
+        ))}
+        <Form.Range
+          min={range.min}
+          max={range.max}
+          step={1}
+          value={Math.min(range.max, Math.max(range.min, value))}
+          onChange={(event) => set(event.target.value)}
+          aria-label={t('ftt_col_new')}
+          className="ftt-slider"
+          data-testid="ftt-slider"
+        />
+      </div>
       <Form.Control
         type="number"
         size="sm"

@@ -16,9 +16,139 @@
   padding: 4px 0;
 }
 
-.form-range.ftt-slider {
+/* The slider with its marks (ThresholdCell): the values on top, the ticks
+   crossing the track, striped zones on the track - red below the true
+   maximum (the location would alarm), green up to the scan's buffer above
+   it. The thumb travels 8px in from either end; everything on the track is
+   placed on that same span (--ftt-at: 0..1). */
+.ftt-rail {
+  --ftt-thumb: 16px;
+  position: relative;
   flex: 1 1 auto;
-  min-width: 110px;
+  min-width: 140px;
+  height: 44px;
+}
+
+.ftt-track {
+  position: absolute;
+  left: calc(var(--ftt-thumb) / 2);
+  right: calc(var(--ftt-thumb) / 2);
+  top: 29px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--progeo-track);
+  overflow: hidden;
+}
+
+.ftt-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.ftt-zone--unsafe {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(208, 59, 59, 0.75) 0 3px,
+    rgba(208, 59, 59, 0.28) 3px 6px
+  );
+}
+
+.ftt-zone--buffer {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(46, 139, 58, 0.7) 0 3px,
+    rgba(46, 139, 58, 0.25) 3px 6px
+  );
+}
+
+/* A value: its number on top, a tick down through the track. */
+.ftt-mark {
+  position: absolute;
+  top: 0;
+  left: calc(var(--ftt-thumb) / 2 + (100% - var(--ftt-thumb)) * var(--ftt-at));
+  height: 100%;
+  pointer-events: none;
+}
+
+.ftt-mark-value {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--ftt-mark-color);
+  /* Hover shows what the number is (title) - over the slider input. */
+  pointer-events: auto;
+}
+
+/* Too near the label before it: one row lower. */
+.ftt-mark--low .ftt-mark-value {
+  top: 12px;
+}
+
+.ftt-mark-tick {
+  position: absolute;
+  top: 24px;
+  left: -1px;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--ftt-mark-color);
+}
+
+.ftt-mark--max {
+  --ftt-mark-color: #d03b3b;
+}
+
+.ftt-mark--current {
+  --ftt-mark-color: var(--progeo-orange);
+}
+
+.ftt-mark--proposed {
+  --ftt-mark-color: #2e8b3a;
+}
+
+/* Bootstrap's range, drawn by .ftt-track instead: transparent, its thumb on top. */
+.ftt-rail .form-range.ftt-slider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20px;
+  width: 100%;
+  height: 24px;
+  z-index: 2;
+  background: transparent;
+}
+
+.ftt-rail .form-range.ftt-slider::-webkit-slider-runnable-track {
+  height: 24px;
+  background: transparent;
+}
+
+.ftt-rail .form-range.ftt-slider::-moz-range-track {
+  background: transparent;
+}
+
+.ftt-rail .form-range.ftt-slider::-webkit-slider-thumb {
+  width: var(--ftt-thumb);
+  height: var(--ftt-thumb);
+  margin-top: 4px;
+  background: var(--progeo-blue);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.35);
+}
+
+.ftt-rail .form-range.ftt-slider::-moz-range-thumb {
+  width: var(--ftt-thumb);
+  height: var(--ftt-thumb);
+  background: var(--progeo-blue);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.35);
 }
 
 .form-control.ftt-number {
