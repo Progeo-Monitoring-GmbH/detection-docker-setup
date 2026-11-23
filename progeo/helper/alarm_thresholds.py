@@ -38,10 +38,30 @@ def load_sensor_thresholds(db, location_ids):
 
 
 def evaluate_sensor_thresholds(measurement, location_threshold, sensor_thresholds):
+    """evaluate_all with each pair's threshold: its sensor's own (or
+    DISABLED), else the location's. The pair -> sensor is the device's
+    (ProgeoDevice.sensor_order_of, the sensor mapping valid at the
+    measurement's time); a pair without sensor (an unwired input) is never
+    checked."""
     device = measurement.device
-    thresholds = {
-        sensor_order - (device.first_sensor_order or 1): threshold
-        for sensor_order, threshold in sensor_thresholds.items()
-        if device and sensor_order >= (device.first_sensor_order or 1)
-    }
+    if device is None:
+        return measurement.evaluate_all(location_threshold)
+    # Anything without a mapping (a stand-in device) counts by the formula.
+    sensor_map = device.sensor_map() if hasattr(device, "sensor_map") else None
+    at = getattr(measurement, "last_fetched", None)
+    if sensor_map is None or not sensor_map.is_mapped(at):
+        first = device.first_sensor_order or 1
+        thresholds = {
+            sensor_order - first: threshold
+            for sensor_order, threshold in sensor_thresholds.items()
+            if sensor_order >= first
+        }
+        return measurement.evaluate_all(location_threshold, thresholds=thresholds)
+    thresholds = {}
+    for index in range(len(measurement.get_pairs())):
+        sensor_order = sensor_map.order_of(index, at)
+        if sensor_order is None:
+            thresholds[index] = DISABLED
+        elif sensor_order in sensor_thresholds:
+            thresholds[index] = sensor_thresholds[sensor_order]
     return measurement.evaluate_all(location_threshold, thresholds=thresholds)

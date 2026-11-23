@@ -11,6 +11,7 @@ import type { CadImportJob } from '../components/form/useCadImportJob';
 import { errorReason, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { repeatedTestId } from '../testIds';
 import { formatDate } from './dateFormat';
+import SensorMappingPanel from './SensorMappingPanel';
 import './LageplanKlemmliste.css';
 
 type Auth = ReturnType<typeof useAuth>;
@@ -68,10 +69,39 @@ type PreviewEntry = {
   points?: number;
 };
 
+/** How the list is applied: renumber / name the points, or map the inputs onto them (from now on). */
+export type Strategy = 'points' | 'map';
+
+/** Strategy "map": a device's inputs onto the points (helper/klemmliste_names.preview_map). */
+type MappingPreview = {
+  unit: string | null;
+  device_id: number;
+  device_label: string;
+  positions: {
+    position: number;
+    mux: number | null;
+    pin: number | null;
+    sensor: string;
+    sensor_order: number;
+    formula: number;
+    current: number | null;
+  }[];
+  /** Inputs whose sensor differs from first sensor + input - 1. */
+  remapped: number;
+  /** Inputs whose sensor differs from what is valid now. */
+  changed: number;
+  unmapped_inputs: number[];
+  manual_conflicts: { position: number; klemmliste: number | null; manual: number | null }[];
+};
+
 /** klemmliste/apply's answer (helper/klemmliste_names.py). */
 type Preview = {
+  strategy?: Strategy;
+  /** "map" once the location has measurements - renumbering would change what they meant. */
+  suggested_strategy?: Strategy;
+  mappings?: MappingPreview[];
   /** "renumber": the points are numbered by their plan label and move to their input. */
-  mode?: 'name' | 'renumber';
+  mode?: 'name' | 'renumber' | 'map';
   moves?: PreviewEntry[];
   conflicts?: { position: number; mux?: number | null; pin?: number | null; sensor: string;
     sensor_order: number; from_order: number; unit?: string | null }[];
@@ -137,8 +167,13 @@ const formatSize = (size: number | null) => {
 type PreviewLine = PreviewEntry & { state: 'move' | 'change' | 'same' | 'missing' | 'conflict' };
 
 /** What applying writes: the device updates, the moves and the name changes. */
-const pendingCount = (preview: Preview | null) =>
-  preview ? (preview.device_updates?.length ?? 0) + (preview.moves?.length ?? 0) + preview.changes.length : 0;
+export const pendingCount = (preview: Preview | null) =>
+  preview
+    ? (preview.device_updates?.length ?? 0) +
+      (preview.moves?.length ?? 0) +
+      preview.changes.length +
+      (preview.mappings ?? []).reduce((sum, mapping) => sum + mapping.changed, 0)
+    : 0;
 
 const previewLines = (preview: Preview): PreviewLine[] =>
   [
@@ -220,6 +255,10 @@ const LageplanKlemmliste = ({
   // Measuring units: the device picked per unit (none: the backend's order - first sensor numbers).
   const [unitDevices, setUnitDevices] = useState<Record<string, number | null> | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  // null: not chosen yet - the backend's suggestion is taken with the first preview.
+  const [strategy, setStrategy] = useState<Strategy | null>(null);
+  // Bumped when a mapping was written: the mapping panel reads again.
+  const [mappingRevision, setMappingRevision] = useState(0);
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
 
@@ -308,6 +347,7 @@ const LageplanKlemmliste = ({
     dryRun: boolean,
     onDone: (result: Preview) => void,
     onFail: (error: unknown) => void,
+    chosen: Strategy | null = strategy,
   ) => {
     void axiosConfig.perform_post(
       auth,
@@ -317,6 +357,7 @@ const LageplanKlemmliste = ({
         job_id: jobId,
         device_id: device === '' ? null : device,
         ...(units ? { unit_devices: units } : {}),
+        strategy: chosen ?? 'points',
         dry_run: dryRun,
       },
       (response) => onDone(response?.data?.result as Preview),
@@ -325,7 +366,12 @@ const LageplanKlemmliste = ({
   };
 
   /** What applying would change - after reading the list and when another device is picked. */
-  const loadPreview = (jobId: string, device: number | '', units: Record<string, number | null> | null) => {
+  const loadPreview = (
+    jobId: string,
+    device: number | '',
+    units: Record<string, number | null> | null,
+    chosen: Strategy | null = strategy,
+  ) => {
     setPreviewing(true);
     setPreview(null);
     post(
@@ -334,6 +380,15 @@ const LageplanKlemmliste = ({
       units,
       true,
       (result) => {
+        // Nothing chosen yet: the suggestion - asked again when it is the other one.
+        if (chosen === null && result.suggested_strategy && result.suggested_strategy !== 'points') {
+          setStrategy(result.suggested_strategy);
+          loadPreview(jobId, device, units, result.suggested_strategy);
+          return;
+        }
+        if (chosen === null) {
+          setStrategy('points');
+        }
         setPreview(result);
         setPreviewing(false);
       },
@@ -341,7 +396,15 @@ const LageplanKlemmliste = ({
         setPreviewing(false);
         showRequestError(enqueueSnackbar, 'The Klemmliste could not be compared with the measure points', error);
       },
+      chosen,
     );
+  };
+
+  const pickStrategy = (next: Strategy) => {
+    setStrategy(next);
+    if (job) {
+      loadPreview(job.id, deviceId, unitDevices, next);
+    }
   };
 
   const jobFinished = (finished: CadImportJob | undefined, result: unknown) => {
@@ -355,9 +418,10 @@ const LageplanKlemmliste = ({
       rows: data.rows,
       warnings: Array.isArray(data.warnings) ? data.warnings : [],
     });
-    // A new list: its units go to the devices in order again.
+    // A new list: its units go to the devices in order again, the strategy is suggested again.
     setUnitDevices(null);
-    loadPreview(finished.job_id, deviceId, null);
+    setStrategy(null);
+    loadPreview(finished.job_id, deviceId, null, null);
   };
 
   const pickDevice = (device: number | '') => {
@@ -391,20 +455,27 @@ const LageplanKlemmliste = ({
       false,
       (result) => {
         setApplying(false);
-        // Applied: what it moved and named is now as the list says.
+        // Applied: what it moved, mapped and named is now as the list says.
         const done = [...(result.moves ?? []), ...result.changes].map((entry) => ({ ...entry, from_order: undefined }));
         setPreview({
           ...result,
-          mode: 'name',
+          mode: result.strategy === 'map' ? 'map' : 'name',
           moves: [],
           changes: [],
           device_updates: [],
+          mappings: (result.mappings ?? []).map((mapping) => ({ ...mapping, changed: 0 })),
           unchanged: [...result.unchanged, ...done],
         });
+        const mapped = (result.mappings ?? []).reduce((sum, mapping) => sum + mapping.positions.length, 0);
         showSuccessBar(
           enqueueSnackbar,
-          `${result.updated ?? 0} measure point(s) ${result.moves?.length ? 'renumbered and ' : ''}named from the Klemmliste`,
+          result.strategy === 'map'
+            ? `${mapped} input(s) mapped from now on, ${result.updated ?? 0} measure point(s) named`
+            : `${result.updated ?? 0} measure point(s) ${result.moves?.length ? 'renumbered and ' : ''}named from the Klemmliste`,
         );
+        if (result.strategy === 'map') {
+          setMappingRevision((revision) => revision + 1);
+        }
         onNamesApplied();
       },
       (error) => {
@@ -562,6 +633,16 @@ const LageplanKlemmliste = ({
     </div>
   );
 
+  const mappingPanel = (
+    <SensorMappingPanel
+      auth={auth}
+      locationId={locationId}
+      devices={devices.map((device) => ({ id: device.id, label: device.label }))}
+      staff={staff}
+      revision={mappingRevision}
+    />
+  );
+
   return (
     <div className="lageplan-klemmliste" data-testid="lageplan-wizard-klemmliste">
       {documentsPanel}
@@ -622,7 +703,9 @@ const LageplanKlemmliste = ({
                   aria-label="Device of the Klemmliste"
                   data-testid="lageplan-wizard-klemmliste-device"
                 >
-                  <option value="">Positions are the sensor numbers of the location</option>
+                  <option value="">
+                    {strategy === 'map' ? 'Pick the device of the list' : 'Positions are the sensor numbers of the location'}
+                  </option>
                   {devices.map((device) => (
                     <option key={device.id} value={device.id}>
                       {device.label} (from sensor {device.first_sensor_order ?? 1})
@@ -645,6 +728,70 @@ const LageplanKlemmliste = ({
                 ))}
               </ul>
             )}
+            <div className="lageplan-klemmliste-strategy" data-testid="lageplan-wizard-klemmliste-strategy">
+              <Form.Check
+                type="radio"
+                inline
+                id="klemmliste-strategy-points"
+                name="klemmliste-strategy"
+                checked={strategy === 'points'}
+                disabled={previewing || applying}
+                onChange={() => pickStrategy('points')}
+                label="Renumber the points to their inputs (changes the past too)"
+                data-testid="lageplan-wizard-klemmliste-strategy-points"
+              />
+              <Form.Check
+                type="radio"
+                inline
+                id="klemmliste-strategy-map"
+                name="klemmliste-strategy"
+                checked={strategy === 'map'}
+                disabled={previewing || applying}
+                onChange={() => pickStrategy('map')}
+                label="Sensor mapping - the points keep their numbers (from now on)"
+                data-testid="lageplan-wizard-klemmliste-strategy-map"
+              />
+              {preview?.suggested_strategy === 'map' && strategy === 'points' && (
+                <div className="lageplan-klemmliste-note lageplan-klemmliste-note--warning">
+                  The location has measurements already: renumbering changes which point their values belong to.
+                </div>
+              )}
+            </div>
+            {preview?.strategy === 'map' &&
+              (preview.mappings ?? []).map((mapping) => (
+                <div
+                  key={mapping.device_id}
+                  className="lageplan-klemmliste-mapping"
+                  {...repeatedTestId('lageplan-wizard-klemmliste-mapping', mapping.device_id)}
+                >
+                  <div>
+                    {mapping.unit ? `${mapping.unit} → ` : ''}
+                    <strong>{mapping.device_label}</strong>: <strong>{mapping.positions.length}</strong> input(s)
+                    mapped, <strong>{mapping.remapped}</strong> differ from the formula
+                    {mapping.changed > 0 ? `, ${mapping.changed} change from now on` : ', nothing changes'}.
+                  </div>
+                  {mapping.unmapped_inputs.length > 0 && (
+                    <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-klemmliste-unmapped">
+                      Inputs without sensor (left out, never alarm): {mapping.unmapped_inputs.join(', ')}
+                    </div>
+                  )}
+                  {mapping.manual_conflicts.length > 0 && (
+                    <div
+                      className="lageplan-klemmliste-note lageplan-klemmliste-note--warning"
+                      data-testid="lageplan-wizard-klemmliste-manual-conflicts"
+                    >
+                      Set by hand, kept:{' '}
+                      {mapping.manual_conflicts
+                        .map(
+                          (conflict) =>
+                            `input ${conflict.position} is sensor ${conflict.manual ?? 'none'} ` +
+                            `(the list says ${conflict.klemmliste ?? 'none'})`,
+                        )
+                        .join('; ')}
+                    </div>
+                  )}
+                </div>
+              ))}
             {preview && (preview.units?.length ?? 0) > 0 && (
               <div className="lageplan-klemmliste-units" data-testid="lageplan-wizard-klemmliste-units">
                 <div className="lageplan-klemmliste-note">
@@ -816,7 +963,9 @@ const LageplanKlemmliste = ({
                         <td>{line.new}</td>
                         <td>
                           {line.state === 'missing'
-                            ? `#${line.sensor_order} – none`
+                            ? line.sensor_order == null
+                              ? 'no point of that name'
+                              : `#${line.sensor_order} – none`
                             : line.state === 'move' || line.state === 'conflict'
                               ? `#${line.from_order} → #${line.sensor_order}`
                               : `#${line.sensor_order}`}
@@ -845,6 +994,7 @@ const LageplanKlemmliste = ({
           </div>
         )}
       </div>
+      {mappingPanel}
     </div>
   );
 };

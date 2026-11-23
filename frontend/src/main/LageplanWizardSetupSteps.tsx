@@ -5,6 +5,7 @@ import {
   ChevronRight,
   PencilSquare,
   PlusLg,
+  Save,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
@@ -383,6 +384,9 @@ type LageplanDeviceStepProps = {
   deviceRanges: DeviceRange[];
   onDeviceRangesChange: Dispatch<SetStateAction<DeviceRange[]>>;
   deviceRangesProblem: string | null;
+  isProcessing?: boolean;
+  /** Saves the ranges on their own (first sensors, points' devices) - without an import. */
+  onSave?: () => void;
 };
 
 export const LageplanDeviceStep = ({
@@ -392,6 +396,8 @@ export const LageplanDeviceStep = ({
   deviceRanges,
   onDeviceRangesChange,
   deviceRangesProblem,
+  isProcessing = false,
+  onSave,
 }: LageplanDeviceStepProps) => {
   const usedRanges = deviceRanges.filter((range) => range.deviceId != null);
   const connectedCount = (deviceId: number) =>
@@ -405,12 +411,26 @@ export const LageplanDeviceStep = ({
       done={usedRanges.length > 0 && !deviceRangesProblem}
       actions={
         locationId !== null && (
-          <span
-            className="lageplan-muted"
-            data-testid="lageplan-wizard-device-count"
-          >
-            {devices.length} device(s) at this location
-          </span>
+          <>
+            <span
+              className="lageplan-muted"
+              data-testid="lageplan-wizard-device-count"
+            >
+              {devices.length} device(s) at this location
+            </span>
+            {onSave && devices.length > 0 && (
+              <PillButton
+                icon={<Save size={13} />}
+                label="Save ranges"
+                title="Save the devices' first sensors and connect their points - without importing"
+                onClick={onSave}
+                disabled={
+                  isProcessing || usedRanges.length === 0 || Boolean(deviceRangesProblem)
+                }
+                testId="lageplan-wizard-device-ranges-save"
+              />
+            )}
+          </>
         )
       }
     >

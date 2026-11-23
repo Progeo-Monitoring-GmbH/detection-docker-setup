@@ -5,6 +5,7 @@ import {
   bandCount,
   belongsToPlan,
   canvasTitle,
+  deviceRangesPayload,
   imageEditedMessage,
   importPayloadFor,
   jsonImportMessage,
@@ -262,6 +263,24 @@ describe('plans', () => {
         (s) => s.lageplanId,
       ),
     ).toEqual([3, 5]);
+  });
+});
+
+describe('deviceRangesPayload', () => {
+  it('saves the used ranges of step 2 as a list - an empty start is 1', () => {
+    expect(
+      deviceRangesPayload(7, [
+        { deviceId: 1, from: ' ', to: '8 ' },
+        { deviceId: null, from: '1', to: '' },
+        { deviceId: 2, from: '9', to: '' },
+      ]),
+    ).toEqual({
+      location_id: 7,
+      point_devices: [
+        { device_id: 1, from: 1, to: '8' },
+        { device_id: 2, from: '9', to: '' },
+      ],
+    });
   });
 });
 

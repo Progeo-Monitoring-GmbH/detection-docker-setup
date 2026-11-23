@@ -654,10 +654,28 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     # only POST /v1/device/<pk>/notify_on_measurements/ (staff) sets it.
     notify_on_measurements = models.BooleanField(default=False)
 
-    def sensor_order_of(self, pair_index: int) -> int:
+    def sensor_order_of(self, pair_index: int, at=None) -> int | None:
         """sensor_order of the measure point the 0-based pair `pair_index` of
-        this device's measurements belongs to."""
-        return (self.first_sensor_order or 1) + pair_index
+        this device's measurements belongs to - for a measurement of time `at`
+        (None: now). first_sensor_order + pair_index, unless a sensor mapping
+        (ProgeoSensorMapping, helper/sensor_mapping.py) was valid then: its
+        number, None for an input no sensor is wired to."""
+        return self.sensor_map().order_of(pair_index, at)
+
+    def sensor_map(self):
+        """The device's SensorMap (helper/sensor_mapping.py) - read once per
+        instance from the device's database; set_sensor_map() hands in one
+        read for many devices at once."""
+        cached = getattr(self, "_sensor_map", None)
+        if cached is None:
+            from progeo.helper.sensor_mapping import load_maps
+
+            cached = load_maps(self._state.db or "default", [self])[self.pk]
+            self._sensor_map = cached
+        return cached
+
+    def set_sensor_map(self, sensor_map):
+        self._sensor_map = sensor_map
 
     @property
     def display_name(self):
@@ -786,6 +804,43 @@ class ProgeoNoiseProfile(auto_prefetch.Model):
         _id = f"[{self.pk}] " if settings.DEBUG else ""
         active = " (aktiv)" if self.is_active else ""
         return f"{_id} 🔇 {self.name}{active} - device {self.device_id}"
+
+
+class ProgeoSensorMapping(models.Model):
+    """Which sensor (sensor_order) each input of a device measures, from
+    `valid_from` on - the ground truth where first_sensor_order + position - 1
+    is wrong (a skipped input, a gap filled later). Read from the Klemmliste
+    or set by hand to correct it (helper/sensor_mapping.py). A new version
+    starts at its valid_from: measurements before keep the version valid
+    then - nothing in the past is reinterpreted.
+
+    `positions`: {"<input, 1-based>": sensor_order}; an input not listed has
+    no sensor (its values are left out, it never alarms). None: back to the
+    formula. `manual`: the inputs set by hand - a later Klemmliste keeps them
+    (and names the conflict)."""
+
+    class Origin(models.TextChoices):
+        KLEMMLISTE = "klemmliste", "Klemmliste"
+        MANUAL = "manual", "Von Hand"
+        FORMULA = "formula", "Formel (erster Sensor + Eingang)"
+        MERGE = "merge", "Zusammenführung"
+
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE, related_name="sensor_mappings")
+    valid_from = models.DateTimeField(default=timezone.now)
+    positions = models.JSONField(null=True, blank=True)
+    manual = models.JSONField(default=list, blank=True)
+    origin = models.CharField(max_length=16, choices=Origin.choices)
+    source_name = models.CharField(max_length=255, blank=True, default="")
+    # A user id (users are mirrored, but a mapping must survive a deleted user).
+    created_by_id = models.IntegerField(null=True, blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["device_id", "valid_from", "id"]
+        indexes = [models.Index(fields=["device", "valid_from"], name="progeo_sensormap_device_from")]
+
+    def __str__(self):
+        return f"🔢 device {self.device_id} from {self.valid_from:%Y-%m-%d %H:%M} ({self.origin})"
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):

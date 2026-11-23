@@ -336,11 +336,16 @@ def _db_datetime(value):
 
 
 def _device_starts(location, db_name):
-    """{device pk: sensor_order of its pair 1} of the location's devices - the
-    sensors of a location can be split over devices (ProgeoDevice.first_sensor_order)."""
-    return dict(
+    """{device pk: SensorMap} of the location's devices: which sensor each
+    pair of their measurements is - first_sensor_order + pair (the sensors of
+    a location can be split over devices), or the sensor mapping valid when
+    the measurement was taken (helper/sensor_mapping.py). One query each."""
+    from progeo.helper.sensor_mapping import load_maps
+
+    devices = list(
         ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", "first_sensor_order")
     )
+    return load_maps(db_name, devices)
 
 
 #: The heatmap's value per sensor (?profile=): |WP - EP| (the alarm value,
@@ -363,10 +368,17 @@ def _profile_values(measurement, profile):
 
 def _sensor_values(measurement, starts, profile="diff"):
     """{sensor_order: value} of a measurement's pairs (by `profile`, see
-    HEAT_PROFILES): pair i of its device is sensor first_sensor_order + i
-    (ProgeoDevice.sensor_order_of)."""
-    first = starts.get(measurement.device_id) or 1
-    return {first + index: value for index, value in enumerate(_profile_values(measurement, profile))}
+    HEAT_PROFILES): `starts` (_device_starts) maps each device's pairs - by
+    the mapping valid at the measurement's time; a plain number is the
+    device's first sensor (pair i is sensor first + i)."""
+    from progeo.helper.sensor_mapping import SensorMap
+
+    entry = starts.get(measurement.device_id)
+    values = _profile_values(measurement, profile)
+    if isinstance(entry, SensorMap):
+        return entry.values(values, measurement.last_fetched)
+    first = entry or 1
+    return {first + index: value for index, value in enumerate(values)}
 
 
 def _aligned_series(frames, carry=True):
@@ -462,8 +474,8 @@ def _sensor_points_data(points, location, db_name, names=None):
             "y_end": round(point.ny_end, 4) if point.ny_end is not None else None,
             "device": point.device_id,
             # Which pair (1-based) of its device's measurements the sensor is
-            # (ProgeoDevice.first_sensor_order); None without device.
-            "pair": point.sensor_order - (starts[point.device_id] or 1) + 1 if point.device_id in starts else None,
+            # now (first_sensor_order, or the sensor mapping); None without device.
+            "pair": starts[point.device_id].pair_of(point.sensor_order) if point.device_id in starts else None,
             # The view (Lageplan) the point sits on, and its grid cell -
             # the smartex® dm lines join the sensors of one grid row.
             "lageplan": point.lageplan_id,

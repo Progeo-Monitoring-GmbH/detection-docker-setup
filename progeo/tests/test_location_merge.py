@@ -10,7 +10,7 @@ import pytest
 
 from conftest import TEST_DATABASES
 from progeo import tasks
-from progeo.helper import location_merge
+from progeo.helper import location_merge, sensor_mapping
 from progeo.helper.project_db_copy import mirror_shared
 from progeo.helper.project_dbs import ensure_project_db, project_alias
 from progeo.tests import factories as f
@@ -24,6 +24,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    ProgeoSensorMapping,
 )
 
 ADMIN = (
@@ -98,6 +99,7 @@ def test_merging_into_a_main_project_moves_the_devices_behind_its_sensors(api_cl
     alarm = _alarm(f.DB, _measurement(f.DB, device, _at(2), pairs=5), sensor_id=3)
     customer = f.make_user(email=f"{f.unique('single')}@progeo.com")
     f.make_access(part, customer, objektleitung=True)
+    mapping = sensor_mapping.save_version(device, f.DB, {1: 1, 3: 2}, "klemmliste")
     api_client.force_authenticate(user=admin)
 
     response = _merge(api_client, [main.pk, part.pk], main=main.pk)
@@ -113,6 +115,9 @@ def test_merging_into_a_main_project_moves_the_devices_behind_its_sensors(api_cl
     device.refresh_from_db(using=f.DB)
     assert (device.location_id, device.first_sensor_order) == (main.pk, 11)
     assert ProgeoDevice.objects.using(f.DB).get(pk=main_device.pk).first_sensor_order == 1
+    # Its sensor mapping moved along: input 3 is sensor 12 now.
+    mapping.refresh_from_db(using=f.DB)
+    assert mapping.positions == {"1": 11, "3": 12}
     alarm.refresh_from_db(using=f.DB)
     assert alarm.sensor_id == 13
     assert alarm.sensor_max_values == [{"sensor_id": 13, "max_value": 150}]
@@ -261,6 +266,8 @@ def test_across_databases_the_history_and_the_open_alarm_case_move(project_dbs, 
     device = ProgeoDevice.objects.using(PART_DB).create(raw_hash=f.unique("dev"), location_id=part.pk, sensor_count=4)
     measurements = [_measurement(PART_DB, device, _at(day), pairs=4) for day in (1, 2)]
     alarm = _alarm(PART_DB, measurements[1], sensor_id=2)
+    ProgeoSensorMapping.objects.using(PART_DB).create(device_id=device.pk, valid_from=_at(1), positions={"1": 2},
+                                                      origin="klemmliste")
     plan = ProgeoLageplan.objects.using(PART_DB).create(location_id=part.pk, name="OG")
     _point(PART_DB, part, 2, plan=plan, device=device)
     case = NotificationCase.objects.using("default").create(
@@ -273,6 +280,9 @@ def test_across_databases_the_history_and_the_open_alarm_case_move(project_dbs, 
     moved = ProgeoDevice.objects.using(MAIN_DB).get(raw_hash=device.raw_hash)
     assert (moved.location_id, moved.first_sensor_order) == (main.pk, 7)
     assert ProgeoMeasurement.objects.using(MAIN_DB).filter(device_id=moved.pk).count() == 2
+    # The sensor mapping moved with it, its numbers behind the main project's.
+    assert list(ProgeoSensorMapping.objects.using(MAIN_DB).filter(device_id=moved.pk).values_list(
+        "positions", flat=True)) == [{"1": 8}]
     moved_alarm = ProgeoAlarm.objects.using(MAIN_DB).get(measurement__device_id=moved.pk)
     assert moved_alarm.sensor_id == 8 and moved_alarm.sensor_max_values[0]["sensor_id"] == 8
     point = ProgeoMeasurePoint.objects.using(MAIN_DB).get(location_id=main.pk)
@@ -285,3 +295,32 @@ def test_across_databases_the_history_and_the_open_alarm_case_move(project_dbs, 
     case.refresh_from_db(using="default")
     assert (case.db, case.location_id, case.project_id, case.stage) == (MAIN_DB, main.pk, MAIN_PROJECT, 1)
     assert case.alarm_ids == [moved_alarm.pk] and case.state == NotificationCase.State.OPEN
+
+
+# ---------------------------------------------------------------------------- a merge no worker took
+
+@pytest.mark.django_db
+def test_a_merge_no_worker_took_is_named_and_can_be_started_again(api_client, world, monkeypatch):
+    """A celery worker running older code discards the unknown task without a
+    word: the job stays queued - reported as stale, and startable again."""
+    _account, main, part, admin = world
+    device = f.make_device(part, sensor_count=2)
+    monkeypatch.setattr(tasks.run_location_merge, "delay", lambda job_id: None)  # nobody takes it
+    api_client.force_authenticate(user=admin)
+    job_id = _merge(api_client, [main.pk, part.pk], main=main.pk).json()["job_id"]
+    job = location_merge.get_job(job_id)
+
+    assert api_client.get(f"{BASE}/merge-job/?id={job_id}").json()["job"]["stale"] is False
+    # Started again at once: refused while it may still be taken.
+    assert "being merged already" in _merge(api_client, [main.pk, part.pk], main=main.pk).json()["reason"]
+
+    created = datetime.datetime.fromisoformat(job["created"]) - datetime.timedelta(seconds=120)
+    location_merge._update_job(job_id, created=created.isoformat())
+    assert api_client.get(f"{BASE}/merge-job/?id={job_id}").json()["job"]["stale"] is True
+
+    monkeypatch.setattr(tasks.run_location_merge, "delay", lambda job_id: location_merge.run_job(job_id))
+    again = _merge(api_client, [main.pk, part.pk], main=main.pk).json()
+
+    assert api_client.get(f"{BASE}/merge-job/?id={again['job_id']}").json()["job"]["status"] == "done"
+    assert location_merge.get_job(job_id)["status"] == "failed"
+    assert ProgeoDevice.objects.using(f.DB).get(pk=device.pk).location_id == main.pk

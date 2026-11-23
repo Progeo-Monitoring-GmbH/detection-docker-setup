@@ -340,9 +340,11 @@ def _move_device_row(raw, source, target, device_pk, location_id, project_id, fo
     return target_pk
 
 
-def _move_children(raw, source, device_pk, target_pk):
-    """Commands and noise profiles of the device."""
-    from progeo.v1.models import ProgeoDeviceCommand, ProgeoNoiseProfile
+def _move_children(raw, source, device_pk, target_pk, sensor_shift=0):
+    """Commands, noise profiles and sensor mappings of the device - the
+    mappings' sensor numbers moved by `sensor_shift`, a version the target
+    device has already (a move run again) not twice."""
+    from progeo.v1.models import ProgeoDeviceCommand, ProgeoNoiseProfile, ProgeoSensorMapping
 
     counts = {}
     for model, temp in ((ProgeoDeviceCommand, "_cmd"), (ProgeoNoiseProfile, "_noise")):
@@ -350,6 +352,23 @@ def _move_children(raw, source, device_pk, target_pk):
         _assign_ids(raw, model, temp)
         counts[model.__name__] = _insert_staged(raw, model, temp, overrides={"device_id": sql.Literal(target_pk)})
         raw.execute(sql.SQL("DROP TABLE {}").format(sql.Identifier(temp)))
+    table = _table(ProgeoSensorMapping)
+    _stage(raw, ProgeoSensorMapping, "_sensormap", source, sql.SQL("device_id = %s"), [device_pk])
+    _assign_ids(raw, ProgeoSensorMapping, "_sensormap")
+    overrides = {"device_id": sql.Literal(target_pk)}
+    if sensor_shift:
+        overrides["positions"] = sql.SQL(
+            "CASE WHEN x.positions IS NULL OR jsonb_typeof(x.positions) <> 'object' THEN x.positions ELSE"
+            " (SELECT COALESCE(jsonb_object_agg(key, (value::text)::int + {}), '{{}}'::jsonb)"
+            " FROM jsonb_each(x.positions)) END"
+        ).format(sql.Literal(sensor_shift))
+    counts[ProgeoSensorMapping.__name__] = _insert_staged(
+        raw, ProgeoSensorMapping, "_sensormap", overrides=overrides,
+        where=sql.SQL("NOT EXISTS (SELECT 1 FROM {} m WHERE m.device_id = %s AND m.valid_from = x.valid_from)")
+        .format(table),
+        params=[target_pk],
+    )
+    raw.execute("DROP TABLE _sensormap")
     return counts
 
 
@@ -547,6 +566,7 @@ def _delete_source(source, device_pk, handled):
         ProgeoMeasurement,
         ProgeoMeasurePoint,
         ProgeoNoiseProfile,
+        ProgeoSensorMapping,
     )
 
     m_table = _table(ProgeoMeasurement)
@@ -564,7 +584,7 @@ def _delete_source(source, device_pk, handled):
         raw.execute(sql.SQL("DELETE FROM {} WHERE measurement_id IN ({})").format(_table(ProgeoAlarm), measurements),
                     [device_pk])
         raw.execute(sql.SQL("DELETE FROM {} WHERE device_id = %s").format(m_table), [device_pk])
-        for model in (ProgeoDeviceCommand, ProgeoNoiseProfile):
+        for model in (ProgeoDeviceCommand, ProgeoNoiseProfile, ProgeoSensorMapping):
             raw.execute(sql.SQL("DELETE FROM {} WHERE device_id = %s").format(_table(model)), [device_pk])
         raw.execute(sql.SQL("UPDATE {} SET device_id = NULL WHERE device_id = %s").format(_table(ProgeoMeasurePoint)),
                     [device_pk])
@@ -650,7 +670,7 @@ def _move(source, target, device_pk, raw_hash, location, project_id, force_locat
                     target_pk = _move_device_row(raw, source, target, device_pk, location.pk, project_id,
                                                  force_location=force_location, sensor_shift=sensor_shift)
                     summary["device"] = target_pk
-                    summary.update(_move_children(raw, source, device_pk, target_pk))
+                    summary.update(_move_children(raw, source, device_pk, target_pk, sensor_shift=sensor_shift))
                     if target_pk != device_pk:
                         # Points of the location pointing at the old id follow, unless that id is another device's here.
                         raw.execute(

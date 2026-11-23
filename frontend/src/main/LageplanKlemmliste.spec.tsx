@@ -212,7 +212,9 @@ describe('LageplanKlemmliste', () => {
 
     const dry = api.post.mock.calls[1];
     expect(dry[0]).toBe('/v1/status/measure_points/klemmliste/apply/');
-    expect(dry[1]).toEqual({ location_id: 7078, job_id: 'job-airtable', device_id: null, dry_run: true });
+    expect(dry[1]).toEqual({
+      location_id: 7078, job_id: 'job-airtable', device_id: null, strategy: 'points', dry_run: true,
+    });
     const states = [...container.querySelectorAll('[data-testid="lageplan-wizard-klemmliste-line"]')].map(
       (row) => [row.getAttribute('data-test-key'), row.className.replace(/.*--/, '')],
     );
@@ -232,6 +234,55 @@ describe('LageplanKlemmliste', () => {
     expect(api.post.mock.calls[2][1]).toMatchObject({ job_id: 'job-airtable', dry_run: false });
     expect(onNamesApplied).toHaveBeenCalledTimes(1);
     expect((byTestId('lageplan-wizard-klemmliste-apply') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('takes the suggested sensor mapping once the location has measurements', async () => {
+    const mapping = {
+      ...PREVIEW,
+      strategy: 'map',
+      mode: 'map',
+      suggested_strategy: 'map',
+      mappings: [{
+        unit: null, device_id: 8, device_label: 'smartex dm (#8)', remapped: 1, changed: 1,
+        positions: [
+          { position: 1, mux: 1, pin: 1, sensor: 'D_1', sensor_order: 1, formula: 1, current: 1 },
+          { position: 3, mux: 1, pin: 3, sensor: 'D_2', sensor_order: 2, formula: 3, current: 3 },
+        ],
+        unmapped_inputs: [2],
+        manual_conflicts: [{ position: 4, klemmliste: 3, manual: null }],
+      }],
+    };
+    api.post.mockImplementation((url: string, body: Record<string, unknown>, ok: Ok) => {
+      if (url.endsWith('/klemmliste/')) {
+        ok({ data: { job_id: 'job-map' } });
+      } else if (body.strategy === 'map') {
+        ok({ data: { result: body.dry_run ? mapping : { ...mapping, updated: 1 }, applied: !body.dry_run } });
+      } else {
+        ok({ data: { result: { ...PREVIEW, strategy: 'points', suggested_strategy: 'map' } } });
+      }
+    });
+    await render();
+    await click('lageplan-wizard-mea-read', 'recKlemm');
+    await act(async () =>
+      api.finishJob!({ job_id: 'job-map', status: 'done', source_name: 'k.pdf', result: { rows: ROWS, warnings: [] },
+        log: [], error: null }),
+    );
+
+    // Asked as "points" first, then again with the suggestion.
+    expect(api.post.mock.calls.slice(1).map((call) => (call[1] as { strategy: string }).strategy)).toEqual(['points', 'map']);
+    expect((byTestId('lageplan-wizard-klemmliste-strategy-map') as HTMLInputElement).checked).toBe(true);
+    expect(byTestId('lageplan-wizard-klemmliste-mapping', '8')!.textContent).toContain('1 differ from the formula');
+    expect(byTestId('lageplan-wizard-klemmliste-unmapped')!.textContent).toContain('2');
+    expect(byTestId('lageplan-wizard-klemmliste-manual-conflicts')!.textContent).toContain('input 4 is sensor none');
+
+    await click('lageplan-wizard-klemmliste-apply');
+
+    expect(api.post.mock.calls[api.post.mock.calls.length - 1][1]).toMatchObject({ strategy: 'map', dry_run: false });
+    expect(onNamesApplied).toHaveBeenCalledTimes(1);
+
+    // Back to renumbering on request.
+    await click('lageplan-wizard-klemmliste-strategy-points');
+    expect(api.post.mock.calls[api.post.mock.calls.length - 1][1]).toMatchObject({ strategy: 'points', dry_run: true });
   });
 
   it('moves label-numbered points to their input (renumber mode) and names the conflicts', async () => {
@@ -350,7 +401,9 @@ describe('LageplanKlemmliste', () => {
     });
 
     const last = api.post.mock.calls[api.post.mock.calls.length - 1];
-    expect(last[1]).toEqual({ location_id: 7078, job_id: 'job-upload', device_id: 6, dry_run: true });
+    expect(last[1]).toEqual({
+      location_id: 7078, job_id: 'job-upload', device_id: 6, strategy: 'points', dry_run: true,
+    });
   });
 
   it('shows no Airtable documents to non-staff and asks nothing', async () => {

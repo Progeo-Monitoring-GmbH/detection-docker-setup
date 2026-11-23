@@ -126,6 +126,25 @@ describe('MergeProjectsModal', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it('names a merge no worker took and starts it again into the same main project', async () => {
+    jobState = { ...jobState, status: 'queued', stale: true, progress: undefined };
+    await render();
+    await click('merge-projects-confirm');
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(byTestId('merge-projects-stale')!.textContent).toBe('selection_merge_stale');
+    jobState = { ...jobState, status: 'done', stale: false };
+    await click('merge-projects-retry');
+
+    expect(api.post.mock.calls[1][1]).toEqual({ ids: [11, 12], main: 11 });
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(onDone).toHaveBeenCalledWith(11);
+  });
+
   it('counts the progress over the parts and their devices', () => {
     expect(mergeProgress(null)).toBe(0);
     expect(mergeProgress({ status: 'running', main: 1, project_id: 1, parts: [2, 3],

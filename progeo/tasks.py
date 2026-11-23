@@ -218,7 +218,9 @@ def evaluate_measurement(measurement_id: int, account_id: int | None = None):
     relevant_points = []
     updated_points = []
     for i, value in enumerate(values):
-        sensor_order = device.sensor_order_of(i)
+        sensor_order = device.sensor_order_of(i, measurement.last_fetched)
+        if sensor_order is None:
+            continue  # an input without sensor (sensor mapping)
         point = points_by_sensor_order.get(sensor_order)
         if not point:
             _dlog(f"No point for measurement {measurement_id} sensor {sensor_order} with value {value}")

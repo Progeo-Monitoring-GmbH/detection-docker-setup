@@ -1670,6 +1670,9 @@ i18n
           selection_merge_incomplete:
             'A device was sending while it was moved - start the merge again to finish it.',
           selection_merge_job_failed: 'The merge stopped: {{reason}}',
+          selection_merge_stale:
+            'No background worker has taken the merge - nothing was moved yet. Is the celery worker running the current version? Restart it, then start the merge again.',
+          selection_merge_retry: 'Start again',
           selection_merge_failed: 'The projects could not be merged',
           selection_merge_need_two: 'Select at least two objects to merge them.',
           selection_merge_has_merged: 'Several merged projects are selected - merge them one after another.',
@@ -4562,6 +4565,9 @@ i18n
           selection_merge_incomplete:
             'Ein Gerät hat während des Verschiebens gesendet - das Zusammenführen bitte erneut starten.',
           selection_merge_job_failed: 'Das Zusammenführen wurde abgebrochen: {{reason}}',
+          selection_merge_stale:
+            'Kein Hintergrund-Worker hat das Zusammenführen übernommen - es wurde noch nichts verschoben. Läuft der Celery-Worker mit der aktuellen Version? Bitte neu starten und das Zusammenführen erneut starten.',
+          selection_merge_retry: 'Erneut starten',
           selection_merge_failed: 'Die Projekte konnten nicht zusammengeführt werden',
           selection_merge_need_two: 'Zum Zusammenführen mindestens zwei Objekte auswählen.',
           selection_merge_has_merged: 'Mehrere zusammengeführte Projekte sind ausgewählt - bitte nacheinander zusammenführen.',

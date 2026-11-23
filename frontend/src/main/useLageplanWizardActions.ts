@@ -17,6 +17,7 @@ import {
 } from './lageplanWizardUtils';
 import {
   answerPoints,
+  deviceRangesPayload,
   imageEditedMessage,
   jsonImportMessage,
   manualSensorsPayload,
@@ -449,6 +450,25 @@ export const usePointActions = (
     setPlacementDirty(false);
   };
 
+  // Step 2 on its own: the devices' first sensors and their points.
+  const saveDeviceRanges = async () => {
+    if (selectedLocationId === null) {
+      return;
+    }
+    await post(
+      '/v1/status/measure_points/device_ranges/',
+      deviceRangesPayload(selectedLocationId, state.deviceRanges),
+      (response) => {
+        setIsProcessing(false);
+        state.reload();
+        toastSaved(
+          `Device ranges saved - ${Number(response?.data?.points ?? 0)} point(s) connected to their device.`,
+        );
+      },
+      'Could not save the device ranges',
+    );
+  };
+
   const handleSaveManualSensors = async () => {
     if (selectedLocationId === null) {
       return;
@@ -491,6 +511,7 @@ export const usePointActions = (
     removeActiveSensor,
     discardPlacement,
     handleSaveManualSensors,
+    saveDeviceRanges,
     canvasPlacement: derived.manualPlacement ? placement : undefined,
   };
 };

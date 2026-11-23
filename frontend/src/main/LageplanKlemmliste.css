@@ -24,6 +24,25 @@
   justify-content: space-between;
 }
 
+/* How the list is applied: renumber the points, or a sensor mapping (from now on). */
+.lageplan-klemmliste-strategy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.lageplan-klemmliste-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bs-tertiary-bg);
+  font-size: 0.85rem;
+}
+
 /* Another Airtable project's documents (a merged project's source projects). */
 .lageplan-klemmliste-project {
   display: inline-flex;

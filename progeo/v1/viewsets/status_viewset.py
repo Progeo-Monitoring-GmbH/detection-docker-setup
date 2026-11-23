@@ -768,8 +768,10 @@ class StatusViewSet(ProgeoModalViewSet):
     def klemmliste_apply(self, request, *args, **kwargs):
         """The names of a finished klemmliste job onto the location's measure
         points (helper/klemmliste_names.py): {job_id, device_id?, unit_devices?
-        ({measuring unit: device id | null}), dry_run?} - dry_run only lists
-        what would change."""
+        ({measuring unit: device id | null}), strategy? ("points": renumber /
+        name the points - the default; "map": a sensor mapping per device from
+        now on, the points keep their numbers), dry_run?} - dry_run only lists
+        what would change; its answer names the "suggested_strategy"."""
         from progeo.helper import klemmliste_names
 
         location, db_name, error = self._wizard_location(request)
@@ -787,15 +789,94 @@ class StatusViewSet(ProgeoModalViewSet):
         unit_devices = data.get("unit_devices")
         if unit_devices is not None and not isinstance(unit_devices, dict):
             return RequestFailed({"reason": "unit_devices must be an object {unit: device id}"})
-        handler = klemmliste_names.preview if dry_run else klemmliste_names.apply
+        strategy = str(data.get("strategy") or "points")
+        if strategy not in klemmliste_names.STRATEGIES:
+            return RequestFailed({"reason": f"strategy must be one of {', '.join(klemmliste_names.STRATEGIES)}"})
+        rows = job["result"]["rows"]
         try:
-            result = handler(db_name, location, job["result"]["rows"], data.get("device_id"), unit_devices)
+            if strategy == "map":
+                result = (klemmliste_names.preview_map(db_name, location, rows, data.get("device_id"), unit_devices)
+                          if dry_run else
+                          klemmliste_names.apply_map(db_name, location, rows, data.get("device_id"), unit_devices,
+                                                     source_name=job.get("source_name") or "",
+                                                     user_id=request.user.pk))
+            else:
+                handler = klemmliste_names.preview if dry_run else klemmliste_names.apply
+                result = handler(db_name, location, rows, data.get("device_id"), unit_devices)
         except klemmliste_names.KlemmlisteError as exc:
             return RequestFailed({"reason": str(exc)})
+        result["strategy"] = strategy
+        result["suggested_strategy"] = klemmliste_names.suggested_strategy(db_name, location)
         if not dry_run:
             ilog(f"[klemmliste] {result['updated']} measure point name(s) of location {location.pk} "
-                 f"from {job.get('source_name')} by {request.user.username}")
+                 f"from {job.get('source_name')} ({strategy}) by {request.user.username}")
         return RequestSuccess({"result": result, "applied": not dry_run})
+
+    def _mapping_device(self, request):
+        """(location, db_name, device, error) - the wizard's location and its device `device_id`."""
+        location, db_name, error = self._wizard_location(request)
+        if error:
+            return None, None, None, error
+        data = request.data if hasattr(request.data, "get") else {}
+        raw = request.query_params.get("device_id") or data.get("device_id")
+        try:
+            device = ProgeoDevice.objects.using(db_name).filter(pk=int(raw), location=location).first()
+        except (TypeError, ValueError):
+            device = None
+        if device is None:
+            return None, None, None, RequestFailed({"reason": "The device is not one of the location's"})
+        return location, db_name, device, None
+
+    @staticmethod
+    def _mapping_answer(device, db_name):
+        from progeo.helper import sensor_mapping
+        from progeo.v1.models import ProgeoSensorMapping
+
+        versions = ProgeoSensorMapping.objects.using(db_name).filter(device_id=device.pk).order_by("-valid_from", "-id")
+        return {
+            "device_id": device.pk,
+            "first_sensor_order": device.first_sensor_order,
+            "sensor_count": device.sensor_count,
+            "inputs": sensor_mapping.effective(device, db_name),
+            "versions": [
+                {"id": version.pk, "valid_from": version.valid_from.isoformat(), "origin": version.origin,
+                 "source_name": version.source_name, "mapped": version.positions is not None,
+                 "inputs": len(version.positions or {}), "manual": version.manual}
+                for version in versions[:50]
+            ],
+        }
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/sensor_mapping", methods=["GET", "POST"])
+    def sensor_mapping(self, request, *args, **kwargs):
+        """Which sensor each input of a device measures (helper/sensor_mapping.py).
+        GET ?location_id&device_id -> {inputs: [{position, sensor_order, source}],
+        versions: [...], first_sensor_order, sensor_count}.
+        POST {location_id, device_id, changes: {input: sensor_order | null}} (staff):
+        those inputs corrected by hand - a new version from now on;
+        {..., reset: true}: back to first_sensor_order + input from now on."""
+        from progeo.helper import sensor_mapping
+
+        _location, db_name, device, error = self._mapping_device(request)
+        if error:
+            return error
+        if request.method == "POST":
+            if not is_staff_admin(request.user):
+                return RequestFailed({"reason": "Staff access required"})
+            data = request.data if hasattr(request.data, "get") else {}
+            try:
+                if data.get("reset") in (True, "1", "true"):
+                    sensor_mapping.save_version(device, db_name, None, "formula", user_id=request.user.pk)
+                else:
+                    changes = data.get("changes")
+                    if not isinstance(changes, dict) or not changes:
+                        return RequestFailed({"reason": "changes must be an object {input: sensor number | null}"})
+                    sensor_mapping.set_by_hand(device, db_name, changes, user_id=request.user.pk)
+            except (sensor_mapping.SensorMappingError, TypeError, ValueError) as exc:
+                return RequestFailed({"reason": str(exc)})
+            ilog(f"[sensor-mapping] device {device.pk} ({db_name}) changed by {request.user.username}")
+        return RequestSuccess(self._mapping_answer(device, db_name))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -836,6 +917,39 @@ class StatusViewSet(ProgeoModalViewSet):
         for device_pk, first, _last in device_ranges:
             ProgeoDevice.objects.using(db_name).filter(pk=device_pk).update(first_sensor_order=first)
         return RequestSuccess({"data": data})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/device_ranges", methods=["POST"])
+    def save_device_ranges(self, request, *args, **kwargs):
+        """Wizard step 2 saved without an import: {location_id, point_devices:
+        [{device_id, from, to}]} (see _point_devices) - each device's
+        first_sensor_order is `from` (its sensor_count to - from + 1 when `to`
+        is given), the location's points from..to are connected to it.
+        A device with a sensor mapping (helper/sensor_mapping.py) follows its
+        mapping from its valid_from on - the first sensor counts before it."""
+        location, db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        device_ranges, error = _point_devices(request, location, db_name)
+        if error:
+            return error
+        if not device_ranges:
+            return RequestFailed({"reason": "Choose a device for at least one range"})
+        points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+        connected = 0
+        with transaction.atomic(using=db_name):
+            for device_pk, first, last in device_ranges:
+                fields = {"first_sensor_order": first}
+                if last is not None:
+                    fields["sensor_count"] = last - first + 1
+                ProgeoDevice.objects.using(db_name).filter(pk=device_pk).update(**fields)
+                in_range = points.filter(sensor_order__gte=first)
+                if last is not None:
+                    in_range = in_range.filter(sensor_order__lte=last)
+                connected += in_range.update(device_id=device_pk)
+        ilog(f"[wizard] device ranges of location {location.pk} saved by {request.user.username}: {device_ranges}")
+        return RequestSuccess({"ranges": len(device_ranges), "points": connected})
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

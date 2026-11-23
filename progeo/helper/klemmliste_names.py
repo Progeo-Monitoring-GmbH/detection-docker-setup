@@ -312,3 +312,172 @@ def apply(db_name, location, rows, device_id=None, unit_devices=None) -> dict:
             updated += points.filter(sensor_order=change["sensor_order"]).update(**fields(change, name=change["new"]))
     result["updated"] = updated
     return result
+
+
+# ---------------------------------------------------------------------------- strategy "map"
+# The points keep their numbers (the plan's labels) - the device's inputs are
+# mapped onto them instead (helper/sensor_mapping.py), from now on: a row's
+# sensor is the point its name names (D_124 -> point 124, else a point named
+# exactly so), measured at the row's input of its unit's device. Measurements
+# before keep their meaning; first sensor numbers are not changed. Inputs
+# set by hand in the device's current mapping win over the list (conflicts).
+
+STRATEGIES = ("points", "map")
+
+
+def suggested_strategy(db_name, location) -> str:
+    """"map" once the location's devices have measurements (renumbering the
+    points would change what they meant), else "points"."""
+    from progeo.v1.models import ProgeoMeasurement
+
+    measured = ProgeoMeasurement.objects.using(db_name).filter(device__location=location).exists()
+    return "map" if measured else "points"
+
+
+def _map_devices(db_name, location, rows, device_id, unit_devices):
+    """(units, {unit or None: device}) for the rows - a list without units
+    needs one device: `device_id`, or the location's only one."""
+    units = list(dict.fromkeys(row["unit"] for row in rows if row.get("unit")))
+    if units:
+        return units, _unit_devices(db_name, location, units, unit_devices)
+    devices = list(ProgeoDevice.objects.using(db_name).filter(location=location).order_by("pk"))
+    if device_id not in (None, ""):
+        try:
+            device = next((device for device in devices if device.pk == int(device_id)), None)
+        except (TypeError, ValueError):
+            device = None
+        if device is None:
+            raise KlemmlisteError("The device is not one of the location's")
+    elif len(devices) == 1:
+        device = devices[0]
+    else:
+        raise KlemmlisteError("Pick the device whose inputs the list describes")
+    return [], {None: device}
+
+
+def _point_of(row, points, by_name):
+    """The sensor_order of the point a row names: by its name's number, else by its exact name."""
+    number = name_number(row["sensor"])
+    return number if number in points else by_name.get(row["sensor"])
+
+
+def preview_map(db_name, location, rows, device_id=None, unit_devices=None) -> dict:
+    """What apply_map() would do: {"strategy": "map", "mappings": [{unit,
+    device_id, device_label, positions: [{position, mux, pin, sensor,
+    sensor_order, formula, current}], remapped, changed, unmapped_inputs,
+    manual_conflicts}], "changes" / "unchanged" (names), "missing" (no point
+    of that name), "conflicts" (a point named twice), "without_name",
+    "point_orders", "units", "unit_warnings", "device_updates" (sensor counts
+    only), "rows_total"}."""
+    from progeo.helper.sensor_mapping import load_maps
+
+    points = {}
+    by_name = {}
+    for sensor_order, name in (ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+                               .order_by("sensor_order").values_list("sensor_order", "name")):
+        points.setdefault(sensor_order, []).append(name)
+        if name:
+            by_name.setdefault(" ".join(name.split()), sensor_order)
+    rows = _valid_rows(rows)
+    units, mapping = _map_devices(db_name, location, rows, device_id, unit_devices)
+    maps = load_maps(db_name, [device for device in mapping.values() if device])
+    result = {"strategy": "map", "mode": "map", "mappings": [], "moves": [], "changes": [], "unchanged": [],
+              "missing": [], "conflicts": [], "device_updates": [], "unit_warnings": []}
+    claimed = set()
+    touched = set()
+    per_device = {}
+    for row in rows:
+        device = mapping.get(row.get("unit"))
+        if device is None:
+            continue
+        source = _point_of(row, points, by_name)
+        base = {"position": row["position"], "mux": row.get("mux"), "pin": row.get("pin"), "unit": row.get("unit"),
+                "device_id": device.pk, "sensor": row["sensor"]}
+        if source is None:
+            result["missing"].append({**base, "sensor_order": None})
+            continue
+        if source in claimed:
+            result["conflicts"].append({**base, "sensor_order": source, "from_order": source})
+            continue
+        claimed.add(source)
+        touched.add(source)
+        per_device.setdefault(device.pk, []).append((row, source))
+        old = sorted({name or "" for name in points[source]})
+        entry = {**base, "sensor_order": source, "old": ", ".join(name for name in old if name) or None,
+                 "new": row["sensor"], "points": len(points[source])}
+        result["unchanged" if old == [row["sensor"]] else "changes"].append(entry)
+
+    for unit in units or [None]:
+        device = mapping.get(unit)
+        if device is None or device.pk not in per_device:
+            continue
+        sensor_map = maps[device.pk]
+        current = sensor_map.positions_at() or {}
+        entries = []
+        for row, source in sorted(per_device[device.pk], key=lambda pair: pair[0]["position"]):
+            position = row["position"]
+            entries.append({"position": position, "mux": row.get("mux"), "pin": row.get("pin"),
+                            "sensor": row["sensor"], "sensor_order": source,
+                            "formula": (device.first_sensor_order or 1) + position - 1,
+                            "current": sensor_map.order_of(position - 1)})
+        listed = {entry["position"]: entry["sensor_order"] for entry in entries}
+        span = max([device.sensor_count or 0, *listed])
+        result["mappings"].append({
+            "unit": unit, "device_id": device.pk, "device_label": device_label(device),
+            "positions": entries,
+            "remapped": sum(1 for entry in entries if entry["sensor_order"] != entry["formula"]),
+            "changed": sum(1 for entry in entries if entry["sensor_order"] != entry["current"]),
+            "unmapped_inputs": [position for position in range(1, span + 1) if position not in listed],
+            "manual_conflicts": [
+                {"position": position, "klemmliste": listed.get(position), "manual": current.get(position)}
+                for position in sensor_map.manual if current.get(position) != listed.get(position)
+            ],
+        })
+        if not device.sensor_count:
+            result["device_updates"].append({"unit": unit, "device_id": device.pk, "device_label": device_label(device),
+                                             "first_sensor_order": [device.first_sensor_order,
+                                                                    device.first_sensor_order],
+                                             "sensor_count": [device.sensor_count, max(listed)]})
+        elif device.sensor_count != max(listed):
+            result["unit_warnings"].append(
+                f"{unit or device_label(device)}: the list uses inputs up to {max(listed)}, "
+                f"{device_label(device)} measures {device.sensor_count}")
+    result["units"] = [{"unit": unit, "rows": sum(1 for row in rows if row.get("unit") == unit),
+                        "device_id": device.pk if device else None,
+                        "device_label": device_label(device) if device else None,
+                        "first_sensor_order": device.first_sensor_order if device else None,
+                        "sensor_count": device.sensor_count if device else None, "count_matches": None}
+                       for unit, device in mapping.items() if unit is not None]
+    result["unassigned"] = sum(1 for row in rows if row.get("unit") and mapping.get(row["unit"]) is None)
+    result["without_name"] = sorted(order for order in points if order not in touched)
+    result["point_orders"] = {"count": len(points), "min": min(points, default=None), "max": max(points, default=None)}
+    result["named_like_points"] = sum(1 for row in rows if name_number(row["sensor"]) in points)
+    result["rows_total"] = len(rows)
+    return result
+
+
+def apply_map(db_name, location, rows, device_id=None, unit_devices=None, source_name="", user_id=None) -> dict:
+    """preview_map() written: per device a new sensor mapping from now on
+    (helper/sensor_mapping.from_klemmliste - inputs set by hand kept), the
+    names onto the points (and their device), missing sensor counts."""
+    from progeo.helper import sensor_mapping
+
+    result = preview_map(db_name, location, rows, device_id, unit_devices)
+    points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+    updated = 0
+    with transaction.atomic(using=db_name):
+        for update in result["device_updates"]:
+            ProgeoDevice.objects.using(db_name).filter(pk=update["device_id"]).update(
+                sensor_count=update["sensor_count"][1])
+        for entry in result["mappings"]:
+            device = ProgeoDevice.objects.using(db_name).get(pk=entry["device_id"])
+            _version, conflicts = sensor_mapping.from_klemmliste(
+                device, db_name, {item["position"]: item["sensor_order"] for item in entry["positions"]},
+                source_name=source_name, user_id=user_id,
+            )
+            entry["manual_conflicts"] = conflicts
+        for change in result["changes"]:
+            updated += points.filter(sensor_order=change["sensor_order"]).update(
+                name=change["new"], device_id=change["device_id"])
+    result["updated"] = updated
+    return result

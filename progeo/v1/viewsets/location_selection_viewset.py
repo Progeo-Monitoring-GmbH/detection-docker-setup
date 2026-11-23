@@ -269,14 +269,17 @@ class LocationSelectionViewSet(viewsets.ViewSet):
     def merge_job(self, request, *args, **kwargs):
         """GET ?id=<job_id> -> {"job": {status: queued|running|done|incomplete|failed,
         main, project_id, parts, progress?, result?, error?}} - the starter's own jobs (staff: any)."""
-        from progeo.helper.location_merge import get_job
+        from progeo.helper.location_merge import get_job, is_stale
 
         if (denied := self._refused(request, "module_locations_edit", held=(MERGABLE,))) is not None:
             return denied
         job = get_job(str(request.query_params.get("id") or "").strip())
         if job is None or (job.get("user_id") != request.user.pk and not _is_staff_admin(request.user)):
             return RequestFailed({"reason": "Merge not found"})
-        return RequestSuccess({"job": {key: value for key, value in job.items() if key != "user_id"}})
+        # "stale": still queued long after it was started - no worker took it
+        # (one running older code discards it); the dialog offers to start it again.
+        return RequestSuccess({"job": {**{key: value for key, value in job.items() if key != "user_id"},
+                                       "stale": is_stale(job)}})
 
     @action(detail=False, methods=["POST"], url_path="dissolve")
     def dissolve(self, request, *args, **kwargs):

@@ -110,6 +110,9 @@ def scan_location(location, db, start, end, step=None) -> dict:
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurement, ProgeoRainEvent
 
     devices = {device.pk: device for device in ProgeoDevice.objects.using(db).filter(location_id=location.pk)}
+    from progeo.helper.sensor_mapping import attach_maps
+
+    attach_maps(db, devices.values())
     # Own threshold or disabled: the global threshold doesn't apply to these sensors.
     own = load_sensor_thresholds(db, [location.pk]).get(location.pk, {})
     excluded = set()
@@ -131,7 +134,9 @@ def scan_location(location, db, start, end, step=None) -> dict:
         scanned += 1
         device = devices[measurement.device_id]
         for index, value in enumerate(measurement.get_pairs()):
-            sensor_order = device.sensor_order_of(index)
+            sensor_order = device.sensor_order_of(index, measurement.last_fetched)
+            if sensor_order is None:
+                continue  # an input without sensor (sensor mapping)
             if sensor_order in own:
                 excluded.add(sensor_order)
                 continue

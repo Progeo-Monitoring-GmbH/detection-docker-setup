@@ -109,6 +109,7 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
         ProgeoMeasurePoint,
         ProgeoNoiseProfile,
         ProgeoRainEvent,
+        ProgeoSensorMapping,
     )
 
     ids = project_location_ids(project, source)
@@ -144,6 +145,9 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
         ),
         ProgeoNoiseProfile: (
             sql.SQL("{} IN ({})").format(_column(ProgeoNoiseProfile, "device"), devices), [ids, orphans]
+        ),
+        ProgeoSensorMapping: (
+            sql.SQL("{} IN ({})").format(_column(ProgeoSensorMapping, "device"), devices), [ids, orphans]
         ),
         # A point must not reference a Lageplan of another project, the FK
         # would break in the project database - those stay behind (see

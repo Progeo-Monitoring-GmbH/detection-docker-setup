@@ -43,7 +43,7 @@ AREA_MODULES = {
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video
-        heat_limitations_api location_climate measurement_history noise_profiles
+        heat_limitations_api location_climate measurement_history noise_profiles sensor_mapping
     """,
     "notifications": """
         bounces_and_notifications notification_cases notification_timeline email_and_sms_helpers measurement_notice messenger matrix_setup

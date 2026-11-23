@@ -29,6 +29,14 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
         for alarm in alarms if alarm.measurement.device and alarm.measurement.device.location_id
     }
     sensor_thresholds = load_sensor_thresholds(db, location_ids)
+    # Each alarm has its own device instance: their sensor maps read once, shared.
+    from progeo.helper.sensor_mapping import load_maps
+
+    devices = {alarm.measurement.device_id: alarm.measurement.device for alarm in alarms if alarm.measurement.device}
+    maps = load_maps(db, list(devices.values()))
+    for alarm in alarms:
+        if alarm.measurement.device is not None:
+            alarm.measurement.device.set_sensor_map(maps[alarm.measurement.device_id])
 
     # Fetch the newest measurement per involved device in ONE query, so the
     # per-alarm check below never triggers an N+1 lookup.
@@ -91,7 +99,7 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
             # Keep tracking the alarm's development while it stays active.
             peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
             max_value = float(peak_value)
-            sensor_id = device.sensor_order_of(peak_idx)  # matches sensor_order
+            sensor_id = device.sensor_order_of(peak_idx, latest.last_fetched)  # matches sensor_order
             if max_value is not None:
                 # Runs every 15 minutes, so the same timestamp can be appended more
                 # than once; only record an entry when it is genuinely new.
@@ -105,7 +113,7 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
                     }]
             # Refresh the strongest sensor + the full set of over-threshold pairs.
             sensor_pairs = [
-                {"sensor_id": device.sensor_order_of(idx), "max_value": float(value)}
+                {"sensor_id": device.sensor_order_of(idx, latest.last_fetched), "max_value": float(value)}
                 for idx, value in over_threshold
             ]
             from progeo.v1.creator import merge_sensor_max_values

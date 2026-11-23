@@ -192,6 +192,19 @@ export const importPayloadFor = (
   ),
 });
 
+/** Step 2 saved on its own (measure_points/device_ranges): each device's
+ * first sensor (and sensor count with "to"), the points of its range connected. */
+export const deviceRangesPayload = (locationId: number | null, ranges: DeviceRange[]) => ({
+  location_id: locationId,
+  point_devices: ranges
+    .filter((range) => range.deviceId != null)
+    .map((range) => ({
+      device_id: range.deviceId,
+      from: range.from.trim() || 1,
+      to: range.to.trim(),
+    })),
+});
+
 /** The canvas' heading: what it shows of the picked plan. */
 export const canvasTitle = ({
   manual,

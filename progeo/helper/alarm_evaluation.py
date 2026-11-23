@@ -84,6 +84,13 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     # Resolve each device once before fetching its location's overrides.
     locations = {}
     measurements = list(measurements)
+    # Every row has its own device instance: their sensor maps read once, shared.
+    from progeo.helper.sensor_mapping import load_maps
+
+    maps = load_maps(db, list({(m.device_id, m.device.first_sensor_order) for m in measurements if m.device}))
+    for measurement in measurements:
+        if measurement.device is not None:
+            measurement.device.set_sensor_map(maps[measurement.device_id])
     for measurement in measurements:
         if measurement.device_id not in locations:
             locations[measurement.device_id] = _resolve_location(measurement, db)
@@ -439,8 +446,13 @@ def _evaluate_measurement(measurement, location, db: str, alarmed_devices=None,
                 alarms.reload(measurement.device_id)
         return False
 
-    # Pair index -> sensor_order (1-based; a device can start at a later sensor).
-    sensor_order_of = measurement.device.sensor_order_of if measurement.device else (lambda idx: idx + 1)
+    # Pair index -> sensor_order (1-based; a device can start at a later sensor,
+    # its inputs can be mapped - as valid when the measurement was taken).
+    def sensor_order_of(idx):
+        if measurement.device is None:
+            return idx + 1
+        return measurement.device.sensor_order_of(idx, measurement.last_fetched)
+
     sensor_max_values = [
         {"sensor_id": sensor_order_of(idx), "max_value": float(value)}
         for idx, value in over_threshold

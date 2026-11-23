@@ -1,0 +1,18 @@
+/* The sensor mapping of a device (SensorMappingPanel.tsx) - in the wizard's step 8. */
+
+.sensor-mapping .sensor-mapping-input.form-control {
+  width: 5.5rem;
+  font-weight: 600;
+}
+
+.sensor-mapping .sensor-mapping-device.form-select {
+  width: auto;
+  max-width: 16rem;
+}
+
+.sensor-mapping-versions {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.85rem;
+}

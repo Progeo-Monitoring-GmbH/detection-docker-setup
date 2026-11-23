@@ -43,6 +43,8 @@ INHERITED_FIELDS = ("address", "plz", "city", "country", "manager", "telefon", "
 
 JOB_SECONDS = 7 * 24 * 3600
 LOCK_SECONDS = 6 * 3600
+# A job still "queued" after this long was not taken by any worker.
+STALE_SECONDS = 90
 
 
 class MergeError(Exception):
@@ -189,6 +191,7 @@ def merge_into(user_id, main, account, parts, progress=None):
 
 def _merge_part(main, account, main_db, part, progress):
     from progeo.helper.project_db_move import move_device_to, shift_alarm_sensors
+    from progeo.helper.sensor_mapping import shift_mappings
     from progeo.v1.models import ProgeoDevice, ProgeoLageplan, ProgeoMeasurePoint
 
     part_db = location_db(part, account)
@@ -215,6 +218,7 @@ def _merge_part(main, account, main_db, part, progress):
                     ProgeoDevice.objects.using(main_db).filter(pk=device_pk).update(
                         location_id=main.pk, first_sensor_order=Coalesce(F("first_sensor_order"), 1) + shift)
                     result["alarms"] += shift_alarm_sensors(main_db, device_pk, shift)
+                    shift_mappings(main_db, device_pk, shift)
                 moved[device_pk] = device_pk
             else:
                 done = move_device_to(device_pk, raw_hash, part_db, main, main_db, sensor_shift=shift)
@@ -364,14 +368,33 @@ def _update_job(job_id, **fields):
     return job
 
 
+def is_stale(job, now=None) -> bool:
+    """Still "queued" after STALE_SECONDS: no worker took it - a celery worker
+    that runs older code discards the unknown task without a word."""
+    if not job or job.get("status") != "queued" or not job.get("created"):
+        return False
+    from datetime import datetime
+
+    created = datetime.fromisoformat(job["created"])
+    return ((now or timezone.now()) - created).total_seconds() > STALE_SECONDS
+
+
 def start_job(user, main, account, parts):
     """Queue the merge of `parts` into `main` (run_merge_job in celery).
-    Returns the job id. One merge per main project at a time."""
+    Returns the job id. One merge per main project at a time - a merge no
+    worker took (is_stale) or that ended may be started again."""
     from progeo.tasks import run_location_merge
 
-    if not cache.add(_lock_key(main.pk), True, LOCK_SECONDS):
-        raise MergeError("This project is being merged already - wait until it is done")
+    lock = _lock_key(main.pk)
+    if not cache.add(lock, "", LOCK_SECONDS):
+        holder = get_job(cache.get(lock))
+        if holder is not None and holder.get("status") in ("queued", "running") and not is_stale(holder):
+            raise MergeError("This project is being merged already - wait until it is done")
+        if holder is not None and is_stale(holder):
+            _update_job(holder["id"], status="failed", error="No background worker took the merge")
+            wlog(f"[merge] job {holder['id']} of location {main.pk} was never taken by a worker - started again")
     job_id = uuid.uuid4().hex
+    cache.set(lock, job_id, LOCK_SECONDS)
     _update_job(job_id, id=job_id, status="queued", user_id=user.pk, main=main.pk, project_id=main.project_id,
                 account=account.pk, parts=[part.pk for part in parts], created=timezone.now().isoformat())
     try:
@@ -415,7 +438,9 @@ def run_job(job_id):
         _update_job(job_id, status="failed", error=str(exc))
         return None
     finally:
-        cache.delete(_lock_key(job["main"]))
+        # Only its own lock: a merge started again meanwhile holds a new one.
+        if cache.get(_lock_key(job["main"])) in (job_id, ""):
+            cache.delete(_lock_key(job["main"]))
 
 
 # ---------------------------------------------------------------------------- older merges (nothing moved)

@@ -39,6 +39,8 @@ export type MergeJob = {
     devices?: number;
   };
   error?: string;
+  /** Still queued long after it was started: no background worker took it. */
+  stale?: boolean;
 };
 
 /** The main project picked: one of the selected locations, or a new project number. */
@@ -132,7 +134,7 @@ const MergeProjectsModal = ({
   const jobId = job?.id;
   const jobStatus = job?.state?.status;
   useEffect(() => {
-    if (!jobId || (jobStatus && !['queued', 'running'].includes(jobStatus))) {
+    if (!jobId || job?.state?.stale || (jobStatus && !['queued', 'running'].includes(jobStatus))) {
       return undefined;
     }
     const timer = window.setTimeout(() => {
@@ -167,17 +169,20 @@ const MergeProjectsModal = ({
 
   const free = check?.nr === Number(nr) && check.free === true;
   const ready = isNew ? free && !checking : true;
-  const running = Boolean(job) && (!jobStatus || ['queued', 'running'].includes(jobStatus));
+  const stale = Boolean(job?.state?.stale);
+  const running = Boolean(job) && !stale && (!jobStatus || ['queued', 'running'].includes(jobStatus));
 
-  const submit = () => {
+  /** Start the merge - again (`retryInto`: the main project of a merge no worker took, a new one exists now). */
+  const submit = (retryInto?: number) => {
     setSaving(true);
+    told.current = false;
+    const ids = locations.map((location) => location.id);
     void axiosConfig.perform_post(
       auth,
       '/v1/location-selection/merge/',
-      {
-        ids: locations.map((location) => location.id),
-        ...(isNew ? { project_id: Number(nr), name: name.trim() } : { main }),
-      },
+      retryInto != null
+        ? { ids: ids.includes(retryInto) ? ids : [...ids, retryInto], main: retryInto }
+        : { ids, ...(isNew ? { project_id: Number(nr), name: name.trim() } : { main }) },
       (response) => {
         setSaving(false);
         setJob({
@@ -285,7 +290,22 @@ const MergeProjectsModal = ({
         </div>
         {job && (
           <div className="location-selection-job" data-testid="merge-projects-job">
-            {job.state?.status === 'failed' ? (
+            {stale ? (
+              <>
+                <span className="location-selection-error" data-testid="merge-projects-stale">
+                  {t('selection_merge_stale')}
+                </span>
+                <button
+                  type="button"
+                  className="location-selection-confirm"
+                  onClick={() => submit(job.mainId)}
+                  disabled={saving}
+                  data-testid="merge-projects-retry"
+                >
+                  {t('selection_merge_retry')}
+                </button>
+              </>
+            ) : job.state?.status === 'failed' ? (
               <span className="location-selection-error" data-testid="merge-projects-failed">
                 {t('selection_merge_job_failed', { reason: job.state.error ?? '' })}
               </span>
@@ -317,7 +337,7 @@ const MergeProjectsModal = ({
           <button
             type="button"
             className="location-selection-confirm"
-            onClick={submit}
+            onClick={() => submit()}
             disabled={!ready || saving}
             data-testid="merge-projects-confirm"
           >

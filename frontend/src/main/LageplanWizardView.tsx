@@ -117,6 +117,8 @@ const LageplanWizardView = () => {
           deviceRanges={state.deviceRanges}
           onDeviceRangesChange={state.setDeviceRanges}
           deviceRangesProblem={derived.deviceRangesProblem}
+          isProcessing={state.isProcessing}
+          onSave={() => void points.saveDeviceRanges()}
         />
         <LageplanPlansStep
           locationId={selectedLocationId}
