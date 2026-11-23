@@ -98,6 +98,33 @@
   color: #c44d26;
 }
 
+/* MergeProjectsModal: the main project, the running merge. */
+.location-selection-mains {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 13px;
+  color: var(--progeo-blue);
+}
+
+.location-selection-mains legend.location-selection-targets {
+  float: none;
+  width: auto;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.location-selection-job {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--progeo-blue);
+}
+
 /* The merged project's bar in the portal (LocationGroupBar). */
 .location-group-bar {
   display: flex;

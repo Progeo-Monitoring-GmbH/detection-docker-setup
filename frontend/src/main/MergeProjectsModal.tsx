@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Modal, Spinner } from 'react-bootstrap';
+import { useEffect, useRef, useState } from 'react';
+import { Form, Modal, ProgressBar, Spinner } from 'react-bootstrap';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -9,7 +9,12 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import LabeledInput from '../components/ui/kit/LabeledInput';
-import { selectedLocationLabel, type SelectedLocation } from './locationSelection';
+import { repeatedTestId } from '../testIds';
+import {
+  mergeMainDefault,
+  selectedLocationLabel,
+  type SelectedLocation,
+} from './locationSelection';
 import './LocationSelection.css';
 
 /** Answer of GET /v1/location-selection/project-id/ - never names who uses a number. */
@@ -19,11 +24,51 @@ type ProjectIdCheck = {
   suggestion: number;
 };
 
+/** GET /v1/location-selection/merge-job/ (helper/location_merge.py run_job). */
+export type MergeJob = {
+  status: 'queued' | 'running' | 'done' | 'incomplete' | 'failed';
+  main: number;
+  project_id: number | null;
+  parts: number[];
+  progress?: {
+    step?: string;
+    part_index?: number;
+    parts?: number;
+    device?: string;
+    device_index?: number;
+    devices?: number;
+  };
+  error?: string;
+};
+
+/** The main project picked: one of the selected locations, or a new project number. */
+type MainChoice = number | 'new';
+
+const POLL_MS = 2000;
+
+/** How far the job is (0-100): the parts done, the current part's devices. */
+export const mergeProgress = (job: MergeJob | null) => {
+  if (!job || job.status === 'queued') {
+    return 0;
+  }
+  if (job.status !== 'running') {
+    return 100;
+  }
+  const progress = job.progress ?? {};
+  const parts = Math.max(progress.parts ?? 1, 1);
+  const devices = Math.max(progress.devices ?? 1, 1);
+  const inPart =
+    progress.step === 'plans' ? 1 : (progress.device_index ?? 0) / devices;
+  return Math.round((((progress.part_index ?? 0) + inPart) / parts) * 100);
+};
+
 /**
  * "Merge projects" of the location overview (backend helper/location_merge.py):
- * a new project number becomes a merged project the selected locations are
- * parts of. Nothing is moved - the devices go on sending their old numbers
- * to their locations; the portal shows the parts' lageplans as one object.
+ * the devices of the selected projects move - with their measurements and
+ * alarms - into a main project, one of them or a new one; plans, measure
+ * points and users go along, the sensor numbers behind the main project's.
+ * The other projects are hidden afterwards. Moving runs as a background job:
+ * the dialog follows it and may be closed meanwhile.
  */
 const MergeProjectsModal = ({
   locations,
@@ -32,22 +77,28 @@ const MergeProjectsModal = ({
 }: {
   locations: SelectedLocation[];
   onHide: () => void;
-  /** The merged project's location id. */
-  onDone: (parentId: number) => void;
+  /** The main project's location id. */
+  onDone: (mainId: number) => void;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  const [main, setMain] = useState<MainChoice>(() => mergeMainDefault(locations));
   const [nr, setNr] = useState('');
   const [name, setName] = useState(locations[0]?.name ?? '');
   const [check, setCheck] = useState<ProjectIdCheck | null>(null);
+  const isNew = main === 'new';
   // The answer is for another number (still typing / asking): not known yet.
   const wellFormed = /^\d+$/.test(nr);
-  const checking = wellFormed && check?.nr !== Number(nr);
+  const checking = isNew && wellFormed && check?.nr !== Number(nr);
   const [saving, setSaving] = useState(false);
+  const [job, setJob] = useState<{ id: string; mainId: number; state: MergeJob | null } | null>(null);
 
-  // The next free number as the proposal - once.
+  // The next free number as the proposal - once, when a new project is picked.
   useEffect(() => {
+    if (!isNew) {
+      return;
+    }
     void axiosConfig.perform_get(
       auth,
       '/v1/location-selection/project-id/',
@@ -59,11 +110,11 @@ const MergeProjectsModal = ({
         }
       },
     );
-  }, [auth]);
+  }, [auth, isNew]);
 
   // Is the typed number free? Asked a moment after the last keystroke.
   useEffect(() => {
-    if (!wellFormed) {
+    if (!isNew || !wellFormed) {
       return undefined;
     }
     const timer = window.setTimeout(() => {
@@ -75,9 +126,48 @@ const MergeProjectsModal = ({
       );
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [auth, nr, wellFormed]);
+  }, [auth, isNew, nr, wellFormed]);
+
+  // The running merge: asked again every POLL_MS until it ends.
+  const jobId = job?.id;
+  const jobStatus = job?.state?.status;
+  useEffect(() => {
+    if (!jobId || (jobStatus && !['queued', 'running'].includes(jobStatus))) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/location-selection/merge-job/?id=${jobId}`,
+        (response) => {
+          const state = (response?.data?.job ?? null) as MergeJob | null;
+          setJob((current) => (current && current.id === jobId ? { ...current, state } : current));
+        },
+      );
+    }, job?.state ? POLL_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [auth, job?.state, jobId, jobStatus]);
+
+  // The end of the merge: told once.
+  const told = useRef(false);
+  useEffect(() => {
+    if (!job || !jobStatus || ['queued', 'running'].includes(jobStatus) || told.current) {
+      return;
+    }
+    told.current = true;
+    if (jobStatus === 'done') {
+      showSuccessBar(
+        enqueueSnackbar,
+        t('selection_merge_done', { nr: job.state?.project_id ?? '' }),
+      );
+      onDone(job.mainId);
+    }
+    // 'incomplete' and 'failed' stay in the dialog (merge_state).
+  }, [enqueueSnackbar, job, jobStatus, onDone, t]);
 
   const free = check?.nr === Number(nr) && check.free === true;
+  const ready = isNew ? free && !checking : true;
+  const running = Boolean(job) && (!jobStatus || ['queued', 'running'].includes(jobStatus));
 
   const submit = () => {
     setSaving(true);
@@ -86,16 +176,15 @@ const MergeProjectsModal = ({
       '/v1/location-selection/merge/',
       {
         ids: locations.map((location) => location.id),
-        project_id: Number(nr),
-        name: name.trim(),
+        ...(isNew ? { project_id: Number(nr), name: name.trim() } : { main }),
       },
       (response) => {
         setSaving(false);
-        showSuccessBar(
-          enqueueSnackbar,
-          t('selection_merge_done', { nr, count: locations.length }),
-        );
-        onDone(Number(response?.data?.location));
+        setJob({
+          id: String(response?.data?.job_id),
+          mainId: Number(response?.data?.location),
+          state: null,
+        });
       },
       (error) => {
         setSaving(false);
@@ -103,6 +192,18 @@ const MergeProjectsModal = ({
       },
     );
   };
+
+  const progress = job?.state?.progress;
+  const progressText =
+    job?.state?.status === 'running' && progress?.step === 'device'
+      ? t('selection_merge_moving_device', {
+          device: progress.device ?? '',
+          index: (progress.device_index ?? 0) + 1,
+          count: progress.devices ?? 0,
+          part: (progress.part_index ?? 0) + 1,
+          parts: progress.parts ?? 0,
+        })
+      : t('selection_merge_running');
 
   return (
     <Modal show onHide={onHide} centered data-testid="merge-projects-modal">
@@ -115,47 +216,94 @@ const MergeProjectsModal = ({
         <div className="location-selection-hint">
           {t('selection_merge_intro')}
         </div>
-        <ul
-          className="location-selection-list"
-          data-testid="merge-projects-parts"
+        <fieldset
+          className="location-selection-mains"
+          disabled={Boolean(job) || saving}
+          data-testid="merge-projects-main"
         >
+          <legend className="location-selection-targets">
+            {t('selection_merge_main')}
+          </legend>
           {locations.map((location) => (
-            <li key={location.id}>{selectedLocationLabel(location)}</li>
+            <Form.Check
+              key={location.id}
+              type="radio"
+              name="merge-main"
+              id={`merge-main-${location.id}`}
+              checked={main === location.id}
+              onChange={() => setMain(location.id)}
+              label={<strong>{selectedLocationLabel(location)}</strong>}
+              {...repeatedTestId('merge-projects-main-option', location.id)}
+            />
           ))}
-        </ul>
-        <div className="location-selection-names">
-          <LabeledInput
-            label={t('selection_merge_nr')}
-            value={nr}
-            onChange={(value) => setNr(value.replace(/\D/g, ''))}
-            testId="merge-projects-nr"
+          <Form.Check
+            type="radio"
+            name="merge-main"
+            id="merge-main-new"
+            checked={isNew}
+            onChange={() => setMain('new')}
+            label={t('selection_merge_main_new')}
+            data-testid="merge-projects-main-new"
           />
-          <LabeledInput
-            label={t('selection_merge_name')}
-            value={name}
-            onChange={setName}
-            testId="merge-projects-name"
-          />
-        </div>
-        <div
-          className="location-selection-nr"
-          data-testid="merge-projects-nr-state"
-        >
-          {checking ? (
-            <Spinner animation="border" size="sm" />
-          ) : check && check.nr === Number(nr) && check.free !== null ? (
-            <span
-              className={
-                free ? 'location-selection-ok' : 'location-selection-error'
-              }
+        </fieldset>
+        {isNew && (
+          <>
+            <div className="location-selection-names">
+              <LabeledInput
+                label={t('selection_merge_nr')}
+                value={nr}
+                onChange={(value) => setNr(value.replace(/\D/g, ''))}
+                testId="merge-projects-nr"
+              />
+              <LabeledInput
+                label={t('selection_merge_name')}
+                value={name}
+                onChange={setName}
+                testId="merge-projects-name"
+              />
+            </div>
+            <div
+              className="location-selection-nr"
+              data-testid="merge-projects-nr-state"
             >
-              {t(free ? 'anlegen_nr_free' : 'selection_merge_nr_used')}
-            </span>
-          ) : null}
-        </div>
+              {checking ? (
+                <Spinner animation="border" size="sm" />
+              ) : check && check.nr === Number(nr) && check.free !== null ? (
+                <span
+                  className={
+                    free ? 'location-selection-ok' : 'location-selection-error'
+                  }
+                >
+                  {t(free ? 'anlegen_nr_free' : 'selection_merge_nr_used')}
+                </span>
+              ) : null}
+            </div>
+          </>
+        )}
         <div className="location-selection-hint">
-          {t('selection_merge_devices')}
+          {t(isNew ? 'selection_merge_main_hint_new' : 'selection_merge_main_hint')}
         </div>
+        {job && (
+          <div className="location-selection-job" data-testid="merge-projects-job">
+            {job.state?.status === 'failed' ? (
+              <span className="location-selection-error" data-testid="merge-projects-failed">
+                {t('selection_merge_job_failed', { reason: job.state.error ?? '' })}
+              </span>
+            ) : job.state?.status === 'incomplete' ? (
+              <span className="location-selection-error" data-testid="merge-projects-incomplete">
+                {t('selection_merge_incomplete')}
+              </span>
+            ) : (
+              <>
+                <span>{progressText}</span>
+                <ProgressBar now={mergeProgress(job.state)} />
+                <span className="location-selection-hint">
+                  {t('selection_merge_background')}
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </Modal.Body>
       <Modal.Footer>
         <button
@@ -163,18 +311,21 @@ const MergeProjectsModal = ({
           className="location-selection-cancel"
           onClick={onHide}
         >
-          {t('rechte_cancel')}
+          {t(job ? 'selection_merge_close' : 'rechte_cancel')}
         </button>
-        <button
-          type="button"
-          className="location-selection-confirm"
-          onClick={submit}
-          disabled={!free || checking || saving}
-          data-testid="merge-projects-confirm"
-        >
-          {saving && <Spinner animation="border" size="sm" />}
-          {t('selection_merge_confirm', { count: locations.length })}
-        </button>
+        {!job && (
+          <button
+            type="button"
+            className="location-selection-confirm"
+            onClick={submit}
+            disabled={!ready || saving}
+            data-testid="merge-projects-confirm"
+          >
+            {saving && <Spinner animation="border" size="sm" />}
+            {t('selection_merge_confirm', { count: locations.length })}
+          </button>
+        )}
+        {running && <Spinner animation="border" size="sm" />}
       </Modal.Footer>
     </Modal>
   );

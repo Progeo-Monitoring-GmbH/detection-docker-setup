@@ -382,6 +382,8 @@ def can_see_location(user, location) -> bool:
         return True
     if location is None or not location.account_id or not getattr(user, "pk", None):
         return False
+    if getattr(location, "merged_at", None) is not None:
+        return False
     account = Account.objects.using(DEFAULT_DB_ALIAS).filter(pk=location.account_id).first()
     if account is None:
         return False
@@ -396,14 +398,18 @@ def listed_locations(user) -> list[tuple[Account, Q]]:
     - staff and everyone else: the locations of the accounts they belong to,
       plus those granted to them one by one (ProgeoAccess) - being staff
       alone lists nothing (they still open any location by id).
+    Projects merged into another (merged_at) are listed for staff only.
     """
     if sees_every_location(user):
         return [(account, Q(account=account)) for account in configured_accounts()]
+    staff = is_staff_admin(user)
     listed = []
     for account in user_accounts(user):
         scope = Q(account=account)
         if not is_account_member(user, account):
             scope &= Q(id__in=single_access_location_ids(user, account))
+        if not staff:
+            scope &= Q(merged_at__isnull=True)
         listed.append((account, scope))
     return listed
 
@@ -412,9 +418,14 @@ def location_q(user, account, prefix: str = "") -> Q:
     """Filter for rows `user` may see and act on within `account`: everything
     for staff and members, else the user's single accesses. What the location
     lists show is narrower for staff (listed_locations). `prefix` is the
-    lookup path to the location, e.g. "device__location__" for measurements."""
+    lookup path to the location, e.g. "device__location__" for measurements.
+    A project merged into another (merged_at, helper/location_merge.py) is an
+    empty shell customers don't see - only staff."""
     scope = Q(**{f"{prefix}account": account})
-    if not user or is_staff_admin(user) or is_account_member(user, account):
+    if not user or is_staff_admin(user):
+        return scope
+    scope &= Q(**{f"{prefix}merged_at__isnull": True})
+    if is_account_member(user, account):
         return scope
     return scope & Q(**{f"{prefix}id__in": single_access_location_ids(user, account)})
 

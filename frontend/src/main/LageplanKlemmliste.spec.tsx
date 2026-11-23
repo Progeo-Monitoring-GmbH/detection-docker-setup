@@ -152,6 +152,49 @@ describe('LageplanKlemmliste', () => {
     ]);
   });
 
+  it("reads the documents of another project number - a merged project's source", async () => {
+    await render();
+    const field = byTestId('lageplan-wizard-mea-project-number') as HTMLInputElement;
+    expect(field.placeholder).toBe('7078');
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, '51a80');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Digits only.
+    expect(field.value).toBe('5180');
+    await click('lageplan-wizard-mea-project-load');
+
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/v1/status/measure_points/airtable_documents/?location_id=7078&project_number=5180',
+    );
+    // Download and reading name the same project; the names still go onto location 7078.
+    await click('lageplan-wizard-mea-download', 'recDwg');
+    expect(api.download.mock.calls[0][1]).toBe(
+      '/v1/status/measure_points/airtable_documents/download/?location_id=7078&document=recDwg&project_number=5180',
+    );
+    await click('lageplan-wizard-mea-read', 'recKlemm');
+    expect(api.post.mock.calls[0][1]).toEqual({ location_id: 7078, document: 'recKlemm', project_number: '5180' });
+
+    // Back to the location's own project.
+    await click('lageplan-wizard-mea-project-own');
+    expect(api.get).toHaveBeenLastCalledWith('/v1/status/measure_points/airtable_documents/?location_id=7078');
+    expect(byTestId('lageplan-wizard-mea-project-own')).toBeNull();
+  });
+
+  it('names the other project number when Airtable has no such project', async () => {
+    await render();
+    api.get.mockImplementation(() => ({ project_found: false, project_url: null, documents: [] }));
+    const field = byTestId('lageplan-wizard-mea-project-number') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, '9999');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click('lageplan-wizard-mea-project-load');
+
+    expect(byTestId('lageplan-wizard-mea-no-project')!.textContent).toBe('No Airtable project with the number 9999.');
+  });
+
   it('reads the Klemmliste from Airtable, previews and applies the names', async () => {
     await render();
 

@@ -48,8 +48,9 @@ class LocationSelectionViewSet(viewsets.ViewSet):
         GET  /v1/location-selection/users/?ids=1,2     the people to assign them to
         POST /v1/location-selection/assign/            {ids, user_id | email, first_name?, last_name?}
         GET  /v1/location-selection/project-id/?nr=    is the number free (merge), the next free one
-        POST /v1/location-selection/merge/             {ids, project_id, name?} - see helper/location_merge.py
-        POST /v1/location-selection/dissolve/          {location} - a merge undone
+        POST /v1/location-selection/merge/             {ids, main? | project_id + name?} - see helper/location_merge.py
+        GET  /v1/location-selection/merge-job/?id=     how that merge (a background job) is getting on
+        POST /v1/location-selection/dissolve/          {location} - an older merge (nothing moved) undone
         GET  /v1/location-selection/group/?location=   the merged project of a location (portal group bar)
 
     All need module_locations_selectable; assigning module_user_invitable,
@@ -159,14 +160,16 @@ class LocationSelectionViewSet(viewsets.ViewSet):
 
     @staticmethod
     def _with_parts(request, selected):
-        """A merged project assigns its parts too (the data is theirs) - those the requester sees."""
+        """An older merged project (nothing moved) assigns its parts too (the
+        data is theirs) - those the requester sees. Parts whose devices moved
+        into it (merged_at) are empty shells: not assigned."""
         from progeo.v1.models import ProgeoLocation
 
         result = list(selected)
         known = {location.pk for location, _account in result}
         for location, account in selected:
             part_ids = ProgeoLocation.objects.using(account.db_name).filter(
-                parent_location_id=location.pk
+                parent_location_id=location.pk, merged_at__isnull=True,
             ).values_list("pk", flat=True)
             for part_id in part_ids:
                 if part_id in known:
@@ -226,8 +229,12 @@ class LocationSelectionViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["POST"], url_path="merge")
     def merge(self, request, *args, **kwargs):
-        """POST {ids, project_id, name?} -> {"location": <the new parent's id>} (helper/location_merge.py)."""
-        from progeo.helper.location_merge import MergeError, check_mergeable, merge
+        """POST {ids, main: <one of ids>} or {ids, project_id, name?} (a new
+        main project) -> {"location": <the main project's id>, "project_id",
+        "job_id"}: the others' devices, plans and access rules move into the
+        main project in a background job (merge-job) - helper/location_merge.py."""
+        from progeo.helper import location_merge
+        from progeo.helper.location_merge import MergeError
 
         if (denied := self._refused(request, "module_locations_edit", held=(MERGABLE,))) is not None:
             return denied
@@ -235,14 +242,41 @@ class LocationSelectionViewSet(viewsets.ViewSet):
         selected = self._selected(request, data.get("ids"))
         if selected is None:
             return RequestFailed({"reason": "Location not found"})
+        main = None
+        if data.get("main") not in (None, ""):
+            try:
+                main_id = int(data.get("main"))
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "main must be a location id"})
+            main = next((location for location, _account in selected if location.pk == main_id), None)
+            if main is None:
+                return RequestFailed({"reason": "The main project must be one of the selected locations"})
         try:
-            check_mergeable(selected)
-            if not self._may_merge(request, selected[0][1]):
+            location_merge.check_mergeable(selected, main)
+            account = selected[0][1]
+            if not self._may_merge(request, account):
                 return permission_denied_response(["module_locations_edit"])
-            parent = merge(request.user, selected, data.get("project_id"), str(data.get("name") or ""))
+            parts = [location for location, _account in selected if main is None or location.pk != main.pk]
+            if main is None:
+                main = location_merge.create_main(account, data.get("project_id"), str(data.get("name") or ""),
+                                                  parts[0])
+            job_id = location_merge.start_job(request.user, main, account, parts)
         except MergeError as exc:
             return RequestFailed({"reason": str(exc)})
-        return RequestSuccess({"location": parent.pk, "project_id": parent.project_id})
+        return RequestSuccess({"location": main.pk, "project_id": main.project_id, "job_id": job_id})
+
+    @action(detail=False, methods=["GET"], url_path="merge-job")
+    def merge_job(self, request, *args, **kwargs):
+        """GET ?id=<job_id> -> {"job": {status: queued|running|done|incomplete|failed,
+        main, project_id, parts, progress?, result?, error?}} - the starter's own jobs (staff: any)."""
+        from progeo.helper.location_merge import get_job
+
+        if (denied := self._refused(request, "module_locations_edit", held=(MERGABLE,))) is not None:
+            return denied
+        job = get_job(str(request.query_params.get("id") or "").strip())
+        if job is None or (job.get("user_id") != request.user.pk and not _is_staff_admin(request.user)):
+            return RequestFailed({"reason": "Merge not found"})
+        return RequestSuccess({"job": {key: value for key, value in job.items() if key != "user_id"}})
 
     @action(detail=False, methods=["POST"], url_path="dissolve")
     def dissolve(self, request, *args, **kwargs):

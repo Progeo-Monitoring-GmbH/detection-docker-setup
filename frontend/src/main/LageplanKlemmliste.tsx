@@ -178,6 +178,9 @@ const lineKey = (line: { unit?: string | null; position: number }) =>
  * Klemmliste: read by progeo-cad_factory (uploaded or straight from Airtable),
  * its sensor names - position (MUX - 1) * 16 + PIN - previewed against the
  * measure points and written onto them.
+ * The documents can come from another Airtable project ("Project number"):
+ * a merged project needs the Klemmlisten of the projects its devices come
+ * from - the names still go onto the selected location's points.
  */
 const LageplanKlemmliste = ({
   auth,
@@ -201,6 +204,10 @@ const LageplanKlemmliste = ({
   // The project in Airtable (the location's Airtable link, else the project's own).
   const [projectUrl, setProjectUrl] = useState<string | null>(null);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
+  // Another Airtable project to read the documents of ('' = the location's own) - and the field's text.
+  const [projectNumber, setProjectNumber] = useState('');
+  const [projectInput, setProjectInput] = useState('');
+  const projectQuery = projectNumber ? `&project_number=${encodeURIComponent(projectNumber)}` : '';
   // The first load starts with the step (one step per location - the wizard keys it).
   const [loadingDocuments, setLoadingDocuments] = useState(staff);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -224,7 +231,7 @@ const LageplanKlemmliste = ({
       }
       void axiosConfig.perform_get(
         auth,
-        `${STATUS_URL}/airtable_documents/?location_id=${locationId}${refresh ? '&refresh=1' : ''}`,
+        `${STATUS_URL}/airtable_documents/?location_id=${locationId}${projectQuery}${refresh ? '&refresh=1' : ''}`,
         (response) => {
           setDocuments((response?.data?.documents ?? []) as MeaDocument[]);
           setProjectFound(response?.data?.project_found !== false);
@@ -239,7 +246,7 @@ const LageplanKlemmliste = ({
         },
       );
     },
-    [auth, locationId, staff],
+    [auth, locationId, projectQuery, staff],
   );
 
   useEffect(() => {
@@ -251,11 +258,24 @@ const LageplanKlemmliste = ({
     fetchDocuments(true);
   };
 
+  /** Read the documents of the project in the field ('' or the location's own number: its own). */
+  const switchProject = (raw: string) => {
+    const next = raw.trim() === String(locationId) ? '' : raw.trim();
+    setProjectInput(next);
+    if (next === projectNumber) {
+      return;
+    }
+    setDocuments(null);
+    setDocumentsError(null);
+    setLoadingDocuments(true);
+    setProjectNumber(next);
+  };
+
   const download = async (document: MeaDocument) => {
     setDownloading(document.id);
     await downloadResponse(
       auth,
-      `${STATUS_URL}/airtable_documents/download/?location_id=${locationId}&document=${encodeURIComponent(document.id)}`,
+      `${STATUS_URL}/airtable_documents/download/?location_id=${locationId}&document=${encodeURIComponent(document.id)}${projectQuery}`,
       document.name,
     );
     setDownloading(null);
@@ -266,7 +286,7 @@ const LageplanKlemmliste = ({
     void axiosConfig.perform_post(
       auth,
       `${STATUS_URL}/klemmliste/`,
-      { location_id: locationId, document: document.id },
+      { location_id: locationId, document: document.id, ...(projectNumber ? { project_number: projectNumber } : {}) },
       (response) => {
         setStarting(null);
         setJob(null);
@@ -401,6 +421,43 @@ const LageplanKlemmliste = ({
       <div className="lageplan-klemmliste-section-head">
         <span className="lageplan-klemmliste-section-title">MEA documents and drawings (Airtable)</span>
         <span className="lageplan-klemmliste-actions">
+          <Form
+            className="lageplan-klemmliste-project"
+            onSubmit={(event) => {
+              event.preventDefault();
+              switchProject(projectInput);
+            }}
+            data-testid="lageplan-wizard-mea-project"
+          >
+            <Form.Label htmlFor="lageplan-wizard-mea-project-number" className="lageplan-klemmliste-muted mb-0">
+              Project number
+            </Form.Label>
+            <Form.Control
+              id="lageplan-wizard-mea-project-number"
+              size="sm"
+              inputMode="numeric"
+              value={projectInput}
+              placeholder={String(locationId)}
+              onChange={(event) => setProjectInput(event.target.value.replace(/\D/g, ''))}
+              data-testid="lageplan-wizard-mea-project-number"
+            />
+            <PillButton
+              variant="ghost"
+              label="Load"
+              onClick={() => switchProject(projectInput)}
+              disabled={loadingDocuments || projectInput.trim() === projectNumber}
+              testId="lageplan-wizard-mea-project-load"
+            />
+            {projectNumber && (
+              <PillButton
+                variant="ghost"
+                label={`Own project (${locationId})`}
+                onClick={() => switchProject('')}
+                disabled={loadingDocuments}
+                testId="lageplan-wizard-mea-project-own"
+              />
+            )}
+          </Form>
           {projectUrl && (
             <a
               className="progeo-pill progeo-pill--ghost lageplan-klemmliste-link"
@@ -435,7 +492,9 @@ const LageplanKlemmliste = ({
         </div>
       ) : !projectFound ? (
         <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-mea-no-project">
-          No Airtable project for this location (project number or Airtable link).
+          {projectNumber
+            ? `No Airtable project with the number ${projectNumber}.`
+            : 'No Airtable project for this location (project number or Airtable link).'}
         </div>
       ) : documents.length === 0 ? (
         <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-mea-empty">

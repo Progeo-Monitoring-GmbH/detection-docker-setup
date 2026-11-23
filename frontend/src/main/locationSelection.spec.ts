@@ -8,6 +8,7 @@ import {
 import {
   selectedLocationLabel,
   mergeBlocker,
+  mergeMainDefault,
   selectionLabel,
 } from './locationSelection';
 import { planFromParams } from './planParam';
@@ -27,15 +28,27 @@ describe('the overview selection', () => {
     );
   });
 
-  it('merges two or more locations - none merged already, none a merged project', () => {
+  it('merges two or more locations - none merged into another one already', () => {
     expect(mergeBlocker([{ id: 1 }])).toBe('selection_merge_need_two');
     expect(mergeBlocker([{ id: 1 }, { id: 2 }])).toBeNull();
-    expect(mergeBlocker([{ id: 1 }, { id: 2, part_count: 3 }])).toBe(
-      'selection_merge_has_merged',
-    );
+    // An older merged project with its parts: it becomes the main project.
+    expect(mergeBlocker([{ id: 9, part_count: 2 }, { id: 1, parent_location: 9 }])).toBeNull();
+    expect(
+      mergeBlocker([{ id: 8, part_count: 2 }, { id: 9, part_count: 3 }]),
+    ).toBe('selection_merge_has_merged');
+    // A part whose project isn't selected, or one merged (devices moved) already.
     expect(mergeBlocker([{ id: 1, parent_location: 9 }, { id: 2 }])).toBe(
       'selection_merge_already_merged',
     );
+    expect(mergeBlocker([{ id: 9 }, { id: 1, parent_location: 9, merged: true }])).toBe(
+      'selection_merge_already_merged',
+    );
+  });
+
+  it('proposes an older merged project, else the first location as the main project', () => {
+    expect(mergeMainDefault([{ id: 1 }, { id: 9, part_count: 2 }])).toBe(9);
+    expect(mergeMainDefault([{ id: 4 }, { id: 5 }])).toBe(4);
+    expect(mergeMainDefault([])).toBe('new');
   });
 });
 

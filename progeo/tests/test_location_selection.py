@@ -1,7 +1,7 @@
 """Locations selected in the overview (module_locations_selectable):
 "Assign to user" (/v1/location-selection/users|assign/, one mail for all)
-and "Merge projects" (/v1/location-selection/merge|dissolve|group/,
-helper/location_merge.py - a parent wraps the parts, nothing is moved)."""
+and older merged projects (/v1/location-selection/dissolve|group/: a parent
+wrapped the parts, nothing moved). Merging itself: test_location_merge.py."""
 import pytest
 from django.contrib.auth.models import User
 
@@ -118,53 +118,28 @@ def test_a_location_the_user_does_not_see_refuses_the_whole_selection(api_client
 
 
 # ---------------------------------------------------------------------------- merge projects
+# Merging moves the devices (test_location_merge.py). Older merges hung the
+# parts under a new parent and moved nothing - the group bar, dissolving and
+# assigning still know them.
 
-def _merge(api_client, locations, project_id=93000, name="Werk"):
-    return api_client.post(f"{BASE}/merge/", {"ids": _ids(locations), "project_id": project_id, "name": name},
-                           format="json")
+def _older_group(account, halls, project_id=93000, name="Werk"):
+    parent = f.make_location(account, project_id=project_id, name=name)
+    for hall in halls:
+        hall.parent_location = parent
+        hall.save(using=f.DB)
+    return parent
 
 
-def test_merging_wraps_the_locations_in_a_new_project(api_client, world):
+def test_the_overview_lists_an_older_group_with_its_parts(api_client, world):
     account, halls, admin = world
-    single = f.make_user()
-    f.make_access(halls[1], single)
     api_client.force_authenticate(user=admin)
-
-    response = _merge(api_client, halls[:2])
-
-    assert response.status_code == 200, response.content
-    parent = ProgeoLocation.objects.using(f.DB).get(pk=response.json()["location"])
-    assert (parent.project_id, parent.name, parent.account_id) == (93000, "Werk", account.pk)
-    # The parts keep their numbers (the devices still send them) - they only got a parent.
-    for hall in halls[:2]:
-        hall.refresh_from_db(using=f.DB)
-        assert hall.parent_location_id == parent.pk and hall.project_id in (91000, 91001)
-    # Their single-access users see the merged project too.
-    assert ProgeoAccess.objects.using(f.DB).filter(location=parent, user=single).exists()
-
-
-def test_the_overview_lists_the_project_with_its_parts(api_client, world):
-    _account, halls, admin = world
-    api_client.force_authenticate(user=admin)
-    parent_id = _merge(api_client, halls[:2]).json()["location"]
+    parent = _older_group(account, halls[:2])
 
     rows = {row["id"]: row for row in api_client.get("/v1/location/min/").json()}
 
-    assert rows[parent_id]["part_count"] == 2
-    assert rows[halls[0].pk]["parent_location"] == parent_id
+    assert rows[parent.pk]["part_count"] == 2
+    assert rows[halls[0].pk]["parent_location"] == parent.pk and rows[halls[0].pk]["merged"] is False
     assert rows[halls[2].pk]["parent_location"] is None and rows[halls[2].pk]["part_count"] == 0
-
-
-def test_merging_is_refused_for_a_used_number_and_merged_locations(api_client, world):
-    _account, halls, admin = world
-    api_client.force_authenticate(user=admin)
-
-    assert "already in use" in _merge(api_client, halls[:2], project_id=91002).json()["reason"]
-    assert _merge(api_client, halls[:1]).json()["reason"] == "Select at least two locations to merge"
-    parent_id = _merge(api_client, halls[:2]).json()["location"]
-    assert "already part of" in _merge(api_client, [halls[0], halls[2]], project_id=93001).json()["reason"]
-    parent = ProgeoLocation.objects.using(f.DB).get(pk=parent_id)
-    assert "merged project itself" in _merge(api_client, [parent, halls[2]], project_id=93002).json()["reason"]
 
 
 def test_locations_of_different_accounts_are_not_merged(api_client, world):
@@ -172,7 +147,9 @@ def test_locations_of_different_accounts_are_not_merged(api_client, world):
     other = f.make_location(f.make_account(), project_id=92002)
     api_client.force_authenticate(user=f.make_user(staff=True))
 
-    assert _merge(api_client, [halls[0], other]).json()["reason"] == "Only locations of one account can be merged"
+    response = api_client.post(f"{BASE}/merge/", {"ids": [halls[0].pk, other.pk], "main": halls[0].pk}, format="json")
+
+    assert response.json()["reason"] == "Only locations of one account can be merged"
 
 
 def test_the_free_number_check_names_nobody(api_client, world):
@@ -187,36 +164,36 @@ def test_the_free_number_check_names_nobody(api_client, world):
 
 
 def test_the_group_lists_the_parts_and_their_plans(api_client, world):
-    _account, halls, admin = world
+    account, halls, admin = world
     api_client.force_authenticate(user=admin)
-    parent_id = _merge(api_client, halls[:2]).json()["location"]
+    parent = _older_group(account, halls[:2])
 
-    for location_id in (parent_id, halls[1].pk):
+    for location_id in (parent.pk, halls[1].pk):
         body = api_client.get(f"{BASE}/group/?location={location_id}").json()
-        assert body["group"]["parent"]["id"] == parent_id
+        assert body["group"]["parent"]["id"] == parent.pk
         assert [part["id"] for part in body["group"]["parts"]] == _ids(halls[:2])
         assert body["can_dissolve"] is True
     assert api_client.get(f"{BASE}/group/?location={halls[2].pk}").json()["group"] is None
 
 
-def test_dissolving_undoes_the_merge(api_client, world):
-    _account, halls, admin = world
+def test_dissolving_undoes_an_older_group(api_client, world):
+    account, halls, admin = world
     api_client.force_authenticate(user=admin)
-    parent_id = _merge(api_client, halls[:2]).json()["location"]
+    parent = _older_group(account, halls[:2])
 
-    response = api_client.post(f"{BASE}/dissolve/", {"location": parent_id}, format="json")
+    response = api_client.post(f"{BASE}/dissolve/", {"location": parent.pk}, format="json")
 
     assert sorted(response.json()["parts"]) == sorted(_ids(halls[:2]))
-    assert not ProgeoLocation.objects.using(f.DB).filter(pk=parent_id).exists()
+    assert not ProgeoLocation.objects.using(f.DB).filter(pk=parent.pk).exists()
     assert not ProgeoLocation.objects.using(f.DB).filter(pk__in=_ids(halls), parent_location__isnull=False).exists()
 
 
-def test_assigning_a_merged_project_assigns_its_parts(api_client, world):
-    _account, halls, admin = world
+def test_assigning_an_older_group_assigns_its_parts(api_client, world):
+    account, halls, admin = world
     person = f.make_user(email=f"{f.unique('erika')}@progeo.com")
     api_client.force_authenticate(user=admin)
-    parent_id = _merge(api_client, halls[:2]).json()["location"]
+    parent = _older_group(account, halls[:2])
 
-    response = api_client.post(f"{BASE}/assign/", {"ids": [parent_id], "email": person.email}, format="json")
+    response = api_client.post(f"{BASE}/assign/", {"ids": [parent.pk], "email": person.email}, format="json")
 
-    assert sorted(response.json()["granted"]) == sorted([parent_id, *_ids(halls[:2])])
+    assert sorted(response.json()["granted"]) == sorted([parent.pk, *_ids(halls[:2])])

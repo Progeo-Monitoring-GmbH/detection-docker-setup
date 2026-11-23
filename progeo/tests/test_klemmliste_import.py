@@ -278,7 +278,8 @@ class FakeTable:
     def all(self, formula=None, **kwargs):
         self.formulas.append(formula)
         if "Projektnummer" in (formula or ""):
-            return [record for record in self.records.values() if "Projektnummer" in record["fields"]]
+            return [record for record in self.records.values()
+                    if f"='{record['fields'].get('Projektnummer')}'" in formula]
         return [record for record in self.records.values()
                 if record["id"] in formula and f"'{record['fields'].get('Dokumententyp')}'" in formula]
 
@@ -412,6 +413,57 @@ def test_a_klemmliste_from_airtable_starts_a_job(api_client, staff, location, ai
     other = api_client.post(url, {"location_id": location.project_id, "document": "recModel00000000a"},
                             format="json")
     assert cad_import.get_job(other.json()["job_id"])["source_name"] == "MEA-Modell.pdf"
+
+
+def test_the_documents_of_another_project_number(api_client, staff, location, airtable, monkeypatch):
+    """Step 8 of a merged project: the Klemmliste of a project its devices come from."""
+    other = {"id": "recProject000000b", "fields": {"Projektnummer": 5180, "Dokumente": ["recOther00000000b"],
+                                                  "Link zum Projekt": "https://airtable.com/appX/tblY/recProject000000b"}}
+    airtable["projects"].records[other["id"]] = other
+    airtable["documents"].records["recOther00000000b"] = _doc("recOther00000000b", "Klemmliste_5180.pdf")
+    # The location's own link names its own project - not the other one's.
+    location.airtable_url = "https://airtable.com/appX/tblY/recProject000000a"
+    location.save(using=f.DB)
+    url = "/v1/status/measure_points/airtable_documents/"
+
+    body = api_client.get(url, {"location_id": location.project_id, "project_number": "5180"}).json()
+
+    assert body["project_found"] is True and body["project_number"] == 5180
+    assert [d["name"] for d in body["documents"]] == ["Klemmliste_5180.pdf"]
+    assert body["project_url"] == "https://airtable.com/appX/tblY/recProject000000b"
+    # Its own documents are cached apart: without the number, the location's project again.
+    own = api_client.get(url, {"location_id": location.project_id}).json()
+    assert own["project_number"] == 937078 and "Klemmliste_5180.pdf" not in [d["name"] for d in own["documents"]]
+    # The location's own number is no other project.
+    assert api_client.get(url, {"location_id": location.project_id, "project_number": "937078"}).json()[
+        "project_number"] == 937078
+    assert api_client.get(url, {"location_id": location.project_id, "project_number": "abc"}).json()[
+        "reason"] == "The project number must be a number"
+
+    # Download and reading go by the same number: its document is one of "the location's" only with it.
+    monkeypatch.setattr(airtable_documents, "open_download", lambda entry: entry)
+    download = "/v1/status/measure_points/airtable_documents/download/"
+    refused = api_client.get(download, {"location_id": location.project_id, "document": "recOther00000000b"})
+    assert refused.json()["reason"] == "This document is not one of the location's Airtable documents"
+    entry = airtable_documents.document(location, "recOther00000000b", 5180)
+    assert entry["url"] == "https://dl.airtable/recOther00000000b"
+
+
+def test_a_klemmliste_of_another_project_starts_a_job(api_client, staff, location, airtable, tmp_path, monkeypatch):
+    airtable["projects"].records["recProject000000b"] = {
+        "id": "recProject000000b", "fields": {"Projektnummer": 5180, "Dokumente": ["recOther00000000b"]}}
+    airtable["documents"].records["recOther00000000b"] = _doc("recOther00000000b", "Klemmliste_5180.pdf")
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(status_viewset.run_cad_import, "delay", lambda job_id: None)
+    monkeypatch.setattr(airtable_documents, "read_bytes", lambda entry: b"%PDF-5180")
+
+    response = api_client.post("/v1/status/measure_points/klemmliste/", {
+        "location_id": location.project_id, "document": "recOther00000000b", "project_number": 5180,
+    }, format="json")
+
+    job = cad_import.get_job(response.json()["job_id"])
+    # The job belongs to the selected location - its points get the names.
+    assert job["source_name"] == "Klemmliste_5180.pdf" and job["location_pk"] == location.pk
 
 
 def test_airtable_documents_are_staff_only(api_client, location, airtable):

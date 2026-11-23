@@ -1648,21 +1648,35 @@ i18n
           selection_assign_failed: 'The objects could not be assigned',
           selection_merge_title: 'Merge projects',
           selection_merge_intro:
-            'The selected objects become parts of one new project. In the portal it shows as one object with the site plans of all parts.',
+            'The devices of the selected objects move into the main project - with all their measurements and alarms, site plans, measure points and users. The other objects are hidden afterwards; the devices keep sending under their old numbers and their data arrives in the main project.',
+          selection_merge_main: 'Main project',
+          selection_merge_main_new: 'New project number',
+          selection_merge_main_hint:
+            'The main project keeps its sensor numbers; those of the other objects follow behind them.',
+          selection_merge_main_hint_new:
+            'The first object keeps its sensor numbers; those of the others follow behind them.',
           selection_merge_nr: 'New project number',
           selection_merge_name: 'Name',
           selection_merge_nr_used: 'This number is already used.',
-          selection_merge_devices:
-            'Nothing is moved: the devices keep sending under their old project numbers and their data stays with the parts. The merge can be undone.',
           selection_merge_confirm_one: 'Merge {{count}} project',
           selection_merge_confirm_other: 'Merge {{count}} projects',
-          selection_merge_done: 'Project {{nr}} created from {{count}} objects.',
+          selection_merge_running: 'Merging the projects …',
+          selection_merge_moving_device:
+            'Project {{part}} of {{parts}}: moving device {{device}} ({{index}} of {{count}}) …',
+          selection_merge_background:
+            'Moving a long history takes a while - you can close this window, the merge goes on.',
+          selection_merge_close: 'Close',
+          selection_merge_done: 'The projects were merged into project {{nr}}.',
+          selection_merge_incomplete:
+            'A device was sending while it was moved - start the merge again to finish it.',
+          selection_merge_job_failed: 'The merge stopped: {{reason}}',
           selection_merge_failed: 'The projects could not be merged',
           selection_merge_need_two: 'Select at least two objects to merge them.',
-          selection_merge_has_merged: 'A merged project is selected - it cannot be merged again.',
-          selection_merge_already_merged: 'A selected object is already part of a merged project.',
+          selection_merge_has_merged: 'Several merged projects are selected - merge them one after another.',
+          selection_merge_already_merged: 'A selected object is already merged into another project.',
           locations_group_badge_one: '{{count}} part',
           locations_group_badge_other: '{{count}} parts',
+          locations_merged_badge: '+{{count}} merged',
           location_group_title: 'Project #{{nr}} {{name}}',
           location_group_dissolve: 'Dissolve merge',
           location_group_dissolve_title: 'Dissolve the merged project?',
@@ -4526,21 +4540,35 @@ i18n
           selection_assign_failed: 'Die Objekte konnten nicht zugewiesen werden',
           selection_merge_title: 'Projekte zusammenführen',
           selection_merge_intro:
-            'Die ausgewählten Objekte werden Teile eines neuen Projekts. Im Portal erscheint es als ein Objekt mit den Lageplänen aller Teile.',
+            'Die Geräte der ausgewählten Objekte ziehen ins Hauptprojekt um - mit allen Messungen und Alarmen, Lageplänen, Messpunkten und Nutzern. Die übrigen Objekte werden danach ausgeblendet; die Geräte senden weiter unter ihren alten Nummern, ihre Daten kommen im Hauptprojekt an.',
+          selection_merge_main: 'Hauptprojekt',
+          selection_merge_main_new: 'Neue Projektnummer',
+          selection_merge_main_hint:
+            'Das Hauptprojekt behält seine Sensornummern, die der übrigen Objekte schließen dahinter an.',
+          selection_merge_main_hint_new:
+            'Das erste Objekt behält seine Sensornummern, die der übrigen schließen dahinter an.',
           selection_merge_nr: 'Neue Projektnummer',
           selection_merge_name: 'Name',
           selection_merge_nr_used: 'Diese Nummer ist bereits vergeben.',
-          selection_merge_devices:
-            'Es wird nichts verschoben: Die Geräte senden weiter unter ihren alten Projektnummern, ihre Daten bleiben bei den Teilen. Das Zusammenführen lässt sich rückgängig machen.',
           selection_merge_confirm_one: '{{count}} Projekt zusammenführen',
           selection_merge_confirm_other: '{{count}} Projekte zusammenführen',
-          selection_merge_done: 'Projekt {{nr}} aus {{count}} Objekten angelegt.',
+          selection_merge_running: 'Die Projekte werden zusammengeführt …',
+          selection_merge_moving_device:
+            'Projekt {{part}} von {{parts}}: Gerät {{device}} wird verschoben ({{index}} von {{count}}) …',
+          selection_merge_background:
+            'Eine lange Messhistorie braucht etwas Zeit - das Fenster kann geschlossen werden, das Zusammenführen läuft weiter.',
+          selection_merge_close: 'Schließen',
+          selection_merge_done: 'Die Projekte wurden in Projekt {{nr}} zusammengeführt.',
+          selection_merge_incomplete:
+            'Ein Gerät hat während des Verschiebens gesendet - das Zusammenführen bitte erneut starten.',
+          selection_merge_job_failed: 'Das Zusammenführen wurde abgebrochen: {{reason}}',
           selection_merge_failed: 'Die Projekte konnten nicht zusammengeführt werden',
           selection_merge_need_two: 'Zum Zusammenführen mindestens zwei Objekte auswählen.',
-          selection_merge_has_merged: 'Ein zusammengeführtes Projekt ist ausgewählt - es kann nicht erneut zusammengeführt werden.',
-          selection_merge_already_merged: 'Ein ausgewähltes Objekt gehört bereits zu einem zusammengeführten Projekt.',
+          selection_merge_has_merged: 'Mehrere zusammengeführte Projekte sind ausgewählt - bitte nacheinander zusammenführen.',
+          selection_merge_already_merged: 'Ein ausgewähltes Objekt ist bereits in ein anderes Projekt zusammengeführt.',
           locations_group_badge_one: '{{count}} Teil',
           locations_group_badge_other: '{{count}} Teile',
+          locations_merged_badge: '+{{count}} zusammengeführt',
           location_group_title: 'Projekt #{{nr}} {{name}}',
           location_group_dissolve: 'Zusammenführung auflösen',
           location_group_dissolve_title: 'Zusammengeführtes Projekt auflösen?',

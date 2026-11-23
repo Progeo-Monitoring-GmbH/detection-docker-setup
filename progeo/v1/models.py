@@ -434,13 +434,29 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     db_measurement_count = models.IntegerField(null=True, blank=True)
     db_stats_at = models.DateTimeField(null=True, blank=True)
 
-    # Parent-location support: allows location hierarchy
+    # Parent-location support: allows location hierarchy. Merged projects
+    # (helper/location_merge.py): the main project is the parent of the
+    # projects merged into it.
     parent_location = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='child_locations'
+    )
+    # When this project was merged into its parent_location: its devices
+    # (with their measurements and alarms), plans, measure points and access
+    # rules moved there - it stays as an empty, hidden shell (staff only).
+    # None for a part of an older merge that moved nothing (a group).
+    merged_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Merged into its parent_location (devices moved there) - hidden from customers",
+    )
+    # Its sensor numbers in the main project: + merge_shift (behind the main
+    # project's own). Fixed when the merge starts, so a merge run again after
+    # an interruption numbers the rest the same way.
+    merge_shift = models.IntegerField(
+        null=True, blank=True, help_text="Sensor numbers in the main project = own + merge_shift",
     )
 
     def get_device_count(self):

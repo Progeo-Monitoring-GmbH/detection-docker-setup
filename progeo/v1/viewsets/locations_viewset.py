@@ -18,7 +18,9 @@ from django.core.validators import validate_email
 from django.db import connections, transaction
 from django.db.models import (
     Avg,
+    BooleanField,
     Count,
+    ExpressionWrapper,
     F,
     Max,
     Min,
@@ -586,7 +588,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         data = []
         fields = (
             "id", "project_id", "name", "city", "plz", "address", "country",
-            "manager", "telefon", "mail", "project_type", "parent_location",
+            "manager", "telefon", "mail", "project_type", "parent_location", "merged_at",
         )
         # Staff see the readiness score next to the names (location_readiness).
         staff = _is_staff_admin(getattr(request, "user", None))
@@ -603,16 +605,25 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             seen.update((physical, location.pk) for location in locations)
             rows = ProgeoLocationMinSerializer(locations, many=True).data
             # Merged projects (helper/location_merge.py): the overview shows
-            # one row per project - the parent with its number of parts.
-            parts = dict(
+            # one row per project - the parent with its number of parts
+            # (an older merge that moved nothing). Projects merged into it
+            # (devices moved, "merged") are listed for staff only - counted
+            # apart (merged_count), the main project is a plain project.
+            parts, merged = {}, {}
+            for parent_id, is_merged, count in (
                 ProgeoLocation.objects.using(account.db_name)
                 .filter(parent_location_id__in=[location.pk for location in locations])
-                .values("parent_location_id").annotate(count=Count("pk"))
-                .values_list("parent_location_id", "count")
-            )
+                .annotate(is_merged=ExpressionWrapper(Q(merged_at__isnull=False), output_field=BooleanField()))
+                .values("parent_location_id", "is_merged").annotate(count=Count("pk"))
+                .values_list("parent_location_id", "is_merged", "count")
+            ):
+                (merged if is_merged else parts)[parent_id] = count
             for row, location in zip(rows, locations):
                 row["parent_location"] = location.parent_location_id
                 row["part_count"] = parts.get(location.pk, 0)
+                row["merged"] = location.merged_at is not None
+                if staff:
+                    row["merged_count"] = merged.get(location.pk, 0)
             if staff:
                 for row, location in zip(rows, locations):
                     row["readiness_score"] = location.readiness_score

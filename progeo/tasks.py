@@ -10,6 +10,16 @@ def ping():
 
 
 @shared_task
+def run_location_merge(job_id: str):
+    """Merge projects (helper/location_merge.py start_job): the devices,
+    plans and access rules of the parts move into the main project - long
+    with a long history, so in the background; the dialog polls the job."""
+    from progeo.helper.location_merge import run_job
+
+    return run_job(job_id)
+
+
+@shared_task
 def download_device_config(device_ip: str, path: str | None = None):
     """Download the device config file from a private IPv4 device."""
     import logging

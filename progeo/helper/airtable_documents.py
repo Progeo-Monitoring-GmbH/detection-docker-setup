@@ -15,7 +15,9 @@ helper/klemmliste_names.py). "project_url" links the project in Airtable:
 the location's airtable_url, else the project's "Link zum Projekt".
 
 The project is found by the record id in the location's airtable_url, else
-by its project number. Airtable's file URLs expire after a few hours, so they
+by its project number - or by another project number the wizard names
+(`project_number`): a merged project needs the Klemmlisten of the projects
+its devices come from. Airtable's file URLs expire after a few hours, so they
 never leave the backend: a download fetches the record again and passes the
 file through (download()).
 """
@@ -78,10 +80,31 @@ def _documents_table(helper):
     return helper.table(getattr(settings, "AIRTABLE_DOCUMENTS_TABLE", "") or "Dokumente")
 
 
-def project_records(helper, location, fields=(DOCUMENTS_FIELD, "Projektnummer", PROJECT_LINK_FIELD)) -> list:
+def other_project_number(location, raw) -> int | None:
+    """The project number the wizard asks for instead of the location's own -
+    None when none is given or it is the location's own. AirtableDocumentsError
+    when it is no positive number."""
+    raw = str(raw if raw is not None else "").strip()
+    if not raw:
+        return None
+    try:
+        number = int(raw)
+    except ValueError:
+        raise AirtableDocumentsError("The project number must be a number") from None
+    if number <= 0:
+        raise AirtableDocumentsError("The project number must be positive")
+    return None if number == location.project_id else number
+
+
+def project_records(helper, location, fields=(DOCUMENTS_FIELD, "Projektnummer", PROJECT_LINK_FIELD),
+                    project_number=None) -> list:
     """The Airtable project records of `location`: by the record id of its
     airtable_url (every field), else every record with its project number
-    (`fields`)."""
+    (`fields`). With `project_number` (another project's): the records of
+    that number - the location's airtable_url is not their link."""
+    if project_number is not None:
+        formula = f"{{Projektnummer}}&''='{int(project_number)}'"
+        return helper.table().all(formula=formula, fields=list(fields), max_records=5)
     match = RECORD_ID_RE.search(location.airtable_url or "")
     if match:
         try:
@@ -117,8 +140,8 @@ def _document(record) -> dict | None:
     }
 
 
-def _fetch_documents(helper, location) -> dict:
-    records = project_records(helper, location)
+def _fetch_documents(helper, location, project_number=None) -> dict:
+    records = project_records(helper, location, project_number=project_number)
     document_ids = list(dict.fromkeys(
         record_id for record in records for record_id in record.get("fields", {}).get(DOCUMENTS_FIELD) or []
     ))
@@ -134,14 +157,17 @@ def _fetch_documents(helper, location) -> dict:
     order = {kind: index for index, (kind, _pattern) in enumerate(KINDS)}
     documents.sort(key=lambda document: (groups[document["group"]], order[document["kind"]],
                                          document["name"].lower()))
-    return {"project_found": bool(records), "project_url": _project_url(location, records),
+    return {"project_found": bool(records),
+            "project_url": _project_url(location, records, own=project_number is None),
+            "project_number": project_number if project_number is not None else location.project_id,
             "documents": documents}
 
 
-def _project_url(location, records) -> str | None:
-    """Where the project opens in Airtable: the location's airtable_url, else
-    the project record's "Link zum Projekt" (a formula - text or a list)."""
-    if (location.airtable_url or "").strip():
+def _project_url(location, records, own=True) -> str | None:
+    """Where the project opens in Airtable: the location's airtable_url (its
+    `own` project only), else the project record's "Link zum Projekt" (a
+    formula - text or a list)."""
+    if own and (location.airtable_url or "").strip():
         return location.airtable_url.strip()
     for record in records:
         link = record.get("fields", {}).get(PROJECT_LINK_FIELD)
@@ -151,17 +177,19 @@ def _project_url(location, records) -> str | None:
     return None
 
 
-def location_documents(location, refresh=False) -> dict:
-    """{"project_found", "project_url", "documents": [{id, name, kind, group, size, type, created, modified}]}
-    - cached CACHE_SECONDS per location."""
-    key = f"progeo:airtable-documents:v2:{location.pk}:{location.project_id}"
+def location_documents(location, refresh=False, project_number=None) -> dict:
+    """{"project_found", "project_url", "project_number", "documents": [{id, name, kind, group,
+    size, type, created, modified}]} - of the location's project, or of the
+    other project `project_number` (other_project_number); cached
+    CACHE_SECONDS per location and project."""
+    key = f"progeo:airtable-documents:v3:{location.pk}:{location.project_id}:{project_number or ''}"
     if not refresh:
         cached = cache.get(key)
         if cached is not None:
             return cached
     helper = _helper()
     try:
-        result = _fetch_documents(helper, location)
+        result = _fetch_documents(helper, location, project_number)
     except AirtableDocumentsError:
         raise
     except Exception as exc:  # noqa: BLE001 - any Airtable failure is reported, not raised as 500
@@ -170,10 +198,11 @@ def location_documents(location, refresh=False) -> dict:
     return result
 
 
-def document(location, document_id) -> dict:
-    """The document `document_id` of the location's documents (fresh, with
-    its attachment URL under "url") - AirtableDocumentsError when it isn't one of them."""
-    listed = {entry["id"] for entry in location_documents(location)["documents"]}
+def document(location, document_id, project_number=None) -> dict:
+    """The document `document_id` of the location's documents - or of those of
+    the other project `project_number` - fresh, with its attachment URL under
+    "url"; AirtableDocumentsError when it isn't one of them."""
+    listed = {entry["id"] for entry in location_documents(location, project_number=project_number)["documents"]}
     if document_id not in listed:
         raise AirtableDocumentsError("This document is not one of the location's Airtable documents")
     helper = _helper()

@@ -661,6 +661,17 @@ class StatusViewSet(ProgeoModalViewSet):
             request, {"location_id": request.query_params.get("location_id") or data.get("location_id")}
         )
 
+    @staticmethod
+    def _airtable_project_number(request, location):
+        """The other Airtable project the wizard reads documents of
+        (`project_number` of the query or body), None for the location's own -
+        AirtableDocumentsError for an invalid number."""
+        from progeo.helper import airtable_documents
+
+        data = request.data if hasattr(request.data, "get") else {}
+        raw = request.query_params.get("project_number") or data.get("project_number")
+        return airtable_documents.other_project_number(location, raw)
+
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/airtable_documents", methods=["GET"])
@@ -669,7 +680,8 @@ class StatusViewSet(ProgeoModalViewSet):
         (Verlegplan)) in Airtable - the CAD plans (*.dwg), Router_Daten.txt and
         every PDF, a recognised Klemmliste first - and the project's Airtable
         link "project_url" (helper/airtable_documents.py).
-        ?refresh=1 skips the 5-minute cache."""
+        ?refresh=1 skips the 5-minute cache; ?project_number=<nr> lists those
+        of another project (e.g. a source project of a merged one)."""
         from progeo.helper import airtable_documents
 
         if not is_staff_admin(request.user):
@@ -679,7 +691,8 @@ class StatusViewSet(ProgeoModalViewSet):
             return error
         try:
             data = airtable_documents.location_documents(
-                location, refresh=request.query_params.get("refresh") in ("1", "true"))
+                location, refresh=request.query_params.get("refresh") in ("1", "true"),
+                project_number=self._airtable_project_number(request, location))
         except airtable_documents.AirtableDocumentsError as exc:
             return RequestFailed({"reason": str(exc)})
         return RequestSuccess({**data, "airtable_url": location.airtable_url})
@@ -698,7 +711,8 @@ class StatusViewSet(ProgeoModalViewSet):
         if error:
             return error
         try:
-            entry = airtable_documents.document(location, (request.query_params.get("document") or "").strip())
+            entry = airtable_documents.document(location, (request.query_params.get("document") or "").strip(),
+                                                self._airtable_project_number(request, location))
             upstream = airtable_documents.open_download(entry)
         except airtable_documents.AirtableDocumentsError as exc:
             return RequestFailed({"reason": str(exc)})
@@ -731,7 +745,8 @@ class StatusViewSet(ProgeoModalViewSet):
             if not is_staff_admin(request.user):
                 return RequestFailed({"reason": "Staff access required"})
             try:
-                entry = airtable_documents.document(location, document_id)
+                entry = airtable_documents.document(location, document_id,
+                                                    self._airtable_project_number(request, location))
                 if entry["kind"] not in airtable_documents.READABLE_KINDS:
                     return RequestFailed({"reason": "Only a PDF can be read as Klemmliste"})
                 upload = ContentFile(airtable_documents.read_bytes(entry), name=entry["name"])

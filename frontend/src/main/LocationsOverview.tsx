@@ -66,8 +66,12 @@ type LocationRow = {
   last_measurement_at?: string | null;
   /** Part of a merged project (helper/location_merge.py): its parent's id. */
   parent_location?: number | null;
-  /** A merged project: how many locations it groups. */
+  /** An older merged project (nothing moved): how many locations it groups. */
   part_count?: number;
+  /** Merged into its parent_location - its devices moved there (staff only). */
+  merged?: boolean;
+  /** Staff: how many projects were merged into this one. */
+  merged_count?: number;
 };
 
 type LocationAlarmSummary = {
@@ -578,6 +582,17 @@ const locationColumns = ({
                   {t('locations_group_badge', { count: row.part_count })}
                 </span>
               </>
+            ) : row.merged_count ? (
+              <>
+                {row.name || '–'}
+                {/* Staff: projects merged into this one (hidden from customers). */}
+                <span
+                  className="locations-group-badge"
+                  {...repeatedTestId('locations-merged-badge', row.id)}
+                >
+                  {t('locations_merged_badge', { count: row.merged_count })}
+                </span>
+              </>
             ) : (
               row.name || '–'
             )
@@ -1010,13 +1025,19 @@ const LocationsOverview = () => {
   const selectedLocations: SelectedLocation[] = useMemo(
     () =>
       rows
-        .filter((row) => selected.has(row.id))
+        // An older merged project brings its parts (hidden behind its row) along.
+        .filter(
+          (row) =>
+            selected.has(row.id) ||
+            (row.parent_location != null && !row.merged && selected.has(row.parent_location)),
+        )
         .map((row) => ({
           id: row.id,
           name: row.name,
           project_id: row.project_id,
           parent_location: row.parent_location,
           part_count: row.part_count,
+          merged: row.merged,
         })),
     [rows, selected],
   );

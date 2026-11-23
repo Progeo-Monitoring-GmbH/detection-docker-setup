@@ -24,6 +24,17 @@
   justify-content: space-between;
 }
 
+/* Another Airtable project's documents (a merged project's source projects). */
+.lageplan-klemmliste-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lageplan-klemmliste-project .form-control {
+  width: 7rem;
+}
+
 .lageplan-klemmliste-section-title {
   font-weight: 600;
   display: inline-flex;

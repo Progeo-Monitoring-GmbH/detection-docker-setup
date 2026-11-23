@@ -1,5 +1,8 @@
 """Moving a device out of the "unknown" project database into the database
-of its project (patch_live --patch unknown_db_devices).
+of its project (patch_live --patch unknown_db_devices) - and, merging
+projects (helper/location_merge.py), into the main project's location and
+database (move_device_to): filed under that location whatever it had, its
+sensor numbers shifted behind the main project's.
 
 How devices end up there: the split filed every device without a location
 under "unknown" (project_db_copy.project_filters). Ingestion keeps a known
@@ -290,10 +293,13 @@ def _measurement_years(source, device_pk, after):
         return sorted(row[0] for row in raw.fetchall())
 
 
-def _move_device_row(raw, source, target, device_pk, location_id, project_id):
+def _move_device_row(raw, source, target, device_pk, location_id, project_id, force_location=False,
+                     sensor_shift=0):
     """The device in the target: an existing one with its raw_hash (its
     empty fields filled from the moved one), else the moved row - with its
-    own id when free. Returns the target pk."""
+    own id when free. Filed under `location_id` when it has no location there
+    (`force_location`: in any case), its first_sensor_order moved by
+    `sensor_shift`. Returns the target pk."""
     from progeo.v1.models import ProgeoDevice
 
     _stage(raw, ProgeoDevice, "_dev", source, sql.SQL("id = %s"), [device_pk])
@@ -319,12 +325,17 @@ def _move_device_row(raw, source, target, device_pk, location_id, project_id):
         _insert_staged(raw, ProgeoDevice, "_dev")
         raw.execute("SELECT new_id FROM _dev")
         target_pk = raw.fetchone()[0]
-    # Filed under its project's location (kept when it already has one there).
+    # Filed under its project's location (kept when it already has one there - unless forced).
+    location_sql = "location_id = %s" if force_location else "location_id = COALESCE(location_id, %s)"
     raw.execute(
-        sql.SQL("UPDATE {} SET location_id = COALESCE(location_id, %s), project_id = COALESCE(project_id, %s)"
-                " WHERE id = %s").format(_table(ProgeoDevice)),
+        sql.SQL("UPDATE {} SET " + location_sql + ", project_id = COALESCE(project_id, %s) WHERE id = %s")
+        .format(_table(ProgeoDevice)),
         [location_id, project_id, target_pk],
     )
+    if sensor_shift and not found:
+        # Only the moved row: one already here (an interrupted move run again) is shifted already.
+        raw.execute(sql.SQL("UPDATE {} SET first_sensor_order = COALESCE(first_sensor_order, 1) + %s WHERE id = %s")
+                    .format(_table(ProgeoDevice)), [sensor_shift, target_pk])
     raw.execute("DROP TABLE _dev")
     return target_pk
 
@@ -342,10 +353,51 @@ def _move_children(raw, source, device_pk, target_pk):
     return counts
 
 
-def _move_measurements(raw, source, device_pk, target_pk, after):
+def shifted_sensor_ids(column):
+    """SQL of the JSON list `column` (sensor_max_values / max_values of an
+    alarm: [{"sensor_id": n, ...}], a text column - jsonfield.JSONField) with
+    every numeric sensor_id moved by the next %s parameter - anything else
+    kept as it is."""
+    return sql.SQL(
+        "CASE WHEN left(ltrim({col}), 1) = '[' THEN COALESCE((SELECT jsonb_agg(CASE"
+        " WHEN jsonb_typeof(e -> 'sensor_id') = 'number'"
+        " THEN jsonb_set(e, '{{sensor_id}}', to_jsonb((e ->> 'sensor_id')::numeric + %s))"
+        " ELSE e END ORDER BY i) FROM jsonb_array_elements(({col})::jsonb) WITH ORDINALITY AS t(e, i)),"
+        " '[]'::jsonb)::text ELSE {col} END"
+    ).format(col=column)
+
+
+def _shift_alarm_sql(table, where):
+    """UPDATE of the alarms of `table` (alias x) matching `where`: sensor_id
+    and the sensor ids of their JSON lists + the shift (three %s, then those of `where`)."""
+    return sql.SQL(
+        "UPDATE {table} x SET sensor_id = x.sensor_id + %s, sensor_max_values = {smv}, max_values = {mv} WHERE {where}"
+    ).format(table=table, smv=shifted_sensor_ids(sql.SQL("x.sensor_max_values")),
+             mv=shifted_sensor_ids(sql.SQL("x.max_values")), where=where)
+
+
+def shift_alarm_sensors(db, device_pk, shift):
+    """The alarms of a device (in `db`) renumbered by `shift` - a merge whose
+    device stays in its database. Returns the number of alarms."""
+    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
+
+    if not shift:
+        return 0
+    with transaction.atomic(using=db), connections[db].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(
+            _shift_alarm_sql(_table(ProgeoAlarm), sql.SQL("x.measurement_id IN (SELECT id FROM {} WHERE device_id = %s)")
+                             .format(_table(ProgeoMeasurement))),
+            [shift, shift, shift, device_pk],
+        )
+        return raw.rowcount
+
+
+def _move_measurements(raw, source, device_pk, target_pk, after, sensor_shift=0):
     """Measurements (id > after) and their alarms of the source device into
     the target device; the target's ids stay chronological (see the module
-    doc). Returns (highest source id handled, moved, duplicates, alarms)."""
+    doc), the alarms' sensor numbers moved by `sensor_shift`. Returns
+    (highest source id handled, moved, duplicates, alarms)."""
     from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
     m_table, a_table = _table(ProgeoMeasurement), _table(ProgeoAlarm)
@@ -435,6 +487,8 @@ def _move_measurements(raw, source, device_pk, target_pk, after):
     raw.execute(
         sql.SQL("UPDATE _al x SET measurement_id = m.new_id FROM _map m WHERE x.measurement_id = m.old_id")
     )
+    if sensor_shift:
+        raw.execute(_shift_alarm_sql(sql.Identifier("_al"), sql.SQL("TRUE")), [sensor_shift] * 3)
     alarms = _insert_staged(
         raw, ProgeoAlarm, "_al",
         where=sql.SQL("x.measurement_id IN (SELECT new_id FROM _map) AND NOT EXISTS (SELECT 1 FROM {} a"
@@ -538,9 +592,7 @@ def _target_database(project_id):
 def move_device(device, source=None):
     """Move an UnknownDevice (unknown_devices()) with everything hanging off
     it into its project's database. Returns a summary dict."""
-    from progeo.helper.project_db_partitions import ensure_year_partition
-    from progeo.v1.legacy.executor import _mirror_location_now
-    from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint
+    from progeo.v1.models import ProgeoLocation
 
     if not device.movable:
         raise ValueError(f"device #{device.pk} has no project to move to")
@@ -549,41 +601,76 @@ def move_device(device, source=None):
     if target == source:
         raise ValueError("source and target are the same database")
     location = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).get(pk=device.target_location_id)
-    _mirror_location_now(location, target)
+    return _move(source, target, device.pk, device.raw_hash, location, device.project_id)
 
+
+def target_database(project_id):
+    """The project database a merge moves devices into - created when the
+    project has none yet (_target_database)."""
+    return _target_database(project_id)
+
+
+def move_device_to(device_pk, raw_hash, source, location, target, sensor_shift=0):
+    """Merging projects: move the device `device_pk` of `source` with
+    everything hanging off it into `location` in its database `target`
+    (target_database) - filed under that location whatever it had, its
+    sensor numbers (first_sensor_order, the alarms' sensor ids) moved by
+    `sensor_shift`. Returns a summary dict like move_device ("device": its
+    id in the target; "incomplete" when it still receives in the source)."""
+    source, target = _registered(source), _registered(target)
+    if target == source:
+        raise ValueError("source and target are the same database")
+    return _move(source, target, device_pk, raw_hash, location, location.project_id,
+                 force_location=True, sensor_shift=sensor_shift)
+
+
+def _registered(alias):
+    """`alias` usable here: a project database registered, "default" (or an
+    account's own database) as it is."""
+    from progeo.helper.project_dbs import is_project_alias
+
+    return register_project_db(alias) if alias != DEFAULT_DB_ALIAS and is_project_alias(alias) else alias
+
+
+def _move(source, target, device_pk, raw_hash, location, project_id, force_location=False, sensor_shift=0):
+    from progeo.helper.project_db_partitions import ensure_year_partition
+    from progeo.v1.legacy.executor import _mirror_location_now
+    from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
+
+    _mirror_location_now(location, target)
     summary = {"target": target, "measurements": 0, "duplicates": 0, "alarms": 0}
     try:
         handled = 0
         for number in range(MAX_PASSES):
-            for year in _measurement_years(source, device.pk, handled):
+            for year in _measurement_years(source, device_pk, handled):
                 ensure_year_partition(target, year)
             with transaction.atomic(using=target), connections[target].cursor() as cursor:
                 raw = _raw(cursor)
                 if number == 0:
-                    target_pk = _move_device_row(raw, source, target, device.pk, location.pk, device.project_id)
+                    target_pk = _move_device_row(raw, source, target, device_pk, location.pk, project_id,
+                                                 force_location=force_location, sensor_shift=sensor_shift)
                     summary["device"] = target_pk
-                    summary.update(_move_children(raw, source, device.pk, target_pk))
-                    if target_pk != device.pk:
+                    summary.update(_move_children(raw, source, device_pk, target_pk))
+                    if target_pk != device_pk:
                         # Points of the location pointing at the old id follow, unless that id is another device's here.
                         raw.execute(
                             sql.SQL("UPDATE {} SET device_id = %s WHERE device_id = %s AND location_id = %s"
                                     " AND NOT EXISTS (SELECT 1 FROM {} WHERE id = %s)").format(
                                 _table(ProgeoMeasurePoint), _table(ProgeoDevice)),
-                            [target_pk, device.pk, location.pk, device.pk],
+                            [target_pk, device_pk, location.pk, device_pk],
                         )
-                handled, moved, duplicates, alarms = _move_measurements(raw, source, device.pk, summary["device"],
-                                                                        handled)
+                handled, moved, duplicates, alarms = _move_measurements(raw, source, device_pk, summary["device"],
+                                                                        handled, sensor_shift=sensor_shift)
             summary["measurements"] += moved
             summary["duplicates"] += duplicates
             summary["alarms"] += alarms
-            _forget_routing(device.raw_hash, source)
-            if _delete_source(source, device.pk, handled):
-                _forget_routing(device.raw_hash, source)
+            _forget_routing(raw_hash, source)
+            if _delete_source(source, device_pk, handled):
+                _forget_routing(raw_hash, source)
                 summary["passes"] = number + 1
-                ilog(f"moved device #{device.pk} ({device.raw_hash}) {source} -> {target}: {summary}",
-                     tag="[PROJECT_DB]")
+                ilog(f"moved device #{device_pk} ({raw_hash}) {source} -> {target}: {summary}", tag="[PROJECT_DB]")
                 return summary
-        wlog(f"device #{device.pk} ({device.raw_hash}) still receives measurements in {source} after "
+        wlog(f"device #{device_pk} ({raw_hash}) still receives measurements in {source} after "
              f"{MAX_PASSES} passes - copied so far, left in place: run again", tag="[PROJECT_DB]")
         summary["incomplete"] = True
         return summary
