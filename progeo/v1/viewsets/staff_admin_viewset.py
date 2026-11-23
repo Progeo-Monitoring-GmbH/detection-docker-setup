@@ -11,11 +11,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from progeo.decorator import staff_permissions_denied
+from progeo.helper import account_members
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.tokens import revoke_user_tokens
 from progeo.v1.models import (
-    DEFAULT_USER_PERMISSIONS,
     CUSTOMER_ADMIN_PERMISSION,
+    DEFAULT_USER_PERMISSIONS,
     MODULE_PERMISSION_CODES,
     MODULE_PERMISSION_DEFINITIONS,
 )
@@ -160,6 +161,39 @@ def _accounts_by_user(user_ids=None):
     return accounts
 
 
+def _single_access_counts(user_ids=None):
+    """{user id: objects reached by single access (ProgeoAccess) outside the
+    user's own accounts} - their accounts already give them those objects (a
+    rule there only holds notification settings). Without any account every
+    such object counts. Two queries, from the access index in "default"
+    (ProgeoAccessIndex - kept by the ProgeoAccess signals), not the project
+    databases."""
+    from progeo.v1.models import Account, ProgeoAccessIndex
+
+    rows = ProgeoAccessIndex.objects.using(_USER_DB)
+    memberships = Account.users.through.objects.using(_USER_DB)
+    if user_ids is not None:
+        rows, memberships = rows.filter(user_id__in=user_ids), memberships.filter(user_id__in=user_ids)
+    own = defaultdict(set)
+    for user_id, account_id in memberships.values_list("user_id", "account_id"):
+        own[user_id].add(account_id)
+    counts = defaultdict(int)
+    for user_id, account_id in rows.values_list("user_id", "location__account_id"):
+        if account_id is None or account_id not in own[user_id]:
+            counts[user_id] += 1
+    return counts
+
+
+def _shown_accounts(admin, user_ids=None):
+    """_accounts_by_user() as `admin` may see it: a customer admin only their
+    own accounts - not which other customers' accounts their users are in."""
+    accounts = _accounts_by_user(user_ids)
+    if _is_staff_admin(admin):
+        return accounts
+    own = {account.pk for account in _admin_accounts(admin)}
+    return {user_id: [entry for entry in entries if entry["id"] in own] for user_id, entries in accounts.items()}
+
+
 def _session_activity_by_user(user_ids=None):
     """{user id: newest creation time} of the refresh tokens still valid (not
     expired, not blacklisted) - the users logged in somewhere. Every login and
@@ -178,17 +212,21 @@ def _session_activity_by_user(user_ids=None):
     return {row["user_id"]: row["last"] for row in tokens.values("user_id").annotate(last=Max("created_at"))}
 
 
-def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sessions=None, accounts=None):
+def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sessions=None, accounts=None,
+                  single_access=None):
     """`granted_codes`: the user's entry of _module_codes_by_user() for lists;
     None asks user.has_perm() (single users). `two_factor_ids`: see
     _two_factor_user_ids() (lists); None looks the user up. `sessions`: see
     _session_activity_by_user() (lists); None looks the user up. `accounts`:
-    see _accounts_by_user() (lists); None looks the user up."""
+    see _accounts_by_user() (lists); None looks the user up. `single_access`:
+    see _single_access_counts() (lists); None looks the user up."""
     from progeo.helper.two_factor import is_enabled
     if sessions is None:
         sessions = _session_activity_by_user([user.pk])
     if accounts is None:
         accounts = _accounts_by_user([user.pk])
+    if single_access is None:
+        single_access = _single_access_counts([user.pk])
     values = {}
     for code in MODULE_PERMISSION_CODES:
         if granted_codes is None:
@@ -210,8 +248,10 @@ def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sess
         "last_activity": sessions[user.pk].isoformat() if sessions.get(user.pk) else None,
         "permissions": values,
         "grantable": {code: values[code] for code in grantable},
-        # The accounts the user belongs to (/staff/: coloured boxes).
+        # The accounts the user belongs to (/staff/: coloured boxes, "full access").
         "accounts": accounts.get(user.pk, []),
+        # Objects reached by single access beyond those accounts (/staff/: the number beside them).
+        "single_access": single_access.get(user.pk, 0),
     }
 
 
@@ -270,24 +310,26 @@ class StaffUserListView(APIView):
         codes_by_user = _module_codes_by_user()
         two_factor_ids = _two_factor_user_ids()
         sessions = _session_activity_by_user()
-        accounts = _accounts_by_user()
+        # A customer admin sees their own accounts only - not which other
+        # customers' accounts their users belong to as well.
+        accounts = _shown_accounts(request.user)
+        # Counted against all of a user's accounts - also those a customer admin doesn't see.
+        single_access = _single_access_counts([user.pk for user in users])
         customer = not _is_staff_admin(request.user)
-        admin_accounts = []
-        if customer:
-            # A customer admin sees their own accounts only - not which other
-            # customers' accounts their users belong to as well.
-            admin_accounts = [{"id": account.pk, "name": account.name} for account in _admin_accounts(request.user)]
-            own_ids = {account["id"] for account in admin_accounts}
-            accounts = {
-                user_id: [entry for entry in entries if entry["id"] in own_ids]
-                for user_id, entries in accounts.items()
-            }
+        admin_accounts = (
+            [{"id": account.pk, "name": account.name} for account in _admin_accounts(request.user)] if customer else []
+        )
         return RequestSuccess({
             # "staff": every user; "customer": the users of admin_accounts.
             "scope": "customer" if customer else "staff",
             "admin_accounts": admin_accounts,
+            # The accounts the admin may hand out / take away (account_members.account_scope).
+            "account_choices": [
+                {"id": account.pk, "name": account.name} for account in account_members.account_scope(request.user)
+            ],
             "users": [
-                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts)
+                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts,
+                              single_access)
                 for user in users
             ],
             "grantable_codes": sorted(grantable),
@@ -315,21 +357,34 @@ class StaffUserListView(APIView):
         username = (data.get("username") or "").strip()
         email = (data.get("email") or "").strip()
 
-        # A customer admin creates customers of one of their accounts.
-        account = None
-        if not _is_staff_admin(request.user):
-            if data.get("is_staff") or data.get("is_superuser"):
-                return RequestFailed({"reason": "Only staff may create staff users"})
-            own = _admin_accounts(request.user)
+        # The new user's accounts: "accounts" (ids, account_members.account_scope),
+        # or a customer admin's single "account_id". A customer admin creates
+        # customers of at least one of their accounts - else they couldn't see them.
+        customer = not _is_staff_admin(request.user)
+        if customer and (data.get("is_staff") or data.get("is_superuser")):
+            return RequestFailed({"reason": "Only staff may create staff users"})
+        scope = {account.pk: account for account in account_members.account_scope(request.user)}
+        if "accounts" in data:
+            try:
+                new_accounts = {int(account_id) for account_id in (data.get("accounts") or [])}
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "accounts must be a list of account ids"})
+            if new_accounts - set(scope):
+                return RequestFailed({"reason": "You can only add users to your own accounts" if customer else "Unknown account"})
+            if customer and not new_accounts:
+                return RequestFailed({"reason": "Choose at least one of your accounts"})
+        elif customer:
             account_id = data.get("account_id")
             if account_id in (None, ""):
-                if len(own) != 1:
+                if len(scope) != 1:
                     return RequestFailed({"reason": "account_id required: the account the user belongs to"})
-                account = own[0]
+                new_accounts = set(scope)
             else:
-                account = next((entry for entry in own if str(entry.pk) == str(account_id)), None)
-                if account is None:
+                new_accounts = {pk for pk in scope if str(pk) == str(account_id)}
+                if not new_accounts:
                     return RequestFailed({"reason": "You can only add users to your own accounts"})
+        else:
+            new_accounts = set()
 
         if not username:
             return RequestFailed({"reason": "username is required"})
@@ -363,12 +418,12 @@ class StaffUserListView(APIView):
             # Only what the admin selected counts as denied - defaults they may
             # not grant themselves are left out silently.
             denied_codes = [code for code in denied_codes if code in requested_codes]
-            if account is not None:
-                account.users.add(user)
+            for account_id in sorted(new_accounts):
+                scope[account_id].users.add(user)
 
         invite_sent = bool(data.get("send_invite")) and _queue_invite(user) is None
         return RequestSuccess({
-            "user": _user_payload(user, grantable),
+            "user": _user_payload(user, grantable, accounts=_shown_accounts(request.user, [user.pk])),
             "generated_password": password if generated else None,
             "denied_permissions": denied_codes,
             "invite_sent": invite_sent,
@@ -488,6 +543,16 @@ class StaffUserDetailView(APIView):
         if data.get("reset_two_factor") and user.is_superuser and not request.user.is_superuser:
             return RequestFailed({"reason": "Only superusers may modify superusers"})
 
+        # Accounts: the wanted ones within the admin's scope - the form sends
+        # them along unchanged, that is no change (account_members.set_accounts:
+        # a customer admin never changes their own or another customer admin's).
+        account_change = {"added": [], "removed": [], "rules_deleted": 0}
+        if "accounts" in data:
+            try:
+                account_change = account_members.set_accounts(request.user, user, data.get("accounts") or [])
+            except ValueError as refusal:
+                return RequestFailed({"reason": str(refusal)})
+
         # Permissions (only codes the admin has on their own account).
         if "permissions" in data:
             denied_codes = _apply_permissions(user, data.get("permissions", []), grantable, keep_ungrantable=customer)
@@ -502,8 +567,10 @@ class StaffUserDetailView(APIView):
                 revoke_user_tokens(user)
 
         return RequestSuccess({
-            "user": _user_payload(user, grantable),
+            "user": _user_payload(user, grantable, accounts=_shown_accounts(request.user, [user.pk])),
             "denied_permissions": denied_codes,
+            "accounts_added": account_change["added"],
+            "accounts_removed": account_change["removed"],
         })
 
     def put(self, request, pk=None, *args, **kwargs):

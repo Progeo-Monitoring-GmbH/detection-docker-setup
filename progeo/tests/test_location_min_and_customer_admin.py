@@ -5,6 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 
 from progeo.tests import factories as f
+from progeo.v1.models import ProgeoAccess
 
 READ = ("module_locations_enabled",)
 CUSTOMER_ADMIN = "module_customer_admin_enabled"
@@ -130,7 +131,7 @@ def _codes(user):
     return set(user.user_permissions.filter(content_type__app_label="progeo").values_list("codename", flat=True))
 
 
-def test_a_mini_admin_lists_only_the_customers_of_their_account(api_client, customer_admin):
+def test_a_customer_admin_lists_only_the_customers_of_their_account(api_client, customer_admin):
     body = api_client.get(USERS).json()
 
     ids = {user["id"] for user in body["users"]}
@@ -148,7 +149,7 @@ def test_a_mini_admin_lists_only_the_customers_of_their_account(api_client, cust
     }
 
 
-def test_a_mini_admin_creates_users_of_their_account_with_permissions_they_hold(api_client, customer_admin):
+def test_a_customer_admin_creates_users_of_their_account_with_permissions_they_hold(api_client, customer_admin):
     response = api_client.post(USERS, {
         "username": f.unique("neu"), "email": f"{f.unique('neu')}@progeo.com",
         "permissions": ["module_notifications_enabled", "module_devices_enabled", CUSTOMER_ADMIN],
@@ -163,7 +164,7 @@ def test_a_mini_admin_creates_users_of_their_account_with_permissions_they_hold(
     assert set(response["denied_permissions"]) == {"module_devices_enabled", CUSTOMER_ADMIN}
 
 
-def test_a_mini_admin_creates_no_staff_and_only_in_their_own_accounts(api_client, customer_admin):
+def test_a_customer_admin_creates_no_staff_and_only_in_their_own_accounts(api_client, customer_admin):
     staff = api_client.post(USERS, {"username": f.unique("x"), "is_staff": True}, format="json").json()
     foreign = api_client.post(USERS, {"username": f.unique("y"), "account_id": customer_admin["other"].pk},
                               format="json").json()
@@ -172,7 +173,7 @@ def test_a_mini_admin_creates_no_staff_and_only_in_their_own_accounts(api_client
     assert foreign["reason"] == "You can only add users to your own accounts"
 
 
-def test_a_mini_admin_changes_permissions_but_never_the_mini_admin_one(api_client, customer_admin):
+def test_a_customer_admin_changes_permissions_but_never_the_customer_admin_one(api_client, customer_admin):
     colleague = customer_admin["colleague"]
     f.grant(colleague, CUSTOMER_ADMIN, "module_devices_enabled")
     url = f"{USERS}{colleague.pk}/update/"
@@ -187,7 +188,7 @@ def test_a_mini_admin_changes_permissions_but_never_the_mini_admin_one(api_clien
     assert response["denied_permissions"] == []
 
 
-def test_a_mini_admin_cannot_touch_anyone_else(api_client, customer_admin):
+def test_a_customer_admin_cannot_touch_anyone_else(api_client, customer_admin):
     for target in (customer_admin["stranger"], customer_admin["staff"], customer_admin["admin"]):
         assert api_client.post(f"{USERS}{target.pk}/update/", {"email": "x@progeo.com"},
                                format="json").json()["reason"] == "Unknown user"
@@ -201,7 +202,7 @@ def test_a_mini_admin_cannot_touch_anyone_else(api_client, customer_admin):
     assert api_client.post(f"{USERS}{colleague.pk}/delete/").json()["reason"] == "Staff access required"
 
 
-def test_only_staff_grant_the_mini_admin_permission(api_client, customer_admin):
+def test_only_staff_grant_the_customer_admin_permission(api_client, customer_admin):
     colleague = customer_admin["colleague"]
     staff = f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled"))  # without holding CUSTOMER_ADMIN
     api_client.force_authenticate(user=staff)
@@ -217,7 +218,7 @@ def test_customers_without_the_permission_get_no_users_table(api_client, custome
     assert api_client.get(USERS).json()["reason"] == "Staff access required"
 
 
-def test_both_permission_endpoints_let_staff_grant_the_mini_admin_role(api_client):
+def test_both_permission_endpoints_let_staff_grant_the_customer_admin_role(api_client):
     """/api/auth-support/module-permissions/ (POST) follows the same rule as
     the Benutzerverwaltung - staff grant the customer admin role without holding
     it - and the user's own permissions then carry it (the /staff/ guard)."""
@@ -230,3 +231,123 @@ def test_both_permission_endpoints_let_staff_grant_the_mini_admin_role(api_clien
     assert response.status_code == 200, response.content
     api_client.force_authenticate(user=User.objects.using(f.DB).get(pk=customer.pk))
     assert api_client.get("/api/auth-support/module-permissions/").json()["permissions"][CUSTOMER_ADMIN] is True
+
+
+# -- accounts of users (helper/account_members.py) --------------------------------------
+
+def _account_ids(user):
+    return set(User.objects.using(f.DB).get(pk=user.pk).accounts.values_list("pk", flat=True))
+
+
+def _set_accounts(api_client, user, accounts, **extra):
+    return api_client.post(f"{USERS}{user.pk}/update/", {"accounts": accounts, **extra}, format="json").json()
+
+
+def test_the_account_choices_are_the_admins_own_accounts_for_staff_all(api_client, customer_admin):
+    second = f.make_account(name="Zweit")
+    customer_admin["own"].users.add(customer_admin["admin"])
+    second.users.add(customer_admin["admin"])
+
+    choices = api_client.get(USERS).json()["account_choices"]
+    assert choices == [{"id": customer_admin["own"].pk, "name": "Eigen"}, {"id": second.pk, "name": "Zweit"}]
+
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled")))
+    staff_choices = {entry["id"] for entry in api_client.get(USERS).json()["account_choices"]}
+    assert {customer_admin["own"].pk, customer_admin["other"].pk, second.pk} <= staff_choices
+
+
+def test_a_customer_admin_hands_out_and_takes_away_their_own_accounts(api_client, customer_admin):
+    own, other, colleague = customer_admin["own"], customer_admin["other"], customer_admin["colleague"]
+    second = f.make_account(name="Zweit")
+    second.users.add(customer_admin["admin"])
+    # Rules on the own account's objects go with the membership (single access stays elsewhere).
+    own_rule = f.make_access(f.make_location(own), colleague)
+    other_rule = f.make_access(f.make_location(other), colleague)
+
+    added = _set_accounts(api_client, colleague, [own.pk, second.pk])
+    assert (added["success"], added["accounts_added"], added["accounts_removed"]) == (True, [second.pk], [])
+    # The answer names only the admin's accounts - not the colleague's other one.
+    assert {entry["id"] for entry in added["user"]["accounts"]} == {own.pk, second.pk}
+
+    removed = _set_accounts(api_client, colleague, [second.pk])
+    assert removed["accounts_removed"] == [own.pk]
+    # Their membership elsewhere stays - the admin manages only their own accounts.
+    assert _account_ids(colleague) == {second.pk, other.pk}
+    assert not ProgeoAccess.objects.using(f.DB).filter(pk=own_rule.pk).exists()
+    assert ProgeoAccess.objects.using(f.DB).filter(pk=other_rule.pk).exists()
+
+
+def test_a_customer_admin_hands_out_no_foreign_account(api_client, customer_admin):
+    colleague = customer_admin["colleague"]
+
+    response = _set_accounts(api_client, colleague, [customer_admin["own"].pk, customer_admin["other"].pk])
+
+    assert response["reason"] == "You can only hand out your own accounts"
+    assert _account_ids(colleague) == {customer_admin["own"].pk, customer_admin["other"].pk}
+
+
+def test_a_customer_admin_leaves_the_accounts_of_another_customer_admin_alone(api_client, customer_admin):
+    other_admin = customer_admin["colleague"]
+    f.grant(other_admin, CUSTOMER_ADMIN)
+    own = customer_admin["own"]
+
+    response = _set_accounts(api_client, other_admin, [], email="neu@progeo.com")
+
+    assert response["reason"] == "Only staff may change the accounts of a customer admin"
+    assert own.users.filter(pk=other_admin.pk).exists()
+    assert User.objects.using(f.DB).get(pk=other_admin.pk).email != "neu@progeo.com"
+    # The form sends the accounts along unchanged - that is no change, the rest is saved.
+    unchanged = _set_accounts(api_client, other_admin, [own.pk], email="neu@progeo.com")
+    assert unchanged["success"] is True
+    assert User.objects.using(f.DB).get(pk=other_admin.pk).email == "neu@progeo.com"
+
+
+def test_staff_change_the_accounts_of_anyone(api_client, customer_admin):
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled")))
+    admin, other = customer_admin["admin"], customer_admin["other"]
+
+    response = _set_accounts(api_client, admin, [other.pk])
+
+    assert response["success"] is True, response
+    assert _account_ids(admin) == {other.pk}
+
+
+def test_new_users_get_the_accounts_picked(api_client, customer_admin):
+    own, other = customer_admin["own"], customer_admin["other"]
+
+    none = api_client.post(USERS, {"username": f.unique("n"), "accounts": []}, format="json").json()
+    foreign = api_client.post(USERS, {"username": f.unique("f"), "accounts": [other.pk]}, format="json").json()
+    created = api_client.post(USERS, {"username": f.unique("c"), "accounts": [own.pk]}, format="json").json()
+
+    assert none["reason"] == "Choose at least one of your accounts"
+    assert foreign["reason"] == "You can only add users to your own accounts"
+    assert _account_ids(User(pk=created["user"]["id"])) == {own.pk}
+
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled",
+                                                                       "module_user_add")))
+    by_staff = api_client.post(USERS, {"username": f.unique("s"), "accounts": [own.pk, other.pk]},
+                               format="json").json()
+    assert _account_ids(User(pk=by_staff["user"]["id"])) == {own.pk, other.pk}
+
+
+def test_the_list_counts_single_access_outside_the_users_accounts(api_client, customer_admin):
+    own, other, colleague = customer_admin["own"], customer_admin["other"], customer_admin["colleague"]
+    third = f.make_account(name="Dritt")
+    # Objects of the colleague's own accounts: there a rule only holds notification settings.
+    f.make_access(f.make_location(own), colleague)
+    # "other" is the colleague's account too - though the customer admin doesn't see it.
+    f.make_access(f.make_location(other), colleague)
+    for _ in range(2):
+        f.make_access(f.make_location(third), colleague)
+
+    rows = {row["id"]: row for row in api_client.get(USERS).json()["users"]}
+
+    assert rows[colleague.pk]["single_access"] == 2
+
+    # Without any account every object counts.
+    loner = f.make_user(perms=READ)
+    f.make_access(f.make_location(own), loner)
+    f.make_access(f.make_location(third), loner)
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled")))
+    staff_rows = {row["id"]: row for row in api_client.get(USERS).json()["users"]}
+    assert (staff_rows[loner.pk]["single_access"], staff_rows[colleague.pk]["single_access"]) == (2, 2)

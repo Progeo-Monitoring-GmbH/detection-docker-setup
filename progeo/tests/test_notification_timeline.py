@@ -11,7 +11,12 @@ from progeo.helper import notification_cases as nc
 from progeo.helper import notification_timeline as nt
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, fake_smtp  # noqa: F401
-from progeo.v1.models import NotificationCase, OutboundMessage, ProgeoAccess, ProgeoLocation
+from progeo.v1.models import (
+    NotificationCase,
+    OutboundMessage,
+    ProgeoAccess,
+    ProgeoLocation,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_smtp")
 
@@ -198,7 +203,7 @@ def test_iso_times_carry_the_berlin_offset():
 
 
 def test_the_soonest_cases_fill_the_limit_not_the_ones_muted_until_unmuted(site, live):
-    location, case = _alarm_case(site, live)
+    _location, case = _alarm_case(site, live)
     silent = f.make_location(f.make_account(), name="Stumm", project_id=4799, mail=None)
     muted = NotificationCase.objects.using(f.DB).create(
         kind="offline", db=f.DB, location_id=silent.pk, project_id=4799, location_name="Stumm",

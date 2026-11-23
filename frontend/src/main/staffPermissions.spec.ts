@@ -3,9 +3,50 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPermissionPreset,
   copyPermissions,
+  grantablePermissionGroups,
   PERMISSION_GROUPS,
   selectedPermissionPreset,
 } from './staffPermissions';
+
+describe('grantablePermissionGroups', () => {
+  const definitions = [
+    { code: 'module_locations_enabled', label: 'Locations' },
+    { code: 'module_locations_edit', label: 'Edit locations' },
+    { code: 'module_backup_enabled', label: 'Backups' },
+    { code: 'module_not_in_any_group', label: 'Something new' },
+  ];
+
+  it('shows only what the editor may grant - and no group without any', () => {
+    const { shown, groups, ungrouped } = grantablePermissionGroups(
+      definitions,
+      ['module_locations_enabled'],
+    );
+
+    expect(shown.map((definition) => definition.code)).toEqual([
+      'module_locations_enabled',
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].definitions.map((definition) => definition.code)).toEqual([
+      'module_locations_enabled',
+    ]);
+    expect(ungrouped).toEqual([]);
+  });
+
+  it('lists a grantable permission of no group under "Other"', () => {
+    expect(
+      grantablePermissionGroups(definitions, ['module_not_in_any_group'])
+        .ungrouped,
+    ).toEqual([{ code: 'module_not_in_any_group', label: 'Something new' }]);
+  });
+
+  it('shows nothing at all when nothing can be granted', () => {
+    expect(grantablePermissionGroups(definitions, [])).toEqual({
+      shown: [],
+      groups: [],
+      ungrouped: [],
+    });
+  });
+});
 
 describe('staff permission presets', () => {
   it('covers every configured permission exactly once', () => {

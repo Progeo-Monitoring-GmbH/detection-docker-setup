@@ -401,26 +401,49 @@ def test_the_access_answer_names_the_account_and_its_objects(api_client, setup):
     assert body["can_revoke_account"] is False  # no customer admin
 
 
-def test_a_mini_admin_takes_other_members_out_of_the_account(api_client, setup):
+def test_a_customer_admin_takes_other_members_out_of_the_account(api_client, setup):
     account, location, _admin = setup
     other_location = f.make_location(account)
     customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
-    other_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
+    member = f.make_user(perms=("module_notifications_enabled",), accounts=[account])
     # Rules of the member (set notifications) would leave them single access.
-    f.make_access(location, other_admin)
-    f.make_access(other_location, other_admin)
+    f.make_access(location, member)
+    f.make_access(other_location, member)
     api_client.force_authenticate(user=customer_admin)
 
     assert _access(api_client, location)["can_revoke_account"] is True
-    response = _revoke_member(api_client, location, other_admin.pk)
+    response = _revoke_member(api_client, location, member.pk)
 
     assert response.status_code == 200, response.content
     assert response.json()["rules_deleted"] == 2
+    assert not account.users.filter(pk=member.pk).exists()
+    assert not ProgeoAccess.objects.using(f.DB).filter(user_id=member.pk).exists()
+
+
+def test_only_staff_take_a_customer_admin_out_of_the_account(api_client, setup):
+    """No customer admin locks out another one (helper/account_members.py)."""
+    account, location, _admin = setup
+    # A customer admin always sees the other members - no module_notifications_edit / _add needed.
+    customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
+    other_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
+    member = f.make_user(accounts=[account])
+    api_client.force_authenticate(user=customer_admin)
+
+    # The tab learns who is one - it offers no "Revoke" for them.
+    flags = {row["user_id"]: row.get("customer_admin") for row in _access(api_client, location)["members"]
+             if row["access"] == "account"}
+    assert (flags[other_admin.pk], flags[customer_admin.pk], flags[member.pk]) == (True, True, False)
+    response = _revoke_member(api_client, location, other_admin.pk).json()
+
+    assert response == {"success": False, "reason": "Only staff may change the accounts of a customer admin"}
+    assert account.users.filter(pk=other_admin.pk).exists()
+
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_notifications_enabled",)))
+    assert _revoke_member(api_client, location, other_admin.pk).status_code == 200
     assert not account.users.filter(pk=other_admin.pk).exists()
-    assert not ProgeoAccess.objects.using(f.DB).filter(user_id=other_admin.pk).exists()
 
 
-def test_a_mini_admin_revokes_single_access_without_the_edit_permission(api_client, setup):
+def test_a_customer_admin_revokes_single_access_without_the_edit_permission(api_client, setup):
     account, location, _admin = setup
     customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
     rule = f.make_access(location, f.make_user())

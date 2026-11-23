@@ -46,13 +46,14 @@ import { childTestId, repeatedTestId } from '../testIds';
 import {
   applyPermissionPreset,
   copyPermissions,
-  PERMISSION_GROUPS,
+  grantablePermissionGroups,
   selectedPermissionPreset,
 } from './staffPermissions';
 import {
   AccountBoxes,
   AccountLegend,
   accountLegend,
+  AccountPicker,
   matchesAccountFilter,
   type UserAccount,
 } from './staffAccounts';
@@ -82,6 +83,8 @@ type StaffUser = {
   grantable: Record<string, boolean>;
   /** The accounts the user is a member of - coloured boxes, see staffAccounts.tsx. */
   accounts?: UserAccount[];
+  /** Objects reached by single access beyond those accounts (ProgeoAccess). */
+  single_access?: number;
 };
 
 type UsersResponse = {
@@ -91,6 +94,8 @@ type UsersResponse = {
   /** "staff": every user; "customer": a customer admin's - the customers of admin_accounts. */
   scope?: 'staff' | 'customer';
   admin_accounts?: UserAccount[];
+  /** The accounts the admin may hand out / take away: staff all, a customer admin their own. */
+  account_choices?: UserAccount[];
 };
 
 const EMPTY_RESPONSE: UsersResponse = {
@@ -181,7 +186,10 @@ const UserFormModal = ({
   staffFields = true,
   canInvite = true,
   canDisable = true,
-  accounts = [],
+  accountChoices = [],
+  accountsLocked = null,
+  customerAdmin = false,
+  accountColorOf,
   users = [],
   testId,
 }: {
@@ -200,8 +208,14 @@ const UserFormModal = ({
   canInvite?: boolean;
   /** The active switch (module_user_disability) - without it the flag stays as it is. */
   canDisable?: boolean;
-  /** A customer admin's accounts: a new user joins one (chosen when there are several). */
-  accounts?: UserAccount[];
+  /** The accounts the editor may hand out (account_choices: staff all, a customer admin their own). */
+  accountChoices?: UserAccount[];
+  /** Why the accounts can't be changed here (another customer admin's) - null: they can. */
+  accountsLocked?: string | null;
+  /** The editor is a customer admin: a new user needs one of their accounts, a user
+   * without any drops out of their list. */
+  customerAdmin?: boolean;
+  accountColorOf: (id: number) => string;
   /** The users whose permissions can be copied ("Berechtigungen übernehmen von"). */
   users?: StaffUser[];
   /** data-testid of the dialog; its fields and buttons are "<testId>-<name>". */
@@ -215,7 +229,7 @@ const UserFormModal = ({
   const [isActive, setIsActive] = useState(true);
   const [sendInvite, setSendInvite] = useState(false);
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
-  const [accountId, setAccountId] = useState('');
+  const [selectedAccounts, setSelectedAccounts] = useState<number[]>([]);
   // The user whose permissions were copied in - told until saved.
   const [copied, setCopied] = useState<{
     username: string;
@@ -224,7 +238,9 @@ const UserFormModal = ({
   // Asked first (a ConfirmDialog inside this modal): a new password, or
   // saving with "active" switched off - the payload waits meanwhile.
   const [ask, setAsk] = useState<
-    { kind: 'password' } | { kind: 'deactivate'; payload: Record<string, unknown> } | null
+    | { kind: 'password' }
+    | { kind: 'deactivate'; payload: Record<string, unknown> }
+    | null
   >(null);
 
   useEffect(() => {
@@ -239,7 +255,14 @@ const UserFormModal = ({
     setIsStaff(Boolean(user?.is_staff));
     setIsActive(user ? Boolean(user.is_active) : true);
     setSendInvite(false);
-    setAccountId(accounts.length === 1 ? String(accounts[0].id) : '');
+    // A customer admin's only account is preselected for a new user.
+    setSelectedAccounts(
+      user
+        ? (user.accounts ?? []).map((account) => account.id)
+        : customerAdmin && accountChoices.length === 1
+          ? [accountChoices[0].id]
+          : [],
+    );
     setSelectedPerms(
       user
         ? rowPermissions(user)
@@ -247,7 +270,7 @@ const UserFormModal = ({
             grantableCodes.includes(code),
           ),
     );
-    // Per opening - `accounts` is a new array with every load.
+    // Per opening - `accountChoices` is a new array with every load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, user, grantableCodes]);
 
@@ -271,11 +294,12 @@ const UserFormModal = ({
     if (staffFields) {
       payload.is_staff = isStaff;
     }
+    // The wanted accounts (within the editor's choices) - not where they can't be changed.
+    if (!accountsLocked) {
+      payload.accounts = selectedAccounts;
+    }
     if (isNew) {
       payload.username = username;
-      if (accounts.length) {
-        payload.account_id = accountId ? Number(accountId) : null;
-      }
       if (password) {
         payload.password = password;
       }
@@ -309,18 +333,18 @@ const UserFormModal = ({
     permissionDefs.find((def) => def.code === code)?.label ??
     permissionLabel(code);
 
-  const groupedPermissionDefs = PERMISSION_GROUPS.map((group) => ({
-    ...group,
-    definitions: permissionDefs.filter((def) =>
-      group.permissions.includes(def.code),
-    ),
-  }));
-  const groupedCodes = new Set(
-    PERMISSION_GROUPS.flatMap((group) => group.permissions),
+  // None of the editor's accounts picked: a customer admin's new user would be
+  // invisible to them, an existing one drops out of their list.
+  const noAccount = !accountChoices.some((account) =>
+    selectedAccounts.includes(account.id),
   );
-  const ungroupedDefinitions = permissionDefs.filter(
-    (def) => !groupedCodes.has(def.code),
-  );
+
+  // Only what the editor may grant is shown - a group without any is left out.
+  const {
+    shown: grantableDefs,
+    groups: groupedPermissionDefs,
+    ungrouped: ungroupedDefinitions,
+  } = grantablePermissionGroups(permissionDefs, grantableCodes);
 
   return (
     <Modal show={show} onHide={onHide} centered size="xl" data-testid={testId}>
@@ -363,21 +387,32 @@ const UserFormModal = ({
             </Form.Group>
           )}
 
-          {isNew && accounts.length > 1 && (
+          {accountChoices.length > 0 && (
             <Form.Group className="mb-3">
-              <Form.Label>{t('staff_field_account')}</Form.Label>
-              <Form.Select
-                value={accountId}
-                onChange={(event) => setAccountId(event.target.value)}
-                data-testid={childTestId(testId, 'account')}
-              >
-                <option value="">{t('staff_field_account_choose')}</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </Form.Select>
+              <Form.Label>
+                {t('staff_field_accounts')}{' '}
+                <small className="text-muted">
+                  {t('staff_field_accounts_hint')}
+                </small>
+              </Form.Label>
+              <AccountPicker
+                choices={accountChoices}
+                selected={selectedAccounts}
+                onChange={setSelectedAccounts}
+                locked={accountsLocked}
+                colorOf={accountColorOf}
+                testId={`${testId}-accounts`}
+              />
+              {customerAdmin && !accountsLocked && noAccount && (
+                <small
+                  className="text-danger d-block mt-1"
+                  data-testid={childTestId(testId, 'accounts-none')}
+                >
+                  {isNew
+                    ? t('staff_accounts_required')
+                    : t('staff_accounts_leave_hint')}
+                </small>
+              )}
             </Form.Group>
           )}
 
@@ -457,93 +492,88 @@ const UserFormModal = ({
                 })}`}
             </div>
           )}
-          <div
-            className="staff-permissions-box mb-2"
-            data-testid={childTestId(testId, 'permissions')}
-          >
-            {permissionDefs.length === 0 && (
-              <small className="text-muted">{t('staff_no_permissions')}</small>
-            )}
-            <div className="row g-2">
-              {groupedPermissionDefs.map((group) => {
-                const selectedLabels = group.definitions
-                  .filter((def) => selectedPerms.includes(def.code))
-                  .map((def) => def.label);
-                const preset = selectedPermissionPreset(
-                  selectedPerms,
-                  group,
-                  grantableCodes,
-                );
-                return (
-                  <div className="col-12 col-md-6" key={group.id}>
-                    <section
-                      className={`staff-permission-group staff-permission-group--${group.id}`}
-                      data-testid={childTestId(
-                        testId,
-                        `permission-group-${group.id}`,
-                      )}
-                    >
-                      <div className="d-flex align-items-center justify-content-between gap-2">
-                        <strong>{t(group.labelKey)}</strong>
-                        <Form.Select
-                          size="sm"
-                          aria-label={t('staff_permission_preset_label', {
-                            group: t(group.labelKey),
-                          })}
-                          value={preset}
-                          onChange={(event) =>
-                            setSelectedPerms((current) =>
-                              applyPermissionPreset(
-                                current,
-                                group,
-                                event.target.value,
-                                grantableCodes,
-                              ),
-                            )
-                          }
-                          data-testid={childTestId(
-                            testId,
-                            `permission-preset-${group.id}`,
-                          )}
-                        >
-                          {preset === 'custom' && (
-                            <option value="custom">
-                              {t('staff_permission_custom')}
-                            </option>
-                          )}
-                          {Object.keys(group.presets).map((presetKey) => (
-                            <option key={presetKey} value={presetKey}>
-                              {t(`staff_permission_preset_${presetKey}`)}
-                            </option>
-                          ))}
-                        </Form.Select>
-                      </div>
-                      <div
-                        className="staff-permission-summary"
-                        title={selectedLabels.join(', ')}
-                      >
-                        {selectedLabels.length
-                          ? selectedLabels.join(', ')
-                          : t('staff_permissions_none')}
-                      </div>
-                      <HoverDetails
-                        className="staff-permission-details"
-                        summary={t('staff_permission_customize')}
-                        testId={childTestId(
+          {grantableDefs.length > 0 && (
+            <div
+              className="staff-permissions-box mb-2"
+              data-testid={childTestId(testId, 'permissions')}
+            >
+              <div className="row g-2">
+                {groupedPermissionDefs.map((group) => {
+                  const selectedLabels = group.definitions
+                    .filter((def) => selectedPerms.includes(def.code))
+                    .map((def) => def.label);
+                  const preset = selectedPermissionPreset(
+                    selectedPerms,
+                    group,
+                    grantableCodes,
+                  );
+                  return (
+                    <div className="col-12 col-md-6" key={group.id}>
+                      <section
+                        className={`staff-permission-group staff-permission-group--${group.id}`}
+                        data-testid={childTestId(
                           testId,
-                          `permission-details-${group.id}`,
+                          `permission-group-${group.id}`,
                         )}
                       >
-                        <div className="staff-permission-options">
-                          {group.definitions.map((def) => {
-                            const grantable = grantableCodes.includes(def.code);
-                            return (
+                        <div className="d-flex align-items-center justify-content-between gap-2">
+                          <strong>{t(group.labelKey)}</strong>
+                          <Form.Select
+                            size="sm"
+                            aria-label={t('staff_permission_preset_label', {
+                              group: t(group.labelKey),
+                            })}
+                            value={preset}
+                            onChange={(event) =>
+                              setSelectedPerms((current) =>
+                                applyPermissionPreset(
+                                  current,
+                                  group,
+                                  event.target.value,
+                                  grantableCodes,
+                                ),
+                              )
+                            }
+                            data-testid={childTestId(
+                              testId,
+                              `permission-preset-${group.id}`,
+                            )}
+                          >
+                            {preset === 'custom' && (
+                              <option value="custom">
+                                {t('staff_permission_custom')}
+                              </option>
+                            )}
+                            {Object.keys(group.presets).map((presetKey) => (
+                              <option key={presetKey} value={presetKey}>
+                                {t(`staff_permission_preset_${presetKey}`)}
+                              </option>
+                            ))}
+                          </Form.Select>
+                        </div>
+                        <div
+                          className="staff-permission-summary"
+                          title={selectedLabels.join(', ')}
+                        >
+                          {selectedLabels.length
+                            ? selectedLabels.join(', ')
+                            : t('staff_permissions_none')}
+                        </div>
+                        <HoverDetails
+                          className="staff-permission-details"
+                          summary={t('staff_permission_customize')}
+                          testId={childTestId(
+                            testId,
+                            `permission-details-${group.id}`,
+                          )}
+                        >
+                          <div className="staff-permission-options">
+                            {group.definitions.map((def) => (
                               <Form.Check
                                 key={def.code}
                                 type="checkbox"
                                 id={`perm-${def.code}`}
                                 label={def.label}
-                                disabled={!grantable}
                                 checked={selectedPerms.includes(def.code)}
                                 onChange={() => togglePermission(def.code)}
                                 {...repeatedTestId(
@@ -551,38 +581,40 @@ const UserFormModal = ({
                                   def.code,
                                 )}
                               />
-                            );
-                          })}
-                        </div>
-                      </HoverDetails>
+                            ))}
+                          </div>
+                        </HoverDetails>
+                      </section>
+                    </div>
+                  );
+                })}
+                {ungroupedDefinitions.length > 0 && (
+                  <div className="col-12 col-md-6">
+                    <section className="staff-permission-group staff-permission-group--other">
+                      <strong>{t('staff_permission_group_other')}</strong>
+                      <div className="staff-permission-options">
+                        {ungroupedDefinitions.map((def) => (
+                          <Form.Check
+                            key={def.code}
+                            type="checkbox"
+                            id={`perm-${def.code}`}
+                            label={def.label}
+                            checked={selectedPerms.includes(def.code)}
+                            onChange={() => togglePermission(def.code)}
+                            {...repeatedTestId(
+                              `${testId}-permission`,
+                              def.code,
+                            )}
+                          />
+                        ))}
+                      </div>
                     </section>
                   </div>
-                );
-              })}
-              {ungroupedDefinitions.length > 0 && (
-                <div className="col-12 col-md-6">
-                  <section className="staff-permission-group staff-permission-group--other">
-                    <strong>{t('staff_permission_group_other')}</strong>
-                    <div className="staff-permission-options">
-                      {ungroupedDefinitions.map((def) => (
-                        <Form.Check
-                          key={def.code}
-                          type="checkbox"
-                          id={`perm-${def.code}`}
-                          label={def.label}
-                          disabled={!grantableCodes.includes(def.code)}
-                          checked={selectedPerms.includes(def.code)}
-                          onChange={() => togglePermission(def.code)}
-                          {...repeatedTestId(`${testId}-permission`, def.code)}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-          {grantableCodes.length === 0 && (
+          )}
+          {grantableDefs.length === 0 && (
             <small className="text-muted">
               {t('staff_no_grantable_permissions')}
             </small>
@@ -615,7 +647,7 @@ const UserFormModal = ({
         <Button
           variant="primary"
           onClick={handleSubmit}
-          disabled={isNew && accounts.length > 1 && !accountId}
+          disabled={isNew && customerAdmin && noAccount}
           data-testid={childTestId(testId, 'save')}
         >
           {t('staff_save')}
@@ -631,8 +663,12 @@ const UserFormModal = ({
         }
         message={
           ask?.kind === 'deactivate'
-            ? t('staff_deactivate_confirm_body', { username: user?.username ?? '' })
-            : t('staff_password_confirm_body', { username: user?.username ?? '' })
+            ? t('staff_deactivate_confirm_body', {
+                username: user?.username ?? '',
+              })
+            : t('staff_password_confirm_body', {
+                username: user?.username ?? '',
+              })
         }
         confirmLabel={
           ask?.kind === 'deactivate'
@@ -661,11 +697,7 @@ const UserFormModal = ({
 
 /** The row actions that ask first - their ConfirmDialog ("staff-user-<action>-dialog"). */
 type UserAction =
-  | 'password'
-  | 'invite'
-  | 'reset-two-factor'
-  | 'impersonate'
-  | 'delete';
+  'password' | 'invite' | 'reset-two-factor' | 'impersonate' | 'delete';
 const USER_ACTIONS: Record<
   UserAction,
   { title: string; message: string; confirm: string; danger: boolean }
@@ -792,7 +824,8 @@ const StaffAdmin = () => {
   // Customer admins (module_customer_admin_enabled, no staff): the users of their
   // own account - only this table, only what the backend lets them do.
   const { hasPermission } = useAccess();
-  const isCustomerAdmin = !isStaff && hasPermission('module_customer_admin_enabled');
+  const isCustomerAdmin =
+    !isStaff && hasPermission('module_customer_admin_enabled');
   const canManageUsers = isStaff || isCustomerAdmin;
   // The user actions, each with its own permission (backend: holds_permission).
   const canAddUser = hasPermission('module_user_add');
@@ -1065,246 +1098,255 @@ const StaffAdmin = () => {
   }, [legend]);
 
   const allColumns = useMemo<TableColumn<StaffUser>[]>(
-    () => [
-      {
-        id: 'username',
-        name: t('staff_col_username'),
-        selector: (row) => row.username.toLowerCase(),
-        sortable: true,
-        cell: (row) => (
-          <span
-            className="d-inline-flex align-items-center"
-            {...repeatedTestId('staff-user-name', row.id)}
-          >
-            <SessionDot user={row} />
-            {row.username}
-            {row.is_superuser && (
-              <ShieldLock className="ms-2 text-warning" size={14} />
-            )}
-          </span>
-        ),
-      },
-      {
-        name: t('staff_col_email'),
-        selector: (row) => (row.email || '').toLowerCase(),
-        format: (row) => row.email || '-',
-        sortable: true,
-      },
-      {
-        id: 'accounts',
-        name: t('staff_col_accounts'),
-        // By the number of accounts, then by the first one's name.
-        selector: (row) =>
-          `${String(row.accounts?.length ?? 0).padStart(4, '0')} ${(row.accounts?.[0]?.name ?? '').toLowerCase()}`,
-        sortable: true,
-        cell: (row) => (
-          <AccountBoxes
-            userId={row.id}
-            accounts={row.accounts ?? []}
-            colorOf={accountColorOf}
-          />
-        ),
-        minWidth: '140px',
-      },
-      {
-        name: t('staff_col_staff'),
-        selector: (row) => ROLE_RANK[roleOf(row)],
-        sortable: true,
-        cell: (row) => {
-          const role = roleOf(row);
-          return (
-            <Badge
-              bg={role === 'user' ? 'secondary' : 'warning'}
-              text={role === 'user' ? undefined : 'dark'}
-              {...repeatedTestId('staff-user-role', row.id)}
-            >
-              {roleLabel(role)}
-            </Badge>
-          );
-        },
-        width: '120px',
-      },
-      {
-        name: t('staff_col_active'),
-        selector: (row) => Number(row.is_active),
-        sortable: true,
-        cell: (row) =>
-          row.is_active ? (
-            <Badge
-              bg="success"
-              {...repeatedTestId('staff-user-active', row.id)}
-            >
-              {t('staff_badge_active')}
-            </Badge>
-          ) : (
-            <Badge bg="danger" {...repeatedTestId('staff-user-active', row.id)}>
-              {t('staff_badge_inactive')}
-            </Badge>
-          ),
-        width: '100px',
-      },
-      {
-        name: t('staff_col_two_factor'),
-        selector: (row) => Number(Boolean(row.two_factor_enabled)),
-        sortable: true,
-        cell: (row) =>
-          row.two_factor_enabled ? (
-            <Badge
-              bg="success"
-              {...repeatedTestId('staff-user-two-factor', row.id)}
-            >
-              {t('staff_badge_two_factor')}
-            </Badge>
-          ) : (
-            <span className="text-muted small">-</span>
-          ),
-        width: '80px',
-      },
-      {
-        name: t('staff_col_permissions'),
-        selector: (row) => rowPermissions(row).length,
-        sortable: true,
-        cell: (row) => {
-          const enabled = rowPermissions(row);
-          if (enabled.length === 0) {
-            return (
-              <span
-                className="text-muted small"
-                {...repeatedTestId('staff-user-permissions', row.id)}
-              >
-                {t('staff_permissions_none')}
-              </span>
-            );
-          }
-          return (
+    () =>
+      [
+        {
+          id: 'username',
+          name: t('staff_col_username'),
+          selector: (row) => row.username.toLowerCase(),
+          sortable: true,
+          cell: (row) => (
             <span
-              className="d-flex flex-wrap gap-1"
-              {...repeatedTestId('staff-user-permissions', row.id)}
+              className="d-inline-flex align-items-center"
+              {...repeatedTestId('staff-user-name', row.id)}
             >
-              {enabled.slice(0, 3).map((code) => (
-                <Badge key={code} bg="info" pill text="dark">
-                  {response.all_permission_defs.find((def) => def.code === code)
-                    ?.label ?? permissionLabel(code)}
-                </Badge>
-              ))}
-              {enabled.length > 3 && (
-                <Badge bg="secondary" pill>
-                  +{enabled.length - 3}
-                </Badge>
+              <SessionDot user={row} />
+              {row.username}
+              {row.is_superuser && (
+                <ShieldLock className="ms-2 text-warning" size={14} />
               )}
             </span>
-          );
+          ),
         },
-      },
-      {
-        name: t('staff_col_date_joined'),
-        selector: (row) => row.date_joined || '',
-        format: (row) => formatDate(row.date_joined, 'date'),
-        sortable: true,
-        width: '120px',
-      },
-      {
-        name: t('staff_col_last_login'),
-        selector: (row) => row.last_login || '',
-        format: (row) => formatDate(row.last_login),
-        sortable: true,
-        width: '150px',
-      },
-      {
-        name: t('staff_col_actions'),
-        width: '300px',
-        cell: (row) => (
-          <span className="d-flex gap-1">
-            <Button
-              size="sm"
-              variant="outline-primary"
-              title={t('staff_edit_user')}
-              aria-label={t('staff_edit_user')}
-              disabled={busyId === row.id}
-              onClick={() => setEditUser(row)}
-              {...repeatedTestId('staff-user-edit', row.id)}
-            >
-              <PencilSquare size={14} />
-            </Button>
-            {isStaff && (
+        {
+          name: t('staff_col_email'),
+          selector: (row) => (row.email || '').toLowerCase(),
+          format: (row) => row.email || '-',
+          sortable: true,
+        },
+        {
+          id: 'accounts',
+          name: t('staff_col_accounts'),
+          // By the number of accounts, then single access, then the first account's name.
+          selector: (row) =>
+            `${String(row.accounts?.length ?? 0).padStart(4, '0')} ${String(row.single_access ?? 0).padStart(6, '0')} ${(row.accounts?.[0]?.name ?? '').toLowerCase()}`,
+          sortable: true,
+          cell: (row) => (
+            <AccountBoxes
+              userId={row.id}
+              accounts={row.accounts ?? []}
+              singleAccess={row.single_access ?? 0}
+              colorOf={accountColorOf}
+            />
+          ),
+          minWidth: '140px',
+        },
+        {
+          id: 'role',
+          name: t('staff_col_staff'),
+          selector: (row) => ROLE_RANK[roleOf(row)],
+          sortable: true,
+          cell: (row) => {
+            const role = roleOf(row);
+            return (
+              <Badge
+                bg={role === 'user' ? 'secondary' : 'warning'}
+                text={role === 'user' ? undefined : 'dark'}
+                {...repeatedTestId('staff-user-role', row.id)}
+              >
+                {roleLabel(role)}
+              </Badge>
+            );
+          },
+          width: '120px',
+        },
+        {
+          name: t('staff_col_active'),
+          selector: (row) => Number(row.is_active),
+          sortable: true,
+          cell: (row) =>
+            row.is_active ? (
+              <Badge
+                bg="success"
+                {...repeatedTestId('staff-user-active', row.id)}
+              >
+                {t('staff_badge_active')}
+              </Badge>
+            ) : (
+              <Badge
+                bg="danger"
+                {...repeatedTestId('staff-user-active', row.id)}
+              >
+                {t('staff_badge_inactive')}
+              </Badge>
+            ),
+          width: '100px',
+        },
+        {
+          name: t('staff_col_two_factor'),
+          selector: (row) => Number(Boolean(row.two_factor_enabled)),
+          sortable: true,
+          cell: (row) =>
+            row.two_factor_enabled ? (
+              <Badge
+                bg="success"
+                {...repeatedTestId('staff-user-two-factor', row.id)}
+              >
+                {t('staff_badge_two_factor')}
+              </Badge>
+            ) : (
+              <span className="text-muted small">-</span>
+            ),
+          width: '80px',
+        },
+        {
+          name: t('staff_col_permissions'),
+          selector: (row) => rowPermissions(row).length,
+          sortable: true,
+          cell: (row) => {
+            const enabled = rowPermissions(row);
+            if (enabled.length === 0) {
+              return (
+                <span
+                  className="text-muted small"
+                  {...repeatedTestId('staff-user-permissions', row.id)}
+                >
+                  {t('staff_permissions_none')}
+                </span>
+              );
+            }
+            return (
+              <span
+                className="d-flex flex-wrap gap-1"
+                {...repeatedTestId('staff-user-permissions', row.id)}
+              >
+                {enabled.slice(0, 3).map((code) => (
+                  <Badge key={code} bg="info" pill text="dark">
+                    {response.all_permission_defs.find(
+                      (def) => def.code === code,
+                    )?.label ?? permissionLabel(code)}
+                  </Badge>
+                ))}
+                {enabled.length > 3 && (
+                  <Badge bg="secondary" pill>
+                    +{enabled.length - 3}
+                  </Badge>
+                )}
+              </span>
+            );
+          },
+        },
+        {
+          name: t('staff_col_date_joined'),
+          selector: (row) => row.date_joined || '',
+          format: (row) => formatDate(row.date_joined, 'date'),
+          sortable: true,
+          width: '120px',
+        },
+        {
+          name: t('staff_col_last_login'),
+          selector: (row) => row.last_login || '',
+          format: (row) => formatDate(row.last_login),
+          sortable: true,
+          width: '150px',
+        },
+        {
+          name: t('staff_col_actions'),
+          width: '300px',
+          cell: (row) => (
+            <span className="d-flex gap-1">
               <Button
                 size="sm"
-                variant="outline-warning"
-                title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
-                aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+                variant="outline-primary"
+                title={t('staff_edit_user')}
+                aria-label={t('staff_edit_user')}
                 disabled={busyId === row.id}
-                onClick={() => setPending({ kind: 'password', user: row })}
-                {...repeatedTestId('staff-user-generate-password', row.id)}
+                onClick={() => setEditUser(row)}
+                {...repeatedTestId('staff-user-edit', row.id)}
               >
-                <Key size={14} />
+                <PencilSquare size={14} />
               </Button>
-            )}
-            {canInviteUser && (
-              <Button
-                size="sm"
-                variant="outline-secondary"
-                title={
-                  row.email
-                    ? t('staff_send_invite')
-                    : t('staff_send_invite_no_email')
-                }
-                aria-label={
-                  row.email
-                    ? t('staff_send_invite')
-                    : t('staff_send_invite_no_email')
-                }
-                disabled={busyId === row.id || !row.email || !row.is_active}
-                onClick={() => setPending({ kind: 'invite', user: row })}
-                {...repeatedTestId('staff-user-invite', row.id)}
-              >
-                <Envelope size={14} />
-              </Button>
-            )}
-            {isStaff && row.two_factor_enabled && (
-              <Button
-                size="sm"
-                variant="outline-secondary"
-                title={t('staff_reset_two_factor')}
-                aria-label={t('staff_reset_two_factor')}
-                disabled={busyId === row.id}
-                onClick={() =>
-                  setPending({ kind: 'reset-two-factor', user: row })
-                }
-                {...repeatedTestId('staff-user-reset-two-factor', row.id)}
-              >
-                <ShieldX size={14} />
-              </Button>
-            )}
-            {canImpersonate(row) && (
-              <Button
-                size="sm"
-                variant="outline-dark"
-                title={t('staff_impersonate')}
-                aria-label={t('staff_impersonate')}
-                disabled={busyId === row.id}
-                onClick={() => setPending({ kind: 'impersonate', user: row })}
-                {...repeatedTestId('staff-user-impersonate', row.id)}
-              >
-                <Incognito size={14} />
-              </Button>
-            )}
-            {isStaff && canDeleteUser && (
-              <Button
-                size="sm"
-                variant="outline-danger"
-                title={t('staff_delete_user')}
-                aria-label={t('staff_delete_user')}
-                disabled={busyId === row.id}
-                onClick={() => setPending({ kind: 'delete', user: row })}
-                {...repeatedTestId('staff-user-delete', row.id)}
-              >
-                <Trash size={14} />
-              </Button>
-            )}
-          </span>
-        ),
-      },
-    ],
+              {isStaff && (
+                <Button
+                  size="sm"
+                  variant="outline-warning"
+                  title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+                  aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+                  disabled={busyId === row.id}
+                  onClick={() => setPending({ kind: 'password', user: row })}
+                  {...repeatedTestId('staff-user-generate-password', row.id)}
+                >
+                  <Key size={14} />
+                </Button>
+              )}
+              {canInviteUser && (
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  title={
+                    row.email
+                      ? t('staff_send_invite')
+                      : t('staff_send_invite_no_email')
+                  }
+                  aria-label={
+                    row.email
+                      ? t('staff_send_invite')
+                      : t('staff_send_invite_no_email')
+                  }
+                  disabled={busyId === row.id || !row.email || !row.is_active}
+                  onClick={() => setPending({ kind: 'invite', user: row })}
+                  {...repeatedTestId('staff-user-invite', row.id)}
+                >
+                  <Envelope size={14} />
+                </Button>
+              )}
+              {isStaff && row.two_factor_enabled && (
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  title={t('staff_reset_two_factor')}
+                  aria-label={t('staff_reset_two_factor')}
+                  disabled={busyId === row.id}
+                  onClick={() =>
+                    setPending({ kind: 'reset-two-factor', user: row })
+                  }
+                  {...repeatedTestId('staff-user-reset-two-factor', row.id)}
+                >
+                  <ShieldX size={14} />
+                </Button>
+              )}
+              {canImpersonate(row) && (
+                <Button
+                  size="sm"
+                  variant="outline-dark"
+                  title={t('staff_impersonate')}
+                  aria-label={t('staff_impersonate')}
+                  disabled={busyId === row.id}
+                  onClick={() => setPending({ kind: 'impersonate', user: row })}
+                  {...repeatedTestId('staff-user-impersonate', row.id)}
+                >
+                  <Incognito size={14} />
+                </Button>
+              )}
+              {isStaff && canDeleteUser && (
+                <Button
+                  size="sm"
+                  variant="outline-danger"
+                  title={t('staff_delete_user')}
+                  aria-label={t('staff_delete_user')}
+                  disabled={busyId === row.id}
+                  onClick={() => setPending({ kind: 'delete', user: row })}
+                  {...repeatedTestId('staff-user-delete', row.id)}
+                >
+                  <Trash size={14} />
+                </Button>
+              )}
+            </span>
+          ),
+        },
+      ]
+        // Customer admins list customers only - the role column tells them nothing.
+        .filter((column) => !(isCustomerAdmin && column.id === 'role')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       busyId,
@@ -1312,6 +1354,7 @@ const StaffAdmin = () => {
       roleLabel,
       isSuperuser,
       isStaff,
+      isCustomerAdmin,
       accountColorOf,
       response.all_permission_defs,
       canInviteUser,
@@ -1384,21 +1427,24 @@ const StaffAdmin = () => {
               onChange={(event) => setFilter('text', event.target.value)}
               data-testid="staff-users-filter-text"
             />
-            <Form.Select
-              size="sm"
-              className="staff-filter-select"
-              aria-label={t('staff_col_staff')}
-              value={filters.role}
-              onChange={(event) =>
-                setFilter('role', event.target.value as Filters['role'])
-              }
-              data-testid="staff-users-filter-role"
-            >
-              <option value="">{t('staff_filter_all_roles')}</option>
-              <option value="superuser">{t('staff_badge_superuser')}</option>
-              <option value="staff">{t('staff_badge_staff')}</option>
-              <option value="user">{t('staff_badge_user')}</option>
-            </Form.Select>
+            {/* Customer admins list customers only - no roles or permissions to filter by. */}
+            {!isCustomerAdmin && (
+              <Form.Select
+                size="sm"
+                className="staff-filter-select"
+                aria-label={t('staff_col_staff')}
+                value={filters.role}
+                onChange={(event) =>
+                  setFilter('role', event.target.value as Filters['role'])
+                }
+                data-testid="staff-users-filter-role"
+              >
+                <option value="">{t('staff_filter_all_roles')}</option>
+                <option value="superuser">{t('staff_badge_superuser')}</option>
+                <option value="staff">{t('staff_badge_staff')}</option>
+                <option value="user">{t('staff_badge_user')}</option>
+              </Form.Select>
+            )}
             <Form.Select
               size="sm"
               className="staff-filter-select"
@@ -1444,21 +1490,25 @@ const StaffAdmin = () => {
               <option value="in">{t('staff_filter_logged_in')}</option>
               <option value="out">{t('staff_filter_logged_out')}</option>
             </Form.Select>
-            <Form.Select
-              size="sm"
-              className="staff-filter-select staff-filter-select--narrow"
-              aria-label={t('staff_col_permissions')}
-              value={filters.permission}
-              onChange={(event) => setFilter('permission', event.target.value)}
-              data-testid="staff-users-filter-permission"
-            >
-              <option value="">{t('staff_filter_all_permissions')}</option>
-              {response.all_permission_defs.map((def) => (
-                <option key={def.code} value={def.code}>
-                  {def.label}
-                </option>
-              ))}
-            </Form.Select>
+            {!isCustomerAdmin && (
+              <Form.Select
+                size="sm"
+                className="staff-filter-select staff-filter-select--narrow"
+                aria-label={t('staff_col_permissions')}
+                value={filters.permission}
+                onChange={(event) =>
+                  setFilter('permission', event.target.value)
+                }
+                data-testid="staff-users-filter-permission"
+              >
+                <option value="">{t('staff_filter_all_permissions')}</option>
+                {response.all_permission_defs.map((def) => (
+                  <option key={def.code} value={def.code}>
+                    {def.label}
+                  </option>
+                ))}
+              </Form.Select>
+            )}
             {filtersActive && (
               <Button
                 size="sm"
@@ -1532,7 +1582,9 @@ const StaffAdmin = () => {
         staffFields={isStaff}
         canInvite={canInviteUser}
         canDisable={canDisableUser}
-        accounts={isCustomerAdmin ? (response.admin_accounts ?? []) : []}
+        accountChoices={response.account_choices ?? []}
+        customerAdmin={isCustomerAdmin}
+        accountColorOf={accountColorOf}
         users={response.users}
         testId="staff-user-create"
       />
@@ -1551,6 +1603,16 @@ const StaffAdmin = () => {
         onGeneratePassword={isStaff ? handleGeneratePassword : undefined}
         staffFields={isStaff}
         canDisable={canDisableUser}
+        accountChoices={response.account_choices ?? []}
+        // Another customer admin's accounts only staff change (helper/account_members.py).
+        accountsLocked={
+          isCustomerAdmin &&
+          editUser?.permissions?.module_customer_admin_enabled
+            ? t('staff_accounts_locked')
+            : null
+        }
+        customerAdmin={isCustomerAdmin}
+        accountColorOf={accountColorOf}
         users={response.users}
         testId="staff-user-edit-dialog"
       />

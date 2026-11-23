@@ -54,13 +54,14 @@ describe('HoverDetails', () => {
   const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
   const click = () => act(() => summary().click());
 
-  it('unfolds while the mouse is over it, after a short delay', () => {
+  it('unfolds when the mouse rests on it - and stays open when it leaves', () => {
     enter();
     expect(details().open).toBe(false);
     wait(HOVER_OPEN_DELAY_MS);
     expect(details().open).toBe(true);
+    // No folding back on leave: moving to the next card made the dialog flicker.
     leave();
-    expect(details().open).toBe(false);
+    expect(details().open).toBe(true);
   });
 
   it('stays closed when the mouse only passes by', () => {
@@ -71,15 +72,16 @@ describe('HoverDetails', () => {
     expect(details().open).toBe(false);
   });
 
-  it('a click keeps it open, a second one closes it', () => {
+  it('a click on the summary folds it, another one unfolds it', () => {
     enter();
     wait(HOVER_OPEN_DELAY_MS);
     click();
-    leave();
-    expect(details().open).toBe(true);
-    enter();
-    click();
     expect(details().open).toBe(false);
+    // Still over it: it stays folded until the mouse comes back.
+    wait(HOVER_OPEN_DELAY_MS);
+    expect(details().open).toBe(false);
+    click();
+    expect(details().open).toBe(true);
   });
 
   it('touch opens by tapping only', () => {

@@ -45,7 +45,7 @@ def superuser(api_client):
 
 # -- staff only --------------------------------------------------------------
 
-# The users table answers non-staff with 400 (_require_user_admin - mini
+# The users table answers non-staff with 400 (_require_user_admin - customer
 # admins pass there), password and delete with the 403 of staff_permissions_denied.
 @pytest.mark.parametrize(
     "method, url, status",

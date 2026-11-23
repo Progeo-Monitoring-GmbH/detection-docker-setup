@@ -90,7 +90,7 @@ def world():
 
 @pytest.mark.django_db
 def test_merging_into_a_main_project_moves_the_devices_behind_its_sensors(api_client, world):
-    account, main, part, admin = world
+    _account, main, part, admin = world
     main_device = f.make_device(main, first_sensor_order=1, sensor_count=10)
     _point(f.DB, main, 10)
     device = f.make_device(part, first_sensor_order=1, sensor_count=5)

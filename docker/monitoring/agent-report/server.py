@@ -22,6 +22,7 @@ Environment:
 import argparse
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -30,7 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://progeo-prometheus:9090").rstrip("/")
@@ -58,7 +59,7 @@ def get_json(url, params=None, timeout=60):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
-        raise RuntimeError("%s: HTTP %s %s" % (url.split("?")[0], error.code, error.read(300).decode("utf-8", "replace")))
+        raise RuntimeError("{}: HTTP {} {}".format(url.split("?")[0], error.code, error.read(300).decode("utf-8", "replace")))
 
 
 def prom(query):
@@ -67,7 +68,7 @@ def prom(query):
     rows = []
     for series in data["data"]["result"]:
         value = float(series["value"][1])
-        if value == value and value not in (float("inf"), float("-inf")):
+        if math.isfinite(value):
             rows.append((series["metric"], value))
     return rows
 
@@ -94,7 +95,7 @@ def loki_lines(query, hours, limit):
 
 
 def iso(seconds):
-    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # --- log messages (same selection and grouping as the dashboard "Errors and warnings") ---
@@ -125,12 +126,12 @@ CLIENT_ERRORS = ('{job="progeo-backend", file="backend.err.log", level=~"WARNING
 
 
 def selector(levels):
-    return '{job="progeo-backend", level=~"%s"} %s' % (levels, DUP)
+    return f'{{job="progeo-backend", level=~"{levels}"}} {DUP}'
 
 
 def example_line(levels, rx, hours):
     """The newest line of a message, with the fields of errors.jsonl where it came from there."""
-    lines = loki_lines('{job="progeo-backend", level=~"%s"} %s |~ "%s"' % (levels, DUP, rx), hours, 1)
+    lines = loki_lines(f'{{job="progeo-backend", level=~"{levels}"}} {DUP} |~ "{rx}"', hours, 1)
     if not lines:
         return None
     line = lines[0]
@@ -150,19 +151,18 @@ def example_line(levels, rx, hours):
 
 
 def log_messages(levels, hours, with_projects=False):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     sel = selector(levels)
-    counts = loki("sum %s (count_over_time(%s %s [%s]))" % (BY, sel, NORM, rng))
-    first = {m.get("msg"): v for m, v in loki("min %s (min_over_time(%s %s %s [%s]) %s)" % (BY, sel, NORM, TS, rng, BY))}
-    last = {m.get("msg"): v for m, v in loki("max %s (max_over_time(%s %s %s [%s]) %s)" % (BY, sel, NORM, TS, rng, BY))}
+    counts = loki(f"sum {BY} (count_over_time({sel} {NORM} [{rng}]))")
+    first = {m.get("msg"): v for m, v in loki(f"min {BY} (min_over_time({sel} {NORM} {TS} [{rng}]) {BY})")}
+    last = {m.get("msg"): v for m, v in loki(f"max {BY} (max_over_time({sel} {NORM} {TS} [{rng}]) {BY})")}
     new = {m.get("msg") for m, _ in loki(
-        "sum %s (count_over_time(%s %s [%s])) unless sum %s (count_over_time(%s %s [7d] offset %s))"
-        % (BY, sel, NORM, rng, BY, sel, NORM, rng))}
+        f"sum {BY} (count_over_time({sel} {NORM} [{rng}])) unless sum {BY} (count_over_time({sel} {NORM} [7d] offset {rng}))")}
     projects = {}
     if with_projects:
         projects = {m.get("msg"): int(v) for m, v in loki(
-            "count %s (sum by (level, msg, rx, project) (count_over_time(%s %s "
-            '| regexp `project (?P<project>[0-9]+)` | project != "" [%s])))' % (BY, sel, NORM, rng))}
+            f"count {BY} (sum by (level, msg, rx, project) (count_over_time({sel} {NORM} "
+            f'| regexp `project (?P<project>[0-9]+)` | project != "" [{rng}])))')}
     messages = []
     for labels, value in sorted(counts, key=lambda row: -row[1])[:MAX_MESSAGES]:
         msg = labels.get("msg", "")
@@ -179,7 +179,7 @@ def log_messages(levels, hours, with_projects=False):
         if labels.get("rx"):
             try:
                 entry["example"] = example_line(levels, labels["rx"], hours)
-            except Exception as error:  # one example must not cost the section
+            except Exception as error:  # noqa: BLE001 - one example must not cost the section
                 entry["example_error"] = str(error)
         messages.append(entry)
     return {"different_messages": len(counts), "listed": len(messages), "messages": messages}
@@ -215,7 +215,7 @@ def section_warnings(hours):
 
 
 def section_client_errors(hours):
-    rows = loki("sum %s (count_over_time(%s %s [%dh]))" % (BY, CLIENT_ERRORS, NORM, hours))
+    rows = loki(f"sum {BY} (count_over_time({CLIENT_ERRORS} {NORM} [{hours}h]))")
     rows.sort(key=lambda row: -row[1])
     return {
         "note": "4xx answers and rejected Host headers from backend.err.log. Mostly scanners and expired "
@@ -226,23 +226,23 @@ def section_client_errors(hours):
 
 
 def section_celery(hours):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     run_sum = 'sum by (task) (increase(flower_task_runtime_seconds_sum[%s]))'
     run_count = 'sum by (task) (increase(flower_task_runtime_seconds_count[%s]))'
     quantile = 'histogram_quantile(%s, sum by (le, task) (rate(flower_task_runtime_seconds_bucket[%s])))'
-    succeeded = prom_by('sum by (task) (increase(flower_events_total{type="task-succeeded"}[%s])) > 0' % rng, "task", 0)
+    succeeded = prom_by(f'sum by (task) (increase(flower_events_total{{type="task-succeeded"}}[{rng}])) > 0', "task", 0)
     # Flower creates the failure counter on a task's first failure, which
     # increase() does not see - the "unless ... offset" part catches those.
     failed = prom_by(
-        '(sum by (task) (increase(flower_events_total{type="task-failed"}[%s])) > 0 '
+        f'(sum by (task) (increase(flower_events_total{{type="task-failed"}}[{rng}])) > 0 '
         'or (sum by (task) (flower_events_total{type="task-failed"}) '
-        'unless sum by (task) (flower_events_total{type="task-failed"} offset %s)))' % (rng, rng), "task", 0)
-    avg = prom_by('%s / (%s > 0)' % (run_sum % rng, run_count % rng), "task")
-    avg_week = prom_by('%s / (%s > 0)' % (run_sum % "7d", run_count % "7d"), "task")
+        f'unless sum by (task) (flower_events_total{{type="task-failed"}} offset {rng})))', "task", 0)
+    avg = prom_by(f'{run_sum % rng} / ({run_count % rng} > 0)', "task")
+    avg_week = prom_by('{} / ({} > 0)'.format(run_sum % "7d", run_count % "7d"), "task")
     median = prom_by(quantile % (0.5, rng), "task")
     p95 = prom_by(quantile % (0.95, rng), "task")
     total = prom_by(run_sum % rng, "task", 1)
-    wait = prom_by('max by (task) (max_over_time(flower_task_prefetch_time_seconds[%s]))' % rng, "task")
+    wait = prom_by(f'max by (task) (max_over_time(flower_task_prefetch_time_seconds[{rng}]))', "task")
     tasks = []
     for task in sorted(set(succeeded) | set(failed), key=lambda name: -total.get(name, 0)):
         tasks.append({
@@ -285,22 +285,22 @@ def section_cron(hours):
 
 
 def section_api(hours):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     return {
-        "requests_per_second": prom_scalar("sum(rate(progeo_http_requests_total[%s]))" % rng),
-        "share_5xx": prom_scalar('sum(rate(progeo_http_requests_total{status=~"5.."}[%s])) '
-                                 '/ sum(rate(progeo_http_requests_total[%s]))' % (rng, rng)) or 0,
+        "requests_per_second": prom_scalar(f"sum(rate(progeo_http_requests_total[{rng}]))"),
+        "share_5xx": prom_scalar(f'sum(rate(progeo_http_requests_total{{status=~"5.."}}[{rng}])) '
+                                 f'/ sum(rate(progeo_http_requests_total[{rng}]))') or 0,
         "p95_seconds": prom_scalar("histogram_quantile(0.95, sum by (le) "
-                                   "(rate(progeo_http_request_duration_seconds_bucket[%s])))" % rng),
+                                   f"(rate(progeo_http_request_duration_seconds_bucket[{rng}])))"),
         "responses_5xx_by_view": [
             {"view": m.get("view"), "status": m.get("status"), "responses": round(v)}
-            for m, v in sorted(prom('sum by (view, status) (increase(progeo_http_requests_total{status=~"5.."}[%s])) > 0' % rng),
+            for m, v in sorted(prom(f'sum by (view, status) (increase(progeo_http_requests_total{{status=~"5.."}}[{rng}])) > 0'),
                                key=lambda row: -row[1])],
         "slowest_views_p95_seconds": dict(sorted(prom_by(
             "topk(15, histogram_quantile(0.95, sum by (le, view) "
-            "(rate(progeo_http_request_duration_seconds_bucket[%s]))))" % rng, "view").items(), key=lambda kv: -kv[1])),
+            f"(rate(progeo_http_request_duration_seconds_bucket[{rng}]))))", "view").items(), key=lambda kv: -kv[1])),
         "busiest_views_requests": dict(sorted(prom_by(
-            "topk(15, sum by (view) (increase(progeo_http_requests_total[%s])))" % rng, "view", 0).items(),
+            f"topk(15, sum by (view) (increase(progeo_http_requests_total[{rng}])))", "view", 0).items(),
             key=lambda kv: -kv[1])),
     }
 
@@ -311,37 +311,37 @@ def statements(query):
 
 
 def section_database(hours):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     join = " * on (queryid) group_left(query) max by (queryid, query) (pg_stat_statements_query_id)"
-    total = "sum by (datname, queryid) (increase(pg_stat_statements_seconds_total[%s]))" % rng
-    calls = "sum by (datname, queryid) (increase(pg_stat_statements_calls_total[%s]))" % rng
+    total = f"sum by (datname, queryid) (increase(pg_stat_statements_seconds_total[{rng}]))"
+    calls = f"sum by (datname, queryid) (increase(pg_stat_statements_calls_total[{rng}]))"
     return {
         "connections_used_share": prom_scalar("sum(pg_stat_database_numbackends) / max(pg_settings_max_connections)"),
-        "deadlocks": prom_scalar("sum(increase(pg_stat_database_deadlocks[%s]))" % rng),
+        "deadlocks": prom_scalar(f"sum(increase(pg_stat_database_deadlocks[{rng}]))"),
         "oldest_open_transaction_seconds": prom_scalar("max(pg_stat_activity_max_tx_duration)"),
-        "statements_by_total_seconds": statements("topk(15, %s)%s" % (total, join)),
-        "statements_by_mean_seconds_per_call": statements("topk(15, %s / (%s > 0))%s" % (total, calls, join)),
+        "statements_by_total_seconds": statements(f"topk(15, {total}){join}"),
+        "statements_by_mean_seconds_per_call": statements(f"topk(15, {total} / ({calls} > 0)){join}"),
     }
 
 
 def section_host(hours):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     busy = '1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))'
     memory = "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes"
     disks = 'fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs"'
     cpu = 'sum by (name) (rate(container_cpu_usage_seconds_total{name=~"progeo-.+"}[5m]))'
     mem = 'sum by (name) (container_memory_working_set_bytes{name=~"progeo-.+"})'
-    cpu_avg = prom_by("avg_over_time((%s)[%s:5m])" % (cpu, rng), "name")
-    cpu_max = prom_by("max_over_time((%s)[%s:5m])" % (cpu, rng), "name")
+    cpu_avg = prom_by(f"avg_over_time(({cpu})[{rng}:5m])", "name")
+    cpu_max = prom_by(f"max_over_time(({cpu})[{rng}:5m])", "name")
     mem_now = prom_by(mem, "name", 0)
-    mem_max = prom_by("max_over_time((%s)[%s:5m])" % (mem, rng), "name", 0)
-    restarts = prom_by('sum by (name) (changes(container_start_time_seconds{name=~"progeo-.+"}[%s])) > 0' % rng, "name", 0)
+    mem_max = prom_by(f"max_over_time(({mem})[{rng}:5m])", "name", 0)
+    restarts = prom_by(f'sum by (name) (changes(container_start_time_seconds{{name=~"progeo-.+"}}[{rng}])) > 0', "name", 0)
     # progeo-process-exporter: the process groups inside progeo-backend.
     group_cpu = "sum by (groupname) (rate(namedprocess_namegroup_cpu_seconds_total[5m]))"
     group_mem = 'sum by (groupname) (namedprocess_namegroup_memory_bytes{memtype="proportionalResident"})'
-    group_cpu_avg = prom_by("avg_over_time((%s)[%s:5m])" % (group_cpu, rng), "groupname")
-    group_cpu_max = prom_by("max_over_time((%s)[%s:5m])" % (group_cpu, rng), "groupname")
-    group_mem_max = prom_by("max_over_time((%s)[%s:5m])" % (group_mem, rng), "groupname", 0)
+    group_cpu_avg = prom_by(f"avg_over_time(({group_cpu})[{rng}:5m])", "groupname")
+    group_cpu_max = prom_by(f"max_over_time(({group_cpu})[{rng}:5m])", "groupname")
+    group_mem_max = prom_by(f"max_over_time(({group_mem})[{rng}:5m])", "groupname", 0)
     return {
         "backend_process_groups": [{
             "group": group,
@@ -350,13 +350,13 @@ def section_host(hours):
             "memory_bytes_max": group_mem_max.get(group),
         } for group in sorted(set(group_cpu_max) | set(group_mem_max), key=lambda g: -(group_cpu_max.get(g) or 0))],
         "cpu_busy_share_now": prom_scalar(busy),
-        "cpu_busy_share_max": prom_scalar("max_over_time((%s)[%s:5m])" % (busy, rng)),
+        "cpu_busy_share_max": prom_scalar(f"max_over_time(({busy})[{rng}:5m])"),
         "cpu_cores": prom_scalar('count(node_cpu_seconds_total{mode="idle"})'),
         "load_1m": prom_scalar("node_load1"),
         "memory_used_share_now": prom_scalar(memory),
-        "memory_used_share_max": prom_scalar("max_over_time((%s)[%s:5m])" % (memory, rng)),
+        "memory_used_share_max": prom_scalar(f"max_over_time(({memory})[{rng}:5m])"),
         "fullest_disk_used_share": prom_scalar(
-            "max(1 - node_filesystem_avail_bytes{%s} / node_filesystem_size_bytes{%s})" % (disks, disks)),
+            f"max(1 - node_filesystem_avail_bytes{{{disks}}} / node_filesystem_size_bytes{{{disks}}})"),
         "containers": [{
             "name": name,
             "cpu_cores_avg": cpu_avg.get(name),
@@ -369,14 +369,14 @@ def section_host(hours):
 
 
 def section_notifications(hours):
-    rng = "%dh" % hours
+    rng = f"{hours}h"
     return {
         "open_cases": prom_by("sum by (kind) (progeo_notification_cases_open)", "kind", 0),
         "open_cases_reaching_nobody": prom_by("sum by (kind) (progeo_notification_cases_unreachable)", "kind", 0),
         "seconds_since_last_processing": prom_scalar("time() - max(progeo_notification_process_last_run_timestamp_seconds)"),
         "outbound_messages": [
             {"channel": m.get("channel"), "status": m.get("status"), "messages": round(v)}
-            for m, v in prom("sum by (channel, status) (increase(progeo_outbound_messages_total[%s])) > 0" % rng)],
+            for m, v in prom(f"sum by (channel, status) (increase(progeo_outbound_messages_total[{rng}])) > 0")],
     }
 
 
@@ -415,8 +415,8 @@ def build_report(hours):
     for name, collect in SECTIONS:
         try:
             report[name] = collect(hours)
-        except Exception as error:  # a missing exporter must not cost the rest
-            report["failed_sections"][name] = "%s: %s" % (type(error).__name__, error)
+        except Exception as error:  # noqa: BLE001 - a missing exporter must not cost the rest
+            report["failed_sections"][name] = f"{type(error).__name__}: {error}"
     celery_tasks = (report.get("celery") or {}).get("tasks", [])
     report["summary"] = {
         "firing_alerts": len(report.get("firing_alerts") or []),
@@ -463,12 +463,12 @@ class Handler(BaseHTTPRequestHandler):
             with zipfile.ZipFile(body, "w", zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr("agent-report/PROMPT.md", read_prompt())
                 archive.writestr("agent-report/report.json", report_json(hours))
-        except Exception as error:
-            return self.answer(500, "text/plain", ("agent report failed: %s\n" % error).encode())
-        name = "agent-report-%s-%s.zip" % (re.sub(r"[^A-Za-z0-9_.-]+", "-", SERVER_NAME),
-                                           datetime.now(timezone.utc).strftime("%Y%m%d-%H%M"))
+        except Exception as error:  # noqa: BLE001 - the browser gets the reason, not a dropped connection
+            return self.answer(500, "text/plain", (f"agent report failed: {error}\n").encode())
+        name = "agent-report-{}-{}.zip".format(re.sub(r"[^A-Za-z0-9_.-]+", "-", SERVER_NAME),
+                                           datetime.now(UTC).strftime("%Y%m%d-%H%M"))
         self.answer(200, "application/zip", body.getvalue(),
-                    {"Content-Disposition": 'attachment; filename="%s"' % name})
+                    {"Content-Disposition": f'attachment; filename="{name}"'})
 
     def answer(self, status, content_type, body, headers=None):
         self.send_response(status)
@@ -482,7 +482,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         if "/healthz" not in (args[0] if args else ""):
-            sys.stderr.write("%s %s\n" % (self.log_date_time_string(), fmt % args))
+            sys.stderr.write(f"{self.log_date_time_string()} {fmt % args}\n")
 
 
 def main():

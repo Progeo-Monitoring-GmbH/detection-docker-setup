@@ -46,6 +46,7 @@ from progeo.decorator import (
     require_staff_permissions,
 )
 from progeo.helper import (
+    account_members,
     cad_import,
     device_overview,
     heatmap_video,
@@ -88,8 +89,8 @@ from progeo.helper.project_dbs import (
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
-    HEAT_LIMITATION_MAX_POINTS,
     CUSTOMER_ADMIN_PERMISSION,
+    HEAT_LIMITATION_MAX_POINTS,
     SMS,
     Account,
     EMail,
@@ -131,8 +132,9 @@ def _staff_user_ids(user_ids) -> set:
 
 def _may_revoke_account(user, account) -> bool:
     """May `user` take members out of `account` (Rechte tab, Revoke)? Staff,
-    and customer admins (module_customer_admin_enabled) who are members of it - they
-    manage the people of their account, other customer admins included."""
+    and customer admins (module_customer_admin_enabled) who are members of it -
+    they manage the customers of their account; another customer admin only
+    staff take out (helper/account_members.account_change_refusal)."""
     if _is_staff_admin(user):
         return True
     return bool(
@@ -969,10 +971,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             viewer = request.user
             is_staff = _is_staff_admin(viewer)
             # Who manages the access of this location sees everyone's contact
-            # data; everyone else only their own rule and the assigned
-            # Objektleitung - not the other customers' mail/mobile/last login.
-            manages = has_module_permissions(viewer, "module_notifications_edit") or has_module_permissions(
-                viewer, "module_notifications_add"
+            # data - customer admins always; everyone else only their own rule
+            # and the assigned Objektleitung - not the other customers'
+            # mail/mobile/last login.
+            manages = (
+                has_module_permissions(viewer, "module_notifications_edit")
+                or has_module_permissions(viewer, "module_notifications_add")
+                # module_customer_admin_enabled (not this module's _is_customer_admin: the Kundenadmin role).
+                or account_members.is_customer_admin(viewer)
             )
             rows = list(
                 ProgeoAccess.objects.using(db_name)
@@ -1195,11 +1201,15 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         rules_by_user = {rule.user_id: rule for rule in rules if rule.user_id}
         members = []
         seen = set()
-        for user in account.users.filter(is_staff=False, is_superuser=False).order_by("username"):
+        account_users = list(account.users.filter(is_staff=False, is_superuser=False).order_by("username"))
+        # Another customer admin only staff take out of the account (helper/account_members.py).
+        customer_admins = account_members.customer_admin_ids(user.id for user in account_users)
+        for user in account_users:
             rule = rules_by_user.get(user.id)
             members.append({
                 **cls._user_contact(user),
                 "access": "account",
+                "customer_admin": user.id in customer_admins,
                 "single": rule is not None,
                 "rule": ProgeoAccessSerializer(rule).data if rule else None,
             })
@@ -1322,10 +1332,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         - POST {"id": <access_id>}: delete a single-access rule
           (module_notifications_edit, or a customer admin of the account).
         - POST {"user_id": N, "scope": "account"}: take an account member out
-          of the location's account - staff and customer admins of that account
-          (also other customer admins, never themselves or ProGeo staff). Their
-          rules on the account's locations go too: they would leave them
-          single access to every object whose notifications they had set.
+          of the location's account - staff anyone but ProGeo staff, customer
+          admins of that account its customers (not themselves, not another
+          customer admin - helper/account_members.py). Their rules on the
+          account's locations go too: they would leave them single access to
+          every object whose notifications they had set.
         """
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -1367,17 +1378,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         member = account.users.filter(pk=user_id, is_staff=False, is_superuser=False).first()
         if member is None:
             return RequestFailed({"reason": "User not found"})
-        account.users.remove(member)
-        locations = ProgeoLocation.objects.using(account.db_name).filter(account=account).only(
-            "pk", "project_id", "account_id"
-        )
-        rules = 0
-        for db_name, group in locations_by_db(locations, account).items():
-            deleted, _ = ProgeoAccess.objects.using(db_name).filter(
-                user_id=member.pk, location_id__in=[loc.pk for loc in group]
-            ).delete()
-            rules += deleted
-        ilog(f"[access] User {request.user.pk} took user {member.pk} out of account {account.pk} ({rules} rules)")
+        # A customer admin never takes another customer admin out (helper/account_members.py).
+        refusal = account_members.account_change_refusal(request.user, member)
+        if refusal:
+            return RequestFailed({"reason": refusal})
+        rules = account_members.remove_member(account, member, by=request.user)
         return RequestSuccess({"user_id": member.pk, "account": account.pk, "rules_deleted": rules})
 
     def _superuser_location(self, request, pk):

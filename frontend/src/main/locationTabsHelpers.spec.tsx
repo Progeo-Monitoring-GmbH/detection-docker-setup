@@ -78,7 +78,18 @@ describe('mayRevoke (Rechte tab)', () => {
     ).toBe(true);
   });
 
-  it('takes account members (other customer admins too) out only as a customer admin - never oneself', () => {
+  it('leaves another customer admin to staff', () => {
+    const otherAdmin = {
+      ...base,
+      access: 'account' as const,
+      canRevokeAccount: true,
+      memberIsCustomerAdmin: true,
+    };
+    expect(mayRevoke(otherAdmin)).toBe(false);
+    expect(mayRevoke({ ...otherAdmin, viewerIsStaff: true })).toBe(true);
+  });
+
+  it('takes account members out only as a customer admin - never oneself', () => {
     expect(mayRevoke({ ...base, access: 'account', canEdit: true })).toBe(
       false,
     );

@@ -50,6 +50,8 @@ type UserContact = {
  */
 type Member = UserContact & {
   access: Access;
+  /** An account member holding the customer admin permission - only staff take them out. */
+  customer_admin?: boolean;
   single: boolean;
   rule: AccessRule | null;
 };
@@ -159,24 +161,34 @@ export const mayEditRule = ({
  * May the viewer revoke this member's access here? Single access with
  * module_notifications_edit or as a customer admin of the account (backend:
  * can_revoke_account); account members only as such a customer admin (or
- * staff) - it takes them out of the account, so never oneself. ProGeo
- * staff see every object anyway: nothing to revoke.
+ * staff) - it takes them out of the account, so never oneself, and another
+ * customer admin only staff (helper/account_members.py). ProGeo staff see
+ * every object anyway: nothing to revoke.
  */
 export const mayRevoke = ({
   access,
   isOwn,
   canEdit,
   canRevokeAccount,
+  memberIsCustomerAdmin = false,
+  viewerIsStaff = false,
 }: {
   access: Access;
   isOwn: boolean;
   canEdit: boolean;
   canRevokeAccount: boolean;
+  memberIsCustomerAdmin?: boolean;
+  viewerIsStaff?: boolean;
 }) => {
   if (access === 'single') {
     return canEdit || canRevokeAccount;
   }
-  return access === 'account' && canRevokeAccount && !isOwn;
+  return (
+    access === 'account' &&
+    canRevokeAccount &&
+    !isOwn &&
+    (!memberIsCustomerAdmin || viewerIsStaff)
+  );
 };
 
 const LocationRechteTab = () => {
@@ -206,7 +218,7 @@ const LocationRechteTab = () => {
   const [members, setMembers] = useState<Member[]>([]);
   const [canGrantAccount, setCanGrantAccount] = useState(false);
   // Staff and customer admins of the account: take members out of it (Revoke) -
-  // other customer admins too, never themselves.
+  // never themselves, another customer admin only staff.
   const [canRevokeAccount, setCanRevokeAccount] = useState(false);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   // Revoking at all needs module_user_revokable (the backend checks the
@@ -512,6 +524,8 @@ const LocationRechteTab = () => {
       isOwn,
       canEdit: revokable && canEdit,
       canRevokeAccount: revokable && canRevokeAccount,
+      memberIsCustomerAdmin: Boolean(member.customer_admin),
+      viewerIsStaff,
     });
     const canEditRule = mayEditRule({
       canEdit,
@@ -782,7 +796,11 @@ const LocationRechteTab = () => {
                     testId="rechte-add-confirm"
                     onClick={addUser}
                     disabled={!inviteValid || adding}
-                    icon={adding ? <Spinner animation="border" size="sm" /> : undefined}
+                    icon={
+                      adding ? (
+                        <Spinner animation="border" size="sm" />
+                      ) : undefined
+                    }
                     label={t('rechte_add_confirm')}
                   />
                   <button

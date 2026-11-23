@@ -212,6 +212,35 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   },
 ];
 
+/**
+ * What the permission editor shows: only the permissions the editor may grant
+ * (the others aren't shown at all - a customer admin grants only what they
+ * hold), in their groups - a group without any is left out - and the rest
+ * under "Other".
+ */
+export const grantablePermissionGroups = <T extends { code: string }>(
+  definitions: T[],
+  grantableCodes: string[],
+) => {
+  const grantable = new Set(grantableCodes);
+  const shown = definitions.filter((definition) =>
+    grantable.has(definition.code),
+  );
+  const grouped = new Set(
+    PERMISSION_GROUPS.flatMap((group) => group.permissions),
+  );
+  return {
+    shown,
+    groups: PERMISSION_GROUPS.map((group) => ({
+      ...group,
+      definitions: shown.filter((definition) =>
+        group.permissions.includes(definition.code),
+      ),
+    })).filter((group) => group.definitions.length > 0),
+    ungrouped: shown.filter((definition) => !grouped.has(definition.code)),
+  };
+};
+
 export const applyPermissionPreset = (
   current: string[],
   group: PermissionGroup,

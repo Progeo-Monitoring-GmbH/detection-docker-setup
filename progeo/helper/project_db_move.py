@@ -344,7 +344,11 @@ def _move_children(raw, source, device_pk, target_pk, sensor_shift=0):
     """Commands, noise profiles and sensor mappings of the device - the
     mappings' sensor numbers moved by `sensor_shift`, a version the target
     device has already (a move run again) not twice."""
-    from progeo.v1.models import ProgeoDeviceCommand, ProgeoNoiseProfile, ProgeoSensorMapping
+    from progeo.v1.models import (
+        ProgeoDeviceCommand,
+        ProgeoNoiseProfile,
+        ProgeoSensorMapping,
+    )
 
     counts = {}
     for model, temp in ((ProgeoDeviceCommand, "_cmd"), (ProgeoNoiseProfile, "_noise")):

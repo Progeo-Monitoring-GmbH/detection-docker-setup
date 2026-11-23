@@ -56,9 +56,46 @@
   color: var(--bs-secondary-color);
 }
 
+/* Objects reached by single access beyond the accounts: a building and the number. */
+.staff-single-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+}
+
 .staff-account-none {
   font-size: 12px;
   color: var(--bs-secondary-color);
+}
+
+/* The accounts of a user in the user dialog (AccountPicker, staffAccounts.tsx):
+   checkboxes in columns, scrolling once staff see many accounts. */
+.staff-account-picker {
+  padding: 8px 10px;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 8px;
+}
+
+.staff-account-picker-search {
+  max-width: 260px;
+  margin-bottom: 6px;
+}
+
+.staff-account-picker-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Raised over Bootstrap's .form-check. */
+.staff-account-picker-list .form-check {
+  margin-bottom: 0;
 }
 
 .staff-account-legend {

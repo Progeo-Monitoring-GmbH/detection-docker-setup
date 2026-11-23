@@ -219,7 +219,10 @@ class UserProfileViewSet(viewsets.ViewSet):
         is none; the token itself is only inside the image. {qr, created}."""
         import json
 
-        from progeo.decorator import missing_held_permissions, permission_denied_response
+        from progeo.decorator import (
+            missing_held_permissions,
+            permission_denied_response,
+        )
         from progeo.helper.tokens import drf_token_for_qr_code
 
         missing = missing_held_permissions(request.user, QR_CODE_PERMISSION)
@@ -236,7 +239,10 @@ class UserProfileViewSet(viewsets.ViewSet):
         Needs module_profile_qr_code. {qr}."""
         import json
 
-        from progeo.decorator import missing_held_permissions, permission_denied_response
+        from progeo.decorator import (
+            missing_held_permissions,
+            permission_denied_response,
+        )
         from progeo.helper.tokens import replace_drf_token
 
         missing = missing_held_permissions(request.user, QR_CODE_PERMISSION)
