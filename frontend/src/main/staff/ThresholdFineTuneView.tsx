@@ -367,13 +367,27 @@ const ActionBadge = ({ entry }: { entry: FineTuneEntry }) => {
   );
 };
 
+/** A value column's header with the colour of its mark on the slider (legend). */
+const ValueHead = ({
+  kind,
+  label,
+}: {
+  kind: SliderMark['kind'];
+  label: string;
+}) => (
+  <span className="ftt-value-head">
+    <i className={`ftt-swatch ftt-value--${kind}`} aria-hidden />
+    {label}
+  </span>
+);
+
 const CurrentCell = ({ entry }: { entry: FineTuneEntry }) => {
   const { t } = useTranslation();
   const expected = expectedThreshold(entry);
   const drift = entry.live_threshold !== expected;
   return (
     <span className="small staff-insights-num">
-      <span className="fw-bold">{expected}</span>
+      <span className="fw-bold ftt-value ftt-value--current">{expected}</span>
       {entry.applied && (
         <span className="text-muted">
           {' '}
@@ -731,7 +745,9 @@ const ThresholdFineTuneView = () => {
         name: t('ftt_col_location'),
         selector: (entry) => entry.name ?? '',
         sortable: true,
-        grow: 2,
+        // Narrow: the name truncates (full name on hover), the slider gets the room.
+        grow: 1,
+        minWidth: '130px',
         cell: (entry) => (
           <div className="small">
             <div
@@ -759,7 +775,7 @@ const ThresholdFineTuneView = () => {
       },
       {
         id: 'max',
-        name: t('ftt_col_max'),
+        name: <ValueHead kind="max" label={t('ftt_col_max')} />,
         selector: (entry) => entry.max_value ?? -1,
         sortable: true,
         right: true,
@@ -775,7 +791,9 @@ const ThresholdFineTuneView = () => {
                 : undefined
             }
           >
-            <span className="fw-bold">{entry.max_value ?? '–'}</span>
+            <span className="fw-bold ftt-value ftt-value--max">
+              {entry.max_value ?? '–'}
+            </span>
             {entry.max_at && (
               <span className="text-muted">
                 {' '}
@@ -787,7 +805,7 @@ const ThresholdFineTuneView = () => {
       },
       {
         id: 'current',
-        name: t('ftt_col_current'),
+        name: <ValueHead kind="current" label={t('ftt_col_current')} />,
         selector: (entry) => expectedThreshold(entry),
         sortable: true,
         right: true,
@@ -795,7 +813,7 @@ const ThresholdFineTuneView = () => {
       },
       {
         id: 'proposed',
-        name: t('ftt_col_proposed'),
+        name: <ValueHead kind="proposed" label={t('ftt_col_proposed')} />,
         selector: (entry) =>
           entry.scan_proposal?.proposed ?? entry.proposed ?? -1,
         sortable: true,
@@ -804,7 +822,9 @@ const ThresholdFineTuneView = () => {
           const proposal = entry.scan_proposal ?? entry;
           return (
             <span className="small staff-insights-num">
-              <span className="fw-bold">{proposal.proposed ?? '–'}</span>
+              <span className="fw-bold ftt-value ftt-value--proposed">
+                {proposal.proposed ?? '–'}
+              </span>
               {proposal.change_percent != null && (
                 <span className="text-muted">
                   {' '}
@@ -819,8 +839,9 @@ const ThresholdFineTuneView = () => {
       {
         id: 'threshold',
         name: t('ftt_col_new'),
-        grow: 2.4,
-        minWidth: '220px',
+        // The widest column: the slider with its marks.
+        grow: 4,
+        minWidth: '320px',
         cell: (entry) => <ThresholdCell entry={entry} />,
       },
       {
@@ -837,7 +858,7 @@ const ThresholdFineTuneView = () => {
         name: t('ftt_col_warnings'),
         selector: (entry) => entry.warnings.length,
         sortable: true,
-        grow: 1.6,
+        grow: 1.2,
         cell: (entry) =>
           entry.warnings.length === 0 ? (
             <span className="small text-muted">–</span>
@@ -986,6 +1007,7 @@ const ThresholdFineTuneView = () => {
               columns={columns}
               data={shown}
               keyField="key"
+              columnWidthsKey="staff-thresholds"
               pagination
               paginationPerPage={50}
               paginationRowsPerPageOptions={[25, 50, 100, 500]}

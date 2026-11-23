@@ -101,16 +101,39 @@
   background: var(--ftt-mark-color);
 }
 
-.ftt-mark--max {
+/* The three values: the same colour in their column, its header swatch and
+   their mark on the slider. */
+.ftt-mark--max,
+.ftt-value--max {
   --ftt-mark-color: #d03b3b;
 }
 
-.ftt-mark--current {
+.ftt-mark--current,
+.ftt-value--current {
   --ftt-mark-color: var(--progeo-orange);
 }
 
-.ftt-mark--proposed {
+.ftt-mark--proposed,
+.ftt-value--proposed {
   --ftt-mark-color: #2e8b3a;
+}
+
+.ftt-value {
+  color: var(--ftt-mark-color);
+}
+
+.ftt-value-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ftt-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ftt-mark-color);
 }
 
 /* Bootstrap's range, drawn by .ftt-track instead: transparent, its thumb on top. */

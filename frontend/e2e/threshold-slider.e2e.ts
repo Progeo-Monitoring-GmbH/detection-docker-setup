@@ -220,7 +220,45 @@ test.describe('threshold slider', () => {
       await row.getByTestId('ftt-zone-unsafe').getAttribute('title'),
     ).toMatch(/60/);
 
+    // The value columns wear the colours of their marks.
+    const valueColour = async (kind: 'max' | 'current' | 'proposed') =>
+      page
+        .locator(`.ftt-value--${kind}`)
+        .first()
+        .evaluate((element) => getComputedStyle(element).color);
+    expect(await valueColour('max')).toBe('rgb(208, 59, 59)');
+    expect(await valueColour('current')).toBe('rgb(235, 99, 59)');
+    expect(await valueColour('proposed')).toBe('rgb(46, 139, 58)');
+
     await expectUniqueTestIds();
+  });
+
+  test('the columns can be resized, the width is kept', async ({ page }) => {
+    await openThresholds(page);
+    const header = page.locator('.rdt_TableCol[data-column-id="location"]');
+    const before = (await box(header)).width;
+    const handle = await box(header.locator('.rdt_resizeHandle'));
+
+    await page.mouse.move(
+      handle.x + handle.width / 2,
+      handle.y + handle.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handle.x + handle.width / 2 + 80,
+      handle.y + handle.height / 2,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+
+    const after = (await box(header)).width;
+    expect(after - before, 'the location column is wider').toBeGreaterThan(60);
+    await page.reload();
+    await expect(cell(page, SPREAD.key)).toBeVisible();
+    expect(
+      Math.abs((await box(header)).width - after),
+      'the width survives a reload',
+    ).toBeLessThan(2);
   });
 
   test('moves a number one row lower when two values are close', async ({

@@ -2,9 +2,15 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import SearchableDataTable, { ROW_CLICK, type SearchableColumn } from './SearchableDataTable';
+import SearchableDataTable, {
+  readColumnWidths,
+  ROW_CLICK,
+  type SearchableColumn,
+} from './SearchableDataTable';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 // DataTable follows the colour scheme; jsdom has no matchMedia.
 window.matchMedia ??= (query: string) =>
@@ -74,8 +80,13 @@ afterEach(() => {
 });
 
 const search = (value: string) => {
-  const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
-  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const input = container.querySelector<HTMLInputElement>(
+    'input[type="search"]',
+  )!;
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )!.set!;
   act(() => {
     setValue.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -87,7 +98,8 @@ const shownIds = () =>
     .slice(1)
     .map((row) => row.querySelector('[data-column-id="id"]')?.textContent);
 
-const click = (element: Element | null) => act(() => (element as HTMLElement).click());
+const click = (element: Element | null) =>
+  act(() => (element as HTMLElement).click());
 
 describe('SearchableDataTable', () => {
   it('filters across columns and shows the count', () => {
@@ -112,7 +124,8 @@ describe('SearchableDataTable', () => {
   it('select all toggles the shown rows and keeps hidden ones', () => {
     act(() => root.render(<Harness initial={[1]} />));
     search('kita');
-    const selectAll = () => container.querySelector('input[aria-label="Select all shown rows"]');
+    const selectAll = () =>
+      container.querySelector('input[aria-label="Select all shown rows"]');
 
     click(selectAll());
     expect([...selectedNow].sort()).toEqual([1, 2, 3]);
@@ -141,13 +154,66 @@ describe('SearchableDataTable', () => {
   it('keeps the selection when sorting', () => {
     act(() => root.render(<Harness initial={[3]} />));
     // The table starts sorted by ID - another click sorts descending.
-    click(container.querySelector('[data-column-id="id"] .rdt_TableCol_Sortable'));
+    click(
+      container.querySelector('[data-column-id="id"] .rdt_TableCol_Sortable'),
+    );
     expect(shownIds()).toEqual(['3', '2', '1']);
     // Sorting never reports a selection change.
     expect(selectedNow.size).toBe(0);
     const checked = Array.from(
-      container.querySelectorAll<HTMLInputElement>('[role="row"] input[aria-label="Select row"]'),
+      container.querySelectorAll<HTMLInputElement>(
+        '[role="row"] input[aria-label="Select row"]',
+      ),
     ).map((input) => input.checked);
     expect(checked).toEqual([true, false, false]);
+  });
+});
+
+describe('resizable columns', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('offers resize handles and starts with the widths this browser kept', () => {
+    localStorage.setItem(
+      'progeo_table_widths_spec',
+      JSON.stringify({ name: 222, id: 'x', sheets: -4 }),
+    );
+    // Only real widths are taken.
+    expect(readColumnWidths('spec')).toEqual({ name: 222 });
+
+    act(() =>
+      root.render(
+        <SearchableDataTable
+          columns={columns}
+          data={data}
+          keyField="id"
+          columnWidthsKey="spec"
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelectorAll('.rdt_resizeHandle').length,
+    ).toBeGreaterThan(0);
+    const name =
+      container.querySelector<HTMLElement>(
+        '[role="columnheader"][data-column-id="name"]',
+      ) ??
+      container.querySelector<HTMLElement>(
+        '.rdt_TableCol[data-column-id="name"]',
+      );
+    expect(name?.getAttribute('style') ?? '').toContain('222px');
+  });
+
+  it('has no handles without a key, and survives a broken store', () => {
+    localStorage.setItem('progeo_table_widths_broken', '{not json');
+    expect(readColumnWidths('broken')).toEqual({});
+
+    act(() =>
+      root.render(
+        <SearchableDataTable columns={columns} data={data} keyField="id" />,
+      ),
+    );
+
+    expect(container.querySelectorAll('.rdt_resizeHandle')).toHaveLength(0);
   });
 });

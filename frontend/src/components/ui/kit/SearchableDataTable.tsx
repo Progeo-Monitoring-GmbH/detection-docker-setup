@@ -207,6 +207,44 @@ export type SearchableDataTableProps<T, K> = Omit<
    * its columns and scrolls sideways in its panel.
    */
   mobileColumns?: string[];
+  /**
+   * The user can drag the header edges to resize the columns (DataTable's
+   * `resizable`); the widths are kept in this browser under this name
+   * (localStorage). Columns need an `id`. Double-click a handle: auto width.
+   */
+  columnWidthsKey?: string;
+};
+
+const widthsStorageKey = (name: string) => `progeo_table_widths_${name}`;
+
+/** The column widths the user dragged ({} without, or when the storage is blocked). */
+export const readColumnWidths = (name: string): Record<string, number> => {
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(widthsStorageKey(name)) || '{}',
+    );
+    return stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? Object.fromEntries(
+          Object.entries(stored).filter(
+            (entry): entry is [string, number] =>
+              typeof entry[1] === 'number' && entry[1] > 0,
+          ),
+        )
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const storeColumnWidths = (
+  name: string,
+  widths: Record<string | number, number>,
+) => {
+  try {
+    localStorage.setItem(widthsStorageKey(name), JSON.stringify(widths));
+  } catch {
+    // Private window / blocked storage: the widths last until the page is left.
+  }
 };
 
 /**
@@ -231,9 +269,14 @@ const SearchableDataTable = <T, K = string | number>({
   conditionalRowStyles,
   testId,
   mobileColumns,
+  columnWidthsKey,
   ...tableProps
 }: SearchableDataTableProps<T, K>) => {
   const [query, setQuery] = useState('');
+  // Read once: DataTable takes its initial widths on mount.
+  const [initialWidths] = useState(() =>
+    columnWidthsKey ? readColumnWidths(columnWidthsKey) : undefined,
+  );
   const labels = { ...DEFAULT_LABELS, ...labelOverrides };
 
   // Built once per data/columns, not per keystroke.
@@ -338,6 +381,17 @@ const SearchableDataTable = <T, K = string | number>({
         {toolbar && <div className="progeo-table-toolbar-end">{toolbar}</div>}
       </div>
       <DataTable
+        {...(columnWidthsKey
+          ? {
+              resizable: true,
+              initialColumnWidths: initialWidths,
+              onColumnResize: (
+                _id: string | number,
+                _width: number,
+                all: Record<string | number, number>,
+              ) => storeColumnWidths(columnWidthsKey, all),
+            }
+          : {})}
         {...tableProps}
         {...phone.expandable}
         columns={phone.columns}
