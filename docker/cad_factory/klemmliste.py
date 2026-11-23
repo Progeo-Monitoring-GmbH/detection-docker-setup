@@ -46,6 +46,11 @@ and PIN, the other "block / GE". The sensor's cell spans both, so its name
 may stand in either row: a PIN row without a name takes it from the row
 right after it, when that one has no PIN of its own but is labelled where
 MUX and PIN stand ("block" / "GE") - a sum or a heading leaves them empty.
+
+MPLE lists (Messpunktleisten) number their Messpunkte per MPLE (A1, A2, ...
+in every one): with an "MPLE" column the name is <Messpunkt>-<MPLE>, the
+MPLE carried down its merged cell. They also have two "PIN" columns, the
+LSA strip's and the MUX card's - the rightmost one is the input.
 """
 import re
 import unicodedata
@@ -62,7 +67,13 @@ HEADER_SYNONYMS = (
                 "sensorleitung", "sensorcable", "leitung", "messpunkt", "messstelle", "bezeichnung")),
     # Optional: the controller of the row, when one list covers several.
     ("unit", ("measuringunit", "measurementunit", "messeinheit", "mea", "einheit", "unit")),
+    # Optional: the MPLE (Messpunktleiste) of the row - its Messpunkte (A1, A2,
+    # ...) repeat in every MPLE, the name is <Messpunkt>-<MPLE>.
+    ("mple", ("mple",)),
 )
+# Roles whose rightmost column wins when several have the same label: an
+# MPLE list has the LSA strip's "PIN" left of the MUX card's "PIN".
+RIGHTMOST_ROLES = {"pin"}
 # Words of a header that rule a column out for a role ("Sensor-Typ" names no sensor).
 HEADER_EXCLUDES = {"sensor": ("typ", "type", "art", "anzahl", "laenge", "lange")}
 COLUMNS = ("sensor", "mux", "pin")
@@ -112,12 +123,16 @@ def header_role(text) -> str | None:
 
 def header_roles(cells) -> dict:
     """{role: cell index} of the columns `cells` name - maybe not all three.
-    Per column the best label wins ("Sensor" over "Messpunkt"), then the first."""
+    Per column the best label wins ("Sensor" over "Messpunkt"), then the first -
+    the last for RIGHTMOST_ROLES (the MUX card's PIN right of the LSA strip's)."""
     best = {}
     for index, cell in enumerate(cells):
         match = header_match(cell)
-        if match and (match[0] not in best or match[1] < best[match[0]][0]):
-            best[match[0]] = (match[1], index)
+        if not match:
+            continue
+        role, rank = match
+        if role not in best or rank < best[role][0] or (rank == best[role][0] and role in RIGHTMOST_ROLES):
+            best[role] = (rank, index)
     return {role: index for role, (_rank, index) in best.items()}
 
 
@@ -231,6 +246,9 @@ class RowCollector:
         self._positions = {}
         self._last_mux = None
         self._unit = None
+        # The MPLE of the rows - merged over them, carried down (and across
+        # pages, like the unit) until the next one.
+        self._mple = None
         # A PIN row without a name: its name may follow in the next row (two rows per sensor).
         self._pending = None
 
@@ -248,8 +266,14 @@ class RowCollector:
             self._flush()
             self._unit = unit_text
             self._last_mux = None
+            self._mple = None
             if unit_text not in self.units:
                 self.units.append(unit_text)
+        mple_text = clean_name(cells.get("mple"))
+        if mple_text:
+            self._mple = mple_text
+        if name and "mple" in cells and self._mple and name != self._mple:
+            name = f"{name}-{self._mple}"
         pin = first_number(pin_text)
         mux = first_number(mux_text) if mux_text else self._last_mux
         if mux_text:

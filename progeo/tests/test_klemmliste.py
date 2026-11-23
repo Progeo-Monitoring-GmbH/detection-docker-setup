@@ -308,3 +308,38 @@ def test_without_units_every_row_has_none(klemmliste, tmp_path):
     result = klemmliste.read_klemmliste(_pdf(tmp_path / "plain.pdf", build))
 
     assert result["units"] == [] and {row["unit"] for row in result["rows"]} == {None}
+
+
+# -- MPLE lists (5983 Global Hub Leipzig) ---------------------------------------------
+
+MPLE_COLUMNS = [(30, 60, "Einführungs\npunkt"), (90, 35, "MPLE"), (125, 55, "Messpunkt"), (180, 70, "Farbcode"),
+                (250, 50, "LSA Leiste"), (300, 25, "PIN"), (325, 50, "MUX Karte"), (375, 25, "PIN")]
+
+
+def test_an_mple_list_takes_the_rightmost_pin_and_names_messpunkt_dash_mple(klemmliste, tmp_path):
+    """Two PIN columns - the LSA strip's (1-19 per MPLE) and the MUX card's: the
+    rightmost one is the input. "A1" repeats in every MPLE - the name is
+    <Messpunkt>-<MPLE>, the MPLE cell merged over its rows."""
+    def build(doc):
+        rows = [("EP 1", "1", "A1", "rot ohne", 1, 1, "MUX 1", 1),
+                ("", "", "A2", "rot einfach", 1, 2, "MUX 1", 2),
+                ("", "2", "A1", "rot ohne", 2, 1, "MUX 1", 3),
+                ("", "", "A2", "rot einfach", 2, 2, "MUX 1", 4),
+                ("", "3", "A1", "rot ohne", 3, 1, "MUX 1", 16),
+                ("", "", "A17", "weiß ohne", 3, 17, "MUX 2", 1),
+                ("", "", "A19", "weiß 2 weit", 3, 19, "MUX 2", 3),
+                ("", "GE", "GE 1", "", "Klemmleiste", "GE", "Block", "GE")]
+        _text_table(doc.new_page(), 40, MPLE_COLUMNS, rows, ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "Klemmliste_MPLE.pdf", build))
+
+    assert result["warnings"] == []
+    assert _positions(result) == {1: "A1-1", 2: "A2-1", 3: "A1-2", 4: "A2-2", 16: "A1-3", 17: "A17-3", 19: "A19-3"}
+
+
+@pytest.mark.parametrize("cells, roles", [
+    (["LSA Leiste", "PIN", "MUX Karte", "PIN"], {"pin": 3, "mux": 2}),
+    (["MPLE", "Messpunkt", "MUX", "PIN"], {"mple": 0, "sensor": 1, "mux": 2, "pin": 3}),
+])
+def test_header_roles_of_mple_lists(klemmliste, cells, roles):
+    assert klemmliste.header_roles(cells) == roles
