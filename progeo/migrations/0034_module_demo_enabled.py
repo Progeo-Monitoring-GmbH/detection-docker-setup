@@ -54,5 +54,5 @@ class Migration(migrations.Migration):
             name='usermodulepermissions',
             options={'permissions': PERMISSIONS},
         ),
-        migrations.RunPython(create_demo_permission_row, migrations.RunPython.noop),
+        migrations.RunPython(create_demo_permission_row, migrations.RunPython.noop, elidable=True),
     ]

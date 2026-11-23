@@ -97,7 +97,7 @@ class Migration(migrations.Migration):
                 'constraints': [models.UniqueConstraint(fields=('location', 'start'), name='progeo_rain_event_location_start')],
             },
         ),
-        migrations.RunPython(copy_alarm_rain_events, migrations.RunPython.noop),
+        migrations.RunPython(copy_alarm_rain_events, migrations.RunPython.noop, elidable=True),
         migrations.RemoveField(
             model_name='progeoalarm',
             name='rain_checked',

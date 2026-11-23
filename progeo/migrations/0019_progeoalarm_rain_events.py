@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
             name='rain_events',
             field=jsonfield.fields.JSONField(blank=True, default=list),
         ),
-        migrations.RunPython(forward_rain_to_events, migrations.RunPython.noop),
+        migrations.RunPython(forward_rain_to_events, migrations.RunPython.noop, elidable=True),
         migrations.RemoveField(
             model_name='progeoalarm',
             name='rain_start',

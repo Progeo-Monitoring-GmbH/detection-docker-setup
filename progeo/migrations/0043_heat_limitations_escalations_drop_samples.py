@@ -64,8 +64,8 @@ class Migration(migrations.Migration):
         ),
 
         # The outdated samples column (and the legacy end_index with it).
-        migrations.RunSQL(SAMPLES_TO_POTENTIALS, reverse_sql=migrations.RunSQL.noop),
-        migrations.RunSQL(SAMPLES_TO_RAW_DATA, reverse_sql=migrations.RunSQL.noop),
+        migrations.RunSQL(SAMPLES_TO_POTENTIALS, reverse_sql=migrations.RunSQL.noop, elidable=True),
+        migrations.RunSQL(SAMPLES_TO_RAW_DATA, reverse_sql=migrations.RunSQL.noop, elidable=True),
         migrations.RemoveField(
             model_name='progeomeasurement',
             name='samples',

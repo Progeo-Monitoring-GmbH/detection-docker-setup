@@ -75,5 +75,6 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             create_module_permission_rows,
             remove_module_permission_rows,
+            elidable=True,
         ),
     ]
