@@ -1,4 +1,4 @@
-/* Lageplan wizard, step 7: MEA documents and Klemmliste (LageplanKlemmliste.tsx). */
+/* Lageplan wizard, step 8: MEA documents, drawings and Klemmliste (LageplanKlemmliste.tsx). */
 
 .lageplan-klemmliste {
   display: flex;
@@ -42,6 +42,26 @@
 
 .lageplan-klemmliste-note--warning {
   color: var(--bs-warning-text-emphasis);
+}
+
+/* MEA-Dokumente / Zeichnungen (Verlegplan): one list each. */
+.lageplan-klemmliste-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lageplan-klemmliste-group-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--bs-secondary-color);
+}
+
+/* "Open in Airtable": a link styled as a pill button. */
+a.lageplan-klemmliste-link {
+  text-decoration: none;
 }
 
 .lageplan-klemmliste-documents {

@@ -24,7 +24,10 @@ const DOCUMENTS = [
     created: '2026-10-01T08:00:00.000Z', modified: null },
   { id: 'recKlemm', name: 'Klemmliste_dm_Gebrüder_Weiss.pdf', kind: 'klemmliste', size: 206334, type: null, created: null },
   { id: 'recModel', name: 'MEA-Modell.pdf', kind: 'pdf', size: 5000, type: null, created: null },
+  { id: 'recLayoutDwg', name: 'Verlegeplan.dwg', kind: 'dwg', group: 'drawings', size: 9000, type: null, created: null },
+  { id: 'recLayoutPdf', name: 'Verlegeplan.pdf', kind: 'pdf', group: 'drawings', size: 9000, type: null, created: null },
 ];
+const PROJECT_URL = 'https://airtable.com/appX/tblY/recProject';
 const ROWS = [
   { sensor: 'D_124', mux: 1, pin: 1, position: 1, page: 1 },
   { sensor: 'D_123', mux: 1, pin: 2, position: 2, page: 1 },
@@ -70,7 +73,7 @@ beforeEach(() => {
   api.post.mockReset();
   api.download.mockReset();
   onNamesApplied.mockReset();
-  api.get.mockImplementation(() => ({ project_found: true, documents: DOCUMENTS }));
+  api.get.mockImplementation(() => ({ project_found: true, project_url: PROJECT_URL, documents: DOCUMENTS }));
   api.post.mockImplementation((url: string, body: Record<string, unknown>, ok: Ok) => {
     if (url.endsWith('/klemmliste/')) {
       ok({ data: { job_id: 'job-airtable' } });
@@ -120,7 +123,18 @@ describe('LageplanKlemmliste', () => {
     const names = [...container.querySelectorAll('[data-testid="lageplan-wizard-mea-document"]')].map(
       (row) => row.getAttribute('data-test-key'),
     );
-    expect(names).toEqual(['recDwg', 'recRouter', 'recKlemm', 'recModel']);
+    expect(names).toEqual(['recDwg', 'recRouter', 'recKlemm', 'recModel', 'recLayoutDwg', 'recLayoutPdf']);
+    // MEA-Dokumente and Zeichnungen (Verlegplan) - one list each.
+    const drawings = byTestId('lageplan-wizard-mea-group', 'drawings')!;
+    expect(drawings.textContent).toContain('Zeichnungen (Verlegplan)');
+    expect(drawings.querySelectorAll('[data-testid="lageplan-wizard-mea-document"]')).toHaveLength(2);
+    // A Verlegplan PDF is no Klemmliste - downloadable, not readable.
+    expect(byTestId('lageplan-wizard-mea-read', 'recLayoutPdf')).toBeNull();
+    expect(byTestId('lageplan-wizard-mea-download', 'recLayoutPdf')).not.toBeNull();
+    // The project opens in Airtable, in a new tab.
+    const link = byTestId('lageplan-wizard-mea-airtable-link') as HTMLAnchorElement;
+    expect(link.href).toBe(PROJECT_URL);
+    expect(link.target).toBe('_blank');
     // Every PDF can be read - a Klemmliste isn't always named so; the plan and the router data can't.
     expect(byTestId('lageplan-wizard-mea-read', 'recDwg')).toBeNull();
     expect(byTestId('lageplan-wizard-mea-read', 'recRouter')).toBeNull();

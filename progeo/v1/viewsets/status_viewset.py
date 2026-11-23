@@ -651,7 +651,7 @@ class StatusViewSet(ProgeoModalViewSet):
             "jobs": jobs, "job_id": jobs[0]["job_id"], "status": "queued", "location_id": location.id,
         })
 
-    # -- MEA documents from Airtable, Klemmliste (Lageplan wizard) ----------------
+    # -- MEA documents and drawings from Airtable, Klemmliste (Lageplan wizard) ---
 
     @staticmethod
     def _wizard_location(request):
@@ -665,9 +665,10 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/airtable_documents", methods=["GET"])
     def airtable_documents(self, request, *args, **kwargs):
-        """Staff: the location's MEA documents in Airtable - the CAD plan
-        (*.dwg), Router_Daten.txt and every PDF, a recognised Klemmliste first
-        (helper/airtable_documents.py).
+        """Staff: the location's MEA documents and drawings (Zeichnungen
+        (Verlegplan)) in Airtable - the CAD plans (*.dwg), Router_Daten.txt and
+        every PDF, a recognised Klemmliste first - and the project's Airtable
+        link "project_url" (helper/airtable_documents.py).
         ?refresh=1 skips the 5-minute cache."""
         from progeo.helper import airtable_documents
 

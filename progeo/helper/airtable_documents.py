@@ -1,15 +1,18 @@
-"""The MEA documents of a location's Airtable project - for the Lageplan wizard.
+"""The MEA documents and drawings of a location's Airtable project - for the
+Lageplan wizard.
 
 In the Airtable base the project ("Aufträge", AIRTABLE_PROJECTS_TABLE) links
 its files as records of the documents table (AIRTABLE_DOCUMENTS_TABLE,
-"Dokumente"), each with the file in "Anlage". The ones in the project's
-SharePoint folder "MEA-Dokumente" have Dokumententyp "MEA-Dokumente"; of
-those the wizard offers the CAD plan (*.dwg), the router data
+"Dokumente"), each with the file in "Anlage". The project's SharePoint
+folders "MEA-Dokumente" and "Zeichnungen (Verlegplan)" are their
+Dokumententyp (DOCUMENT_TYPES, each document's "group"); of those the wizard
+offers the CAD plan (*.dwg), the router data
 (Router_Daten*.txt) and every PDF: the Klemmliste is not always called so
 ("Pin_Assignment_dm_UK_Cancer_Center.pdf"), so the names KLEMMLISTE_NAME
 knows are only listed first - the sensor names of any of them can be read
 by progeo-cad_factory, which finds the table by its contents (see
-helper/klemmliste_names.py).
+helper/klemmliste_names.py). "project_url" links the project in Airtable:
+the location's airtable_url, else the project's "Link zum Projekt".
 
 The project is found by the record id in the location's airtable_url, else
 by its project number. Airtable's file URLs expire after a few hours, so they
@@ -29,8 +32,10 @@ from progeo.helper.basics import wlog
 DOCUMENTS_FIELD = "Dokumente"
 ATTACHMENT_FIELD = "Anlage"
 MEA_TYPE = "MEA-Dokumente"
-# Last modified time of the record's Name / Dokumententyp - the table has no
-# field that follows the attachment itself.
+DRAWINGS_TYPE = "Zeichnungen (Verlegplan)"
+# Dokumententyp -> group (the wizard lists the groups in this order).
+DOCUMENT_TYPES = {MEA_TYPE: "mea", DRAWINGS_TYPE: "drawings"}
+PROJECT_LINK_FIELD = "Link zum Projekt"
 MODIFIED_FIELD = "Name/Typ geändert"
 DOCUMENT_FIELDS = ["Name", ATTACHMENT_FIELD, "Dokumententyp", "Created", MODIFIED_FIELD]
 # What a Klemmliste PDF is called (lower case, anywhere in the name).
@@ -73,7 +78,7 @@ def _documents_table(helper):
     return helper.table(getattr(settings, "AIRTABLE_DOCUMENTS_TABLE", "") or "Dokumente")
 
 
-def project_records(helper, location, fields=(DOCUMENTS_FIELD, "Projektnummer")) -> list:
+def project_records(helper, location, fields=(DOCUMENTS_FIELD, "Projektnummer", PROJECT_LINK_FIELD)) -> list:
     """The Airtable project records of `location`: by the record id of its
     airtable_url (every field), else every record with its project number
     (`fields`)."""
@@ -93,7 +98,8 @@ def _document(record) -> dict | None:
     fields = record.get("fields", {})
     attachments = fields.get(ATTACHMENT_FIELD) or []
     attachment = attachments[0] if attachments and isinstance(attachments[0], dict) else None
-    if fields.get("Dokumententyp") != MEA_TYPE or attachment is None:
+    group = DOCUMENT_TYPES.get(fields.get("Dokumententyp"))
+    if group is None or attachment is None:
         return None
     filename = attachment.get("filename") or fields.get("Name") or ""
     kind = kind_of(filename)
@@ -103,6 +109,7 @@ def _document(record) -> dict | None:
         "id": record["id"],
         "name": filename,
         "kind": kind,
+        "group": group,
         "size": attachment.get("size"),
         "type": attachment.get("type"),
         "created": fields.get("Created") or record.get("createdTime"),
@@ -119,17 +126,35 @@ def _fetch_documents(helper, location) -> dict:
     documents = []
     for start in range(0, len(document_ids), ID_BATCH):
         batch = document_ids[start:start + ID_BATCH]
-        formula = f"AND({{Dokumententyp}}='{MEA_TYPE}', OR({', '.join(f'RECORD_ID()={record_id!r}' for record_id in batch)}))"
+        types = ", ".join(f"{{Dokumententyp}}='{document_type}'" for document_type in DOCUMENT_TYPES)
+        ids = ", ".join(f"RECORD_ID()={record_id!r}" for record_id in batch)
+        formula = f"AND(OR({types}), OR({ids}))"
         documents.extend(filter(None, map(_document, table.all(formula=formula, fields=DOCUMENT_FIELDS))))
+    groups = {group: index for index, group in enumerate(DOCUMENT_TYPES.values())}
     order = {kind: index for index, (kind, _pattern) in enumerate(KINDS)}
-    documents.sort(key=lambda document: (order[document["kind"]], document["name"].lower()))
-    return {"project_found": bool(records), "documents": documents}
+    documents.sort(key=lambda document: (groups[document["group"]], order[document["kind"]],
+                                         document["name"].lower()))
+    return {"project_found": bool(records), "project_url": _project_url(location, records),
+            "documents": documents}
+
+
+def _project_url(location, records) -> str | None:
+    """Where the project opens in Airtable: the location's airtable_url, else
+    the project record's "Link zum Projekt" (a formula - text or a list)."""
+    if (location.airtable_url or "").strip():
+        return location.airtable_url.strip()
+    for record in records:
+        link = record.get("fields", {}).get(PROJECT_LINK_FIELD)
+        link = link[0] if isinstance(link, list) and link else link
+        if isinstance(link, str) and link.strip().startswith("http"):
+            return link.strip()
+    return None
 
 
 def location_documents(location, refresh=False) -> dict:
-    """{"project_found", "documents": [{id, name, kind, size, type, created, modified}]}
+    """{"project_found", "project_url", "documents": [{id, name, kind, group, size, type, created, modified}]}
     - cached CACHE_SECONDS per location."""
-    key = f"progeo:airtable-documents:{location.pk}:{location.project_id}"
+    key = f"progeo:airtable-documents:v2:{location.pk}:{location.project_id}"
     if not refresh:
         cached = cache.get(key)
         if cached is not None:
@@ -146,11 +171,11 @@ def location_documents(location, refresh=False) -> dict:
 
 
 def document(location, document_id) -> dict:
-    """The document `document_id` of the location's MEA documents (fresh, with
+    """The document `document_id` of the location's documents (fresh, with
     its attachment URL under "url") - AirtableDocumentsError when it isn't one of them."""
     listed = {entry["id"] for entry in location_documents(location)["documents"]}
     if document_id not in listed:
-        raise AirtableDocumentsError("This document is not one of the location's MEA documents")
+        raise AirtableDocumentsError("This document is not one of the location's Airtable documents")
     helper = _helper()
     try:
         record = _documents_table(helper).get(document_id)

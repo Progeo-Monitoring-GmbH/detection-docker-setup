@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Form, Spinner, Table } from 'react-bootstrap';
-import { ArrowRepeat, Download, FileEarmarkSpreadsheet, ListCheck } from 'react-bootstrap-icons';
+import { ArrowRepeat, BoxArrowUpRight, Download, FileEarmarkSpreadsheet, ListCheck } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import type { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
@@ -15,12 +15,14 @@ import './LageplanKlemmliste.css';
 
 type Auth = ReturnType<typeof useAuth>;
 
-/** A MEA document of the location's Airtable project (helper/airtable_documents.py). */
-type MeaDocument = {
+/** A document of the location's Airtable project (helper/airtable_documents.py). */
+export type MeaDocument = {
   id: string;
   name: string;
   /** "klemmliste": named like one (Klemmliste*, Pin_Assignment*, ...); "pdf": any other PDF - readable too. */
   kind: 'dwg' | 'router' | 'klemmliste' | 'pdf';
+  /** Its Dokumententyp: "mea" MEA-Dokumente, "drawings" Zeichnungen (Verlegplan). */
+  group?: 'mea' | 'drawings';
   size: number | null;
   type: string | null;
   created: string | null;
@@ -109,8 +111,18 @@ const KIND_LABEL: Record<MeaDocument['kind'], string> = {
   pdf: 'PDF',
 };
 
-/** The sensor names of any PDF can be read - a Klemmliste isn't always named so. */
-const READABLE: ReadonlySet<MeaDocument['kind']> = new Set(['klemmliste', 'pdf']);
+/** The document groups (Dokumententyp in Airtable), in the backend's order. */
+const GROUPS: { group: NonNullable<MeaDocument['group']>; label: string }[] = [
+  { group: 'mea', label: 'MEA-Dokumente' },
+  { group: 'drawings', label: 'Zeichnungen (Verlegplan)' },
+];
+
+const groupOf = (document: MeaDocument) => document.group ?? 'mea';
+
+/** The sensor names of any MEA PDF can be read - a Klemmliste isn't always named so;
+ * of the drawings only one named like a Klemmliste (a Verlegplan PDF is none). */
+const readable = (document: MeaDocument) =>
+  document.kind === 'klemmliste' || (document.kind === 'pdf' && groupOf(document) === 'mea');
 
 const STATUS_URL = '/v1/status/measure_points';
 
@@ -159,9 +171,10 @@ const lineKey = (line: { unit?: string | null; position: number }) =>
   line.unit ? `${line.unit}-${line.position}` : String(line.position);
 
 /**
- * Lageplan wizard, step 8: the location's MEA documents from Airtable (staff -
- * CAD plan, Router_Daten.txt and every PDF, a recognised Klemmliste first,
- * each downloadable; any PDF can be read as Klemmliste) and the
+ * Lageplan wizard, step 8: the location's MEA documents and drawings
+ * (Zeichnungen (Verlegplan)) from Airtable (staff - CAD plans, Router_Daten.txt
+ * and every PDF, a recognised Klemmliste first, each downloadable; any MEA PDF
+ * can be read as Klemmliste; a link opens the project in Airtable) and the
  * Klemmliste: read by progeo-cad_factory (uploaded or straight from Airtable),
  * its sensor names - position (MUX - 1) * 16 + PIN - previewed against the
  * measure points and written onto them.
@@ -185,6 +198,8 @@ const LageplanKlemmliste = ({
   const { enqueueSnackbar } = useSnackbar();
   const [documents, setDocuments] = useState<MeaDocument[] | null>(null);
   const [projectFound, setProjectFound] = useState(true);
+  // The project in Airtable (the location's Airtable link, else the project's own).
+  const [projectUrl, setProjectUrl] = useState<string | null>(null);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   // The first load starts with the step (one step per location - the wizard keys it).
   const [loadingDocuments, setLoadingDocuments] = useState(staff);
@@ -213,6 +228,7 @@ const LageplanKlemmliste = ({
         (response) => {
           setDocuments((response?.data?.documents ?? []) as MeaDocument[]);
           setProjectFound(response?.data?.project_found !== false);
+          setProjectUrl(response?.data?.project_url || response?.data?.airtable_url || null);
           setDocumentsError(null);
           setLoadingDocuments(false);
         },
@@ -383,15 +399,30 @@ const LageplanKlemmliste = ({
   const documentsPanel = staff && (
     <div className="lageplan-klemmliste-section" data-testid="lageplan-wizard-mea-documents">
       <div className="lageplan-klemmliste-section-head">
-        <span className="lageplan-klemmliste-section-title">MEA documents (Airtable)</span>
-        <PillButton
-          variant="ghost"
-          icon={loadingDocuments ? <Spinner animation="border" size="sm" /> : <ArrowRepeat size={13} />}
-          label="Refresh"
-          onClick={refreshDocuments}
-          disabled={loadingDocuments}
-          testId="lageplan-wizard-mea-refresh"
-        />
+        <span className="lageplan-klemmliste-section-title">MEA documents and drawings (Airtable)</span>
+        <span className="lageplan-klemmliste-actions">
+          {projectUrl && (
+            <a
+              className="progeo-pill progeo-pill--ghost lageplan-klemmliste-link"
+              href={projectUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open the project in Airtable"
+              data-testid="lageplan-wizard-mea-airtable-link"
+            >
+              <BoxArrowUpRight size={13} />
+              Open in Airtable
+            </a>
+          )}
+          <PillButton
+            variant="ghost"
+            icon={loadingDocuments ? <Spinner animation="border" size="sm" /> : <ArrowRepeat size={13} />}
+            label="Refresh"
+            onClick={refreshDocuments}
+            disabled={loadingDocuments}
+            testId="lageplan-wizard-mea-refresh"
+          />
+        </span>
       </div>
       {documentsError ? (
         <div className="lageplan-klemmliste-note lageplan-klemmliste-note--danger" data-testid="lageplan-wizard-mea-error">
@@ -408,52 +439,55 @@ const LageplanKlemmliste = ({
         </div>
       ) : documents.length === 0 ? (
         <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-mea-empty">
-          No CAD plan, Router_Daten.txt or PDF among the project&apos;s MEA documents.
+          No CAD plan, Router_Daten.txt or PDF among the project&apos;s MEA documents and drawings.
         </div>
       ) : (
-        <ul className="lageplan-klemmliste-documents">
-          {documents.map((document) => (
-            <li key={document.id} {...repeatedTestId('lageplan-wizard-mea-document', document.id)}>
-              <Badge bg="light" text="dark" className="lageplan-klemmliste-kind">
-                {KIND_LABEL[document.kind]}
-              </Badge>
-              <span className="lageplan-klemmliste-name" title={document.name}>
-                {document.name}
-              </span>
-              <span className="lageplan-klemmliste-muted">{formatSize(document.size)}</span>
-              {(document.modified || document.created) && (
-                <span
-                  className="lageplan-klemmliste-muted"
-                  title={`Added ${formatDate(document.created)}`}
-                  {...repeatedTestId('lageplan-wizard-mea-changed', document.id)}
-                >
-                  {document.modified ? 'changed' : 'added'} {formatDate(document.modified || document.created)}
-                </span>
+        GROUPS.map(({ group, label }) => {
+          const inGroup = documents.filter((document) => groupOf(document) === group);
+          return (
+            <div key={group} className="lageplan-klemmliste-group" {...repeatedTestId('lageplan-wizard-mea-group', group)}>
+              <div className="lageplan-klemmliste-group-title">{label}</div>
+              {inGroup.length === 0 ? (
+                <div className="lageplan-klemmliste-note">No CAD plan or PDF in {label}.</div>
+              ) : (
+                <ul className="lageplan-klemmliste-documents">
+                  {inGroup.map((document) => (
+                    <li key={document.id} {...repeatedTestId('lageplan-wizard-mea-document', document.id)}>
+                      <Badge bg="light" text="dark" className="lageplan-klemmliste-kind">
+                        {KIND_LABEL[document.kind]}
+                      </Badge>
+                      <span className="lageplan-klemmliste-name" title={document.name}>
+                        {document.name}
+                      </span>
+                      <span className="lageplan-klemmliste-muted">{formatSize(document.size)}</span>
+                      <span className="lageplan-klemmliste-actions">
+                        {readable(document) && (
+                          <PillButton
+                            icon={starting === document.id ? <Spinner animation="border" size="sm" /> : <ListCheck size={13} />}
+                            label="Read names"
+                            onClick={() => readFromAirtable(document)}
+                            disabled={starting !== null}
+                            testId="lageplan-wizard-mea-read"
+                            testKey={document.id}
+                          />
+                        )}
+                        <PillButton
+                          variant="ghost"
+                          icon={downloading === document.id ? <Spinner animation="border" size="sm" /> : <Download size={13} />}
+                          label="Download"
+                          onClick={() => void download(document)}
+                          disabled={downloading !== null}
+                          testId="lageplan-wizard-mea-download"
+                          testKey={document.id}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
-              <span className="lageplan-klemmliste-actions">
-                {READABLE.has(document.kind) && (
-                  <PillButton
-                    icon={starting === document.id ? <Spinner animation="border" size="sm" /> : <ListCheck size={13} />}
-                    label="Read names"
-                    onClick={() => readFromAirtable(document)}
-                    disabled={starting !== null}
-                    testId="lageplan-wizard-mea-read"
-                    testKey={document.id}
-                  />
-                )}
-                <PillButton
-                  variant="ghost"
-                  icon={downloading === document.id ? <Spinner animation="border" size="sm" /> : <Download size={13} />}
-                  label="Download"
-                  onClick={() => void download(document)}
-                  disabled={downloading !== null}
-                  testId="lageplan-wizard-mea-download"
-                  testKey={document.id}
-                />
-              </span>
-            </li>
-          ))}
-        </ul>
+            </div>
+          );
+        })
       )}
     </div>
   );

@@ -280,7 +280,7 @@ class FakeTable:
         if "Projektnummer" in (formula or ""):
             return [record for record in self.records.values() if "Projektnummer" in record["fields"]]
         return [record for record in self.records.values()
-                if record["id"] in formula and record["fields"].get("Dokumententyp") == "MEA-Dokumente"]
+                if record["id"] in formula and f"'{record['fields'].get('Dokumententyp')}'" in formula]
 
 
 def _doc(record_id, filename, kind="MEA-Dokumente", modified=None):
@@ -295,7 +295,9 @@ def _doc(record_id, filename, kind="MEA-Dokumente", modified=None):
 def airtable(monkeypatch):
     project = {"id": "recProject000000a", "fields": {"Projektnummer": 937078, "Dokumente": [
         "recDwg0000000000a", "recDwl0000000000a", "recRouter0000000a", "recKlemm00000000a", "recOrder00000000a",
-        "recPinAssign0000a", "recModel00000000a", "recXlsx000000000a"]}}
+        "recPinAssign0000a", "recModel00000000a", "recXlsx000000000a", "recLayoutDwg000a", "recLayoutPdf000a",
+        "recLayoutBak000a", "recInput00000000a"],
+        "Link zum Projekt": "https://airtable.com/appX/tblY/recProject000000a"}}
     projects = FakeTable({project["id"]: project})
     documents = FakeTable({record["id"]: record for record in (
         _doc("recDwg0000000000a", "FCX_403018_B.dwg", modified="2026-11-18T14:30:00.000Z"),
@@ -305,6 +307,10 @@ def airtable(monkeypatch):
         _doc("recOrder00000000a", "Klemmliste_alt.pdf", kind="Auftragsbestaetigungen"),
         _doc("recPinAssign0000a", "Pin_Assignment_dm_UK_Cancer_Center.pdf"), _doc("recModel00000000a", "MEA-Modell.pdf"),
         _doc("recXlsx000000000a", "Klemmliste_dm.xlsx"),
+        _doc("recLayoutDwg000a", "Verlegeplan_403018.dwg", kind="Zeichnungen (Verlegplan)"),
+        _doc("recLayoutPdf000a", "Verlegeplan_403018.pdf", kind="Zeichnungen (Verlegplan)"),
+        _doc("recLayoutBak000a", "Verlegeplan_403018.bak", kind="Zeichnungen (Verlegplan)"),
+        _doc("recInput00000000a", "Grundriss_Kunde.pdf", kind="Zeichnungen (Eingang)"),
     )})
 
     class Helper:
@@ -321,18 +327,22 @@ def airtable(monkeypatch):
     return {"projects": projects, "documents": documents}
 
 
-def test_the_mea_documents_of_the_project(api_client, staff, location, airtable):
+def test_the_mea_documents_and_drawings_of_the_project(api_client, staff, location, airtable):
     body = api_client.get("/v1/status/measure_points/airtable_documents/",
                           {"location_id": location.project_id}).json()
 
     assert body["project_found"] is True
-    # Every PDF of MEA-Dokumente - the ones named like a Klemmliste first; not the .dwl/.xlsx, not other folders.
-    assert [(d["kind"], d["name"]) for d in body["documents"]] == [
-        ("dwg", "FCX_403018_B.dwg"), ("router", "Router_Daten.txt"),
-        ("klemmliste", "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"),
-        ("klemmliste", "Pin_Assignment_dm_UK_Cancer_Center.pdf"),
-        ("pdf", "MEA-Modell.pdf"),
+    # MEA-Dokumente, then Zeichnungen (Verlegplan): their plans and PDFs, the ones named like a Klemmliste
+    # first; not the .dwl/.xlsx/.bak, not other folders (Zeichnungen (Eingang), Auftragsbestaetigungen).
+    assert [(d["group"], d["kind"], d["name"]) for d in body["documents"]] == [
+        ("mea", "dwg", "FCX_403018_B.dwg"), ("mea", "router", "Router_Daten.txt"),
+        ("mea", "klemmliste", "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"),
+        ("mea", "klemmliste", "Pin_Assignment_dm_UK_Cancer_Center.pdf"),
+        ("mea", "pdf", "MEA-Modell.pdf"),
+        ("drawings", "dwg", "Verlegeplan_403018.dwg"), ("drawings", "pdf", "Verlegeplan_403018.pdf"),
     ]
+    # No airtable_url on the location: the project's own link.
+    assert body["project_url"] == "https://airtable.com/appX/tblY/recProject000000a"
     assert "url" not in body["documents"][0]
     assert "937078" in airtable["projects"].formulas[0]
     # When the record was last changed ("Name/Typ geändert") - null until it was.
@@ -346,7 +356,8 @@ def test_the_airtable_link_names_the_project_record(location, airtable):
 
     result = airtable_documents.location_documents(location, refresh=True)
 
-    assert len(result["documents"]) == 5 and airtable["projects"].formulas == []
+    assert len(result["documents"]) == 7 and airtable["projects"].formulas == []
+    assert result["project_url"] == location.airtable_url
 
 
 def test_a_document_downloads_through_the_backend(api_client, staff, location, airtable, monkeypatch):
@@ -377,7 +388,9 @@ def test_a_document_downloads_through_the_backend(api_client, staff, location, a
     assert "filename*=UTF-8''Klemmliste_dm_Gebr%C3%BCder" in response["Content-Disposition"]
     # Only the location's MEA documents - not another one of the base.
     refused = api_client.get(url, {"location_id": location.project_id, "document": "recOrder00000000a"})
-    assert refused.json()["reason"] == "This document is not one of the location's MEA documents"
+    assert refused.json()["reason"] == "This document is not one of the location's Airtable documents"
+    # A drawing downloads too.
+    assert api_client.get(url, {"location_id": location.project_id, "document": "recLayoutPdf000a"}).status_code == 200
 
 
 def test_a_klemmliste_from_airtable_starts_a_job(api_client, staff, location, airtable, tmp_path, monkeypatch):
