@@ -820,6 +820,67 @@ def _drop_placeholder(database, plan, path, tables, apply, unnamed, kept_type):
     return 0
 
 
+def clean_heat_limits(apply=False, databases=None):
+    """The heat limitations the automatic detection made of sensor symbols
+    (helper/auto_heat_limits.clean_symbol_areas) in default and every project
+    database - before plan_detect.MIN_OUTLINE_SHARE a plan drawing each point
+    sensor as a filled arrowhead got one area per sensor. A plan with only
+    automatic areas is detected again, otherwise only those areas go;
+    hand-made areas stay. Read only unless `apply`. Returns the counts."""
+    from django.db import DEFAULT_DB_ALIAS
+
+    from progeo.helper.auto_heat_limits import clean_symbol_areas
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        is_project_alias,
+        register_project_db,
+        release_connection,
+    )
+
+    if databases is None:
+        databases = [DEFAULT_DB_ALIAS, *existing_project_aliases(refresh=True)]
+    ilog(f"Looking for heat limitations made of sensor symbols in {len(databases)} database(s)"
+         f"{'' if apply else ' (dry run, use --apply)'}")
+
+    totals = {"plans": 0, "areas_before": 0, "areas_after": 0, "failed": []}
+    for database in databases:
+        project_db = is_project_alias(database)
+        if project_db:
+            register_project_db(database)
+        try:
+            plans = (ProgeoLageplan.objects.using(database).select_related("location")
+                     .exclude(heat_limitations=[]).order_by("pk"))
+            for plan in plans:
+                try:
+                    result = clean_symbol_areas(plan, database, apply=apply)
+                except Exception as exc:  # noqa: BLE001 - one failing plan must not stop the others
+                    elog(f"{database}: plan {plan.pk}: {exc}")
+                    totals["failed"].append(f"{database}:{plan.pk}")
+                    continue
+                if result is None:
+                    continue
+                totals["plans"] += 1
+                totals["areas_before"] += result.before
+                totals["areas_after"] += result.after
+                location = plan.location
+                ilog(f"{database}: plan {plan.pk} of location {location.pk if location else '-'} "
+                     f"(project {location.project_id if location else '-'}): {result.before} -> {result.after} "
+                     f"area(s), {result.how}{f' ({result.note})' if result.note else ''}"
+                     f"{'' if apply else ' - dry run'}")
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
+            elog(f"{database}: {exc}")
+            totals["failed"].append(database)
+        finally:
+            if project_db:
+                release_connection(database)
+
+    if totals["failed"]:
+        elog(f"{len(totals['failed'])} failed: {totals['failed']}")
+    ilog(f"{totals['plans']} plan(s) {'cleaned' if apply else 'to clean'}: "
+         f"{totals['areas_before']} -> {totals['areas_after']} heat limitation(s)")
+    return totals
+
+
 class Command(BaseCommand):
     help = (
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
@@ -842,7 +903,10 @@ class Command(BaseCommand):
         '                            many remain unset - read only unless --apply\n'
         '  unknown_db_devices        move the devices of the "unknown" project database that belong to a\n'
         '                            project (location / project_id / numeric raw_hash) with their\n'
-        '                            measurements and alarms into its database - read only unless --apply\n\n'
+        '                            measurements and alarms into its database - read only unless --apply\n'
+        '  clean_heat_limits         remove the automatic heat limitations made of sensor symbols (one\n'
+        '                            tiny area per sensor): plans with only automatic areas are detected\n'
+        '                            again, hand-made areas stay - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -853,7 +917,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch drop_duplicate_locations [--apply]\n'
         '  python manage.py patch_live --patch drop_is_plans [--apply]\n'
         '  python manage.py patch_live --patch sensor_count_from_samples [--apply]\n'
-        '  python manage.py patch_live --patch unknown_db_devices [--apply]'
+        '  python manage.py patch_live --patch unknown_db_devices [--apply]\n'
+        '  python manage.py patch_live --patch clean_heat_limits [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -862,7 +927,7 @@ class Command(BaseCommand):
                             default=None)
         parser.add_argument("--apply", action="store_true",
                             help="drop_duplicate_locations, drop_is_plans, koords_to_points, "
-                                 "sensor_count_from_samples, unknown_db_devices: change the data "
+                                 "sensor_count_from_samples, unknown_db_devices, clean_heat_limits: change the data "
                                  "(default: only report)")
 
 
@@ -890,6 +955,9 @@ class Command(BaseCommand):
 
         if patch == "unknown_db_devices":
             unknown_db_devices(apply=options["apply"])
+
+        if patch == "clean_heat_limits":
+            clean_heat_limits(apply=options["apply"])
 
         if patch == "fetch_koords":
             fetch_koords()

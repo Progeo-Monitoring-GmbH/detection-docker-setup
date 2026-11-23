@@ -59,6 +59,10 @@ CLOSE_FRACTIONS = (0.006, 0.012, 0.02, 0.035)
 # box - a hall of a tightly cropped building only encloses columns.
 FRAME_SPAN = 0.9
 ENCLOSED_ROOMS = 0.05
+# An outline smaller than this share of the image is no building or room but
+# a symbol - e.g. the filled arrowhead a legacy plan draws for every point
+# sensor (project 5968: 125 such "areas", one per sensor).
+MIN_OUTLINE_SHARE = 0.0005
 # Sensors outside every outline: clustered when closer than this (share of
 # the longest side), each cluster gets its hull padded by CLUSTER_PAD.
 CLUSTER_DISTANCE = 0.08
@@ -657,7 +661,10 @@ def _footprints(ink: np.ndarray, kernel: int) -> np.ndarray:
     lines are thickened by half of it (a closing would only fill gaps as
     narrow as the lines), the inside found and shrunk back by as much.
     A frame around the whole drawing: its largest inner region is paper, not
-    a room, and is left out (FRAME_SPAN, PAPER_SHARE)."""
+    a room, and is left out (FRAME_SPAN, PAPER_SHARE). Outlines smaller than
+    MIN_OUTLINE_SHARE of the image are symbols, not rooms, and left out too -
+    a sensor inside one counts as outside every outline, so the gaps are
+    sealed wider until its building holds it."""
     height, width = ink.shape
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel, kernel))
     thick = cv2.dilate(ink, disk)
@@ -680,7 +687,10 @@ def _footprints(ink: np.ndarray, kernel: int) -> np.ndarray:
         if _encloses_rooms(regions == largest, free, box):
             inside[regions == largest] = False
     inside = cv2.erode(inside.astype(np.uint8), disk, borderValue=0)
-    _, outlines = cv2.connectedComponents(inside, connectivity=8)
+    count, outlines, stats, _ = cv2.connectedComponentsWithStats(inside, connectivity=8)
+    small = [label for label in range(1, count) if stats[label, cv2.CC_STAT_AREA] < MIN_OUTLINE_SHARE * width * height]
+    if small:
+        outlines[np.isin(outlines, small)] = 0
     return outlines
 
 

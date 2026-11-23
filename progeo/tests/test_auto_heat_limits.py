@@ -181,3 +181,67 @@ def test_backfill_apply_stores(plan):
 
     assert "stored: 1" in output
     assert len(_reload(plan).heat_limitations) == 2
+
+
+# -- patch_live clean_heat_limits: the symbol areas of the old detection ----------------
+
+def _symbol(number, x=0.5):
+    """An automatic area around one sensor's arrowhead - far below MIN_OUTLINE_SHARE."""
+    return {"id": f"s{number}", "name": f"Auto {number}", "points": [[x, 0.5], [x + 0.004, 0.5], [x, 0.504]]}
+
+
+def _clean(apply=False):
+    from progeo.management.commands.patch_live import clean_heat_limits
+
+    return clean_heat_limits(apply=apply, databases=[f.DB])
+
+
+def test_clean_is_a_dry_run_by_default(plan):
+    symbols = [_symbol(number, x=0.01 * number) for number in range(1, 40)]
+    plan.heat_limitations = symbols
+    plan.save(using=f.DB, update_fields=["heat_limitations"])
+
+    assert _clean() == {"plans": 1, "areas_before": 39, "areas_after": 2, "failed": []}
+    assert _reload(plan).heat_limitations == symbols
+
+
+def test_clean_redetects_a_plan_full_of_symbol_areas(plan):
+    plan.heat_limitations = [_symbol(number, x=0.01 * number) for number in range(1, 40)]
+    plan.save(using=f.DB, update_fields=["heat_limitations"])
+
+    _clean(apply=True)
+
+    areas = _reload(plan).heat_limitations
+    # The two buildings of the synthetic plan, as a fresh detection finds them.
+    assert len(areas) == 2 and all(auto_heat_limits.is_auto_area(area) for area in areas)
+
+
+def test_clean_drops_only_the_symbols_next_to_hand_made_areas(plan):
+    building = {"id": "a1", "name": "Auto 1", "points": [[0.1, 0.1], [0.4, 0.1], [0.4, 0.6], [0.1, 0.6]]}
+    tiny_by_hand = {"id": "h2", "name": "Schacht", "points": [[0.7, 0.7], [0.701, 0.7], [0.7, 0.701]]}
+    plan.heat_limitations = [HAND_MADE, building, _symbol(2), tiny_by_hand, _symbol(3, x=0.6)]
+    plan.save(using=f.DB, update_fields=["heat_limitations"])
+
+    _clean(apply=True)
+
+    assert _reload(plan).heat_limitations == [HAND_MADE, building, tiny_by_hand]
+
+
+def test_clean_drops_the_symbols_when_the_plan_cannot_be_detected_again(upload_dir, location):
+    without_image = ProgeoLageplan.objects.using(f.DB).create(
+        location=location, lageplan="lageplan/missing.png",
+        heat_limitations=[_symbol(1), _symbol(2, x=0.6)],
+    )
+
+    _clean(apply=True)
+
+    assert _reload(without_image).heat_limitations == []
+
+
+def test_clean_leaves_plans_without_symbol_areas_alone(plan):
+    building = {"id": "a1", "name": "Auto 1", "points": [[0.1, 0.1], [0.4, 0.1], [0.4, 0.6], [0.1, 0.6]]}
+    plan.heat_limitations = [building]
+    plan.save(using=f.DB, update_fields=["heat_limitations"])
+
+    assert _clean(apply=True)["plans"] == 0
+    assert _reload(plan).heat_limitations == [building]

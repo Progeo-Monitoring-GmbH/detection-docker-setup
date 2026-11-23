@@ -14,6 +14,10 @@ outline):
 - for every existing plan: manage.py backfill_heat_limits (dry run by
   default, --apply stores).
 
+Before plan_detect.MIN_OUTLINE_SHARE a plan drawing every point sensor as a
+small filled symbol got one area per sensor; manage.py patch_live --patch
+clean_heat_limits [--apply] removes those (clean_symbol_areas).
+
 Hand-made areas are never touched: a plan's areas are only (re)detected
 while it has none, or while every area it has is one of ours (named
 "Auto <n>" / "Auto <n> (sensors)" by plan_detect) - those follow a moved
@@ -102,6 +106,58 @@ def auto_heat_limitations(plan, db_name: str, *, dry: bool = False) -> AutoHeatR
     plan.save(using=db_name, update_fields=["heat_limitations"])
     ilog(f"auto heat limitations: plan {plan.pk} in {db_name} - {note}", tag="[LAGEPLAN]")
     return AutoHeatResult("stored", areas=areas, note=note)
+
+
+def area_share(area) -> float:
+    """The share of the plan image an area covers (its points are normalized to the image)."""
+    points = [point for point in (area.get("points") or []) if isinstance(point, (list, tuple)) and len(point) == 2]
+    if len(points) < 3:
+        return 0.0
+    twice = sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]))
+    return abs(twice) / 2
+
+
+def symbol_areas(areas) -> list:
+    """The automatic areas too small for a building - the symbols (a point
+    sensor's arrowhead) the detection took for outlines before
+    plan_detect.MIN_OUTLINE_SHARE: one area per sensor (project 5968: 130)."""
+    from progeo.helper.plan_detect import MIN_OUTLINE_SHARE
+
+    return [area for area in areas if is_auto_area(area) and area_share(area) < MIN_OUTLINE_SHARE]
+
+
+@dataclass
+class CleanResult:
+    """What clean_symbol_areas did (or, dry, would do) with one plan."""
+
+    before: int
+    after: int
+    # "re-detected" (only automatic areas: detected again) | "symbols dropped"
+    how: str
+    note: str = ""
+
+
+def clean_symbol_areas(plan, db_name: str, *, apply: bool = False) -> CleanResult | None:
+    """The plan without its symbol areas (symbol_areas) - None when it has
+    none. Only automatic areas: detected again (auto_heat_limitations); where
+    that isn't possible (no image, no points) or hand-made areas are there
+    too, just the symbol areas are dropped. Hand-made areas stay. Read only
+    unless `apply`."""
+    areas = [area for area in (plan.heat_limitations or []) if isinstance(area, dict)]
+    symbols = symbol_areas(areas)
+    if not symbols:
+        return None
+    if replaceable(areas):
+        result = auto_heat_limitations(plan, db_name, dry=not apply)
+        if result.status in ("stored", "would_store"):
+            return CleanResult(len(areas), len(result.areas), "re-detected", result.note)
+    dropped = {id(area) for area in symbols}
+    kept = [area for area in areas if id(area) not in dropped]
+    if apply:
+        plan.heat_limitations = kept
+        # save(): post_save drops the cached location answers.
+        plan.save(using=db_name, update_fields=["heat_limitations"])
+    return CleanResult(len(areas), len(kept), "symbols dropped")
 
 
 def run_for_plan(db_name: str, lageplan_id: int) -> AutoHeatResult | None:

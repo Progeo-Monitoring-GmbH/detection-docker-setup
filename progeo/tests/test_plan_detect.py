@@ -171,6 +171,26 @@ def test_a_tightly_cropped_building_is_no_frame(tmp_path):
     assert right - left > 0.95 * SIZE[0] and bottom - top > 0.95 * SIZE[1]
 
 
+def test_sensor_symbols_are_no_outlines(tmp_path):
+    """Legacy plans (project 5968) draw every point sensor as a small filled
+    arrowhead - each one a closed bit of ink around its sensor. They are no
+    buildings: the building around them is the one area, not one per sensor."""
+    image = np.full((SIZE[1], SIZE[0], 3), 255, np.uint8)
+    _walls(image, BUILDING_A, gap=(380, 420))  # the door needs the larger gap sealing
+    marks = [(x, y) for y in (200, 300, 400, 500) for x in range(160, 660, 60)]
+    for x, y in marks:
+        cv2.fillPoly(image, [np.array([(x - 6, y - 6), (x + 6, y), (x - 6, y + 6)], np.int32)], (40, 40, 200))
+    path = tmp_path / "arrowheads.png"
+    cv2.imwrite(str(path), image)
+
+    detection = plan_detect.detect_heat_limitations(
+        plan_detect.load_plan_image(str(path)), [[(x / SIZE[0], y / SIZE[1])] for x, y in marks]
+    )
+
+    assert [(area.kind, area.sensors) for area in detection.areas] == [("outline", len(marks))]
+    assert _box(detection.areas[0].points) == pytest.approx(BUILDING_A, abs=12)
+
+
 def test_sensors_off_the_plan_are_refused(plan_path):
     with pytest.raises(plan_detect.PlanDetectError, match="No measure point lies on the plan"):
         plan_detect.detect_heat_limitations(plan_detect.load_plan_image(plan_path), [[(1.5, 0.2)]])
