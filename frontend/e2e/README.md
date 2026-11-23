@@ -66,6 +66,10 @@ on the frontend's origin.
   it (the `subscriber` role) the code is generated, shown, hidden and offered
   again as "QR-Code zeigen"; revoking asks first and replaces the code.
 - `login-throttle.e2e.ts` - failed logins make the wait grow.
+- `threshold-slider.e2e.ts` - the slider of /staff/thresholds/: maximum,
+  threshold and proposal as ticks where the thumb would stand, red/green
+  stripes, sliding and typing. Its own findings file (page.route), nothing
+  applied; skips without `module_admin_thresholds`.
 - `destructive-*.e2e.ts` - every destructive button asks first and explains
   the consequences (`expectConfirmGuard()`); the requests are blocked
   (`blockDestructive()`), the confirm button is never clicked.
