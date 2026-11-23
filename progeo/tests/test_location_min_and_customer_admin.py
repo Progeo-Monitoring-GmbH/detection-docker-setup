@@ -1,13 +1,13 @@
 """Who sees which locations in the pickers (/v1/location/min/), and the
-mini admin: a customer managing the users of their own account on /staff/
-(module_mini_admin_enabled - staff_admin_viewset)."""
+customer admin: a customer managing the users of their own account on /staff/
+(module_customer_admin_enabled - staff_admin_viewset)."""
 import pytest
 from django.contrib.auth.models import User
 
 from progeo.tests import factories as f
 
 READ = ("module_locations_enabled",)
-MINI = "module_mini_admin_enabled"
+CUSTOMER_ADMIN = "module_customer_admin_enabled"
 USERS = "/api/auth-support/staff/users/"
 
 
@@ -109,14 +109,14 @@ def test_staff_alarm_summaries_cover_their_accounts_only(api_client, two_account
     assert set(as_superuser) == {str(a1.pk), str(b1.pk)}
 
 
-# -- the mini admin -------------------------------------------------------------------
+# -- the customer admin -------------------------------------------------------------------
 
 @pytest.fixture
-def mini(api_client):
-    """A mini admin of account "own", with a colleague, a staff member and a
+def customer_admin(api_client):
+    """A customer admin of account "own", with a colleague, a staff member and a
     stranger around."""
     own, other = f.make_account(name="Eigen"), f.make_account(name="Fremd")
-    admin = f.make_user(perms=(*READ, "module_notifications_enabled", MINI), accounts=[own])
+    admin = f.make_user(perms=(*READ, "module_notifications_enabled", CUSTOMER_ADMIN), accounts=[own])
     colleague = f.make_user(perms=READ, accounts=[own, other])
     staff = f.make_user(staff=True, accounts=[own])
     stranger = f.make_user(perms=READ, accounts=[other])
@@ -130,51 +130,51 @@ def _codes(user):
     return set(user.user_permissions.filter(content_type__app_label="progeo").values_list("codename", flat=True))
 
 
-def test_a_mini_admin_lists_only_the_customers_of_their_account(api_client, mini):
+def test_a_mini_admin_lists_only_the_customers_of_their_account(api_client, customer_admin):
     body = api_client.get(USERS).json()
 
     ids = {user["id"] for user in body["users"]}
-    assert ids == {mini["colleague"].pk}
-    assert body["scope"] == "mini"
-    assert body["admin_accounts"] == [{"id": mini["own"].pk, "name": "Eigen"}]
+    assert ids == {customer_admin["colleague"].pk}
+    assert body["scope"] == "customer"
+    assert body["admin_accounts"] == [{"id": customer_admin["own"].pk, "name": "Eigen"}]
     # The colleague's other account stays hidden.
-    colleague = next(user for user in body["users"] if user["id"] == mini["colleague"].pk)
-    assert colleague["accounts"] == [{"id": mini["own"].pk, "name": "Eigen"}]
-    assert MINI not in body["grantable_codes"]
-    # Their own codes - the button permissions of mini admins included (helper/button_permissions.py).
+    colleague = next(user for user in body["users"] if user["id"] == customer_admin["colleague"].pk)
+    assert colleague["accounts"] == [{"id": customer_admin["own"].pk, "name": "Eigen"}]
+    assert CUSTOMER_ADMIN not in body["grantable_codes"]
+    # Their own codes - the button permissions of customer admins included (helper/button_permissions.py).
     assert set(body["grantable_codes"]) == {
         *READ, "module_notifications_enabled", "module_user_add", "module_user_invitable",
         "module_user_disability", "module_user_revokable",
     }
 
 
-def test_a_mini_admin_creates_users_of_their_account_with_permissions_they_hold(api_client, mini):
+def test_a_mini_admin_creates_users_of_their_account_with_permissions_they_hold(api_client, customer_admin):
     response = api_client.post(USERS, {
         "username": f.unique("neu"), "email": f"{f.unique('neu')}@progeo.com",
-        "permissions": ["module_notifications_enabled", "module_devices_enabled", MINI],
+        "permissions": ["module_notifications_enabled", "module_devices_enabled", CUSTOMER_ADMIN],
     }, format="json").json()
 
     assert response["success"] is True
     created = User.objects.using(f.DB).get(pk=response["user"]["id"])
     assert (created.is_staff, created.is_superuser) == (False, False)
-    assert mini["own"].users.filter(pk=created.pk).exists()
+    assert customer_admin["own"].users.filter(pk=created.pk).exists()
     assert "module_notifications_enabled" in _codes(created)
-    assert not {"module_devices_enabled", MINI} & _codes(created)
-    assert set(response["denied_permissions"]) == {"module_devices_enabled", MINI}
+    assert not {"module_devices_enabled", CUSTOMER_ADMIN} & _codes(created)
+    assert set(response["denied_permissions"]) == {"module_devices_enabled", CUSTOMER_ADMIN}
 
 
-def test_a_mini_admin_creates_no_staff_and_only_in_their_own_accounts(api_client, mini):
+def test_a_mini_admin_creates_no_staff_and_only_in_their_own_accounts(api_client, customer_admin):
     staff = api_client.post(USERS, {"username": f.unique("x"), "is_staff": True}, format="json").json()
-    foreign = api_client.post(USERS, {"username": f.unique("y"), "account_id": mini["other"].pk},
+    foreign = api_client.post(USERS, {"username": f.unique("y"), "account_id": customer_admin["other"].pk},
                               format="json").json()
 
     assert staff["reason"] == "Only staff may create staff users"
     assert foreign["reason"] == "You can only add users to your own accounts"
 
 
-def test_a_mini_admin_changes_permissions_but_never_the_mini_admin_one(api_client, mini):
-    colleague = mini["colleague"]
-    f.grant(colleague, MINI, "module_devices_enabled")
+def test_a_mini_admin_changes_permissions_but_never_the_mini_admin_one(api_client, customer_admin):
+    colleague = customer_admin["colleague"]
+    f.grant(colleague, CUSTOMER_ADMIN, "module_devices_enabled")
     url = f"{USERS}{colleague.pk}/update/"
 
     response = api_client.post(url, {
@@ -183,15 +183,15 @@ def test_a_mini_admin_changes_permissions_but_never_the_mini_admin_one(api_clien
 
     assert response["success"] is True
     # Granted what the admin holds; what they can't grant is left as it was.
-    assert _codes(colleague) == {*READ, "module_notifications_enabled", MINI, "module_devices_enabled"}
+    assert _codes(colleague) == {*READ, "module_notifications_enabled", CUSTOMER_ADMIN, "module_devices_enabled"}
     assert response["denied_permissions"] == []
 
 
-def test_a_mini_admin_cannot_touch_anyone_else(api_client, mini):
-    for target in (mini["stranger"], mini["staff"], mini["admin"]):
+def test_a_mini_admin_cannot_touch_anyone_else(api_client, customer_admin):
+    for target in (customer_admin["stranger"], customer_admin["staff"], customer_admin["admin"]):
         assert api_client.post(f"{USERS}{target.pk}/update/", {"email": "x@progeo.com"},
                                format="json").json()["reason"] == "Unknown user"
-    colleague = mini["colleague"]
+    colleague = customer_admin["colleague"]
     assert api_client.post(f"{USERS}{colleague.pk}/update/", {"is_staff": True},
                            format="json").json()["reason"] == "Staff access required"
     assert api_client.post(f"{USERS}{colleague.pk}/update/", {"reset_two_factor": True},
@@ -201,32 +201,32 @@ def test_a_mini_admin_cannot_touch_anyone_else(api_client, mini):
     assert api_client.post(f"{USERS}{colleague.pk}/delete/").json()["reason"] == "Staff access required"
 
 
-def test_only_staff_grant_the_mini_admin_permission(api_client, mini):
-    colleague = mini["colleague"]
-    staff = f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled"))  # without holding MINI
+def test_only_staff_grant_the_mini_admin_permission(api_client, customer_admin):
+    colleague = customer_admin["colleague"]
+    staff = f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled"))  # without holding CUSTOMER_ADMIN
     api_client.force_authenticate(user=staff)
 
-    api_client.post(f"{USERS}{colleague.pk}/update/", {"permissions": [*READ, MINI]}, format="json")
+    api_client.post(f"{USERS}{colleague.pk}/update/", {"permissions": [*READ, CUSTOMER_ADMIN]}, format="json")
 
-    assert MINI in _codes(colleague)
+    assert CUSTOMER_ADMIN in _codes(colleague)
 
 
-def test_customers_without_the_permission_get_no_users_table(api_client, mini):
-    api_client.force_authenticate(user=mini["colleague"])
+def test_customers_without_the_permission_get_no_users_table(api_client, customer_admin):
+    api_client.force_authenticate(user=customer_admin["colleague"])
 
     assert api_client.get(USERS).json()["reason"] == "Staff access required"
 
 
 def test_both_permission_endpoints_let_staff_grant_the_mini_admin_role(api_client):
     """/api/auth-support/module-permissions/ (POST) follows the same rule as
-    the Benutzerverwaltung - staff grant the mini admin role without holding
+    the Benutzerverwaltung - staff grant the customer admin role without holding
     it - and the user's own permissions then carry it (the /staff/ guard)."""
     customer = f.make_user(perms=READ)
     api_client.force_authenticate(user=f.make_user(staff=True, perms=READ))
 
     response = api_client.post("/api/auth-support/module-permissions/",
-                               {"user_id": customer.pk, "add": [MINI]}, format="json")
+                               {"user_id": customer.pk, "add": [CUSTOMER_ADMIN]}, format="json")
 
     assert response.status_code == 200, response.content
     api_client.force_authenticate(user=User.objects.using(f.DB).get(pk=customer.pk))
-    assert api_client.get("/api/auth-support/module-permissions/").json()["permissions"][MINI] is True
+    assert api_client.get("/api/auth-support/module-permissions/").json()["permissions"][CUSTOMER_ADMIN] is True

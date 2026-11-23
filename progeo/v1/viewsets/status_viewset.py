@@ -1492,6 +1492,71 @@ class StatusViewSet(ProgeoModalViewSet):
             "points": ProgeoMeasurePointSerializer(points, many=True).data,
         })
 
+    # Where a measure point's dot is: what "measure_points/reorder" hands from one point to another.
+    REORDER_PLACE_FIELDS = ("lageplan_id", "x", "y", "nx", "ny", "grid_x", "grid_y", "x_end", "y_end", "nx_end", "ny_end")
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/reorder", methods=["POST"])
+    def reorder_measure_points(self, request, *args, **kwargs):
+        """Renumbers dots on the plan (step 5 of the Lageplan wizard, "Repair
+        order"): POST {location_id (project id), orders: [{id, sensor_order}]}
+        - the dot of point `id` gets the number `sensor_order`. The new numbers
+        are the points' own ones, each once (a permutation): nothing else is
+        renumbered and no number gets lost or doubled.
+
+        A number belongs to its input (the readings, the Klemmliste's name),
+        so the records keep sensor_order, name, device, threshold and disabled
+        - what moves between them is the dot (plan, positions, band ends).
+        The answer lists the points whose dot changed."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        raw_orders = request.data.get("orders")
+        orders = {}
+        try:
+            if not isinstance(raw_orders, list) or not raw_orders:
+                raise ValueError
+            for entry in raw_orders:
+                if not isinstance(entry, dict) or any(isinstance(entry.get(key), bool) for key in ("id", "sensor_order")):
+                    raise ValueError
+                point_id = int(entry["id"])
+                if point_id in orders:
+                    return RequestFailed({"reason": f"Measure point {point_id} is listed twice - each point once"})
+                orders[point_id] = int(entry["sensor_order"])
+        except (KeyError, TypeError, ValueError):
+            return RequestFailed({"reason": "orders must be a non-empty list of {id, sensor_order}"})
+
+        with transaction.atomic(using=db_name):
+            points = list(
+                ProgeoMeasurePoint.objects.using(db_name).select_for_update().filter(location=location, pk__in=orders)
+            )
+            missing = sorted(set(orders) - {point.pk for point in points})
+            if missing:
+                return RequestFailed({"reason": f"Measure point(s) {missing} are not at this location"})
+            by_order = {point.sensor_order: point for point in points}
+            if len(by_order) != len(points) or sorted(by_order) != sorted(orders.values()):
+                return RequestFailed({"reason": "The new numbers must be the points' own numbers, each once"})
+            dots = {point.pk: {field: getattr(point, field) for field in self.REORDER_PLACE_FIELDS} for point in points}
+            changed = []
+            for point_id, order in orders.items():
+                record = by_order[order]
+                if record.pk != point_id:
+                    for field, value in dots[point_id].items():
+                        setattr(record, field, value)
+                    changed.append(record)
+            for record in changed:
+                record.save(using=db_name, update_fields=list(self.REORDER_PLACE_FIELDS))
+
+        changed.sort(key=lambda point: (point.sensor_order, point.pk))
+        ilog(f"{len(changed)} measure point(s) of location {location.id} renumbered: "
+             f"{[point.sensor_order for point in changed]}")
+        return RequestSuccess({
+            "location_id": location.id,
+            "reordered": len(changed),
+            "points": ProgeoMeasurePointSerializer(changed, many=True).data,
+        })
+
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])

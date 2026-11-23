@@ -28,7 +28,7 @@ import {
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
-import { portalItemRule, routeRule, useAccess } from '../../main/access';
+import { CUSTOMER_ADMIN, portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
 import { PORTAL_NAV_ITEMS, openLocationId, portalNavPath } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
@@ -267,7 +267,8 @@ const LocationSidebar = ({
   const adminItems: ModuleItem[] = [
     {
       key: 'staff',
-      label: t('sidebar_staff_admin'),
+      // Customer admins: the users of their own account.
+      label: can(CUSTOMER_ADMIN) ? t('staff_title_customer') : t('sidebar_staff_admin'),
       icon: People,
       to: '/staff/',
       visible: can(routeRule('/staff/')),

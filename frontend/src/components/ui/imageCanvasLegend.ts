@@ -134,6 +134,29 @@ const pointsGroup = (modes: CanvasModes): LegendGroup | null => {
   };
 };
 
+/** "Repair order" on: its keys are the only ones (sensorOrderRepair.ts). */
+export const repairLegendGroups = (tool: string): LegendGroup[] => [
+  {
+    title: 'View',
+    entries: [
+      { keys: ['Drag'], label: 'Move the plan (not with Area)' },
+      { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+    ],
+  },
+  {
+    title: 'Repair order',
+    entries: [
+      { keys: ['A', 'Drag'], label: 'Area: the points to number again · Shift adds one, Alt / Ctrl takes out', active: tool === 'area' },
+      { keys: ['C', 'Click'], label: 'Click: the next number to a point', active: tool === 'click' },
+      { keys: ['L', 'Click'], label: 'Line: two clicks - the points along it, from the first click on', active: tool === 'line' },
+      { keys: ['S', 'Click'], label: 'Swap: two points exchange their numbers', active: tool === 'swap' },
+      { keys: ['Z'], label: 'Undo the last step' },
+      { keys: ['Esc'], label: 'Cancel a started line / swap' },
+    ],
+    note: 'Nothing is stored before "Save order" - the dots stay, their numbers (and names) change.',
+  },
+];
+
 /** The legend's groups: view, placing sensors, align and scale, image edits, measure points. */
 export const canvasLegendGroups = (modes: CanvasModes, placement?: Placement): Array<LegendGroup | null> => [
   viewGroup(modes, placement),

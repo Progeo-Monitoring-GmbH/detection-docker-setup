@@ -113,6 +113,23 @@ export const postRemovePoints = (
     (removeFailure: unknown) => onFail(`Could not remove the measure points: ${requestReason(removeFailure)}`),
   );
 
+/** Renumbers dots (measure_points/reorder, "Repair order"): the numbers move to
+ * the dots picked for them - a permutation of the points' own numbers. */
+export const postReorder = (
+  auth: Auth,
+  locationId: number,
+  orders: Array<{ id: number; sensor_order: number }>,
+  onDone: (answer: Answer) => void,
+  onFail: (message: string) => void,
+) =>
+  void axiosConfig.perform_post(
+    auth,
+    '/v1/status/measure_points/reorder/',
+    { location_id: locationId, orders },
+    (response: { data?: Answer }) => onDone(answerOf(response)),
+    (reorderFailure: unknown) => onFail(`Could not store the new order: ${requestReason(reorderFailure)}`),
+  );
+
 /** Moves points onto a plan at new normalized positions (measure_points/place). */
 export const postPlacePoints = (
   auth: Auth,

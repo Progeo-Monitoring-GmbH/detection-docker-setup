@@ -43,6 +43,10 @@ const anyOf =
     rules.some((rule) => rule(access));
 const staffPermission = (code: string): AccessRule =>
   allOf(STAFF, permission(code));
+/** A customer admin: manages the users of their own account(s) - no staff
+ * (staff manage everyone; the backend's _is_customer_admin). */
+export const CUSTOMER_ADMIN: AccessRule = (access) =>
+  !STAFF(access) && access.hasPermission('module_customer_admin_enabled');
 
 /**
  * Access of every route below AppLayout/LocationPortalLayout (CoreRoutes),
@@ -64,9 +68,9 @@ export const APP_ROUTE_ACCESS = {
   // "Is the location ready?" - the readiness checklist (staff, like its endpoints).
   '/checklist/location/': STAFF,
   '/admin/panel/': staffPermission('module_admin_panel'),
-  // Staff only - mini admins manage the people of their objects on the
-  // Rechte tab (/location/:id/permissions), not here.
-  '/staff/': staffPermission('module_admin_staff_enabled'),
+  // Staff - and customer admins, who see only the users table there: the
+  // customers of their own account(s) (the backend's _managed_users).
+  '/staff/': anyOf(staffPermission('module_admin_staff_enabled'), CUSTOMER_ADMIN),
   // Database usage and user activity (main/staff/).
   '/insights/databases/': staffPermission('module_admin_insights'),
   '/insights/activity/': staffPermission('module_admin_insights'),

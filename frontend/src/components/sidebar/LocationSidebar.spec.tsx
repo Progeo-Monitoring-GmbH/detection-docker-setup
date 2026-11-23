@@ -31,6 +31,7 @@ vi.mock('../../main/access', () => ({
   useAccess: () => ({ can: () => true, hasPermission: () => false }),
   routeRule: (route: string) => route,
   portalItemRule: () => null,
+  CUSTOMER_ADMIN: () => false,
 }));
 vi.mock('../../main/roleModel', () => ({ useProgeoRole: () => 'staff' }));
 vi.mock('../../main/portalNav', async (importOriginal) => ({

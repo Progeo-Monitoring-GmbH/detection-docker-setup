@@ -28,7 +28,7 @@ const RequireAccess = ({
   const { t } = useTranslation();
   const allowed = can(rule);
   // The permissions are loaded once per session token: a role granted since
-  // (e.g. the mini admin) wouldn't count before the token rotates. Before
+  // (e.g. the customer admin) wouldn't count before the token rotates. Before
   // refusing, ask the backend once more.
   const [rechecked, setRechecked] = useState<'no' | 'running' | 'done'>('no');
   const settled = Boolean(auth.token && auth.user) && !isLoading;

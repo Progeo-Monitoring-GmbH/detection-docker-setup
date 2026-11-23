@@ -333,12 +333,21 @@ export const useCanvasEdits = (
     );
   };
 
+  // Step 5 "Repair order" - measure_points/reorder answers with the points
+  // whose dot changed (they keep their number and name, the dots moved).
+  const handlePointsReordered = (response: Record<string, unknown>) => {
+    const moved = answerPoints(response);
+    state.setMeasurePoints((current) => mergedPoints(current, pointsById(moved)));
+    toastSaved(`New order saved - ${moved.length} measure point(s) renumbered.`);
+  };
+
   return {
     onDiscardCut: () => state.setCutPoints([]),
     onImageEdited: handleImageEdited,
     onPointsRemoved: handlePointsRemoved,
     onCut: handleCut,
     onPointsPlaced: handlePointsPlaced,
+    onPointsReordered: handlePointsReordered,
   };
 };
 

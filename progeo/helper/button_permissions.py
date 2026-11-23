@@ -22,12 +22,12 @@ GRANTS = {
     "module_admin_storage": [("module_admin_enabled",)],
     "module_admin_lageplan_export": [("module_admin_enabled",)],
     "module_admin_logs": [("module_admin_enabled",)],
-    "module_user_add": [("staff",), ("module_mini_admin_enabled",)],
-    "module_user_invitable": [("staff",), ("module_mini_admin_enabled",),
+    "module_user_add": [("staff",), ("module_customer_admin_enabled",)],
+    "module_user_invitable": [("staff",), ("module_customer_admin_enabled",),
                               ("module_notifications_add", "module_locations_edit")],
-    "module_user_disability": [("staff",), ("module_mini_admin_enabled",)],
+    "module_user_disability": [("staff",), ("module_customer_admin_enabled",)],
     "module_user_erasability": [("staff",)],
-    "module_user_revokable": [("staff",), ("module_mini_admin_enabled",), ("module_notifications_edit",)],
+    "module_user_revokable": [("staff",), ("module_customer_admin_enabled",), ("module_notifications_edit",)],
 }
 
 

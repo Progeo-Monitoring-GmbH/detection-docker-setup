@@ -37,6 +37,7 @@ import {
 } from './imageCanvasModes';
 import type { useAreaSelection, useGroupAlign, usePlanScale, usePointCalibration } from './useImageCanvasEdits';
 import { useWindowPointer } from './useImageCanvasView';
+import { areaOpOf, type SensorOrderRepair } from './useSensorOrderRepair';
 
 type CanvasMouseEvent = React.MouseEvent<HTMLCanvasElement>;
 type ClientPoint = { clientX: number; clientY: number };
@@ -66,6 +67,8 @@ type CanvasPointerInput = {
   setHover: (update: Hover | null | ((current: Hover | null) => Hover | null)) => void;
   setInsertAt: (point: ImagePoint | null) => void;
   insertCut: (at: ImagePoint) => void;
+  /** "Repair order": while it is on, the mouse is its own (areas, clicks, lines). */
+  repair?: SensorOrderRepair;
 };
 
 export const useCanvasPointer = (input: CanvasPointerInput) => {
@@ -252,6 +255,13 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
   // canvas the "Align" drag is dropped - on it, it is pinned first).
   useWindowPointer(
     (event) => {
+      if (input.repair?.draggingArea()) {
+        const at = imagePointAt(event, true);
+        if (at) {
+          input.repair.extendArea(at);
+        }
+        return;
+      }
       if (area.selectingRef.current) {
         const at = imagePointAt(event, true);
         if (at) {
@@ -270,6 +280,9 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     },
     () => {
       dragRef.current = null;
+      if (input.repair?.draggingArea()) {
+        input.repair.finishArea();
+      }
       area.endSelection();
       calibration.setAlignDrag(null);
       groupAlign.setGroupDrag(null);
@@ -282,7 +295,23 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     dragging: Boolean(dragRef.current || calibration.alignDrag || groupDrag),
     onMouseDown: (event: CanvasMouseEvent) => {
       pressRef.current = null;
-      const presses = [pressInsert, pressGroupPoint, pressSelect, pressAlign, pressScale, pressPlacement];
+      const { repair } = input;
+      if (repair?.active && repair.tool === 'area') {
+        // Repair order, Area: a drag selects (Shift adds, Alt / Ctrl takes out).
+        const at = imagePointAt(event, true);
+        if (at) {
+          repair.startArea(at, areaOpOf(event));
+          setHover(null);
+        }
+        return;
+      }
+      // Repair order, the other tools: a click acts (see onClick), a drag pans.
+      if (repair?.active) {
+        pressRef.current = { x: event.clientX, y: event.clientY };
+      }
+      const presses = repair?.active
+        ? []
+        : [pressInsert, pressGroupPoint, pressSelect, pressAlign, pressScale, pressPlacement];
       if (!presses.some((press) => press(event))) {
         dragRef.current = {
           startX: event.clientX,
@@ -298,6 +327,9 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
       }
       if (insertingOf(modes)) {
         input.setInsertAt(normalizedPointAt(event));
+      }
+      if (input.repair?.active && input.repair.lineStart) {
+        input.repair.setMouse(normalizedPointAt(event));
       }
       if (movePinDrag(event)) {
         return;
@@ -320,6 +352,14 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     onClick: (event: CanvasMouseEvent) => {
       const press = pressRef.current;
       pressRef.current = null;
+      const clicked = press != null && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= CLICK_TOLERANCE;
+      if (input.repair?.active) {
+        // Only a click pressed in this tool - not the end of an area's drag.
+        if (clicked) {
+          input.repair.click(itemAt(event), normalizedPointAt(event));
+        }
+        return;
+      }
       if (
         !placement ||
         placement.activeDeviceId === null ||

@@ -70,7 +70,7 @@ describe('mayEditRule (Rechte tab)', () => {
 describe('mayRevoke (Rechte tab)', () => {
   const base = { isOwn: false, canEdit: false, canRevokeAccount: false };
 
-  it('revokes single access with the edit permission or as a mini admin', () => {
+  it('revokes single access with the edit permission or as a customer admin', () => {
     expect(mayRevoke({ ...base, access: 'single' })).toBe(false);
     expect(mayRevoke({ ...base, access: 'single', canEdit: true })).toBe(true);
     expect(
@@ -78,7 +78,7 @@ describe('mayRevoke (Rechte tab)', () => {
     ).toBe(true);
   });
 
-  it('takes account members (other mini admins too) out only as a mini admin - never oneself', () => {
+  it('takes account members (other customer admins too) out only as a customer admin - never oneself', () => {
     expect(mayRevoke({ ...base, access: 'account', canEdit: true })).toBe(
       false,
     );

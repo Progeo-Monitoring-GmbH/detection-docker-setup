@@ -89,7 +89,7 @@ from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
     HEAT_LIMITATION_MAX_POINTS,
-    MINI_ADMIN_PERMISSION,
+    CUSTOMER_ADMIN_PERMISSION,
     SMS,
     Account,
     EMail,
@@ -131,13 +131,13 @@ def _staff_user_ids(user_ids) -> set:
 
 def _may_revoke_account(user, account) -> bool:
     """May `user` take members out of `account` (Rechte tab, Revoke)? Staff,
-    and mini admins (module_mini_admin_enabled) who are members of it - they
-    manage the people of their account, other mini admins included."""
+    and customer admins (module_customer_admin_enabled) who are members of it - they
+    manage the people of their account, other customer admins included."""
     if _is_staff_admin(user):
         return True
     return bool(
         account is not None
-        and has_module_permissions(user, MINI_ADMIN_PERMISSION)
+        and has_module_permissions(user, CUSTOMER_ADMIN_PERMISSION)
         and account.users.filter(pk=user.pk).exists()
     )
 
@@ -1320,10 +1320,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         """Revoke access to the location:
 
         - POST {"id": <access_id>}: delete a single-access rule
-          (module_notifications_edit, or a mini admin of the account).
+          (module_notifications_edit, or a customer admin of the account).
         - POST {"user_id": N, "scope": "account"}: take an account member out
-          of the location's account - staff and mini admins of that account
-          (also other mini admins, never themselves or ProGeo staff). Their
+          of the location's account - staff and customer admins of that account
+          (also other customer admins, never themselves or ProGeo staff). Their
           rules on the account's locations go too: they would leave them
           single access to every object whose notifications they had set.
         """
@@ -1357,7 +1357,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     @staticmethod
     def _revoke_account_member(request, account):
         if not _may_revoke_account(request.user, account):
-            return permission_denied_response(["module_mini_admin_enabled"])
+            return permission_denied_response(["module_customer_admin_enabled"])
         try:
             user_id = int(request.data.get("user_id"))
         except (TypeError, ValueError):

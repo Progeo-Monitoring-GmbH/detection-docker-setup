@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import coreRoutesSource from '../CoreRoutes.jsx?raw';
 import {
   APP_ROUTE_ACCESS,
+  CUSTOMER_ADMIN,
   type AccessContext,
   portalItemRule,
   routeRule,
@@ -46,8 +47,24 @@ describe('APP_ROUTE_ACCESS', () => {
         '/device/overview',
         '/location/overview/',
         '/interface/',
+        // As a customer admin: the users table of their own account.
+        '/staff/',
       ].sort(),
     );
+  });
+
+  it('opens /staff/ to a customer admin - not to staff without the staff permission', () => {
+    const customerAdmin: AccessContext = {
+      isStaff: false,
+      isSuperuser: false,
+      hasPermission: (code) => code === 'module_customer_admin_enabled',
+    };
+    expect(allowed(customerAdmin)).toEqual(['*', '/device/:id/update/', '/staff/']);
+    expect(CUSTOMER_ADMIN(customerAdmin)).toBe(true);
+    // Staff are no customer admins: /staff/ needs their own permission.
+    const staffWithIt: AccessContext = { ...customerAdmin, isStaff: true };
+    expect(CUSTOMER_ADMIN(staffWithIt)).toBe(false);
+    expect(routeRule('/staff/')(staffWithIt)).toBe(false);
   });
 
   it('only opens staff pages with their matching module permission', () => {

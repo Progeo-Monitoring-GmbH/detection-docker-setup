@@ -12,7 +12,7 @@
 - **Staff** list the objects of the accounts they are a member of, plus the objects granted to them one by one. Being staff alone lists nothing, although staff can still open any object by its link.
 - **Everyone else** lists the objects of their accounts plus their single accesses.
 
-**Mini admins** (`module_mini_admin_enabled`, no staff flag) manage the users of their own account(s) on `/staff/` (the users table only). They create users in their account, change the permissions of its customers, and grant only the permissions they hold themselves. They never grant `module_mini_admin_enabled`; only staff grant that, and permissions a mini admin can't grant stay untouched when they save a user.
+**Customer admins** (`module_customer_admin_enabled`, no staff flag) manage the users of their own account(s) on `/staff/` (the users table only). They create users in their account, change the permissions of its customers, and grant only the permissions they hold themselves. They never grant `module_customer_admin_enabled`; only staff grant that, and permissions a customer admin can't grant stay untouched when they save a user.
 
 Code: [progeo/helper/location_access.py](../progeo/helper/location_access.py).
 

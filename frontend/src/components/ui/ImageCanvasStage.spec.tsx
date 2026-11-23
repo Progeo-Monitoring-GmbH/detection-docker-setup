@@ -418,4 +418,120 @@ describe('ImageCanvasStage alignment and scale', () => {
       expect(container.textContent).not.toContain('Aligning');
     });
   });
+
+  describe('repair order', () => {
+    // Two cables (nx 0.3 / 0.6) of three sensors (ny 0.8 / 0.6 / 0.4: flipped,
+    // image y 100 / 200 / 300), numbered row by row instead of along the cables.
+    // Canvas: x 276.4 / 536.8, y 169.8 / 256.6 / 343.4.
+    const X = [276.4, 536.8];
+    const Y = [169.8, 256.6, 343.4];
+    const NY = [0.8, 0.6, 0.4];
+    // The Klemmliste names the inputs along the cables: 1-3 MPLE 1, 4-6 MPLE 2.
+    const NAMES = ['', 'A1-1', 'A2-1', 'A3-1', 'A1-2', 'A2-2', 'A3-2'];
+    const points = [0, 1].flatMap((cable) =>
+      [0, 1, 2].map((row) => {
+        const order = row * 2 + cable + 1;
+        return { id: 20 + cable * 3 + row, sensor_order: order, name: NAMES[order], nx: cable ? 0.6 : 0.3, ny: NY[row] };
+      }),
+    );
+    const canvasEvent = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        container.querySelector('canvas')!.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX, clientY }));
+      });
+    // As a browser does: down, up (it bubbles to the window - the pan a press starts ends), click.
+    const clickAt = (x: number, y: number) => {
+      canvasEvent('mousemove', x, y);
+      canvasEvent('mousedown', x, y);
+      canvasEvent('mouseup', x, y);
+      canvasEvent('click', x, y);
+    };
+    const line = (cable: number) => {
+      clickAt(X[cable], Y[0]);
+      clickAt(X[cable], Y[2]);
+    };
+    const dragArea = () =>
+      act(() => {
+        container.querySelector('canvas')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 200, clientY: 120 }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: 620, clientY: 400 }));
+        window.dispatchEvent(new MouseEvent('mouseup'));
+      });
+    const repairProps = () => ({ locationId: 5, lageplanId: 7, measurePoints: points, onPointsReordered: vi.fn() });
+
+    it('numbers an area again along lines, checks them against the Klemmliste names and stores the new order', () => {
+      const post = vi
+        .spyOn(axiosConfig, 'perform_post')
+        .mockImplementation(async (_auth, _url, _data, onSuccess) => onSuccess({ data: { reordered: 4, points: [] } }));
+      const props = repairProps();
+      mount(props);
+
+      act(() => button('Repair order').click());
+      dragArea();
+      expect(container.textContent).toContain('0 / 6 numbered');
+      // The area's drag did not start a line.
+      expect(container.textContent).toContain('Click the start of a line');
+
+      line(0);
+      expect(container.textContent).toContain('3 / 6 numbered (50 %) · next 4 A1-2');
+      expect(container.textContent).toContain('✓ Line 1: MPLE 1 · A1-1 … A3-1');
+      expect(container.textContent).toContain('No line yet for MPLE 2');
+
+      line(1);
+      expect(container.textContent).toContain('6 / 6 numbered (100 %)');
+      // Z takes the last line back.
+      key('keydown', 'z');
+      expect(container.textContent).toContain('3 / 6 numbered');
+      expect(button('Save order').disabled).toBe(true);
+      line(1);
+
+      act(() => button('Save order').click());
+
+      expect(post).toHaveBeenCalledTimes(1);
+      const [, url, data] = post.mock.calls[0];
+      expect(url).toBe('/v1/status/measure_points/reorder/');
+      const sent = data as { location_id: number; orders: Array<{ id: number; sensor_order: number }> };
+      expect(sent.location_id).toBe(5);
+      // Along the cables now: 1-3 down cable 0, 4-6 down cable 1 - the first and the last stay.
+      expect([...sent.orders].sort((a, b) => a.id - b.id)).toEqual([
+        { id: 21, sensor_order: 2 },
+        { id: 22, sensor_order: 3 },
+        { id: 23, sensor_order: 4 },
+        { id: 24, sensor_order: 5 },
+      ]);
+      expect(props.onPointsReordered).toHaveBeenCalledWith({ reordered: 4, points: [] });
+      // Done: the button is back.
+      expect(button('Repair order')).toBeDefined();
+    });
+
+    it('warns about a line that crosses two MPLEs', () => {
+      mount(repairProps());
+      act(() => button('Repair order').click());
+      dragArea();
+
+      // Row 0 across both cables: numbers 1, 2 - A1-1 and A2-1, but only 2 of MPLE 1's 3.
+      clickAt(X[0], Y[0]);
+      clickAt(X[1], Y[0]);
+      expect(container.textContent).toContain('⚠ Line 1: MPLE 1 has 3 sensors, the line 2');
+      // Clicked one by one, row 1 continues with 3 and 4: A3-1 and A1-2.
+      key('keydown', 'c');
+      clickAt(X[0], Y[1]);
+      clickAt(X[1], Y[1]);
+      expect(container.textContent).toContain('4 / 6 numbered');
+    });
+
+    it('has the keys to itself - L is its line, not the group alignment', () => {
+      mount({ ...repairProps(), onPointsPlaced: vi.fn() });
+      act(() => button('Repair order').click());
+      expect(container.textContent).toContain('Repair order');
+      key('keydown', 'l');
+      expect(container.textContent).not.toContain('Align a group');
+      expect(container.textContent).toContain('Line: two clicks');
+      act(() => button('Discard').click());
+      expect(button('Repair order')).toBeDefined();
+    });
+
+    it('is not offered without onPointsReordered', () => {
+      mount({ locationId: 5, lageplanId: 7, measurePoints: points });
+      expect(button('Repair order')).toBeUndefined();
+    });
+  });
 });

@@ -280,7 +280,7 @@ class UserModulePermissionView(APIView):
             return RequestFailed({"reason": f"Invalid permission codes: {sorted(invalid_codes)}"})
 
         # The same rule as the Benutzerverwaltung: the permissions staff hold
-        # themselves (superusers all) - and the mini admin one, which only
+        # themselves (superusers all) - and the customer admin one, which only
         # staff grant.
         from progeo.v1.viewsets.staff_admin_viewset import _grantable_codes
 

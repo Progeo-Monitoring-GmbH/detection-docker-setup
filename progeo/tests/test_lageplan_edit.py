@@ -379,3 +379,85 @@ def test_place_only_points_and_plans_of_the_location(editor, location):
     )
     own.refresh_from_db(using=f.DB)
     assert own.lageplan_id is None
+
+
+REORDER_URL = "/v1/status/measure_points/reorder/"
+
+
+def test_reorder_hands_the_numbers_to_other_dots_with_everything_they_carry(editor, location):
+    """Step 5 "Repair order": the dots stay where they are on the plan - the
+    numbers move to the dots picked for them, with their name (the
+    Klemmliste's), threshold and device."""
+    main, second = _two_plans(location)
+    one = f.make_measure_point(location, 1, lageplan=main, x=10, y=10, nx=0.1, ny=0.1, name="A1-1")
+    two = f.make_measure_point(location, 2, name="A2-1", threshold=5, lageplan=main, x=20, y=21, nx=0.2, ny=0.21,
+                               grid_x=2, grid_y=3, x_end=25, y_end=21, nx_end=0.25, ny_end=0.21)
+    three = f.make_measure_point(location, 3, name="A1-2", lageplan=second, x=30, y=31, nx=0.3, ny=0.31, disabled=True)
+    stays = f.make_measure_point(location, 4, lageplan=main, nx=0.9, ny=0.9)
+
+    # The dot of 3 is number 2's, the dot of 2 number 3's - 1 keeps its own.
+    response = editor.post(REORDER_URL, {"location_id": location.project_id, "orders": [
+        {"id": two.pk, "sensor_order": 3}, {"id": three.pk, "sensor_order": 2}, {"id": one.pk, "sensor_order": 1},
+    ]}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["reordered"] == 2
+    assert [p["id"] for p in response.json()["points"]] == [two.pk, three.pk]
+    for point in (one, two, three, stays):
+        point.refresh_from_db(using=f.DB)
+    place = ("lageplan_id", "x", "y", "nx", "ny", "grid_x", "grid_y", "x_end", "y_end", "nx_end", "ny_end")
+    assert (two.sensor_order, two.name, two.threshold, two.disabled) == (2, "A2-1", 5, False)
+    assert tuple(getattr(two, field) for field in place) == (second.pk, 30, 31, 0.3, 0.31, 0, 0, None, None, None, None)
+    assert (three.sensor_order, three.name, three.disabled) == (3, "A1-2", True)
+    assert tuple(getattr(three, field) for field in place) == (main.pk, 20, 21, 0.2, 0.21, 2, 3, 25, 21, 0.25, 0.21)
+    assert (one.nx, stays.nx) == (0.1, 0.9)
+
+
+@pytest.mark.parametrize("orders, reason", [
+    ([], "non-empty list"),
+    ([{"id": "one", "sensor_order": True}], "non-empty list"),
+    ([{"id": "one", "sensor_order": 2}, {"id": "one", "sensor_order": 1}], "each point once"),
+    # Only a permutation: no number gets lost or doubled.
+    ([{"id": "one", "sensor_order": 2}, {"id": "two", "sensor_order": 3}], "own numbers, each once"),
+    # Two points with one number (another plan's twin) - which dot would it be?
+    ([{"id": "two", "sensor_order": 2}, {"id": "twin", "sensor_order": 2}], "own numbers, each once"),
+])
+def test_reorder_validation(editor, location, orders, reason):
+    points = {"one": f.make_measure_point(location, 1, nx=0.1), "two": f.make_measure_point(location, 2, nx=0.2),
+              "twin": f.make_measure_point(location, 2, nx=0.3)}
+    orders = [{**entry, "id": points[entry["id"]].pk} for entry in orders]
+
+    response = editor.post(REORDER_URL, {"location_id": location.project_id, "orders": orders}, format="json")
+
+    assert response.status_code == 400
+    assert reason in response.json()["reason"]
+    assert [point.nx for point in ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).order_by("pk")] == [
+        0.1, 0.2, 0.3]
+
+
+def test_reorder_only_points_of_the_location(editor, location):
+    hidden = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931005)
+    foreign = f.make_measure_point(hidden, 1, nx=0.5)
+    own = f.make_measure_point(location, 2, nx=0.1)
+
+    response = editor.post(REORDER_URL, {"location_id": location.project_id, "orders": [
+        {"id": own.pk, "sensor_order": 1}, {"id": foreign.pk, "sensor_order": 2},
+    ]}, format="json")
+
+    assert (response.status_code, response.json()["reason"]) == (400, f"Measure point(s) [{foreign.pk}] are not at this location")
+    foreign.refresh_from_db(using=f.DB)
+    assert (foreign.sensor_order, foreign.nx) == (1, 0.5)
+
+
+def test_reorder_needs_the_edit_permission(api_client, location):
+    user = f.make_user(perms=("module_devices_enabled",))
+    f.make_access(location, user)
+    api_client.force_authenticate(user=user)
+    one, two = f.make_measure_point(location, 1, nx=0.1), f.make_measure_point(location, 2, nx=0.2)
+
+    response = api_client.post(REORDER_URL, {"location_id": location.project_id, "orders": [
+        {"id": one.pk, "sensor_order": 2}, {"id": two.pk, "sensor_order": 1}]}, format="json")
+
+    assert response.status_code in (400, 403)
+    one.refresh_from_db(using=f.DB)
+    assert one.nx == 0.1

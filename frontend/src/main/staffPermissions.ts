@@ -108,7 +108,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     id: 'users',
     labelKey: 'staff_permission_group_users',
     permissions: [
-      'module_mini_admin_enabled',
+      'module_customer_admin_enabled',
       'module_user_add',
       'module_user_invitable',
       'module_user_disability',
@@ -120,13 +120,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       none: [],
       viewer: ['module_user_invitable'],
       manager: [
-        'module_mini_admin_enabled',
+        'module_customer_admin_enabled',
         'module_user_add',
         'module_user_invitable',
         'module_user_erasability',
       ],
       admin: [
-        'module_mini_admin_enabled',
+        'module_customer_admin_enabled',
         'module_user_add',
         'module_user_invitable',
         'module_user_disability',

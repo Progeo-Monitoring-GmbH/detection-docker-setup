@@ -203,13 +203,26 @@ const isHeldKey = (key: string | null): key is HeldKey => HELD_KEYS.includes(key
 /** A/R/M/D/O/L/I (no modifier, not typing) held: what a press on the plan
  * does - released on keyup or leaving the window. C/X switch an image edit
  * (onEditKey, not repeated), Escape leaves what is going on (onEscape). The
- * handlers of the last render are called. */
-export const useHeldKey = (handlers: { onEscape: () => void; onEditKey: (edit: ImageEdit) => void }) => {
+ * handlers of the last render are called. `disabled`: no key does anything
+ * (another mode has the keys - "Repair order"). */
+export const useHeldKey = (handlers: {
+  onEscape: () => void;
+  onEditKey: (edit: ImageEdit) => void;
+  disabled?: boolean;
+}) => {
   const [heldKey, setHeldKey] = useState<HeldKey | null>(null);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
   useEffect(() => {
+    if (handlers.disabled) {
+      setHeldKey(null);
+    }
+  }, [handlers.disabled]);
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (handlersRef.current.disabled) {
+        return;
+      }
       const key = canvasKeyOf(event);
       if (key === 'escape') {
         handlersRef.current.onEscape();
@@ -282,6 +295,7 @@ export const useStageDrawing = (
       scene.alignDrag,
       scene.calibrationPoints,
       scene.referencePoint,
+      scene.repair,
     ],
   );
 };

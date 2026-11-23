@@ -15,7 +15,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.tokens import revoke_user_tokens
 from progeo.v1.models import (
     DEFAULT_USER_PERMISSIONS,
-    MINI_ADMIN_PERMISSION,
+    CUSTOMER_ADMIN_PERMISSION,
     MODULE_PERMISSION_CODES,
     MODULE_PERMISSION_DEFINITIONS,
 )
@@ -32,23 +32,23 @@ def _is_staff_admin(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
 
-def _is_mini_admin(user) -> bool:
+def _is_customer_admin(user) -> bool:
     """A customer managing the users of their own account(s) - module
-    permission MINI_ADMIN_PERMISSION, no staff flag. Staff are no mini admins:
+    permission CUSTOMER_ADMIN_PERMISSION, no staff flag. Staff are no customer admins:
     they manage everyone."""
     return bool(
         user and getattr(user, "is_active", False) and not _is_staff_admin(user)
-        and user.has_perm(f"progeo.{MINI_ADMIN_PERMISSION}")
+        and user.has_perm(f"progeo.{CUSTOMER_ADMIN_PERMISSION}")
     )
 
 
 def _admin_accounts(user) -> list:
-    """The accounts a mini admin manages: those they are a member of."""
+    """The accounts a customer admin manages: those they are a member of."""
     return list(user.accounts.order_by("name", "id"))
 
 
 def _managed_users(admin):
-    """The users `admin` may see and change on /staff/: staff everyone; a mini
+    """The users `admin` may see and change on /staff/: staff everyone; a customer
     admin the customers (no staff, no superusers) of their accounts - not
     themselves."""
     users = User.objects.using(_USER_DB)
@@ -72,10 +72,10 @@ def _refuse_unheld(request, *codes):
 
 
 def _require_user_admin(request):
-    """None for staff and mini admins (the users table), else the refusal."""
+    """None for staff and customer admins (the users table), else the refusal."""
     if _is_staff_admin(request.user):
         return staff_permissions_denied(request.user, "module_admin_staff_enabled")
-    if _is_mini_admin(request.user):
+    if _is_customer_admin(request.user):
         return None
     return RequestFailed({"reason": "Staff access required"})
 
@@ -104,14 +104,14 @@ def _permission_objects(codes):
 
 def _grantable_codes(user):
     """Permission codes the given user may grant to others: their own - all
-    for superusers. The mini admin permission only staff grant (also without
-    holding it); a mini admin never passes it on."""
+    for superusers. The customer admin permission only staff grant (also without
+    holding it); a customer admin never passes it on."""
     if getattr(user, "is_superuser", False):
         return set(MODULE_PERMISSION_CODES)
     own = {code for code in MODULE_PERMISSION_CODES if user.has_perm(f"progeo.{code}")}
     if _is_staff_admin(user):
-        return own | {MINI_ADMIN_PERMISSION}
-    return own - {MINI_ADMIN_PERMISSION}
+        return own | {CUSTOMER_ADMIN_PERMISSION}
+    return own - {CUSTOMER_ADMIN_PERMISSION}
 
 
 def _module_codes_by_user():
@@ -217,7 +217,7 @@ def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sess
 
 def _apply_permissions(user, requested_codes, grantable, keep_ungrantable=False):
     """Replace the user's module permissions, only granting codes the admin
-    has. `keep_ungrantable` (mini admins): the codes the admin can't grant
+    has. `keep_ungrantable` (customer admins): the codes the admin can't grant
     stay as they are - neither removed nor added."""
     requested = set(requested_codes or [])
     allowed = requested & grantable
@@ -229,7 +229,7 @@ def _apply_permissions(user, requested_codes, grantable, keep_ungrantable=False)
 
     all_perms = _permission_objects(grantable if keep_ungrantable else MODULE_PERMISSION_CODES)
     Through = User.user_permissions.through
-    # Clear the module permissions (those the admin can grant, for a mini
+    # Clear the module permissions (those the admin can grant, for a customer
     # admin), then re-grant the allowed ones.
     Through.objects.using(_USER_DB).filter(
         user_id=user.pk,
@@ -255,7 +255,7 @@ def _generate_password(length=16):
 
 
 class StaffUserListView(APIView):
-    """List / create users. Staff: every user; mini admins: the customers of
+    """List / create users. Staff: every user; customer admins: the customers of
     their own accounts (_managed_users)."""
 
     permission_classes = [IsAuthenticated]
@@ -271,10 +271,10 @@ class StaffUserListView(APIView):
         two_factor_ids = _two_factor_user_ids()
         sessions = _session_activity_by_user()
         accounts = _accounts_by_user()
-        mini = not _is_staff_admin(request.user)
+        customer = not _is_staff_admin(request.user)
         admin_accounts = []
-        if mini:
-            # A mini admin sees their own accounts only - not which other
+        if customer:
+            # A customer admin sees their own accounts only - not which other
             # customers' accounts their users belong to as well.
             admin_accounts = [{"id": account.pk, "name": account.name} for account in _admin_accounts(request.user)]
             own_ids = {account["id"] for account in admin_accounts}
@@ -283,8 +283,8 @@ class StaffUserListView(APIView):
                 for user_id, entries in accounts.items()
             }
         return RequestSuccess({
-            # "staff": every user; "mini": the users of admin_accounts.
-            "scope": "mini" if mini else "staff",
+            # "staff": every user; "customer": the users of admin_accounts.
+            "scope": "customer" if customer else "staff",
             "admin_accounts": admin_accounts,
             "users": [
                 _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts)
@@ -315,7 +315,7 @@ class StaffUserListView(APIView):
         username = (data.get("username") or "").strip()
         email = (data.get("email") or "").strip()
 
-        # A mini admin creates customers of one of their accounts.
+        # A customer admin creates customers of one of their accounts.
         account = None
         if not _is_staff_admin(request.user):
             if data.get("is_staff") or data.get("is_superuser"):
@@ -413,7 +413,7 @@ class StaffUserInviteView(APIView):
 
 
 class StaffUserDetailView(APIView):
-    """Update a single user - staff any, mini admins the customers of their
+    """Update a single user - staff any, customer admins the customers of their
     accounts (no staff flags, no second factor)."""
 
     permission_classes = [IsAuthenticated]
@@ -422,7 +422,7 @@ class StaffUserDetailView(APIView):
         denied = _require_user_admin(request)
         if denied:
             return denied, None
-        # A mini admin's: only the customers of their accounts.
+        # A customer admin's: only the customers of their accounts.
         user = _managed_users(request.user).filter(pk=pk).first()
         if not user:
             return RequestFailed({"reason": "Unknown user"}), None
@@ -437,8 +437,8 @@ class StaffUserDetailView(APIView):
         grantable = _grantable_codes(request.user)
         denied_codes = []
         update_fields = []
-        mini = not _is_staff_admin(request.user)
-        if mini:
+        customer = not _is_staff_admin(request.user)
+        if customer:
             # Staff flags and the second factor stay staff business; the
             # form sends is_staff: false along - that is no change.
             if data.get("is_staff") or data.get("is_superuser") or data.get("reset_two_factor"):
@@ -490,7 +490,7 @@ class StaffUserDetailView(APIView):
 
         # Permissions (only codes the admin has on their own account).
         if "permissions" in data:
-            denied_codes = _apply_permissions(user, data.get("permissions", []), grantable, keep_ungrantable=mini)
+            denied_codes = _apply_permissions(user, data.get("permissions", []), grantable, keep_ungrantable=customer)
 
         if update_fields:
             user.save(using=_USER_DB, update_fields=update_fields)

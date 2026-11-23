@@ -24,6 +24,7 @@ import {
   type PointTransform,
 } from './imageCanvasGeometry';
 import { CUT_COLOR, GROUP_COLOR, PRIMARY_COLOR, pointSelectOf, selectColorOf, type SelectMode } from './imageCanvasModes';
+import { drawRepairOver, drawRepairUnder, type RepairOverlay } from './drawSensorRepair';
 
 /** A point being dragged onto its place: the grabbed point and the mouse (canvas units). */
 export type PinDrag<K extends string> = { [key in K]: number } & { source: ImagePoint; at: ImagePoint };
@@ -51,6 +52,8 @@ export type StageScene = {
   alignDrag: PinDrag<'index'> | null;
   calibrationPoints: ImagePoint[];
   referencePoint: ImagePoint | null;
+  /** "Repair order" going on: its areas, lines and marks (drawSensorRepair). */
+  repair?: RepairOverlay | null;
 };
 
 type Positioned = { item: MarkerItem; start: ImagePoint; end: ImagePoint | null };
@@ -58,7 +61,7 @@ type Positioned = { item: MarkerItem; start: ImagePoint; end: ImagePoint | null 
 const FULL_CIRCLE = Math.PI * 2;
 
 /** Drawing helpers at a screen pixel size. */
-const pen = (ctx: CanvasRenderingContext2D, px: number) => {
+export const pen = (ctx: CanvasRenderingContext2D, px: number) => {
   const line = (from: ImagePoint, to: ImagePoint) => {
     ctx.beginPath();
     ctx.moveTo(from[0], from[1]);
@@ -107,7 +110,7 @@ const pen = (ctx: CanvasRenderingContext2D, px: number) => {
   return { ctx, px, line, circle, cross, label, pinLine, pinMark };
 };
 
-type Pen = ReturnType<typeof pen>;
+export type Pen = ReturnType<typeof pen>;
 
 /** Image edit: the selected area - white as "clear" will leave it, or the
  * rest of the plan dimmed for "crop"; a point selection tinted. */
@@ -290,7 +293,7 @@ const drawMarkerLabels = (
   const planArea = layout.drawWidth * scene.alignment.scaleX * layout.drawHeight * scene.alignment.scaleY;
   const roomy = drawOrder.length > 0 && Math.sqrt(planArea / drawOrder.length) / px >= LABEL_SPACING;
   drawOrder.forEach(({ item, start, end }) => {
-    if (!roomy && item !== hovered) {
+    if (!roomy && item !== hovered && !item.forceLabel) {
       return;
     }
     const [x, y] = end ? [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2] : start;
@@ -298,7 +301,7 @@ const drawMarkerLabels = (
       scene.lineMode ? `dm ${item.label}` : item.label,
       x + 9 * px,
       end ? y - 9 * px : y,
-      item === hovered ? '#101419' : '#343a40',
+      item === hovered ? '#101419' : (item.labelColor ?? '#343a40'),
       item === hovered ? 13 : 11,
     );
   });
@@ -382,6 +385,9 @@ export const drawStage = (ctx: CanvasRenderingContext2D, scene: StageScene) => {
 
   // The selected area under the points.
   drawSelectionArea(p, scene, layout);
+  if (scene.repair) {
+    drawRepairUnder(p, scene.repair, transform, layout);
+  }
   drawPlacedSensors(p, scene, transform);
 
   // Measure points, rainbow-coloured in sensor order; the hovered one is drawn last, on top.
@@ -400,6 +406,9 @@ export const drawStage = (ctx: CanvasRenderingContext2D, scene: StageScene) => {
   drawGroup(p, scene, positioned, layout);
   drawInsertGhost(p, scene.insertGhost, transform);
   drawMarkerLabels(p, scene, drawOrder, hovered, layout);
+  if (scene.repair) {
+    drawRepairOver(p, scene.repair, transform);
+  }
   drawAlignPins(p, scene, transform, layout);
   drawCalibration(p, scene.calibrationPoints, layout);
   drawReference(p, scene.referencePoint, layout);

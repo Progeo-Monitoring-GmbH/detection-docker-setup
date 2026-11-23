@@ -263,6 +263,9 @@ export type MarkerItem = {
   color: string;
   start: ImagePoint;
   end: ImagePoint | null;
+  /** Labelled even where the sensors are too close for labels ("Repair order"). */
+  forceLabel?: boolean;
+  labelColor?: string;
 };
 
 const finitePoint = (point: ImagePoint) => (point.every(Number.isFinite) ? point : null);

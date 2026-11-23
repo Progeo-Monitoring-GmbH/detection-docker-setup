@@ -36,6 +36,7 @@ type CanvasEditHandlers = Pick<
   | 'onPointsRemoved'
   | 'onCut'
   | 'onPointsPlaced'
+  | 'onPointsReordered'
 >;
 
 type LageplanAlignStepProps = {

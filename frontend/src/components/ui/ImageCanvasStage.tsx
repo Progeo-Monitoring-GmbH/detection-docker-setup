@@ -16,7 +16,11 @@ import {
   type AlignmentValues,
   type ImagePoint,
 } from './imageCanvasGeometry';
-import { canvasLegendGroups } from './imageCanvasLegend';
+import { canvasLegendGroups, repairLegendGroups } from './imageCanvasLegend';
+import { repairItems, type RepairOverlay } from './drawSensorRepair';
+import { LINE_SNAP, REPAIR_COLOR } from './sensorOrderRepair';
+import SensorRepairPanel, { repairHint } from './SensorRepairPanel';
+import { useSensorOrderRepair } from './useSensorOrderRepair';
 import {
   alignHint,
   applyModeOf,
@@ -98,6 +102,10 @@ type ImageCanvasStageProps = {
    * points (L + drag), stored on the server (measure_points/place) - called
    * with its answer, which carries the moved points ("points"). */
   onPointsPlaced?: (response: Record<string, unknown>, action: 'insert' | 'align') => void;
+  /** Enables "Repair order" (numbering points again by hand), stored on the
+   * server (measure_points/reorder) - called with its answer, which carries
+   * the points whose dot changed ("points"). */
+  onPointsReordered?: (response: Record<string, unknown>) => void;
   /** data-testid of the stage; its parts are "<testId>-canvas", "-zoom", "-apply", "-scale-store", ... */
   testId?: string;
 };
@@ -136,6 +144,7 @@ const ImageCanvasStage = ({
   onCut,
   onDiscardCut,
   onPointsPlaced,
+  onPointsReordered,
   testId = 'image-canvas',
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
@@ -196,6 +205,23 @@ const ImageCanvasStage = ({
   });
 
 
+  const geometry = stageGeometry(logical, image, view, alignment);
+  // "Repair order": numbering points again by hand - while on, the keys and the mouse are its own.
+  const canRepair =
+    withSliders && image != null && !placement && locationId != null && onPointsReordered != null && items.length > 1;
+  const repair = useSensorOrderRepair({
+    auth,
+    locationId,
+    items,
+    shownItems,
+    alignment,
+    image,
+    transform: geometry.transform,
+    px,
+    onStored: onPointsReordered,
+  });
+  const repairing = canRepair && repair.active;
+
   const heldKey = useHeldKey({
     onEscape: () => {
       area.leaveEdit();
@@ -207,6 +233,7 @@ const ImageCanvasStage = ({
         area.toggleEdit(edit);
       }
     },
+    disabled: repairing,
   });
   const modes: CanvasModes = {
     caps,
@@ -223,6 +250,32 @@ const ImageCanvasStage = ({
     calibrationCount: scale.calibrationPoints.length,
   };
 
+  const { result: repairResult, preview: repairPreview, klemmliste, verdicts, lineStart, mouse, swapFirst, areaDrag } = repair;
+  const drawnItems = useMemo(
+    () => (repairing ? repairItems(shownItems, repairResult, repairPreview, klemmliste) : shownItems),
+    [repairing, shownItems, repairResult, repairPreview, klemmliste],
+  );
+  const repairOverlay = useMemo<RepairOverlay | null>(() => {
+    if (!repairing) {
+      return null;
+    }
+    const byId = new Map(shownItems.map((item) => [Number(item.point.id), item]));
+    const startOf = (id: number) => byId.get(id)?.start ?? null;
+    const swapItem = swapFirst != null ? byId.get(swapFirst) : undefined;
+    return {
+      boxes: repairResult.boxes,
+      drag: areaDrag ? { box: [areaDrag.from, areaDrag.to], remove: areaDrag.op === 'remove' } : null,
+      line: lineStart ? { from: lineStart, to: mouse } : null,
+      lines: repairResult.lines.flatMap((ids, index) => {
+        const [from, to] = [startOf(ids[0]), startOf(ids[ids.length - 1])];
+        return from && to ? [{ from, to, ok: verdicts[index]?.ok ?? null }] : [];
+      }),
+      verdict: repair.previewVerdict,
+      swapFirst: swapItem?.start ?? null,
+      snap: LINE_SNAP,
+    };
+  }, [repairing, shownItems, repairResult, areaDrag, lineStart, mouse, verdicts, repair.previewVerdict, swapFirst]);
+
   useStageDrawing(canvasRef, {
     image,
     logical,
@@ -234,7 +287,8 @@ const ImageCanvasStage = ({
     selection: area.selection,
     selectedItems,
     placement,
-    items: shownItems,
+    items: drawnItems,
+    repair: repairOverlay,
     hoveredIndex: hover?.index ?? null,
     lineMode,
     group,
@@ -277,7 +331,7 @@ const ImageCanvasStage = ({
     modes,
     placement,
     image,
-    ...stageGeometry(logical, image, view, alignment),
+    ...geometry,
     alignment,
     view,
     px,
@@ -292,24 +346,39 @@ const ImageCanvasStage = ({
     setHover,
     setInsertAt,
     insertCut: actions.insertCut,
+    repair: repairing ? repair : undefined,
   });
+  const startRepair = () => {
+    area.leaveEdit();
+    groupAlign.leave();
+    repair.start();
+  };
 
   const hoveredItem = hover ? (items[hover.index] ?? null) : null;
   // The reference point or the ratio differ from the plan's stored ones -
   // "Store scale" floats until they are stored.
   const scaleDirty = withSliders && onSaveScale != null && scale.differsFrom(sourceMeta);
-  const cursor = canvasCursor(modes, {
-    placing: placement?.activeDeviceId != null,
-    dragging: pointer.dragging,
-    hovered: hoveredItem,
-    groupIds: group?.ids ?? null,
-  });
+  const cursor = repairing
+    ? repair.tool === 'area' || repair.tool === 'line'
+      ? 'crosshair'
+      : hoveredItem
+        ? 'pointer'
+        : 'grab'
+    : canvasCursor(modes, {
+        placing: placement?.activeDeviceId != null,
+        dragging: pointer.dragging,
+        hovered: hoveredItem,
+        groupIds: group?.ids ?? null,
+      });
 
   return (
     <div className="d-flex flex-column gap-3" data-testid={testId}>
       <StageHeader title={title} fileName={fileName} testId={testId} />
 
-      <CanvasKeyLegend testId={childTestId(testId, 'legend')} groups={canvasLegendGroups(modes, placement)} />
+      <CanvasKeyLegend
+        testId={childTestId(testId, 'legend')}
+        groups={repairing ? repairLegendGroups(repair.tool) : canvasLegendGroups(modes, placement)}
+      />
 
       <div className="d-flex flex-column gap-2">
         {/* As wide as the compact canvas (its share of the full width), left-aligned. */}
@@ -337,12 +406,15 @@ const ImageCanvasStage = ({
           />
           <WheelZoomHint visible={wheelHint} testId={childTestId(testId, 'wheel-hint')} />
           <RotateButtons
-            shown={caps.canEditImage && !editingOf(modes)}
+            shown={caps.canEditImage && !editingOf(modes) && !repairing}
             disabled={area.editBusy || aligning}
             onRotate={actions.rotateImage}
             testId={testId}
           />
-          <CanvasBadge badge={canvasBadge(modes)} testId={testId} />
+          <CanvasBadge
+            badge={repairing ? { text: repairHint(repair), color: REPAIR_COLOR } : canvasBadge(modes)}
+            testId={testId}
+          />
           <CanvasTooltip
             hover={hover}
             item={hoveredItem}
@@ -370,6 +442,8 @@ const ImageCanvasStage = ({
           testId={testId}
         />
       </div>
+
+      <SensorRepairPanel repair={{ ...repair, start: startRepair }} canRepair={canRepair} testId={testId} />
 
       <GroupPanel group={modes.group} problem={groupAlign.problem} lineMode={lineMode} testId={testId} />
 

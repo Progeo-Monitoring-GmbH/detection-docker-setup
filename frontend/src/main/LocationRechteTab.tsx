@@ -157,8 +157,8 @@ export const mayEditRule = ({
 
 /**
  * May the viewer revoke this member's access here? Single access with
- * module_notifications_edit or as a mini admin of the account (backend:
- * can_revoke_account); account members only as such a mini admin (or
+ * module_notifications_edit or as a customer admin of the account (backend:
+ * can_revoke_account); account members only as such a customer admin (or
  * staff) - it takes them out of the account, so never oneself. ProGeo
  * staff see every object anyway: nothing to revoke.
  */
@@ -205,8 +205,8 @@ const LocationRechteTab = () => {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [canGrantAccount, setCanGrantAccount] = useState(false);
-  // Staff and mini admins of the account: take members out of it (Revoke) -
-  // other mini admins too, never themselves.
+  // Staff and customer admins of the account: take members out of it (Revoke) -
+  // other customer admins too, never themselves.
   const [canRevokeAccount, setCanRevokeAccount] = useState(false);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   // Revoking at all needs module_user_revokable (the backend checks the

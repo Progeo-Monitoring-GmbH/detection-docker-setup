@@ -379,9 +379,9 @@ def test_customers_cannot_point_their_rule_at_a_staff_member(api_client, setup):
     assert rule.user_id == customer.id
 
 
-# ---------------------------------------------------------------------------- mini admins revoke
+# ---------------------------------------------------------------------------- customer admins revoke
 
-MINI_PERMS = ("module_notifications_enabled", "module_mini_admin_enabled")
+CUSTOMER_ADMIN_PERMS = ("module_notifications_enabled", "module_customer_admin_enabled")
 
 
 def _revoke_member(api_client, location, user_id):
@@ -398,33 +398,33 @@ def test_the_access_answer_names_the_account_and_its_objects(api_client, setup):
     body = _access(api_client, location)
 
     assert body["account"] == {"id": account.pk, "name": account.name, "location_count": 2}
-    assert body["can_revoke_account"] is False  # no mini admin
+    assert body["can_revoke_account"] is False  # no customer admin
 
 
 def test_a_mini_admin_takes_other_members_out_of_the_account(api_client, setup):
     account, location, _admin = setup
     other_location = f.make_location(account)
-    mini = f.make_user(perms=MINI_PERMS, accounts=[account])
-    other_mini = f.make_user(perms=MINI_PERMS, accounts=[account])
+    customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
+    other_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
     # Rules of the member (set notifications) would leave them single access.
-    f.make_access(location, other_mini)
-    f.make_access(other_location, other_mini)
-    api_client.force_authenticate(user=mini)
+    f.make_access(location, other_admin)
+    f.make_access(other_location, other_admin)
+    api_client.force_authenticate(user=customer_admin)
 
     assert _access(api_client, location)["can_revoke_account"] is True
-    response = _revoke_member(api_client, location, other_mini.pk)
+    response = _revoke_member(api_client, location, other_admin.pk)
 
     assert response.status_code == 200, response.content
     assert response.json()["rules_deleted"] == 2
-    assert not account.users.filter(pk=other_mini.pk).exists()
-    assert not ProgeoAccess.objects.using(f.DB).filter(user_id=other_mini.pk).exists()
+    assert not account.users.filter(pk=other_admin.pk).exists()
+    assert not ProgeoAccess.objects.using(f.DB).filter(user_id=other_admin.pk).exists()
 
 
 def test_a_mini_admin_revokes_single_access_without_the_edit_permission(api_client, setup):
     account, location, _admin = setup
-    mini = f.make_user(perms=MINI_PERMS, accounts=[account])
+    customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
     rule = f.make_access(location, f.make_user())
-    api_client.force_authenticate(user=mini)
+    api_client.force_authenticate(user=customer_admin)
 
     response = api_client.post(f"/v1/location/{location.id}/access/delete/", {"id": rule.id}, format="json")
 
@@ -434,18 +434,18 @@ def test_a_mini_admin_revokes_single_access_without_the_edit_permission(api_clie
 def test_revoking_account_members_is_refused_for_others_self_and_staff(api_client, setup):
     account, location, admin = setup
     member = f.make_user(accounts=[account])
-    mini = f.make_user(perms=MINI_PERMS, accounts=[account])
+    customer_admin = f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[account])
     staff_member = f.make_user(staff=True, accounts=[account])
 
-    # A customer admin without the mini admin role.
+    # A customer admin without the customer admin role.
     api_client.force_authenticate(user=admin)
     assert _revoke_member(api_client, location, member.pk).status_code == 403
-    # A mini admin of another account (the location is not even theirs to find).
-    api_client.force_authenticate(user=f.make_user(perms=MINI_PERMS, accounts=[f.make_account()]))
+    # A customer admin of another account (the location is not even theirs to find).
+    api_client.force_authenticate(user=f.make_user(perms=CUSTOMER_ADMIN_PERMS, accounts=[f.make_account()]))
     assert _revoke_member(api_client, location, member.pk).json()["success"] is False
     # Not themselves, not ProGeo staff.
-    api_client.force_authenticate(user=mini)
-    assert _revoke_member(api_client, location, mini.pk).json()["success"] is False
+    api_client.force_authenticate(user=customer_admin)
+    assert _revoke_member(api_client, location, customer_admin.pk).json()["success"] is False
     assert _revoke_member(api_client, location, staff_member.pk).json()["success"] is False
 
-    assert set(account.users.values_list("pk", flat=True)) >= {member.pk, mini.pk, staff_member.pk}
+    assert set(account.users.values_list("pk", flat=True)) >= {member.pk, customer_admin.pk, staff_member.pk}

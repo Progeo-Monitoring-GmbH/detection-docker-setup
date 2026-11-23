@@ -1,0 +1,44 @@
+/* "Repair order" under the plan canvas (SensorRepairPanel.tsx). */
+
+.sensor-repair-panel {
+  padding: 10px 12px;
+  border: 1px solid rgba(9, 75, 129, 0.25);
+  border-radius: 12px;
+  background: rgba(9, 75, 129, 0.04);
+  font-size: 13px;
+}
+
+/* Raised over Bootstrap's .progress. */
+.progress.sensor-repair-progress {
+  flex: 1 1 220px;
+  max-width: 420px;
+  height: 12px;
+}
+
+.sensor-repair-check {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 560px;
+}
+
+.sensor-repair-check-title {
+  margin-bottom: 2px;
+}
+
+.sensor-repair-check-row {
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.sensor-repair-check-row--ok {
+  background: #e6f4ea;
+}
+
+.sensor-repair-check-row--warn {
+  background: #fdecea;
+}
+
+.sensor-repair-warn-text {
+  color: #dc2626;
+}

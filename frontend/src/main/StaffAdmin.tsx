@@ -88,8 +88,8 @@ type UsersResponse = {
   users: StaffUser[];
   grantable_codes: string[];
   all_permission_defs: PermissionDef[];
-  /** "staff": every user; "mini": a mini admin's - the customers of admin_accounts. */
-  scope?: 'staff' | 'mini';
+  /** "staff": every user; "customer": a customer admin's - the customers of admin_accounts. */
+  scope?: 'staff' | 'customer';
   admin_accounts?: UserAccount[];
 };
 
@@ -194,13 +194,13 @@ const UserFormModal = ({
   isNew: boolean;
   onSave: (data: Record<string, unknown>) => void;
   onGeneratePassword?: (user: StaffUser) => void;
-  /** The staff switch - not for mini admins, who manage customers only. */
+  /** The staff switch - not for customer admins, who manage customers only. */
   staffFields?: boolean;
   /** "Send invitation" (module_user_invitable). */
   canInvite?: boolean;
   /** The active switch (module_user_disability) - without it the flag stays as it is. */
   canDisable?: boolean;
-  /** A mini admin's accounts: a new user joins one (chosen when there are several). */
+  /** A customer admin's accounts: a new user joins one (chosen when there are several). */
   accounts?: UserAccount[];
   /** The users whose permissions can be copied ("Berechtigungen übernehmen von"). */
   users?: StaffUser[];
@@ -789,11 +789,11 @@ const StaffAdmin = () => {
   const authUser = auth?.user as { user_id?: number | string } | null;
   // Staff or superuser, like the route (access.ts) and the backend.
   const { isStaffOrSuperuser: isStaff, isSuperuser } = staffFlags(auth?.user);
-  // Mini admins (module_mini_admin_enabled, no staff): the users of their
+  // Customer admins (module_customer_admin_enabled, no staff): the users of their
   // own account - only this table, only what the backend lets them do.
   const { hasPermission } = useAccess();
-  const isMiniAdmin = !isStaff && hasPermission('module_mini_admin_enabled');
-  const canManageUsers = isStaff || isMiniAdmin;
+  const isCustomerAdmin = !isStaff && hasPermission('module_customer_admin_enabled');
+  const canManageUsers = isStaff || isCustomerAdmin;
   // The user actions, each with its own permission (backend: holds_permission).
   const canAddUser = hasPermission('module_user_add');
   const canInviteUser = hasPermission('module_user_invitable');
@@ -1345,7 +1345,7 @@ const StaffAdmin = () => {
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <h5 className="mb-0">
               <ShieldLock className="me-2 text-warning" />
-              {isMiniAdmin ? t('staff_title_mini') : t('staff_title')}
+              {isCustomerAdmin ? t('staff_title_customer') : t('staff_title')}
             </h5>
             <div className="d-flex gap-2">
               <Button
@@ -1532,7 +1532,7 @@ const StaffAdmin = () => {
         staffFields={isStaff}
         canInvite={canInviteUser}
         canDisable={canDisableUser}
-        accounts={isMiniAdmin ? (response.admin_accounts ?? []) : []}
+        accounts={isCustomerAdmin ? (response.admin_accounts ?? []) : []}
         users={response.users}
         testId="staff-user-create"
       />
