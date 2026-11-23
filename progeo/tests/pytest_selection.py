@@ -21,7 +21,7 @@ AREA_MODULES = {
     """,
     "databases": """
         admin_db_switch adv_migrate database_usage drop_samples_migration handle_all_dbs
-        legacy_file_migration merge_duplicate_locations project_db_move project_dbs pytest_database_setup pytest_selection
+        legacy_file_migration location_merge merge_duplicate_locations project_db_move project_dbs pytest_database_setup pytest_selection
         relink_locations_command router_regressions split_views sync_default_skipping wipe_project_databases
     """,
     "demo": "demo_account_areas demo_view e2e_accounts",

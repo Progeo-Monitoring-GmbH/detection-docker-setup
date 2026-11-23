@@ -33,7 +33,9 @@ ADMIN = (
 BASE = "/v1/location-selection"
 BERLIN = ZoneInfo("Europe/Berlin")
 
-MAIN_PROJECT, PART_PROJECT = 990021, 990022
+# The two project databases every test session has (test_project_dbs.py): a
+# project's and "unknown" - the part without project number lives there.
+MAIN_PROJECT, PART_PROJECT = 990001, None
 MAIN_DB, PART_DB = project_alias(MAIN_PROJECT), project_alias(PART_PROJECT)
 WITH_PROJECT_DBS = pytest.mark.django_db(databases=[*TEST_DATABASES, MAIN_DB, PART_DB])
 
@@ -244,7 +246,7 @@ def project_dbs(django_db_setup, django_db_blocker):
 def _split_world():
     account = f.make_account()
     main = f.make_location(account, project_id=MAIN_PROJECT, name="Hauptprojekt")
-    part = f.make_location(account, project_id=PART_PROJECT, name="Altprojekt")
+    part = f.make_location(account, project_id=PART_PROJECT, name="Altprojekt")  # no number: "unknown"
     for alias, project, location in ((MAIN_DB, MAIN_PROJECT, main), (PART_DB, PART_PROJECT, part)):
         mirror_shared(alias, project)
         _mirror_location_now(location, alias)

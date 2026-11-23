@@ -519,6 +519,17 @@ const LageplanKlemmliste = ({
                         {document.name}
                       </span>
                       <span className="lageplan-klemmliste-muted">{formatSize(document.size)}</span>
+                      {(document.modified || document.created) && (
+                        // When the record last changed in Airtable ("Name/Typ geändert"), else when it was added.
+                        <span
+                          className="lageplan-klemmliste-muted"
+                          {...repeatedTestId('lageplan-wizard-mea-changed', document.id)}
+                        >
+                          {document.modified
+                            ? `changed ${formatDate(document.modified, 'date')}`
+                            : `added ${formatDate(document.created, 'date')}`}
+                        </span>
+                      )}
                       <span className="lageplan-klemmliste-actions">
                         {readable(document) && (
                           <PillButton

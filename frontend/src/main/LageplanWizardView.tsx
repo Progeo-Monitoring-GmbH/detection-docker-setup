@@ -208,25 +208,10 @@ const LageplanWizardView = () => {
             plans={lageplans}
             points={derived.heatPoints}
             editable={staff}
-            onChange={(planId: number, areas: HeatLimitation[]) => updatePlan(planId, { heat_limitations: areas })}
-            testId="lageplan-wizard-heat-limits"
+            onChange={plans.setHeatLimitations}
           />
-        </>
-      )}
-    </StepCard>
-  );
-
-  // Step 8: the MEA documents and drawings from Airtable and the Klemmliste's sensor names.
-  const renderStepKlemmliste = () => (
-    <StepCard number={8} step="klemmliste" title={staff ? 'Airtable documents and Klemmliste' : 'Klemmliste'}>
-      {selectedLocationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-klemmliste-needs-location">
-          Select a location in step 1 first.
-        </Notice>
-      ) : (
-        <LageplanKlemmliste
-          // A new location starts the step afresh: its documents, no Klemmliste of the last one.
-          key={selectedLocationId}
+        )}
+        <LageplanKlemmlisteStep
           auth={auth}
           locationId={selectedLocationId}
           devices={state.devices}
