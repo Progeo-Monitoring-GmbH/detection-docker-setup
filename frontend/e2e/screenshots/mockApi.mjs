@@ -435,8 +435,9 @@ const measurements = Array.from({ length: 48 }, (_, index) => ({
   samples: Array.from(
     { length: SENSORS * 2 },
     (_, sensor) =>
-      Math.round((30 + (sensor % SENSORS) * 5 + 8 * Math.sin(index / 5 + sensor)) * 10) /
-      10,
+      Math.round(
+        (30 + (sensor % SENSORS) * 5 + 8 * Math.sin(index / 5 + sensor)) * 10,
+      ) / 10,
   ),
 }));
 
@@ -561,7 +562,12 @@ const deviceStatistics = () => ({
     by_type: {
       smartbox: [
         statisticsDevice,
-        { ...statisticsDevice, id: 2, raw_hash: '4700-02', display_name: 'smartex dm Halle' },
+        {
+          ...statisticsDevice,
+          id: 2,
+          raw_hash: '4700-02',
+          display_name: 'smartex dm Halle',
+        },
       ],
     },
     with_chip_id: [],
@@ -597,7 +603,13 @@ const reviewImage = {
  */
 export const SCENARIOS = {
   /** StaffMessaging: the circuit breaker stopped the SMS. */
-  'breaker-tripped': { breaker: { tripped: true, tripped_at: iso(NOW - 2 * HOUR), reason: 'sms_per_hour' } },
+  'breaker-tripped': {
+    breaker: {
+      tripped: true,
+      tripped_at: iso(NOW - 2 * HOUR),
+      reason: 'sms_per_hour',
+    },
+  },
   /** Location #1 as a LoRaWAN project (climate panels instead of sensors). */
   lorawan: { projectType: 6 },
   /** Location #1 as an mx-PEEL project (computed suspicion points). */
@@ -631,8 +643,26 @@ export const mockAnswer = (
   if (path.endsWith('/device/provision/airtable/sync/')) {
     return {
       available: [
-        { project_id: 4800, name: 'Halle 41 – Dachfläche A', airtable_type: 'dm', project_type_label: 'smartex® dm', status: 'Sensorik', product_sheets: [], airtable_url: null, raw_address: 'Industriestraße 41\n50707 Köln' },
-        { project_id: 4801, name: 'Halle 42 – Dachfläche B', airtable_type: 'dm', project_type_label: 'smartex® dm', status: 'Technischer Planung', product_sheets: [], airtable_url: null, raw_address: 'Industriestraße 42\n50708 Berlin' },
+        {
+          project_id: 4800,
+          name: 'Halle 41 – Dachfläche A',
+          airtable_type: 'dm',
+          project_type_label: 'smartex® dm',
+          status: 'Sensorik',
+          product_sheets: [],
+          airtable_url: null,
+          raw_address: 'Industriestraße 41\n50707 Köln',
+        },
+        {
+          project_id: 4801,
+          name: 'Halle 42 – Dachfläche B',
+          airtable_type: 'dm',
+          project_type_label: 'smartex® dm',
+          status: 'Technischer Planung',
+          product_sheets: [],
+          airtable_url: null,
+          raw_address: 'Industriestraße 42\n50708 Berlin',
+        },
       ],
       updated: [],
       unchanged: 38,
@@ -643,8 +673,20 @@ export const mockAnswer = (
   if (/\/location\/\d+\/devices\/names\/$/.test(path)) {
     return {
       devices: [
-        { id: 1, name: 'Fühler Nord', hardware: 'lht65', type: 'lorawan', display_name: 'Fühler Nord' },
-        { id: 2, name: '', hardware: 'lht65', type: 'lorawan', display_name: 'a84041000181c2b3' },
+        {
+          id: 1,
+          name: 'Fühler Nord',
+          hardware: 'lht65',
+          type: 'lorawan',
+          display_name: 'Fühler Nord',
+        },
+        {
+          id: 2,
+          name: '',
+          hardware: 'lht65',
+          type: 'lorawan',
+          display_name: 'a84041000181c2b3',
+        },
       ],
     };
   }
@@ -744,7 +786,10 @@ export const mockAnswer = (
           time: iso(NOW - 0.5 * HOUR),
           count: 16,
           max: 120,
-          pairs: Array.from({ length: 16 }, (_, index) => [20 + index * 6, 18 + index * 6]),
+          pairs: Array.from({ length: 16 }, (_, index) => [
+            20 + index * 6,
+            18 + index * 6,
+          ]),
           check: {
             status: 'ok',
             rising: 16,
@@ -815,12 +860,14 @@ export const mockAnswer = (
         'identify',
         'measure',
         'get_config',
-        'maintenance',
-        'normal',
         'restart',
         'set_params',
         'update',
-      ].map((command) => ({ command, superuser_only: command === 'update', allowed: true })),
+      ].map((command) => ({
+        command,
+        superuser_only: command === 'update',
+        allowed: true,
+      })),
       pending_ttl_hours: 24,
       result_ttl_days: 7,
       last_command_poll: iso(NOW - 0.1 * HOUR),
@@ -896,7 +943,14 @@ export const mockAnswer = (
           lageplan: 100,
         })),
         // Device #2: placed by hand (one point).
-        { id: 50, device: 2, sensor_order: 1, nx: 0.82, ny: 0.74, lageplan: 100 },
+        {
+          id: 50,
+          device: 2,
+          sensor_order: 1,
+          nx: 0.82,
+          ny: 0.74,
+          lageplan: 100,
+        },
       ],
       devices: [
         {
@@ -920,7 +974,9 @@ export const mockAnswer = (
   }
   if (/\/v1\/\d+\/backup\/projects\/$/.test(path)) {
     return {
-      projects: [{ database: 'progeo_4700', project: 4700, name: locations[0].name }],
+      projects: [
+        { database: 'progeo_4700', project: 4700, name: locations[0].name },
+      ],
     };
   }
   if (/\/v1\/\d+\/backup\/$/.test(path)) {
@@ -1031,7 +1087,12 @@ export const mockAnswer = (
     };
   }
   if (path.endsWith('/location/accounts/')) {
-    return { accounts: [{ id: 1, name: 'Kunde A' }, { id: 2, name: 'Kunde B' }] };
+    return {
+      accounts: [
+        { id: 1, name: 'Kunde A' },
+        { id: 2, name: 'Kunde B' },
+      ],
+    };
   }
   if (path.endsWith('/location/project-search/')) {
     return { projects: [] };
@@ -1062,7 +1123,9 @@ export const mockAnswer = (
   }
   if (path.endsWith('/screen-review/')) {
     return {
-      runs: [{ run: REVIEW_RUN, created: iso(NOW - 2 * HOUR), images: 1, notes: 1 }],
+      runs: [
+        { run: REVIEW_RUN, created: iso(NOW - 2 * HOUR), images: 1, notes: 1 },
+      ],
       can_capture: true,
       can_fetch: false,
     };
@@ -1243,16 +1306,23 @@ export const mockAnswer = (
     // #1 in full; another one (e.g. #3 - no escalation, no merged project) as itself.
     const id = Number(path.match(/\/location\/(\d+)\/$/)[1]);
     const shown =
-      id === 1 || !locations[id - 1] ? detail : { ...detail, ...locations[id - 1] };
+      id === 1 || !locations[id - 1]
+        ? detail
+        : { ...detail, ...locations[id - 1] };
     return variant.projectType
       ? { ...shown, project_type: variant.projectType }
       : shown;
   }
   if (path.endsWith('/alarm/clusters/')) {
-    return { clusters: Number(searchParams.get('location')) === 1 ? suspicionClusters : [] };
+    return {
+      clusters:
+        Number(searchParams.get('location')) === 1 ? suspicionClusters : [],
+    };
   }
   if (path.endsWith('/alarm/computed-clusters/')) {
-    return { points: Number(searchParams.get('location')) === 1 ? computedPoints : [] };
+    return {
+      points: Number(searchParams.get('location')) === 1 ? computedPoints : [],
+    };
   }
   if (path.endsWith('/alarm/active/')) {
     return { alarms: alarms.filter((alarm) => alarm.status === 0) };
@@ -1294,7 +1364,11 @@ export const mockAnswer = (
     const people = [
       { name: 'Maria Müller', channels: ['mail', 'sms'], objektleitung: false },
       { name: 'Jonas Weber', channels: ['mail'], objektleitung: false },
-      { name: 'Leitstand', channels: ['mail', 'messenger'], objektleitung: false },
+      {
+        name: 'Leitstand',
+        channels: ['mail', 'messenger'],
+        objektleitung: false,
+      },
     ];
     const opened = NOW - 2.4 * HOUR;
     return {
@@ -1302,53 +1376,149 @@ export const mockAnswer = (
       run_minutes: 15,
       cases: [
         {
-          id: 1, kind: 'alarm', phase: 'notified', location_id: 1, project_id: 4711,
-          location_name: 'Halle Nord', location_missing: false, stage: 1, stages: 3,
-          opened_at: iso(opened), alarm_count: 3, device_count: 0, muted_until: null,
-          muted_forever: false, acknowledged_at: null, back_since: null, unreachable_since: null,
-          escalation_id: null, next_at: iso(opened + 4 * HOUR),
+          id: 1,
+          kind: 'alarm',
+          phase: 'notified',
+          location_id: 1,
+          project_id: 4711,
+          location_name: 'Halle Nord',
+          location_missing: false,
+          stage: 1,
+          stages: 3,
+          opened_at: iso(opened),
+          alarm_count: 3,
+          device_count: 0,
+          muted_until: null,
+          muted_forever: false,
+          acknowledged_at: null,
+          back_since: null,
+          unreachable_since: null,
+          escalation_id: null,
+          next_at: iso(opened + 4 * HOUR),
           points: [
             { type: 'detected', at: iso(opened) },
             {
-              type: 'sent', stage: 1, at: iso(opened + 3 * 60000), text: 'Stufe 1 versendet',
-              sms: 1, messenger: 1, recipients: 3, withheld: false, escalation: false, objektleitung: false,
+              type: 'sent',
+              stage: 1,
+              at: iso(opened + 3 * 60000),
+              text: 'Stufe 1 versendet',
+              sms: 1,
+              messenger: 1,
+              recipients: 3,
+              withheld: false,
+              escalation: false,
+              objektleitung: false,
               mails: [
-                { name: 'Maria Müller', address: 'maria.mueller@progeo.com', status: 'sent' },
-                { name: 'Jonas Weber', address: 'jonas.weber@progeo.com', status: 'bounced' },
-                { name: 'Leitstand', address: 'leitstand@progeo.com', status: 'sent' },
+                {
+                  name: 'Maria Müller',
+                  address: 'maria.mueller@progeo.com',
+                  status: 'sent',
+                },
+                {
+                  name: 'Jonas Weber',
+                  address: 'jonas.weber@progeo.com',
+                  status: 'bounced',
+                },
+                {
+                  name: 'Leitstand',
+                  address: 'leitstand@progeo.com',
+                  status: 'sent',
+                },
               ],
             },
             {
-              type: 'planned', stage: 2, due_at: iso(opened + 4 * HOUR), at: iso(opened + 4 * HOUR),
-              overdue: false, paused: false, withheld: false, objektleitung: false, escalation: false,
-              customer: true, recipients: people,
+              type: 'planned',
+              stage: 2,
+              due_at: iso(opened + 4 * HOUR),
+              at: iso(opened + 4 * HOUR),
+              overdue: false,
+              paused: false,
+              withheld: false,
+              objektleitung: false,
+              escalation: false,
+              customer: true,
+              recipients: people,
             },
             {
-              type: 'planned', stage: 3, due_at: iso(opened + 24 * HOUR), at: iso(opened + 24 * HOUR),
-              overdue: false, paused: false, withheld: false, objektleitung: true, escalation: true,
+              type: 'planned',
+              stage: 3,
+              due_at: iso(opened + 24 * HOUR),
+              at: iso(opened + 24 * HOUR),
+              overdue: false,
+              paused: false,
+              withheld: false,
+              objektleitung: true,
+              escalation: true,
               customer: true,
-              recipients: [...people, { name: 'Heike Schulz', channels: ['mail'], objektleitung: true }],
+              recipients: [
+                ...people,
+                {
+                  name: 'Heike Schulz',
+                  channels: ['mail'],
+                  objektleitung: true,
+                },
+              ],
             },
           ],
           end: { kind: 'acknowledge', stable_hours: null },
         },
         {
-          id: 2, kind: 'offline', phase: 'detected', location_id: 2, project_id: 4712,
-          location_name: 'Lager Süd', location_missing: false, stage: 0, stages: 4,
-          opened_at: iso(NOW - 6 * HOUR), alarm_count: 0, device_count: 2, muted_until: null,
-          muted_forever: false, acknowledged_at: null, back_since: null, unreachable_since: null,
-          escalation_id: null, next_at: iso(NOW + 16 * HOUR),
+          id: 2,
+          kind: 'offline',
+          phase: 'detected',
+          location_id: 2,
+          project_id: 4712,
+          location_name: 'Lager Süd',
+          location_missing: false,
+          stage: 0,
+          stages: 4,
+          opened_at: iso(NOW - 6 * HOUR),
+          alarm_count: 0,
+          device_count: 2,
+          muted_until: null,
+          muted_forever: false,
+          acknowledged_at: null,
+          back_since: null,
+          unreachable_since: null,
+          escalation_id: null,
+          next_at: iso(NOW + 16 * HOUR),
           points: [
             { type: 'detected', at: iso(NOW - 6 * HOUR) },
-            ...[[1, 16, false], [2, 88, false], [3, 184, true]].map(([stage, hours, lead]) => ({
-              type: 'planned', stage, due_at: iso(NOW + hours * HOUR), at: iso(NOW + hours * HOUR),
-              overdue: false, paused: false, withheld: false, objektleitung: lead, escalation: false,
-              customer: true, recipients: [{ name: 'Lager Süd (Kontakt)', channels: ['mail'], objektleitung: false }],
+            ...[
+              [1, 16, false],
+              [2, 88, false],
+              [3, 184, true],
+            ].map(([stage, hours, lead]) => ({
+              type: 'planned',
+              stage,
+              due_at: iso(NOW + hours * HOUR),
+              at: iso(NOW + hours * HOUR),
+              overdue: false,
+              paused: false,
+              withheld: false,
+              objektleitung: lead,
+              escalation: false,
+              customer: true,
+              recipients: [
+                {
+                  name: 'Lager Süd (Kontakt)',
+                  channels: ['mail'],
+                  objektleitung: false,
+                },
+              ],
             })),
             {
-              type: 'planned', stage: 4, due_at: iso(NOW + 352 * HOUR), at: iso(NOW + 352 * HOUR),
-              overdue: false, paused: false, withheld: false, objektleitung: false, escalation: true,
-              customer: false, recipients: [],
+              type: 'planned',
+              stage: 4,
+              due_at: iso(NOW + 352 * HOUR),
+              at: iso(NOW + 352 * HOUR),
+              overdue: false,
+              paused: false,
+              withheld: false,
+              objektleitung: false,
+              escalation: true,
+              customer: false,
+              recipients: [],
             },
           ],
           end: { kind: 'back_online', stable_hours: 2 },
@@ -1468,8 +1638,14 @@ export const mockAnswer = (
         connected_at: null,
         primary: false,
         apps: {
-          element_x: { link: 'https://chat.progeo.com/app/element', qr: QR_PNG },
-          fluffychat: { link: 'https://chat.progeo.com/app/fluffychat', qr: QR_PNG },
+          element_x: {
+            link: 'https://chat.progeo.com/app/element',
+            qr: QR_PNG,
+          },
+          fluffychat: {
+            link: 'https://chat.progeo.com/app/fluffychat',
+            qr: QR_PNG,
+          },
         },
         download: {
           link: 'https://chat.progeo.com/download',

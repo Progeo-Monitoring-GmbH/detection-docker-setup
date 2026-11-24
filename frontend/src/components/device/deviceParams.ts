@@ -6,6 +6,8 @@
 
 /** measurement.interval_sec choices. */
 export const INTERVAL_OPTIONS = [
+  { value: 30, label: '30s' },
+  { value: 60, label: '1min' },
   { value: 300, label: '5min' },
   { value: 600, label: '10min' },
   { value: 900, label: '15min' },
@@ -45,9 +47,25 @@ export type ParamOption = { value: number; label?: string; labelKey?: string };
  * The parameters "set_params" may change - exactly the ones the firmware
  * accepts (LUA_WLAN params.lua PARAMS), each with its valid values.
  */
-export const SET_PARAMS: { key: string; labelKey: string; options: ParamOption[] }[] = [
-  { key: 'pulldown_resistance', labelKey: 'device_commands_param_pulldown_resistance', options: RESISTANCE_OPTIONS },
-  // The firmware takes 60 s and more - the 5min..24h steps of the config panel.
-  { key: 'interval_sec', labelKey: 'device_commands_param_interval_sec', options: INTERVAL_OPTIONS },
-  { key: 'poll_sec', labelKey: 'device_commands_param_poll_sec', options: POLL_OPTIONS },
+export const SET_PARAMS: {
+  key: string;
+  labelKey: string;
+  options: ParamOption[];
+}[] = [
+  {
+    key: 'pulldown_resistance',
+    labelKey: 'device_commands_param_pulldown_resistance',
+    options: RESISTANCE_OPTIONS,
+  },
+  // The 30s..24h steps of the config panel.
+  {
+    key: 'interval_sec',
+    labelKey: 'device_commands_param_interval_sec',
+    options: INTERVAL_OPTIONS,
+  },
+  {
+    key: 'poll_sec',
+    labelKey: 'device_commands_param_poll_sec',
+    options: POLL_OPTIONS,
+  },
 ];

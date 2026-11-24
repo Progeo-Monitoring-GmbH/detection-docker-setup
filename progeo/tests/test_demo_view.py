@@ -823,6 +823,25 @@ def test_a_left_over_partner_account_is_merged(demo):
     assert demo.account.users.filter(pk=outsider.pk).exists()
 
 
+def test_a_left_over_partner_account_goes_with_its_daily_reports(demo):
+    """Live: the partner's copy in the demo database had daily alarm reports
+    (generate_daily_alarm_report) - deleting it broke their foreign key."""
+    import datetime
+
+    from progeo.v1.models import Account, AlarmDailyReport
+
+    partner = Account.objects.using("default").create(name="Demo Partner", raw_hash="demo-partner-account",
+                                                      db_name=settings.DEMO_DATABASE)
+    Account.objects.using(settings.DEMO_DATABASE).create(pk=partner.pk, name=partner.name,
+                                                         raw_hash=partner.raw_hash, db_name=settings.DEMO_DATABASE)
+    AlarmDailyReport.objects.using(settings.DEMO_DATABASE).create(account_id=partner.pk, date=datetime.date(2026, 11, 1))
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    assert not Account.objects.using(settings.DEMO_DATABASE).filter(pk=partner.pk).exists()
+    assert not AlarmDailyReport.objects.using(settings.DEMO_DATABASE).filter(account_id=partner.pk).exists()
+
+
 def test_merge_account_moves_the_members_and_deletes_it(demo):
     from io import StringIO
 
@@ -911,3 +930,19 @@ def test_a_rerun_after_deleting_the_demo_account(api_client, demo):
     # The old copy's locations went with it.
     assert not ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account_id=old).exists()
     _login(api_client, LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE, disabled=False))
+
+
+def test_a_rerun_after_deleting_the_demo_account_drops_its_daily_reports(demo):
+    import datetime
+
+    from progeo.v1.models import Account, AlarmDailyReport
+
+    old = demo.account_id
+    AlarmDailyReport.objects.using(settings.DEMO_DATABASE).create(account_id=old, date=datetime.date(2026, 11, 1))
+    _delete_demo_users()
+    Account.objects.using("default").filter(pk=old).delete()  # its copy in the demo database stays
+
+    call_command("demo_account", "--skip-checks", *HISTORY)
+
+    assert not Account.objects.using(settings.DEMO_DATABASE).filter(pk=old).exists()
+    assert not AlarmDailyReport.objects.using(settings.DEMO_DATABASE).filter(account_id=old).exists()

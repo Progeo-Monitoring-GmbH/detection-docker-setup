@@ -49,6 +49,7 @@ from progeo.helper import (
     account_members,
     cad_import,
     device_overview,
+    device_thresholds,
     heatmap_video,
     plan_detect,
     plan_meters,
@@ -1775,6 +1776,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         setattr(point, key, value)
                     point.save(using=db_name, update_fields=list(update))
                 saved.append(points[0])
+        # The controllers that check thresholds themselves get the new ones.
+        device_thresholds.sync_location_on_commit(location, account.db_name if account else "default",
+                                                  user=request.user)
 
         serialized = ProgeoMeasurePointSerializer(saved, many=True).data
         return RequestSuccess({
@@ -2082,6 +2086,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             else:
                 if update_fields:
                     location.save(using=account.db_name, update_fields=update_fields)
+                    if "alarm_threshold" in update_fields:
+                        device_thresholds.sync_location_on_commit(location, account.db_name, user=request.user)
                     updated.append({"row": index, "id": location.pk, "project_id": location.project_id, "fields": update_fields})
                 else:
                     skipped.append({"row": index, "id": location.pk, "reason": "no geo/address fields to update"})
@@ -2131,9 +2137,15 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         self._check_references(serializer)
         instance = serializer.instance
         address_before = tuple(getattr(instance, field) for field in GEOCODE_ADDRESS_FIELDS)
+        threshold_before = instance.alarm_threshold
         position_sent = "latitude" in serializer.validated_data or "longitude" in serializer.validated_data
         super().perform_update(serializer)
         instance = serializer.instance
+        if instance.alarm_threshold != threshold_before:
+            # The controllers that check thresholds themselves get the new one.
+            device_thresholds.sync_location_on_commit(
+                instance, instance._state.db or "default", user=self.request.user
+            )
         self._geocode_status = None
         if not position_sent and tuple(getattr(instance, f) for f in GEOCODE_ADDRESS_FIELDS) != address_before:
             self._geocode_status = self._geocode_moved(instance)

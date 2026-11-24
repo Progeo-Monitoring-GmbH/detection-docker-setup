@@ -4,7 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LegacyConfig } from './LegacyGprsConfigPanel';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const api = vi.hoisted(() => ({
   get: vi.fn(),
@@ -35,8 +37,19 @@ const CONFIG: LegacyConfig = {
   role: 'main',
   project_id: 4060,
   second_project_id: 4061,
-  editable: { interval: true, pull_resistance: true, sensor_count: true, pe: true },
-  values: { interval: 300, pull_resistance: 40, sensor_count: 20, pe: true, main_interval: 300 },
+  editable: {
+    interval: true,
+    pull_resistance: true,
+    sensor_count: true,
+    pe: true,
+  },
+  values: {
+    interval: 300,
+    pull_resistance: 40,
+    sensor_count: 20,
+    pe: true,
+    main_interval: 300,
+  },
   reply: 'xx0x2803000020081 0340x280-10\n\n',
   fields: { pd: '0x28', interval: 300, reset: '0', sensors: 20, earth: 1 },
   answered: true,
@@ -46,12 +59,20 @@ const CONFIG: LegacyConfig = {
 let container: HTMLDivElement;
 let root: Root;
 
-const byTestId = (id: string) => container.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+const byTestId = (id: string) =>
+  container.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
 
 const render = async (config: LegacyConfig = CONFIG, canEdit = true) => {
   api.get.mockResolvedValue({ data: config });
   await act(async () => {
-    root.render(<LegacyGprsConfigPanel deviceId={7} locationId={3} canEdit={canEdit} testId="lc" />);
+    root.render(
+      <LegacyGprsConfigPanel
+        deviceId={7}
+        locationId={3}
+        canEdit={canEdit}
+        testId="lc"
+      />,
+    );
   });
 };
 
@@ -81,14 +102,20 @@ describe('LegacyGprsConfigPanel', () => {
   it('loads the configuration of the device in its database', async () => {
     await render();
 
-    expect(api.get).toHaveBeenCalledWith('/v1/device/7/legacy-config/', { params: { location: 3 } });
+    expect(api.get).toHaveBeenCalledWith('/v1/device/7/legacy-config/', {
+      params: { location: 3 },
+    });
     expect(byTestId('lc-script')?.textContent).toBe('gprs_4060_h.php');
     expect(byTestId('lc-reply')?.textContent).toBe(CONFIG.reply.trim());
   });
 
   it('sends only the changed values and shows the new answer', async () => {
     await render();
-    const saved = { ...CONFIG, values: { ...CONFIG.values, interval: 900 }, reply: 'xx0x2809000020081' };
+    const saved = {
+      ...CONFIG,
+      values: { ...CONFIG.values, interval: 900 },
+      reply: 'xx0x2809000020081',
+    };
     api.post.mockResolvedValue({ data: saved });
 
     await select('lc-interval', '900');
@@ -96,7 +123,10 @@ describe('LegacyGprsConfigPanel', () => {
       byTestId('lc-save')?.click();
     });
 
-    expect(api.post).toHaveBeenCalledWith('/v1/device/7/legacy-config/?location=3', { interval: 900 });
+    expect(api.post).toHaveBeenCalledWith(
+      '/v1/device/7/legacy-config/?location=3',
+      { interval: 900 },
+    );
     expect(byTestId('lc-reply')?.textContent).toBe('xx0x2809000020081');
   });
 
@@ -107,14 +137,26 @@ describe('LegacyGprsConfigPanel', () => {
   });
 
   it('warns when the controller is not answered', async () => {
-    await render({ ...CONFIG, answered: false, reply: '', fields: null, missing: { 4061: ['sensor_count'] } });
+    await render({
+      ...CONFIG,
+      answered: false,
+      reply: '',
+      fields: null,
+      missing: { 4061: ['sensor_count'] },
+    });
 
     expect(byTestId('lc-reply')).toBeNull();
-    expect(byTestId('lc-not-answered')?.textContent).toBe('legacycfg_not_answered');
+    expect(byTestId('lc-not-answered')?.textContent).toBe(
+      'legacycfg_not_answered',
+    );
   });
 
   it('a second project has no interval of its own', async () => {
-    await render({ ...CONFIG, role: 'second', editable: { ...CONFIG.editable, interval: false } });
+    await render({
+      ...CONFIG,
+      role: 'second',
+      editable: { ...CONFIG.editable, interval: false },
+    });
 
     expect(byTestId('lc-interval')).toBeNull();
     expect(byTestId('lc-second')).not.toBeNull();
@@ -134,16 +176,26 @@ describe('legacyIntervalOptions', () => {
 
     expect(values[0]).toBe(1200);
     expect(Math.max(...values)).toBeLessThanOrEqual(9999);
+    // 30 s and 1 min are for the WLAN controllers only.
+    expect(Math.min(...values)).toBe(300);
     expect(values).toContain(1800);
   });
 });
 
 describe('changedValues', () => {
   it('ignores what the device may not change', () => {
-    const second = { ...CONFIG, editable: { ...CONFIG.editable, interval: false } };
+    const second = {
+      ...CONFIG,
+      editable: { ...CONFIG.editable, interval: false },
+    };
 
     expect(
-      changedValues(second, { interval: 900, pull_resistance: 136, sensor_count: '20', pe: true }),
+      changedValues(second, {
+        interval: 900,
+        pull_resistance: 136,
+        sensor_count: '20',
+        pe: true,
+      }),
     ).toEqual({ pull_resistance: 136 });
   });
 });

@@ -331,6 +331,9 @@ def _write(entry, threshold):
     location.alarm_threshold = threshold
     # save(): its post_save mirrors the location into the project databases.
     location.save(using=entry["account_db"], update_fields=["alarm_threshold"])
+    from progeo.helper.device_thresholds import sync_location_on_commit
+
+    sync_location_on_commit(location, entry["account_db"])
 
 
 def _record(source, kind, rows) -> str:

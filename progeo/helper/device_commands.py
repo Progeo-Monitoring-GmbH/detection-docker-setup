@@ -6,7 +6,7 @@ queues them (queue_command), the controller polls GET/POST
 /v1/device/<project_id>/sample/cc/ and gets the pending ones, each handed out
 once (take_commands):
 
-    {"commands": [{"command": "maintenance", "id": 41},
+    {"commands": [{"command": "measure", "id": 41},
                   {"command": "set_params", "id": 42, "payload": {"pulldown_resistance": 120}}]}
 
 and reports their outcome with a later POST to sample/cc - only there,
@@ -14,7 +14,7 @@ sample/ takes samples only (record_results). Everything of an item besides
 id/command/ok/status/error is its result:
 
     {"event": "commands", "mode": "maintenance", "poll_sec": 15,
-     "results": [{"command": "maintenance", "id": 41, "ok": true},
+     "results": [{"command": "measure", "id": 41, "ok": true},
                  {"command": "set_params", "id": 42, "ok": false, "error": "unknown param"},
                  {"command": "get_config", "id": 50, "ok": true,
                   "path": "config/device_config.lua", "content": "return {...}"}]}
@@ -53,8 +53,9 @@ Command = ProgeoDeviceCommand.Command
 Status = ProgeoDeviceCommand.Status
 
 # What can be queued by hand - "upgrade" only comes from a firmware update
-# (helper/firmware_update.py), which knows the files it needs.
-COMMANDS = tuple(command for command in Command.values if command != Command.UPGRADE)
+# (helper/firmware_update.py), which knows the files it needs, and
+# "set_thresholds" from a threshold change (helper/device_thresholds.py).
+COMMANDS = tuple(command for command in Command.values if command not in (Command.UPGRADE, Command.SET_THRESHOLDS))
 # Queued again while one is pending, these still run once.
 IDEMPOTENT_COMMANDS = {Command.MEASURE, Command.IDENTIFY, Command.GET_CONFIG, Command.LOGS}
 # Writes a whole file onto the controller - superusers only.
@@ -532,7 +533,7 @@ def command_result(device, db_name, command_id):
 # params.lua PARAMS, frontend deviceParams.ts). poll_sec 0 ("never poll")
 # is left out: the controller could not be reached by any command again.
 CONFIG_PARAM_RANGES = {
-    "interval_sec": (60, 86400),
+    "interval_sec": (30, 86400),
     "poll_sec": (60, 86400),
 }
 CONFIG_PARAMS = ("pulldown_resistance", *CONFIG_PARAM_RANGES)

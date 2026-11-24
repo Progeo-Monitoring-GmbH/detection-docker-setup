@@ -708,11 +708,11 @@ class ProgeoDeviceCommand(auto_prefetch.Model):
         UPDATE = "update", "update"
         GET_CONFIG = "get_config", "get_config"
         SET_PARAMS = "set_params", "set_params"
-        MAINTENANCE = "maintenance", "maintenance"
-        NORMAL = "normal", "normal"
         LOGS = "logs", "logs"
         # A step of a remote firmware update (helper/firmware_update.py).
         UPGRADE = "upgrade", "upgrade"
+        # The location's alarm thresholds (helper/device_thresholds.py).
+        SET_THRESHOLDS = "set_thresholds", "set_thresholds"
 
     class Status(models.TextChoices):
         PENDING = "pending", "pending"        # queued, not taken yet

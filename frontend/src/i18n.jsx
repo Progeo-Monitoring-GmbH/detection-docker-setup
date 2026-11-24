@@ -47,7 +47,8 @@ i18n
           backup_download_error: 'Could not download backup: {{reason}}',
           backup_reloaded: 'Backups reloaded.',
           backup_reload_error: 'Could not reload backups: {{reason}}',
-          backup_created: 'Backup started - it appears in the list in a few minutes (Reload Backups).',
+          backup_created:
+            'Backup started - it appears in the list in a few minutes (Reload Backups).',
           backup_create_error: 'Could not create backup: {{reason}}',
           backup_deleted: 'Backup deleted.',
           backup_delete_error: 'Could not delete backup: {{reason}}',
@@ -66,11 +67,14 @@ i18n
           backup_deleted_selected: 'Deleted {{count}} backup(s).',
           backup_confirm_yes: 'Yes, delete',
           backup_confirm_cancel: 'Cancel',
-          backup_restore_confirm_title: 'Restore backup and overwrite the database?',
-          backup_restore_confirm_body: 'The backup <strong>{{name}}</strong> from <strong>{{date}}</strong> is written back into its database (<strong>{{target}}</strong>). This OVERWRITES all current data of that database: whatever was recorded or changed after the backup - measurements, alarms, settings - is lost. Other databases are not touched. This cannot be undone. If you might still need the current state, create a backup of it first.',
+          backup_restore_confirm_title:
+            'Restore backup and overwrite the database?',
+          backup_restore_confirm_body:
+            'The backup <strong>{{name}}</strong> from <strong>{{date}}</strong> is written back into its database (<strong>{{target}}</strong>). This OVERWRITES all current data of that database: whatever was recorded or changed after the backup - measurements, alarms, settings - is lost. Other databases are not touched. This cannot be undone. If you might still need the current state, create a backup of it first.',
           backup_restore_confirm_yes: 'Yes, overwrite and restore',
           backup_delete_one_confirm_title: 'Delete backup?',
-          backup_delete_one_confirm_body: 'The backup <strong>{{name}}</strong> (<strong>{{date}}</strong>, <strong>{{size}}</strong>) is deleted from the server. It can no longer be downloaded or restored. The database itself stays as it is. This cannot be undone.',
+          backup_delete_one_confirm_body:
+            'The backup <strong>{{name}}</strong> (<strong>{{date}}</strong>, <strong>{{size}}</strong>) is deleted from the server. It can no longer be downloaded or restored. The database itself stays as it is. This cannot be undone.',
           backup_filter_project: 'Project:',
           backup_project_all: 'All databases',
           backup_filter_date: 'Day:',
@@ -123,9 +127,11 @@ i18n
           profile_request_access_project: 'Object / project name',
           profile_request_access_message: 'Message',
           profile_request_access_send: 'Send request',
-          profile_request_access_sent: 'Your request has been sent to the ProGeo® team.',
+          profile_request_access_sent:
+            'Your request has been sent to the ProGeo® team.',
           profile_request_access_error: 'Could not send the request',
-          profile_request_access_too_many: 'Too many requests - please try again later.',
+          profile_request_access_too_many:
+            'Too many requests - please try again later.',
           profile_qr_code_title: 'Login QR code',
           profile_qr_code_generate: 'Generate QR code',
           profile_qr_code_show: 'Show QR code',
@@ -139,7 +145,8 @@ i18n
           profile_qr_code_revoke_text:
             'Use this when the code may have got into the wrong hands. The current code stops working at once: every device that logged in with it is logged out and has to scan the new code. A new QR code is generated.',
           profile_qr_code_revoke_confirm: 'Revoke and generate a new one',
-          profile_qr_code_revoked: 'The old QR code no longer works. This is the new one.',
+          profile_qr_code_revoked:
+            'The old QR code no longer works. This is the new one.',
           profile_qr_code_revoke_error: 'Could not revoke the QR code',
           profile_delete_account: 'Delete account',
           profile_delete_account_hint:
@@ -150,7 +157,8 @@ i18n
           profile_delete_account_confirm: 'Delete account permanently',
           profile_delete_account_done: 'Your account has been deleted.',
           profile_delete_account_error: 'Could not delete the account',
-          profile_delete_account_last_superuser: 'The last superuser cannot be deleted.',
+          profile_delete_account_last_superuser:
+            'The last superuser cannot be deleted.',
           profile_settings_saved: 'Settings updated',
           profile_settings_saving_info: 'Saving profile settings...',
           profile_settings_error: 'Could not update settings',
@@ -199,18 +207,25 @@ i18n
           measurement_compare_pair_mean_label: 'Sensor average',
           measurement_compare_pair_sum_diff_label: 'Sensor sum difference',
           measurement_compare_pair_mean_diff_label: 'Sensor average difference',
-          measurement_compare_sensor_hint: 'Click a sensor in the upper plot to follow it over time',
-          measurement_compare_sensor_click_add: 'Click: follow sensor {{sensor}} over time',
-          measurement_compare_sensor_click_remove: 'Click: stop following sensor {{sensor}}',
+          measurement_compare_sensor_hint:
+            'Click a sensor in the upper plot to follow it over time',
+          measurement_compare_sensor_click_add:
+            'Click: follow sensor {{sensor}} over time',
+          measurement_compare_sensor_click_remove:
+            'Click: stop following sensor {{sensor}}',
           measurement_compare_add_most_active: 'Add {{n}} most active sensors',
-          measurement_compare_add_least_active: 'Add {{n}} least active sensors',
-          measurement_compare_activity_hint: 'Activity: mean |EP − WP| over the shown measurements - a second click removes them',
+          measurement_compare_add_least_active:
+            'Add {{n}} least active sensors',
+          measurement_compare_activity_hint:
+            'Activity: mean |EP − WP| over the shown measurements - a second click removes them',
           measurement_compare_selected_sensors: 'Sensors shown: {{count}}',
           measurement_compare_clear_sensors: 'Clear sensors',
           measurement_compare_add_random: 'Add random sensor',
-          measurement_compare_add_random_hint: 'Adds one of the sensors that is not shown yet',
+          measurement_compare_add_random_hint:
+            'Adds one of the sensors that is not shown yet',
           measurement_compare_sensor_history: 'Last 3 months',
-          measurement_compare_sensor_history_hint: 'Shows the selected sensors over the last 3 months (to spot trends) - the shaded part is the selected period',
+          measurement_compare_sensor_history_hint:
+            'Shows the selected sensors over the last 3 months (to spot trends) - the shaded part is the selected period',
           measurement_compare_samples_label: 'Samples',
           measurement_compare_measurement_datetime_label:
             'Measurement datetime',
@@ -233,20 +248,24 @@ i18n
           heatmap_zoom_in: 'Zoom in',
           heatmap_zoom_out: 'Zoom out',
           heatmap_zoom_reset: 'Reset view',
-          heatmap_canvas_hint: 'Ctrl + mouse wheel: zoom · drag: move · double-click: reset',
+          heatmap_canvas_hint:
+            'Ctrl + mouse wheel: zoom · drag: move · double-click: reset',
           heatmap_heat: 'Heat',
           heatmap_show_dots: 'Dots',
           heatmap_show_dots_hint: 'Show the sensor dots',
           heatmap_show_labels: 'Labels',
           heatmap_show_labels_hint: 'Show the sensor numbers next to the dots',
           heatmap_show_names: 'Names',
-          heatmap_show_names_hint: 'Show the sensor names (e.g. A2-15) instead of their numbers',
+          heatmap_show_names_hint:
+            'Show the sensor names (e.g. A2-15) instead of their numbers',
           heatmap_scale_unit: 'mV',
           heatmap_show_lines: 'Lines',
           heatmap_show_lines_hint: 'Show the sensor band lines',
           heatmap_normalize: 'Absolute scale',
-          heatmap_normalize_hint: 'Scale the heat to the highest value of the loaded period, in mV, instead of the alarm threshold - values above the threshold stay distinguishable (orange mark on the scale: alarm threshold)',
-          heatmap_normalize_forced: 'WP, EP and WP + EP have no alarm threshold - always scaled to the highest value of the period',
+          heatmap_normalize_hint:
+            'Scale the heat to the highest value of the loaded period, in mV, instead of the alarm threshold - values above the threshold stay distinguishable (orange mark on the scale: alarm threshold)',
+          heatmap_normalize_forced:
+            'WP, EP and WP + EP have no alarm threshold - always scaled to the highest value of the period',
           heatmap_profile: 'Profile',
           heatmap_profile_hint: 'Which value of a sensor the heat shows',
           heatmap_profile_diff: 'WP − EP',
@@ -255,48 +274,77 @@ i18n
           heatmap_profile_sum: 'WP + EP',
           heatmap_change: 'Change',
           heatmap_area_select: 'Area',
-          heatmap_area_select_hint: 'Drag an area on the plan to show its sensors in the second plot (also: Shift + drag)',
+          heatmap_area_select_hint:
+            'Drag an area on the plan to show its sensors in the second plot (also: Shift + drag)',
           plot_help_actions: 'Actions',
           plot_help_workflows: 'Typical workflows',
           plot_help_open: 'Help: {{title}}',
           plot_reset_scale: 'Reset scale',
-          plot_reset_scale_hint: 'Back to the full view after zooming or panning (drag a box: zoom, drag an axis: pan, Ctrl + mouse wheel: zoom)',
+          plot_reset_scale_hint:
+            'Back to the full view after zooming or panning (drag a box: zoom, drag an axis: pan, Ctrl + mouse wheel: zoom)',
           plot_help_heatmap_title: 'Heatmap',
-          plot_help_heatmap_what: 'All sensors on the site plan at the frame picker\'s time - the warmer, the higher (default |WP − EP|). Red dots or lines: above their threshold. Lila ring: the sensors in the second plot; white ring: the one picked last. While comparing: each sensor\'s change since then.',
-          plot_help_heatmap_actions: 'Space / ▶::play the frames\n← / →::one frame back / forward (↑ / ↓: ten)\nClick a sensor::follow it in the second measurement plot\nShift + drag (or "Area")::select every sensor in the area\nCtrl + mouse wheel::zoom - dragging moves the plan\nButtons top left::show / hide dots and lines',
-          plot_help_heatmap_workflows: 'Find a hotspot::▶ play the period → stop where it turns red → click the sensor → check its course below\nCheck an area::Shift + drag over it → its sensors appear in the second plot → compare their lines',
+          plot_help_heatmap_what:
+            "All sensors on the site plan at the frame picker's time - the warmer, the higher (default |WP − EP|). Red dots or lines: above their threshold. Lila ring: the sensors in the second plot; white ring: the one picked last. While comparing: each sensor's change since then.",
+          plot_help_heatmap_actions:
+            'Space / ▶::play the frames\n← / →::one frame back / forward (↑ / ↓: ten)\nClick a sensor::follow it in the second measurement plot\nShift + drag (or "Area")::select every sensor in the area\nCtrl + mouse wheel::zoom - dragging moves the plan\nButtons top left::show / hide dots and lines',
+          plot_help_heatmap_workflows:
+            'Find a hotspot::▶ play the period → stop where it turns red → click the sensor → check its course below\nCheck an area::Shift + drag over it → its sensors appear in the second plot → compare their lines',
           plot_help_by_sensor_title: 'Measurement by sensor',
-          plot_help_by_sensor_what: 'One column per sensor. Left: its WP − EP over the whole period - whisker min–max, box the middle 50 % of the values (25th–75th percentile), line the mean. Right: the measurement at the frame picker as bars EP (red) | WP (blue), WP + EP on demand; dashed outlines: the Störungsprofil. Green: within the alarm threshold (a sensor with its own threshold has its own height). Gray: a disabled sensor.',
-          plot_help_by_sensor_actions: 'Click a column::follow the sensor over time in the second plot\nClick a legend entry::show / hide that part (WP + EP on demand)\nDrag the grip on the axis::hide the sensors whose |WP − EP| stays below it - followed ones stay; "Show all" brings them back\nHover::the values of that sensor\nCtrl + mouse wheel::zoom the columns - many sensors scroll sideways',
-          plot_help_by_sensor_workflows: 'Find the active sensors::drag the grip up until only the moving ones are left → click them → follow them over time\nSpot an outlier::look for bars outside the box → click the sensor → see whether it rises over time\nCheck the threshold::a bar leaving the green area raises an alarm → play the frame picker → see when it leaves',
+          plot_help_by_sensor_what:
+            'One column per sensor. Left: its WP − EP over the whole period - whisker min–max, box the middle 50 % of the values (25th–75th percentile), line the mean. Right: the measurement at the frame picker as bars EP (red) | WP (blue), WP + EP on demand; dashed outlines: the Störungsprofil. Green: within the alarm threshold (a sensor with its own threshold has its own height). Gray: a disabled sensor.',
+          plot_help_by_sensor_actions:
+            'Click a column::follow the sensor over time in the second plot\nClick a legend entry::show / hide that part (WP + EP on demand)\nDrag the grip on the axis::hide the sensors whose |WP − EP| stays below it - followed ones stay; "Show all" brings them back\nHover::the values of that sensor\nCtrl + mouse wheel::zoom the columns - many sensors scroll sideways',
+          plot_help_by_sensor_workflows:
+            'Find the active sensors::drag the grip up until only the moving ones are left → click them → follow them over time\nSpot an outlier::look for bars outside the box → click the sensor → see whether it rises over time\nCheck the threshold::a bar leaving the green area raises an alarm → play the frame picker → see when it leaves',
           plot_help_sensors_over_time_title: 'Selected sensors over time',
-          plot_help_sensors_over_time_what: 'The |WP − EP| of the selected sensors over the period. Green area: below the alarm threshold - no alarm (dashed line: a sensor\'s own, higher threshold). Orange dotted line: the frame picker\'s time.',
-          plot_help_sensors_over_time_actions: 'Click in the first plot or on the heatmap::add a sensor\nShift + drag on the heatmap::add every sensor of an area\nButtons (random, most / least active)::add sensors\n✕ on a sensor::remove it\nClick in the plot::move the frame picker there\n"Last 3 months" (staff)::show a longer history',
-          plot_help_sensors_over_time_workflows: 'Follow a suspicious sensor::click it on the heatmap → watch its line → click a peak → the heatmap shows that moment\nCompare neighbours::drag an area on the heatmap → a line that differs stands out',
+          plot_help_sensors_over_time_what:
+            "The |WP − EP| of the selected sensors over the period. Green area: below the alarm threshold - no alarm (dashed line: a sensor's own, higher threshold). Orange dotted line: the frame picker's time.",
+          plot_help_sensors_over_time_actions:
+            'Click in the first plot or on the heatmap::add a sensor\nShift + drag on the heatmap::add every sensor of an area\nButtons (random, most / least active)::add sensors\n✕ on a sensor::remove it\nClick in the plot::move the frame picker there\n"Last 3 months" (staff)::show a longer history',
+          plot_help_sensors_over_time_workflows:
+            'Follow a suspicious sensor::click it on the heatmap → watch its line → click a peak → the heatmap shows that moment\nCompare neighbours::drag an area on the heatmap → a line that differs stands out',
           plot_help_sensor_sum_title: 'Sensor sum / sensor average',
-          plot_help_sensor_sum_what: 'Per measurement the |WP − EP| of all sensors, added up (sum) or averaged (average) - the overall state over time. One bar per measurement; no bar: no measurement.',
-          plot_help_sensor_sum_actions: 'Greyed-out legend entry::switch sum ↔ average\n"Difference" in the legend::show the jumps between measurements\nClick a bar::move the frame picker there\nDrag / Ctrl + mouse wheel::zoom in time - also the second plot, a band on the frame picker\n"Reset scale"::back to the full period',
-          plot_help_sensor_sum_workflows: 'When did it change?::look for a step in the bars → turn on "Difference" → click the jump → the heatmap shows that moment',
+          plot_help_sensor_sum_what:
+            'Per measurement the |WP − EP| of all sensors, added up (sum) or averaged (average) - the overall state over time. One bar per measurement; no bar: no measurement.',
+          plot_help_sensor_sum_actions:
+            'Greyed-out legend entry::switch sum ↔ average\n"Difference" in the legend::show the jumps between measurements\nClick a bar::move the frame picker there\nDrag / Ctrl + mouse wheel::zoom in time - also the second plot, a band on the frame picker\n"Reset scale"::back to the full period',
+          plot_help_sensor_sum_workflows:
+            'When did it change?::look for a step in the bars → turn on "Difference" → click the jump → the heatmap shows that moment',
           plot_help_compare_title: 'Comparison with the past',
-          plot_help_compare_what: 'The measurement at the frame picker against the same time back then (dotted: EP / WP then). Green / yellow: the change of WP / EP since then. Bands: mean, deviation and range of the WP change over the period.',
-          plot_help_compare_actions: '"Compare" above::pick how far back\nClick an entry of the list::show the sensor in the second measurement plot\n"End comparison"::back to the normal view',
-          plot_help_compare_workflows: 'What changed since then?::pick a comparison → look for green lines outside the bands → click the top entry of the list → follow it over time',
+          plot_help_compare_what:
+            'The measurement at the frame picker against the same time back then (dotted: EP / WP then). Green / yellow: the change of WP / EP since then. Bands: mean, deviation and range of the WP change over the period.',
+          plot_help_compare_actions:
+            '"Compare" above::pick how far back\nClick an entry of the list::show the sensor in the second measurement plot\n"End comparison"::back to the normal view',
+          plot_help_compare_workflows:
+            'What changed since then?::pick a comparison → look for green lines outside the bands → click the top entry of the list → follow it over time',
           plot_help_status_plan_title: 'Site plan',
-          plot_help_status_plan_what: 'The sensors on the site plan at the frame picker\'s time - as heat, lines or points depending on the product. Red marks on the frame picker: alarm periods.',
-          plot_help_status_plan_actions: 'Space / ▶::play the frames\nClick a red alarm mark::jump to its start\nPeriod above, step beside ▶::what the frame picker covers\nClick a sensor::select it - it comes first in the time series\nPoints / Labels::show the sensor dots / their numbers\nCtrl + mouse wheel::zoom - dragging moves the plan',
-          plot_help_status_plan_workflows: 'Review an alarm::click its red mark → ▶ play from there → watch where it spreads',
+          plot_help_status_plan_what:
+            "The sensors on the site plan at the frame picker's time - as heat, lines or points depending on the product. Red marks on the frame picker: alarm periods.",
+          plot_help_status_plan_actions:
+            'Space / ▶::play the frames\nClick a red alarm mark::jump to its start\nPeriod above, step beside ▶::what the frame picker covers\nClick a sensor::select it - it comes first in the time series\nPoints / Labels::show the sensor dots / their numbers\nCtrl + mouse wheel::zoom - dragging moves the plan',
+          plot_help_status_plan_workflows:
+            'Review an alarm::click its red mark → ▶ play from there → watch where it spreads',
           plot_help_status_zeitreihe_title: 'Time series',
-          plot_help_status_zeitreihe_what: 'The readings over the period as a multiple of their threshold (1x = at the threshold, red above). Shown at first: up to 5 sensors - the triggered ones, then the most active. The three tables below list the triggered, active and silent sensors.',
-          plot_help_status_zeitreihe_actions: 'Hover a line, legend entry or table row::highlight the sensor\nClick a table row::show / hide it in the plot\nClick a legend entry::remove it from the plot\n"Only triggered sensors"::plot exactly those above the threshold\n"Reset"::back to the first selection\n"Smoothing"::average close readings (on) or show every reading (off)\nClick a sensor on the site plan::it becomes the first entry ("selected")',
-          plot_help_status_zeitreihe_workflows: 'Which sensor is critical?::look for lines in the red area → hover for name and value → find it on the site plan',
+          plot_help_status_zeitreihe_what:
+            'The readings over the period as a multiple of their threshold (1x = at the threshold, red above). Shown at first: up to 5 sensors - the triggered ones, then the most active. The three tables below list the triggered, active and silent sensors.',
+          plot_help_status_zeitreihe_actions:
+            'Hover a line, legend entry or table row::highlight the sensor\nClick a table row::show / hide it in the plot\nClick a legend entry::remove it from the plot\n"Only triggered sensors"::plot exactly those above the threshold\n"Reset"::back to the first selection\n"Smoothing"::average close readings (on) or show every reading (off)\nClick a sensor on the site plan::it becomes the first entry ("selected")',
+          plot_help_status_zeitreihe_workflows:
+            'Which sensor is critical?::look for lines in the red area → hover for name and value → find it on the site plan',
           plot_help_climate_heatmap_title: 'Climate heatmap',
-          plot_help_climate_heatmap_what: 'Humidity or temperature at the frame picker\'s time, interpolated between the sensors placed on the site plan.',
-          plot_help_climate_heatmap_actions: 'Humidity / Temperature::switch the value\nSpace / ▶ or the frame picker::step through the frames\nHover a sensor::highlight its line in the charts',
-          plot_help_climate_heatmap_workflows: 'Find damp spots::Humidity → ▶ play → note areas that stay high → hover the sensor → check its line below',
+          plot_help_climate_heatmap_what:
+            "Humidity or temperature at the frame picker's time, interpolated between the sensors placed on the site plan.",
+          plot_help_climate_heatmap_actions:
+            'Humidity / Temperature::switch the value\nSpace / ▶ or the frame picker::step through the frames\nHover a sensor::highlight its line in the charts',
+          plot_help_climate_heatmap_workflows:
+            'Find damp spots::Humidity → ▶ play → note areas that stay high → hover the sensor → check its line below',
           plot_help_climate_chart_title: 'Climate chart',
-          plot_help_climate_chart_what: 'One line per device over the period; grey dashed: the mean of all devices. Orange dotted line: the frame picker\'s time. Long periods are averaged.',
-          plot_help_climate_chart_actions: 'Hover a line or name::highlight the device, show its mean\nClick a point::compare every value against that moment (in %)\nClick it again / "Clear"::end the comparison\nDrag a box::zoom - drag an axis: pan\n"Reset scale"::back to the full view',
-          plot_help_climate_chart_workflows: 'How much did it dry out?::click a point at the start → hover a later one → read the change in %',
+          plot_help_climate_chart_what:
+            "One line per device over the period; grey dashed: the mean of all devices. Orange dotted line: the frame picker's time. Long periods are averaged.",
+          plot_help_climate_chart_actions:
+            'Hover a line or name::highlight the device, show its mean\nClick a point::compare every value against that moment (in %)\nClick it again / "Clear"::end the comparison\nDrag a box::zoom - drag an axis: pan\n"Reset scale"::back to the full view',
+          plot_help_climate_chart_workflows:
+            'How much did it dry out?::click a point at the start → hover a later one → read the change in %',
           heatmap_no_data: 'No sensor measurements available.',
           heatmap_step_label: 'Step',
           heatmap_animation_start: 'Start Animation',
@@ -342,7 +390,8 @@ i18n
           permission_denied: "You don't have permission for this.",
           permission_denied_reason: 'No permission: {{reason}}',
           location_no_access: "You don't have access to this location.",
-          location_no_access_hint: 'It may belong to another account, or your access was removed.',
+          location_no_access_hint:
+            'It may belong to another account, or your access was removed.',
           location_no_access_home: 'To the start page',
           measurements_export: 'Export measurements',
           device_rename_title: 'Rename devices',
@@ -361,7 +410,8 @@ i18n
           measurements_cancel: 'Cancel',
           measurements_import_confirm:
             'Import {{count}} measurement row(s) from "{{file}}" into this location? Rows whose id exists already are overwritten with the values of the file, the others are added; rows of devices of other locations are skipped. This cannot be undone.',
-          image_canvas_remove_irreversible: 'Removed points cannot be restored. Esc cancels.',
+          image_canvas_remove_irreversible:
+            'Removed points cannot be restored. Esc cancels.',
           image_canvas_edit_irreversible:
             'Cannot be undone - the plan image is replaced by the edited one. Esc cancels.',
           acknowledge_alarms_title: 'Acknowledge alarms?',
@@ -370,7 +420,8 @@ i18n
             'Acknowledge the {{count}} pending alarm(s) of the suspected leak at {{sensor}}? They are marked as acknowledged by you; once every alarm of the location is acknowledged, the reminders stop. This cannot be undone.',
           acknowledge_alarms_point_message:
             'Acknowledge the <strong>{{count}} pending alarm(s)</strong> of suspicion point <strong>{{letter}}</strong> (<strong>{{sensors}} sensors</strong>)? They are marked as acknowledged by you; once every alarm of the location is acknowledged, the reminders stop. This cannot be undone.',
-          demo_subtitle: 'Read-only demo data - nothing here is real customer data.',
+          demo_subtitle:
+            'Read-only demo data - nothing here is real customer data.',
           demo_login_checking: 'Opening the demo…',
           demo_login_invalid: 'This demo link is invalid or has expired.',
           demo_load_error: 'The demo could not be loaded.',
@@ -405,28 +456,35 @@ i18n
           status_view_zeitreihe: 'Time series',
           status_zeitreihe_title: 'Sensor values over time',
           status_zeitreihe_empty: 'No measurements in this period.',
-          status_zeitreihe_nothing_shown: 'No sensor selected - pick one in the tables below.',
+          status_zeitreihe_nothing_shown:
+            'No sensor selected - pick one in the tables below.',
           status_zeitreihe_shown: '{{shown}} of {{total}} sensors shown',
           status_zeitreihe_only_triggered: 'Only triggered sensors ({{count}})',
           status_zeitreihe_reset: 'Reset',
           status_zeitreihe_triggered_title: 'Triggered sensors',
-          status_zeitreihe_triggered_hint: 'At least one value above the threshold',
+          status_zeitreihe_triggered_hint:
+            'At least one value above the threshold',
           status_zeitreihe_active_title: 'Active sensors',
-          status_zeitreihe_active_hint: 'Large span between min and max (at least {{percent}} % of the threshold)',
+          status_zeitreihe_active_hint:
+            'Large span between min and max (at least {{percent}} % of the threshold)',
           status_zeitreihe_silent_title: 'Silent sensors',
-          status_zeitreihe_silent_hint: 'Hardly any change (span below {{percent}} % of the threshold)',
+          status_zeitreihe_silent_hint:
+            'Hardly any change (span below {{percent}} % of the threshold)',
           status_zeitreihe_table_empty: 'None in this period.',
-          status_zeitreihe_table_click: 'Click a row to show or hide the sensor in the plot. Trend: first to last value of the period.',
+          status_zeitreihe_table_click:
+            'Click a row to show or hide the sensor in the plot. Trend: first to last value of the period.',
           status_zeitreihe_col_sensor: 'Sensor',
           status_zeitreihe_col_max: 'Max',
           status_zeitreihe_col_range: 'Span',
           status_zeitreihe_col_trend: 'Trend',
           status_zeitreihe_threshold_of: 'Threshold {{value}}',
           status_zeitreihe_mean_of: 'avg of {{count}}',
-          status_zeitreihe_threshold_legend: 'Alarm threshold (1.00x) - values above it trigger an alarm',
+          status_zeitreihe_threshold_legend:
+            'Alarm threshold (1.00x) - values above it trigger an alarm',
           status_zeitreihe_selected: 'selected',
           status_zeitreihe_smooth: 'Smoothing',
-          status_zeitreihe_smooth_hint: 'On: readings close together are merged into their average (Ø). Off: every reading is shown - abrupt changes such as switching off or calibration stay visible.',
+          status_zeitreihe_smooth_hint:
+            'On: readings close together are merged into their average (Ø). Off: every reading is shown - abrupt changes such as switching off or calibration stay visible.',
           status_range_latest: 'Latest measurement',
           status_range_24h: 'Last 24 h',
           status_range_7d: 'Last 7 days',
@@ -467,23 +525,28 @@ i18n
           climate_reference_none: 'No reference value nearby',
           climate_mean_all: 'All sensors',
           climate_rain_legend: 'Rain',
-          climate_rain_legend_hint: 'Rain at the object (rain check) - hover a blue band for details',
+          climate_rain_legend_hint:
+            'Rain at the object (rain check) - hover a blue band for details',
           climate_rain_count_one: 'Rain ({{count}} event)',
           climate_rain_count_other: 'Rain ({{count}} events)',
           climate_rain_start: 'Start',
           climate_rain_end: 'End',
           climate_rain_duration: 'Duration',
           climate_rain_amount: 'Amount',
-          climate_heatmap_no_points: 'No sensors have been placed on the site plan yet.',
+          climate_heatmap_no_points:
+            'No sensors have been placed on the site plan yet.',
           climate_heatmap_open_wizard: 'Place sensors in the site plan wizard',
-          climate_heatmap_frames: 'One frame per {{hours}} h - sensors without a reading for 6 h are left out.',
+          climate_heatmap_frames:
+            'One frame per {{hours}} h - sensors without a reading for 6 h are left out.',
           admin_title: 'Admin Panel',
-          admin_no_sections: 'No section of the admin panel is enabled for you.',
+          admin_no_sections:
+            'No section of the admin panel is enabled for you.',
           admin_refresh: 'Refresh',
           admin_days_one: '{{count}} day',
           admin_days_other: '{{count}} days',
           admin_storage_title: 'Host storage',
-          admin_storage_queued: 'Storage scan started - refresh again in a moment.',
+          admin_storage_queued:
+            'Storage scan started - refresh again in a moment.',
           admin_storage_generated: 'as of {{time}}',
           admin_storage_root: 'System disk',
           admin_storage_media: 'Media',
@@ -493,9 +556,12 @@ i18n
           admin_lageplan_title: 'Export Lageplans',
           admin_lageplan_period: 'Created in the last',
           admin_lageplan_download: 'Create & download .tar',
-          admin_lageplan_hint: 'Packs the Lageplans created in the chosen period into one .tar file. If there is none in that period, it is widened until at least one is found.',
-          admin_lageplan_done: '{{count}} Lageplan(s) of the last {{days}} days downloaded.',
-          admin_lageplan_widened: '(None in the chosen period - widened to {{days}} days.)',
+          admin_lageplan_hint:
+            'Packs the Lageplans created in the chosen period into one .tar file. If there is none in that period, it is widened until at least one is found.',
+          admin_lageplan_done:
+            '{{count}} Lageplan(s) of the last {{days}} days downloaded.',
+          admin_lageplan_widened:
+            '(None in the chosen period - widened to {{days}} days.)',
           admin_lageplan_none: 'No Lageplan files found.',
           admin_logs_title: 'Log files',
           admin_logs_filter_files: 'Filter files…',
@@ -516,7 +582,8 @@ i18n
           admin_logs_status_connecting: 'Connecting…',
           admin_logs_status_reconnecting: 'Reconnecting… (polling)',
           admin_logs_status_denied: 'No live access (polling)',
-          location_picker_placeholder: 'Search by name, address, postcode, city, project id…',
+          location_picker_placeholder:
+            'Search by name, address, postcode, city, project id…',
           location_picker_loading: 'Loading locations…',
           location_picker_empty: 'No locations available',
           location_picker_no_match: 'No matching location',
@@ -524,16 +591,19 @@ i18n
           status_legend_title: 'Effective potential',
           status_verdachtsstellen_title: 'Suspected leaks',
           suspicion_computed_title: 'Suspected leak locations',
-          suspicion_computed_hint: 'Computed from all sensors over their threshold in the selected period.',
+          suspicion_computed_hint:
+            'Computed from all sensors over their threshold in the selected period.',
           suspicion_computed_empty: 'No suspected leak in the selected period.',
           suspicion_computed_point_one: 'Area around {{count}} sensor',
           suspicion_computed_point_other: 'Area around {{count}} sensors',
           suspicion_mode_computed: 'Computed',
-          suspicion_mode_computed_hint: 'Suspected leak locations as customers see them',
+          suspicion_mode_computed_hint:
+            'Suspected leak locations as customers see them',
           suspicion_mode_sensors: 'Per sensor',
           suspicion_member_sensors: 'Sensors in this area',
           suspicion_show_first_seen: 'Show first detection',
-          suspicion_show_first_seen_hint: "Sets the plan's time slider to the first detection ({{date}})",
+          suspicion_show_first_seen_hint:
+            "Sets the plan's time slider to the first detection ({{date}})",
           suspicion_last_seen: 'last {{date}}',
           suspicion_first_seen: 'first {{date}}',
           suspicion_strength: 'Strength {{value}} %',
@@ -547,8 +617,10 @@ i18n
           status_col_lvl: 'LVL',
           status_sensor_label: 'Sensor #{{sensor}}',
           status_line_label: 'Line {{line}}',
-          status_alarm_span: 'Alarm {{sensor}}: {{from}} – {{to}} (click: jump there)',
-          status_alarm_span_active: 'Alarm {{sensor}}: since {{from}}, active (click: jump there)',
+          status_alarm_span:
+            'Alarm {{sensor}}: {{from}} – {{to}} (click: jump there)',
+          status_alarm_span_active:
+            'Alarm {{sensor}}: since {{from}}, active (click: jump there)',
           status_alarm_history: 'Alarm history',
           status_alarm_history_empty: 'No readings in the period.',
           status_col_sensor: 'Sensor',
@@ -614,24 +686,28 @@ i18n
           objekt_geocode_done: 'GPS position set.',
           objekt_geocode_error: 'Could not fetch the GPS position: {{reason}}',
           objekt_geocode_save_first: 'Save the address first.',
-          objekt_geocode_updated: 'The map position was updated to the new address.',
+          objekt_geocode_updated:
+            'The map position was updated to the new address.',
           objekt_geocode_not_found:
             'No position was found for the new address - the map still shows the previous one. Please check the address.',
           objekt_fact_devices: 'Measuring units',
           objekt_fact_last_measurement: 'Last measurement',
           objekt_position_title: 'GPS position',
           objekt_regeocode: 'Reload from address',
-          objekt_regeocode_hint: 'Looks the position up again from the saved address - replaces the current one.',
+          objekt_regeocode_hint:
+            'Looks the position up again from the saved address - replaces the current one.',
           objekt_latitude: 'Latitude',
           objekt_longitude: 'Longitude',
           objekt_position_save: 'Save position',
           objekt_position_pick: 'Correct on the map',
           objekt_position_pick_new: 'Set on the map',
-          objekt_position_pick_hint: 'Drag the map until the pin sits on the building.',
+          objekt_position_pick_hint:
+            'Drag the map until the pin sits on the building.',
           objekt_position_pick_moved: 'moved by {{distance}}',
           objekt_position_cancel: 'Cancel',
           objekt_position_saved: 'Position saved.',
-          objekt_position_invalid: 'Latitude -90 to 90, longitude -180 to 180, in decimal degrees.',
+          objekt_position_invalid:
+            'Latitude -90 to 90, longitude -180 to 180, in decimal degrees.',
           objekt_save: 'Save changes',
           objekt_saved: 'Location updated.',
           objekt_save_error: 'Could not save location: {{reason}}',
@@ -661,126 +737,170 @@ i18n
           access_message: 'Message',
           access_optional: 'optional',
           access_privacy_prefix: 'I have read the',
-          access_privacy_suffix: 'and agree that my details are processed to review my request.',
+          access_privacy_suffix:
+            'and agree that my details are processed to review my request.',
           access_request_title: 'Request access',
-          access_request_intro: 'Tell us who you are. After confirming your email address, we review your request and unlock your access.',
+          access_request_intro:
+            'Tell us who you are. After confirming your email address, we review your request and unlock your access.',
           access_request_submit: 'Send request',
-          access_request_error: 'The request could not be sent. Please check your details.',
+          access_request_error:
+            'The request could not be sent. Please check your details.',
           access_request_sent_title: 'Please check your inbox',
-          access_request_sent_text: 'Please confirm your email address using the link we have sent you.',
+          access_request_sent_text:
+            'Please confirm your email address using the link we have sent you.',
           access_verify_title: 'Confirm email address',
           access_verify_checking: 'Checking the link…',
-          access_verify_invalid: 'This confirmation link is invalid or has expired.',
-          access_verify_intro: 'Hello {{name}}, please choose a password for your access.',
+          access_verify_invalid:
+            'This confirmation link is invalid or has expired.',
+          access_verify_intro:
+            'Hello {{name}}, please choose a password for your access.',
           access_verify_repeat: 'Repeat password',
           access_verify_submit: 'Confirm and set password',
           access_verify_mismatch: 'The passwords do not match.',
           migration_setup_title: 'Set up your account',
-          migration_setup_intro: 'Welcome to the new ProGeo portal, {{name}}! Choose your password - you are signed in right away.',
+          migration_setup_intro:
+            'Welcome to the new ProGeo portal, {{name}}! Choose your password - you are signed in right away.',
           migration_setup_password: 'New password',
           migration_setup_submit: 'Save password and sign in',
-          migration_setup_invalid: 'This link is invalid, expired or has already been used. Request a login link by email instead - or contact us.',
+          migration_setup_invalid:
+            'This link is invalid, expired or has already been used. Request a login link by email instead - or contact us.',
           migration_setup_error: 'That did not work. Please try again later.',
           access_verify_password_invalid: 'This password is not allowed.',
           access_verify_error: 'The confirmation failed. Please try again.',
           pending_title: 'Your access is being reviewed',
-          pending_text: 'Thank you for your request. Our team is reviewing it and will unlock your access to your projects.',
-          pending_text_mail: 'You will receive an email as soon as your access has been approved.',
-          pending_login_blocked: 'Your account has to be reviewed by our team first - until then, signing in to the portal is not possible. You don\'t need to do anything: we\'ll email you once it\'s approved.',
+          pending_text:
+            'Thank you for your request. Our team is reviewing it and will unlock your access to your projects.',
+          pending_text_mail:
+            'You will receive an email as soon as your access has been approved.',
+          pending_login_blocked:
+            "Your account has to be reviewed by our team first - until then, signing in to the portal is not possible. You don't need to do anything: we'll email you once it's approved.",
           pending_logout: 'Sign out',
           pending_approved_title: 'Your access has been approved',
           pending_approved_text: 'Please sign in again to use the portal.',
           pending_login_again: 'Sign in again',
           pending_rejected_title: 'Your request could not be approved',
-          pending_rejected_text: 'Unfortunately we could not approve your access. Please contact us if you have any questions.',
+          pending_rejected_text:
+            'Unfortunately we could not approve your access. Please contact us if you have any questions.',
           magic_link_title: 'Login link by email',
-          magic_link_intro: 'Enter your email address. If it belongs to an account, we will send you a one-time login link.',
+          magic_link_intro:
+            'Enter your email address. If it belongs to an account, we will send you a one-time login link.',
           magic_link_submit: 'Send login link',
           magic_link_request_error: 'The request failed. Please try again.',
           magic_link_sent_title: 'Please check your inbox',
-          magic_link_sent_text: 'If the address belongs to an account, a login link is on its way. It is valid for a short time and can only be used once.',
+          magic_link_sent_text:
+            'If the address belongs to an account, a login link is on its way. It is valid for a short time and can only be used once.',
           magic_link_login_title: 'Sign in',
           magic_link_login_intro: 'Sign in with your one-time login link.',
           magic_link_login_submit: 'Sign in now',
-          magic_link_invalid: 'This login link is invalid, expired or has already been used.',
+          magic_link_invalid:
+            'This login link is invalid, expired or has already been used.',
           magic_link_request_new: 'Request a new login link',
           login_forgot_password: 'Forgot your password?',
           login_otp_title: 'Two-factor authentication',
-          login_otp_intro: 'Enter the 6-digit code from your authenticator app. You can also use one of your recovery codes.',
+          login_otp_intro:
+            'Enter the 6-digit code from your authenticator app. You can also use one of your recovery codes.',
           login_otp_code: 'Code',
           login_otp_invalid: 'Invalid code',
-          login_failed: 'Sign-in failed. Please check your email address and password.',
-          login_throttled: 'Too many failed attempts. Try again in {{seconds}} s.',
+          login_failed:
+            'Sign-in failed. Please check your email address and password.',
+          login_throttled:
+            'Too many failed attempts. Try again in {{seconds}} s.',
           login_otp_submit: 'Confirm',
           login_otp_back: 'Back to sign in',
           password_reset_title: 'Forgot password',
-          password_reset_intro: 'Enter your email address. If it belongs to an account, we will send you an email.',
-          password_reset_2fa_hint: 'You can only reset your password yourself if two-factor authentication is set up. Otherwise the email explains how to get in: sign in with a login link, then set up two-factor authentication in your profile.',
+          password_reset_intro:
+            'Enter your email address. If it belongs to an account, we will send you an email.',
+          password_reset_2fa_hint:
+            'You can only reset your password yourself if two-factor authentication is set up. Otherwise the email explains how to get in: sign in with a login link, then set up two-factor authentication in your profile.',
           password_reset_submit: 'Send email',
-          password_reset_sent_text: 'If an account exists for this address, you will receive an email shortly.',
+          password_reset_sent_text:
+            'If an account exists for this address, you will receive an email shortly.',
           password_new_title: 'Choose a new password',
-          password_new_intro: 'Hello {{name}}, choose a new password and confirm it with the code from your authenticator app.',
+          password_new_intro:
+            'Hello {{name}}, choose a new password and confirm it with the code from your authenticator app.',
           password_new_submit: 'Save password and sign in',
-          password_new_invalid: 'This link is invalid, expired or has already been used.',
+          password_new_invalid:
+            'This link is invalid, expired or has already been used.',
           password_new_request_new: 'Request a new link',
-          password_new_otp_missing: 'Please enter the code from your authenticator app.',
-          password_new_error: 'The password could not be changed. Please try again.',
+          password_new_otp_missing:
+            'Please enter the code from your authenticator app.',
+          password_new_error:
+            'The password could not be changed. Please try again.',
           tfa_title: 'Two-factor authentication',
           tfa_status_on: 'Active',
           tfa_status_off: 'Not set up',
-          tfa_intro: 'Protect your account with a second factor: when signing in, you also enter a code from an authenticator app (e.g. Google or Microsoft Authenticator).',
-          tfa_required_hint: 'Two-factor authentication is mandatory for staff accounts.',
+          tfa_intro:
+            'Protect your account with a second factor: when signing in, you also enter a code from an authenticator app (e.g. Google or Microsoft Authenticator).',
+          tfa_required_hint:
+            'Two-factor authentication is mandatory for staff accounts.',
           tfa_codes_left: 'Recovery codes left: {{count}}',
           tfa_setup: 'Set up',
           tfa_setup_button: 'Set up two-factor authentication',
           tfa_manage_button: 'Manage two-factor authentication',
           tfa_password_wrong: 'Current password is incorrect',
           tfa_already_enabled: 'Two-factor authentication is already set up.',
-          password_rule_too_short: 'The password is too short (at least 8 characters).',
+          password_rule_too_short:
+            'The password is too short (at least 8 characters).',
           password_rule_too_common: 'The password is too common.',
-          password_rule_entirely_numeric: 'The password must not consist of digits only.',
-          password_rule_too_similar: 'The password is too similar to your name or email address.',
-          tfa_scan: 'Scan the QR code with your authenticator app, then enter the 6-digit code it shows.',
+          password_rule_entirely_numeric:
+            'The password must not consist of digits only.',
+          password_rule_too_similar:
+            'The password is too similar to your name or email address.',
+          tfa_scan:
+            'Scan the QR code with your authenticator app, then enter the 6-digit code it shows.',
           tfa_qr_alt: 'QR code for the authenticator app',
           tfa_secret: 'Or enter this key manually:',
           tfa_code: 'Code from the authenticator app',
           tfa_confirm: 'Activate',
           tfa_cancel: 'Cancel',
-          tfa_enabled: 'Two-factor authentication is active. All other sessions have been signed out.',
+          tfa_enabled:
+            'Two-factor authentication is active. All other sessions have been signed out.',
           tfa_disable: 'Turn off',
-          tfa_disable_hint: 'Enter a code from your app (or a recovery code) to turn off two-factor authentication. All other sessions will be signed out.',
+          tfa_disable_hint:
+            'Enter a code from your app (or a recovery code) to turn off two-factor authentication. All other sessions will be signed out.',
           tfa_disabled: 'Two-factor authentication is turned off.',
           tfa_recovery_title: 'Your recovery codes',
-          tfa_recovery_hint: 'Save these codes now - they are shown only once. Each code signs you in once if you lose access to your authenticator app.',
+          tfa_recovery_hint:
+            'Save these codes now - they are shown only once. Each code signs you in once if you lose access to your authenticator app.',
           tfa_recovery_copy: 'Copy',
           tfa_recovery_copied: 'Recovery codes copied.',
           tfa_recovery_download: 'Download (.txt)',
           tfa_recovery_done: 'I have saved the codes',
           tfa_recovery_regenerate: 'New recovery codes',
-          tfa_recovery_regenerate_hint: 'Enter a current code from your app (not a recovery code). The previous recovery codes become invalid.',
+          tfa_recovery_regenerate_hint:
+            'Enter a current code from your app (not a recovery code). The previous recovery codes become invalid.',
           tfa_error: 'Action failed',
           tfa_load_error: 'Could not load the two-factor status',
           tfa_required_title: 'Set up two-factor authentication',
-          tfa_required_text: 'Your account requires two-factor authentication. Please set it up now - until then, the portal is locked.',
+          tfa_required_text:
+            'Your account requires two-factor authentication. Please set it up now - until then, the portal is locked.',
           tfa_required_continue: 'Continue to the portal',
           profile_set_password: 'Set password',
-          profile_set_password_hint: 'Your account has no password yet. You can set one with a code from your authenticator app.',
-          profile_set_password_needs_2fa: 'Your account has no password yet. To set one, first set up two-factor authentication below.',
-          profile_forgot_password_2fa: 'Forgot your password? Set a new one with a 2FA code',
+          profile_set_password_hint:
+            'Your account has no password yet. You can set one with a code from your authenticator app.',
+          profile_set_password_needs_2fa:
+            'Your account has no password yet. To set one, first set up two-factor authentication below.',
+          profile_forgot_password_2fa:
+            'Forgot your password? Set a new one with a 2FA code',
           pending_demo: 'View demo',
-          pending_demo_hint: 'Meanwhile you can look around in our demo - a read-only sample with example data. Opening it signs you out of your account here; after approval, simply sign in again with your own account.',
+          pending_demo_hint:
+            'Meanwhile you can look around in our demo - a read-only sample with example data. Opening it signs you out of your account here; after approval, simply sign in again with your own account.',
           staff_field_send_invite: 'Send invitation by email',
-          staff_field_send_invite_hint: 'Mails the user a one-time login link (valid for 72 hours).',
+          staff_field_send_invite_hint:
+            'Mails the user a one-time login link (valid for 72 hours).',
           staff_invite_sent: 'Invitation sent.',
-          staff_invite_confirm: 'Send {{username}} a one-time login link to {{email}}?',
+          staff_invite_confirm:
+            'Send {{username}} a one-time login link to {{email}}?',
           staff_invite_confirm_title: 'Send invitation?',
           staff_invite_error: 'Could not send the invitation',
           staff_send_invite: 'Send invitation (login link)',
           staff_send_invite_no_email: 'No email address',
           staff_requests_title: 'Access requests',
           staff_requests_load_error: 'Could not load access requests',
-          staff_requests_approved: 'Request approved - the requester has been notified.',
-          staff_requests_rejected: 'Request rejected - the requester has been notified.',
+          staff_requests_approved:
+            'Request approved - the requester has been notified.',
+          staff_requests_rejected:
+            'Request rejected - the requester has been notified.',
           staff_requests_decision_error: 'Could not save the decision',
           staff_requests_col_status: 'Status',
           staff_requests_col_name: 'Name / company',
@@ -796,71 +916,100 @@ i18n
           staff_requests_filter_pending: 'Waiting',
           staff_requests_filter_all: 'All',
           staff_requests_empty: 'No access requests.',
-          staff_requests_approve_text: 'Approve the access of {{name}} ({{email}})? Without project numbers, the account sees no project until one is shared with it.',
-          staff_requests_reject_text: 'Reject the request of {{name}} ({{email}})? The account will be deactivated.',
+          staff_requests_approve_text:
+            'Approve the access of {{name}} ({{email}})? Without project numbers, the account sees no project until one is shared with it.',
+          staff_requests_reject_text:
+            'Reject the request of {{name}} ({{email}})? The account will be deactivated.',
           staff_requests_note: 'Internal note',
-          staff_requests_note_hint: 'Only visible to staff, not sent to the requester.',
+          staff_requests_note_hint:
+            'Only visible to staff, not sent to the requester.',
           notification_kind_offline: 'Offline',
           notification_kind_alarm: 'Alarm',
           notification_link_title: 'Notification',
           notification_link_invalid: 'This link is invalid or has expired.',
           notification_link_project: 'Object {{nr}} · {{name}}',
           notification_link_case: 'Case {{number}}',
-          notification_link_alarm_intro: 'Acknowledge the alarm once you are taking care of it - the reminders stop then.',
-          notification_link_alarm_already_done: 'This alarm has already been acknowledged.',
+          notification_link_alarm_intro:
+            'Acknowledge the alarm once you are taking care of it - the reminders stop then.',
+          notification_link_alarm_already_done:
+            'This alarm has already been acknowledged.',
           notification_link_alarm_button: 'Acknowledge alarm',
-          notification_link_alarm_acknowledged: 'Thank you - the alarm is acknowledged, no further reminders will be sent.',
-          notification_link_offline_intro: 'Confirm that you received the message. We will keep reminding you until data arrives again.',
-          notification_link_offline_resolved: 'The data transmission has resumed - this case is closed.',
+          notification_link_alarm_acknowledged:
+            'Thank you - the alarm is acknowledged, no further reminders will be sent.',
+          notification_link_offline_intro:
+            'Confirm that you received the message. We will keep reminding you until data arrives again.',
+          notification_link_offline_resolved:
+            'The data transmission has resumed - this case is closed.',
           notification_link_offline_button: 'Confirm receipt',
-          notification_link_offline_acknowledged: 'Thank you - your confirmation has been recorded. Reminders continue until the fault is fixed.',
-          notification_link_unsubscribe_intro: 'Stop receiving {{kind}} notifications for object {{project}}? You keep your portal access.',
+          notification_link_offline_acknowledged:
+            'Thank you - your confirmation has been recorded. Reminders continue until the fault is fixed.',
+          notification_link_unsubscribe_intro:
+            'Stop receiving {{kind}} notifications for object {{project}}? You keep your portal access.',
           notification_link_unsubscribe_button: 'Unsubscribe',
-          notification_link_unsubscribed: 'You have been unsubscribed. You can subscribe again in the notification settings of the portal.',
-          notification_link_already_unsubscribed: 'You are already unsubscribed from these notifications.',
-          notification_link_switch_unsubscribe: 'Unsubscribe from these notifications',
+          notification_link_unsubscribed:
+            'You have been unsubscribed. You can subscribe again in the notification settings of the portal.',
+          notification_link_already_unsubscribed:
+            'You are already unsubscribed from these notifications.',
+          notification_link_switch_unsubscribe:
+            'Unsubscribe from these notifications',
           notification_link_to_portal: 'To the portal',
-          notification_link_failed: 'That did not work. Please try again later.',
+          notification_link_failed:
+            'That did not work. Please try again later.',
           matrix_setup_open: 'Set up ProGeo chat',
-          matrix_not_primary_hint: 'Your notifications do not use the chat yet.',
+          matrix_not_primary_hint:
+            'Your notifications do not use the chat yet.',
           matrix_other_app: 'Use another app (FluffyChat)',
           matrix_setup_title: 'Set up ProGeo chat',
           matrix_setup_step_install: 'Install the app',
           matrix_setup_step_scan: 'Scan & sign in',
           matrix_setup_step_test: 'Test message',
           matrix_setup_install_title: '1. Install Element X',
-          matrix_setup_install_text: 'The ProGeo chat runs in the free app Element X. Install it on your smartphone from the App Store or Google Play - or scan the code with your phone camera.',
+          matrix_setup_install_text:
+            'The ProGeo chat runs in the free app Element X. Install it on your smartphone from the App Store or Google Play - or scan the code with your phone camera.',
           matrix_setup_download_qr_alt: 'QR code: Element X download',
-          matrix_setup_download_qr_hint: 'Scan with the phone camera: opens the store, or the app if it is already installed.',
+          matrix_setup_download_qr_hint:
+            'Scan with the phone camera: opens the store, or the app if it is already installed.',
           matrix_setup_installed: 'The app is installed',
           matrix_setup_scan_title: '2. Scan the code - signed in',
-          matrix_setup_scan_text: 'Open the camera on your phone and scan this code. Element X opens with the ProGeo server; tap "Continue" - you are signed in without a password, your chat account is created automatically.',
+          matrix_setup_scan_text:
+            'Open the camera on your phone and scan this code. Element X opens with the ProGeo server; tap "Continue" - you are signed in without a password, your chat account is created automatically.',
           matrix_setup_login_qr_alt: 'QR code: sign in to the ProGeo chat',
           matrix_setup_new_code: 'New code',
-          matrix_setup_valid_for: 'Valid for {{minutes}}:{{seconds}} min, works once',
+          matrix_setup_valid_for:
+            'Valid for {{minutes}}:{{seconds}} min, works once',
           matrix_setup_open_here: 'Already on your phone? Open here',
           matrix_setup_waiting: 'This dialog notices the sign-in by itself.',
           matrix_setup_connected: 'Signed in - the chat app is connected.',
           matrix_setup_manual_title: 'Sign in without the code',
-          matrix_setup_manual_text: 'In the app choose "Change account provider", enter {{server}} and sign in with your ProGeo login.',
+          matrix_setup_manual_text:
+            'In the app choose "Change account provider", enter {{server}} and sign in with your ProGeo login.',
           matrix_setup_test_title: '3. Test message',
-          matrix_setup_test_text: 'We send a message to {{id}}. The first message arrives as an invitation from the ProGeo bot - accept it in the app.',
+          matrix_setup_test_text:
+            'We send a message to {{id}}. The first message arrives as an invitation from the ProGeo bot - accept it in the app.',
           matrix_setup_test_send: 'Send test message',
           matrix_setup_test_again: 'Send again',
           matrix_setup_test_sent: 'Sent - check your phone in a few seconds.',
-          matrix_setup_is_primary: 'Your notifications also arrive in the chat.',
-          matrix_setup_primary_text: 'Arrived? Then switch on the chat for all objects you receive alarms or fault notifications for (e-mail stays as well).',
+          matrix_setup_is_primary:
+            'Your notifications also arrive in the chat.',
+          matrix_setup_primary_text:
+            'Arrived? Then switch on the chat for all objects you receive alarms or fault notifications for (e-mail stays as well).',
           matrix_setup_primary_button: 'Use the chat for notifications',
-          matrix_setup_primary_done: 'Chat switched on for {{count}} notification setting(s).',
-          matrix_setup_primary_failed: 'Could not switch the notifications to the chat',
+          matrix_setup_primary_done:
+            'Chat switched on for {{count}} notification setting(s).',
+          matrix_setup_primary_failed:
+            'Could not switch the notifications to the chat',
           matrix_setup_done: 'Done',
           matrix_setup_qr_error: 'Could not create a sign-in code',
           matrix_setup_test_failed: 'The test message could not be sent',
-          matrix_setup_error_matrix_not_connected: 'Sign in to the app first (step 2).',
-          matrix_setup_error_matrix_test_wait: 'One test message per minute - please wait a moment.',
-          matrix_setup_error_matrix_test_failed: 'The test message could not be sent.',
+          matrix_setup_error_matrix_not_connected:
+            'Sign in to the app first (step 2).',
+          matrix_setup_error_matrix_test_wait:
+            'One test message per minute - please wait a moment.',
+          matrix_setup_error_matrix_test_failed:
+            'The test message could not be sent.',
           matrix_setup_error_matrix_disabled: 'This server has no ProGeo chat.',
-          matrix_setup_error_matrix_not_allowed: 'This account cannot use the ProGeo chat.',
+          matrix_setup_error_matrix_not_allowed:
+            'This account cannot use the ProGeo chat.',
           ua_messaging_title: 'Chat and sign-in links',
           ua_matrix_server_accounts: 'Chat accounts',
           ua_matrix_server_accounts_note: 'active on the Matrix server',
@@ -873,7 +1022,8 @@ i18n
           ua_links_24h: 'Links used (24 h)',
           ua_links_7d: 'Links used (7 days)',
           ua_links_30d: 'Links used (30 days)',
-          ua_links_note: 'login {{login}} · invitation {{invite}} · password {{reset}} · chat QR {{matrix}} · migration {{migration}}',
+          ua_links_note:
+            'login {{login}} · invitation {{invite}} · password {{reset}} · chat QR {{matrix}} · migration {{migration}}',
           staff_notifications_title: 'Notifications (offline / alarm)',
           staff_notifications_load_error: 'Could not load the notifications',
           staff_notifications_action_error: 'Action failed',
@@ -898,7 +1048,8 @@ i18n
           staff_notifications_in_window: 'Sending window open (09-22)',
           staff_notifications_quiet_hours: 'Quiet hours: offline mails wait',
           staff_notifications_no_baseline: 'Offline detection has not run yet',
-          staff_notifications_no_recipients_left: '{{count}} object(s) lost their last recipient (7 days)',
+          staff_notifications_no_recipients_left:
+            '{{count}} object(s) lost their last recipient (7 days)',
           staff_notifications_state_open: 'Open',
           staff_notifications_state_resolved: 'Done',
           staff_notifications_state_all: 'All',
@@ -920,7 +1071,8 @@ i18n
           staff_notifications_unmuted: 'Released',
           staff_notifications_close: 'Close case',
           staff_notifications_close_confirm_title: 'Close case?',
-          staff_notifications_close_confirm: 'The case ({{kind}}) of {{location}} is closed by hand: no further reminders or escalation messages are sent for it, even if the problem is still there. A closed case cannot be reopened.',
+          staff_notifications_close_confirm:
+            'The case ({{kind}}) of {{location}} is closed by hand: no further reminders or escalation messages are sent for it, even if the problem is still there. A closed case cannot be reopened.',
           staff_notifications_closed: 'Case closed',
           staff_notifications_event_opened: 'Detected',
           staff_notifications_event_reopened: 'Reopened',
@@ -937,9 +1089,12 @@ i18n
           staff_notifications_event_online_mail: 'Back-online mail',
           staff_notifications_event_resolved: 'Done',
           staff_notifications_event_switched: 'Location switched',
-          staff_notifications_switch_enabled: 'Notifications switched on: {{enabled}} of {{total}} locations',
-          staff_notifications_switch_withheld: '{{count}} message(s) withheld in the last 24 h',
-          staff_notifications_switch_link: 'Switch locations on/off (device statistics)',
+          staff_notifications_switch_enabled:
+            'Notifications switched on: {{enabled}} of {{total}} locations',
+          staff_notifications_switch_withheld:
+            '{{count}} message(s) withheld in the last 24 h',
+          staff_notifications_switch_link:
+            'Switch locations on/off (device statistics)',
           location_flag_notifications_off: 'notifications off',
           location_flag_purgeable: 'marked for deletion',
           readiness_badge_title: 'Readiness {{score}}/100 - open the checklist',
@@ -950,11 +1105,15 @@ i18n
           readiness_load_failed: 'The checklist could not be loaded',
           readiness_overview_title: 'All locations - highest score first',
           readiness_never_checked: 'Never checked',
-          readiness_never_hint: 'Locations never checked get their score with the next nightly run (or: python manage.py location_readiness).',
+          readiness_never_hint:
+            'Locations never checked get their score with the next nightly run (or: python manage.py location_readiness).',
           escalation_view_title: 'Saved view',
-          escalation_view_include: 'Save the current status view with the escalation',
-          escalation_view_hint: "The escalation's link opens the status page exactly like this.",
-          escalation_view_none: 'Create the escalation from the status page to save its view (period, frame, sensors) with it.',
+          escalation_view_include:
+            'Save the current status view with the escalation',
+          escalation_view_hint:
+            "The escalation's link opens the status page exactly like this.",
+          escalation_view_none:
+            'Create the escalation from the status page to save its view (period, frame, sensors) with it.',
           escalation_view_open: 'Open saved view',
           escalation_view_view: 'View',
           escalation_view_range: 'Period',
@@ -964,11 +1123,14 @@ i18n
           escalation_view_profile: 'Heat value',
           sidebar_screen_review: 'Screen review',
           screens_title: 'Screen review',
-          screens_intro: 'Full-page screenshots of every screen of a build (python manage.py e2e_screenshots - pc and mobile, as a user and as staff, with mocked data), cut into numbered parts. Open a screenshot to comment on it; the export gives the commented screenshots with a PROMPT.md.',
+          screens_intro:
+            'Full-page screenshots of every screen of a build (python manage.py e2e_screenshots - pc and mobile, as a user and as staff, with mocked data), cut into numbered parts. Open a screenshot to comment on it; the export gives the commented screenshots with a PROMPT.md.',
           screens_run: 'Run',
-          screens_no_runs: 'No screenshots yet - run python manage.py e2e_screenshots (or fetch them from staging).',
+          screens_no_runs:
+            'No screenshots yet - run python manage.py e2e_screenshots (or fetch them from staging).',
           screens_fetch: 'Fetch from staging',
-          screens_fetch_hint: 'This server takes no screenshots itself (no e2e_screens profile): download the runs of the staging server it does not have yet.',
+          screens_fetch_hint:
+            'This server takes no screenshots itself (no e2e_screens profile): download the runs of the staging server it does not have yet.',
           screens_fetch_running_one: 'Fetching… ({{count}} run so far)',
           screens_fetch_running_other: 'Fetching… ({{count}} runs so far)',
           screens_fetch_done_one: '{{count}} new run fetched from staging.',
@@ -999,15 +1161,19 @@ i18n
           screens_step_press: 'press {{value}}',
           screens_step_wait: 'wait {{value}} ms',
           screens_scenario: 'mock data: {{name}}',
-          screens_failures_one: '{{count}} screenshot not taken (dialog did not open)',
-          screens_failures_other: '{{count}} screenshots not taken (dialogs did not open)',
+          screens_failures_one:
+            '{{count}} screenshot not taken (dialog did not open)',
+          screens_failures_other:
+            '{{count}} screenshots not taken (dialogs did not open)',
           screens_comment: 'Comment',
           screens_export_one: 'Export {{count}} comment (ZIP)',
           screens_export_other: 'Export {{count}} comments (ZIP)',
           screens_export_failed: 'The export failed',
           screens_delete_run: 'Delete run',
-          screens_delete_confirm: 'Delete the run {{run}} with its screenshots and comments? This cannot be undone.',
-          screens_delete_note_confirm: 'Comment {{number}} ("{{comment}}") on the screen {{screen}} is deleted together with its arrow or area and is no longer part of the export. This cannot be undone.',
+          screens_delete_confirm:
+            'Delete the run {{run}} with its screenshots and comments? This cannot be undone.',
+          screens_delete_note_confirm:
+            'Comment {{number}} ("{{comment}}") on the screen {{screen}} is deleted together with its arrow or area and is no longer part of the export. This cannot be undone.',
           screens_delete_failed: 'The run could not be deleted',
           screens_empty_filter: 'No screenshots match the filters.',
           screens_part: 'Part {{number}}',
@@ -1020,8 +1186,10 @@ i18n
           screens_hide_reviewed: 'Hide reviewed',
           screens_reviewed: 'Reviewed',
           screens_mark_reviewed: 'Mark reviewed',
-          screens_mark_reviewed_hint: 'Mark the whole screenshot as reviewed (key R)',
-          screens_reviewed_by: 'Reviewed by {{name}}, {{date}} - click to take it back',
+          screens_mark_reviewed_hint:
+            'Mark the whole screenshot as reviewed (key R)',
+          screens_reviewed_by:
+            'Reviewed by {{name}}, {{date}} - click to take it back',
           screens_reviewed_failed: 'The review mark could not be saved',
           screens_reviewed_count: '{{count}} of {{total}} reviewed',
           screens_keys_title: 'Keyboard',
@@ -1029,19 +1197,22 @@ i18n
           screens_key_screens: 'screen',
           screens_key_reviewed: 'reviewed',
           screens_key_open: 'comment',
-          screens_swipe_hint: 'Swipe left/right over a screenshot: its parts, at the end the next screen. Scroll for the other screens, "Mark reviewed" marks the whole screen.',
+          screens_swipe_hint:
+            'Swipe left/right over a screenshot: its parts, at the end the next screen. Scroll for the other screens, "Mark reviewed" marks the whole screen.',
           screens_previous: 'Previous screenshot',
           screens_next: 'Next screenshot',
           screens_position: '{{number}} of {{total}}',
           screens_key_step: 'previous / next screenshot',
           screens_key_close: 'close',
           screens_step_unsaved: 'Save or cancel the comment first',
-          screens_editor_swipe_hint: 'Swipe left/right over the screenshot: previous / next screenshot (once its parts are scrolled to that end).',
+          screens_editor_swipe_hint:
+            'Swipe left/right over the screenshot: previous / next screenshot (once its parts are scrolled to that end).',
           screens_size: 'Size of the parts',
           screens_tool_arrow: 'Arrow A → B',
           screens_tool_area: 'Mark area',
           screens_tool_note: 'Whole screen',
-          screens_tool_hint_arrow: 'Drag from the element to where it should go - across parts too.',
+          screens_tool_hint_arrow:
+            'Drag from the element to where it should go - across parts too.',
           screens_tool_hint_area: 'Drag a frame around the element.',
           screens_action_label: 'What to do',
           screens_action_move: 'Move',
@@ -1056,7 +1227,8 @@ i18n
           screens_save: 'Save comment',
           screens_cancel: 'Cancel',
           screens_notes_title: 'Comments',
-          screens_no_notes: 'No comments yet - pick a tool and draw on the screenshot.',
+          screens_no_notes:
+            'No comments yet - pick a tool and draw on the screenshot.',
           screens_delete_note: 'Delete comment',
           screens_note_failed: 'The comment could not be saved',
           screens_action_question: 'Question / check',
@@ -1066,21 +1238,26 @@ i18n
           screens_scope_device_pc: 'All desktop screens',
           screens_scope_device_mobile: 'All phone screens',
           screens_scope_all: 'Everywhere',
-          screens_comment_required: '"{{action}}" needs a comment - say what is meant.',
+          screens_comment_required:
+            '"{{action}}" needs a comment - say what is meant.',
           screens_note_done: 'Done',
           screens_note_mark_done: 'Mark as done',
           screens_note_reopen: 'Done - click to reopen',
           screens_note_done_by: 'Done by {{name}}, {{date}}',
           screens_notes_done_count_one: '{{count}} done',
           screens_notes_done_count_other: '{{count}} done',
-          screens_scaled_hint: 'The screenshots are shown scaled down - marks are saved in page pixels.',
+          screens_scaled_hint:
+            'The screenshots are shown scaled down - marks are saved in page pixels.',
           screens_general_note: 'General note',
-          screens_general_hint: 'A remark about the whole run or the review tool - not about one screen. It is part of the export.',
-          screens_general_placeholder: 'What applies to the whole run or to the review tool?',
+          screens_general_hint:
+            'A remark about the whole run or the review tool - not about one screen. It is part of the export.',
+          screens_general_placeholder:
+            'What applies to the whole run or to the review tool?',
           screens_general_title: 'General notes',
           screens_general_edit: 'Edit general note',
           screens_edit_note: 'Edit',
-          screens_delete_general_confirm: 'The general note "{{comment}}" is deleted and no longer part of the export. This cannot be undone.',
+          screens_delete_general_confirm:
+            'The general note "{{comment}}" is deleted and no longer part of the export. This cannot be undone.',
           qa_scoreboard_title: 'Scoreboard',
           qa_scoreboard_intro:
             "Points for every check a staff member fixed: what the check is worth in a location's score - once per location and check.",
@@ -1089,7 +1266,8 @@ i18n
           qa_scoreboard_collapse: 'Minimize the scoreboard',
           qa_scoreboard_expand: 'Show the scoreboard',
           qa_scoreboard_failed: 'The scoreboard could not be loaded',
-          qa_scoreboard_empty: 'No fixed checks yet - points come with the first check that goes from failed to passed.',
+          qa_scoreboard_empty:
+            'No fixed checks yet - points come with the first check that goes from failed to passed.',
           qa_mean_line: 'Mean score of all locations',
           qa_mean_locations_one: '{{count}} location',
           qa_mean_locations_other: '{{count}} locations',
@@ -1100,7 +1278,8 @@ i18n
           qa_pie_today_empty: 'No points yet today.',
           qa_pie_overall: 'Points overall',
           qa_column_daily: '⌀ daily gain',
-          qa_column_daily_hint: 'Average daily gain: points per day since the scoreboard started',
+          qa_column_daily_hint:
+            'Average daily gain: points per day since the scoreboard started',
           qa_total: 'Total so far',
           qa_column_user: 'Staff member',
           qa_column_points: 'Points',
@@ -1133,20 +1312,28 @@ i18n
           readiness_optional: 'optional',
           readiness_points: '{{points}} pts',
           readiness_points_pass: 'Passed: counts {{points}} of 100 points',
-          readiness_points_fail: 'Open: brings {{points}} of 100 points when fixed',
-          readiness_points_warn: 'Optional, open: brings {{points}} of 100 points when fixed',
+          readiness_points_fail:
+            'Open: brings {{points}} of 100 points when fixed',
+          readiness_points_warn:
+            'Optional, open: brings {{points}} of 100 points when fixed',
           readiness_points_na: 'Does not apply - not counted',
           readiness_airtable_filled: 'Taken from Airtable just now: {{fields}}',
-          readiness_points_explain: 'Each check is worth its weight\'s share of 100 points among the checks that apply; optional checks weigh less.',
+          readiness_points_explain:
+            "Each check is worth its weight's share of 100 points among the checks that apply; optional checks weigh less.",
           readiness_fix: 'Fix it',
-          readiness_airtable_fix_hint: 'Loads the project from Airtable by its project number and shows what would change',
+          readiness_airtable_fix_hint:
+            'Loads the project from Airtable by its project number and shows what would change',
           readiness_airtable_updated: 'Taken over from Airtable: {{fields}}',
-          readiness_airtable_unchanged: 'Airtable has nothing new for this location',
-          readiness_airtable_not_found: 'Airtable has no project with the number {{project}}',
+          readiness_airtable_unchanged:
+            'Airtable has nothing new for this location',
+          readiness_airtable_not_found:
+            'Airtable has no project with the number {{project}}',
           readiness_airtable_failed: 'Could not load the project from Airtable',
-          readiness_airtable_skipped: 'Not saved - Airtable has another value by now: {{fields}}',
+          readiness_airtable_skipped:
+            'Not saved - Airtable has another value by now: {{fields}}',
           readiness_airtable_confirm_title: 'Take over from Airtable?',
-          readiness_airtable_confirm_intro: 'Airtable would change these fields of the location. Untick what should stay.',
+          readiness_airtable_confirm_intro:
+            'Airtable would change these fields of the location. Untick what should stay.',
           readiness_airtable_confirm_one: 'Take over {{count}} change',
           readiness_airtable_confirm_other: 'Take over {{count}} changes',
           readiness_airtable_cancel: 'Cancel',
@@ -1186,61 +1373,90 @@ i18n
           readiness_check_threshold: 'Alarm threshold set',
           readiness_check_users: 'Users assigned',
           readiness_check_objektleitung: 'Objektleitung assigned',
-          readiness_check_alarm_recipient: 'Someone receives alarms (not silent)',
+          readiness_check_alarm_recipient:
+            'Someone receives alarms (not silent)',
           readiness_check_notifications_enabled: 'Notifications switched on',
           readiness_check_rain_check: 'Rain check on',
           readiness_detail_error: 'Not checked: {{error}}',
           readiness_detail_needs_plan: 'Needs a Lageplan with measure points',
           readiness_detail_address: 'Missing: {{missing}}',
-          readiness_detail_product: 'No product chosen - set it on the Objekt tab',
-          readiness_detail_geo: 'No latitude/longitude - needed for the map and the rain check',
+          readiness_detail_product:
+            'No product chosen - set it on the Objekt tab',
+          readiness_detail_geo:
+            'No latitude/longitude - needed for the map and the rain check',
           readiness_detail_airtable: 'No Airtable link',
           readiness_detail_lageplan: 'No Lageplan uploaded',
-          readiness_detail_lageplan_aligned: '{{missing}} of {{total}} plan(s) in use not aligned (wizard step 5)',
-          readiness_detail_lageplan_calibrated: '{{missing}} of {{total}} plan(s) in use without reference point and calibration',
-          readiness_detail_lageplan_cropped: 'The measure points cover only {{span}} % of the plan - crop it to the site',
-          readiness_detail_heat_limitation: 'No heat limitation on the main plan',
+          readiness_detail_lageplan_aligned:
+            '{{missing}} of {{total}} plan(s) in use not aligned (wizard step 5)',
+          readiness_detail_lageplan_calibrated:
+            '{{missing}} of {{total}} plan(s) in use without reference point and calibration',
+          readiness_detail_lageplan_cropped:
+            'The measure points cover only {{span}} % of the plan - crop it to the site',
+          readiness_detail_heat_limitation:
+            'No heat limitation on the main plan',
           readiness_detail_devices: 'No device assigned to the location',
-          readiness_detail_devices_online: '{{offline}} of {{total}} offline: {{names}}',
+          readiness_detail_devices_online:
+            '{{offline}} of {{total}} offline: {{names}}',
           readiness_detail_measure_points: 'No measure points',
-          readiness_detail_sensor_devices_uncovered: '{{count}} measure point(s) on no device',
-          readiness_detail_sensor_devices_ambiguous: '{{count}} measure point(s) in two device ranges',
-          readiness_detail_sensor_devices_count: 'devices configured for {{counted}} sensors, {{points}} measure points',
-          readiness_detail_points_named: '{{unnamed}} of {{total}} without a name (Klemmliste)',
-          readiness_detail_threshold: 'Threshold {{threshold}}, {{invalid}} measure point threshold(s) at or below 0',
+          readiness_detail_sensor_devices_uncovered:
+            '{{count}} measure point(s) on no device',
+          readiness_detail_sensor_devices_ambiguous:
+            '{{count}} measure point(s) in two device ranges',
+          readiness_detail_sensor_devices_count:
+            'devices configured for {{counted}} sensors, {{points}} measure points',
+          readiness_detail_points_named:
+            '{{unnamed}} of {{total}} without a name (Klemmliste)',
+          readiness_detail_threshold:
+            'Threshold {{threshold}}, {{invalid}} measure point threshold(s) at or below 0',
           readiness_detail_users: 'Nobody has access to the location',
           readiness_detail_objektleitung: 'No Objektleitung assigned',
-          readiness_detail_alarm_recipient: 'Nobody receives alarms - every rule is silent or without alarms',
-          readiness_detail_notifications_enabled: 'Notifications of the location are switched off (device statistics)',
+          readiness_detail_alarm_recipient:
+            'Nobody receives alarms - every rule is silent or without alarms',
+          readiness_detail_notifications_enabled:
+            'Notifications of the location are switched off (device statistics)',
           readiness_detail_rain_check: 'Rain check is off',
           location_flag_legend: 'Striped: location switched off -',
-          staff_notifications_location_disabled: 'Notifications of this location are switched off',
-          staff_notifications_legend_disabled: 'Striped: notifications of the location switched off (nothing is sent)',
-          staff_notifications_switch_logic_created: 'Cases, stages, escalations and messages are created for every location.',
-          staff_notifications_switch_logic_sent: 'Mails, SMS and messenger messages only leave for locations switched on - for the others they are logged as "withheld" and the stage does not count as unreachable.',
-          staff_notifications_switch_logic_system: 'System mails without a location (login links, invites, password reset) are not affected.',
-          staff_notifications_switch_logic_test: 'The staff test notification (test leak) always goes out.',
+          staff_notifications_location_disabled:
+            'Notifications of this location are switched off',
+          staff_notifications_legend_disabled:
+            'Striped: notifications of the location switched off (nothing is sent)',
+          staff_notifications_switch_logic_created:
+            'Cases, stages, escalations and messages are created for every location.',
+          staff_notifications_switch_logic_sent:
+            'Mails, SMS and messenger messages only leave for locations switched on - for the others they are logged as "withheld" and the stage does not count as unreachable.',
+          staff_notifications_switch_logic_system:
+            'System mails without a location (login links, invites, password reset) are not affected.',
+          staff_notifications_switch_logic_test:
+            'The staff test notification (test leak) always goes out.',
           staff_requests_language: 'Language',
-          staff_requests_language_hint_approve: 'Language of the approval mail - and of all later mails and messenger messages to this user (changeable in their profile). Preselected: the language of the request form.',
-          staff_requests_language_hint_reject: 'Language of the rejection mail. Preselected: the language of the request form.',
+          staff_requests_language_hint_approve:
+            'Language of the approval mail - and of all later mails and messenger messages to this user (changeable in their profile). Preselected: the language of the request form.',
+          staff_requests_language_hint_reject:
+            'Language of the rejection mail. Preselected: the language of the request form.',
           staff_messaging_title: 'Sending (email/SMS)',
           staff_messaging_load_error: 'Could not load the sending status',
           staff_messaging_action_error: 'Action failed',
           staff_messaging_mailing_disabled: 'Mailing disabled on this server',
-          staff_messaging_live_mode: 'Mails: live (notifications only for locations switched on)',
+          staff_messaging_live_mode:
+            'Mails: live (notifications only for locations switched on)',
           staff_messaging_sms_dry_run: 'SMS dry run: nothing is sent',
           staff_messaging_sms_live: 'SMS: live',
-          staff_messaging_messenger_dry_run: 'Messenger dry run: nothing is sent',
+          staff_messaging_messenger_dry_run:
+            'Messenger dry run: nothing is sent',
           staff_messaging_messenger_live: 'Messenger: live',
-          staff_messaging_breaker_tripped: 'Emergency brake active - all sending is stopped.',
+          staff_messaging_breaker_tripped:
+            'Emergency brake active - all sending is stopped.',
           staff_messaging_breaker_reset: 'Release brake',
-          staff_messaging_breaker_reset_confirm_title: 'Release the emergency brake?',
-          staff_messaging_breaker_reset_confirm: 'The emergency brake stopped all outgoing mails, SMS and messenger messages because a global sending limit was hit (reason: {{reason}}). Once released, sending starts again right away. If the cause - e.g. a loop sending the same alarm - is still active, recipients are flooded until the limit trips again. Check the recent sends first.',
+          staff_messaging_breaker_reset_confirm_title:
+            'Release the emergency brake?',
+          staff_messaging_breaker_reset_confirm:
+            'The emergency brake stopped all outgoing mails, SMS and messenger messages because a global sending limit was hit (reason: {{reason}}). Once released, sending starts again right away. If the cause - e.g. a loop sending the same alarm - is still active, recipients are flooded until the limit trips again. Check the recent sends first.',
           staff_messaging_breaker_reset_done: 'Emergency brake released.',
           staff_messaging_count_mail_hour: 'Mails in the last hour',
           staff_messaging_count_sms_hour: 'SMS in the last hour',
           staff_messaging_count_sms_today: 'SMS today',
-          staff_messaging_count_messenger_hour: 'Messenger messages in the last hour',
+          staff_messaging_count_messenger_hour:
+            'Messenger messages in the last hour',
           staff_messaging_count_messenger_today: 'Messenger messages today',
           staff_messaging_recent: 'Recent sends',
           staff_messaging_no_messages: 'Nothing sent yet.',
@@ -1260,15 +1476,18 @@ i18n
           staff_messaging_status_failed: 'failed',
           staff_messaging_status_bounced: 'bounced',
           staff_messaging_suppressions: 'Undeliverable addresses',
-          staff_messaging_suppressions_hint: 'These addresses bounced and receive no more mails. Remove an entry once the address has been fixed.',
+          staff_messaging_suppressions_hint:
+            'These addresses bounced and receive no more mails. Remove an entry once the address has been fixed.',
           staff_messaging_no_suppressions: 'No blocked addresses.',
           staff_messaging_col_address: 'Address',
           staff_messaging_col_reason: 'Reason',
           staff_messaging_col_bounces: 'Bounces',
           staff_messaging_col_last_bounce: 'Last bounce',
           staff_messaging_suppression_delete: 'Remove block',
-          staff_messaging_suppression_delete_confirm_title: 'Remove the mail block?',
-          staff_messaging_suppression_delete_confirm: 'Mails to {{address}} are blocked because they bounced ({{bounces}}x, {{reason}}). Without the block this address gets mails again - alarms and notifications included. If it still does not work, they bounce again, which hurts the reputation of our mail server.',
+          staff_messaging_suppression_delete_confirm_title:
+            'Remove the mail block?',
+          staff_messaging_suppression_delete_confirm:
+            'Mails to {{address}} are blocked because they bounced ({{bounces}}x, {{reason}}). Without the block this address gets mails again - alarms and notifications included. If it still does not work, they bounce again, which hurts the reputation of our mail server.',
           staff_messaging_suppression_deleted: 'Block removed.',
           nav_menu_toggle: 'Menu',
           nav_sidebar_collapse: 'Collapse sidebar',
@@ -1282,14 +1501,17 @@ i18n
           analyse_export_csv: 'CSV export',
           analyse_export_pdf: 'PDF report',
           analyse_archive: 'Archive measurements',
-          analyse_archive_hint: 'Archive the measurements of the picked span - only staff see them then',
-          analyse_archive_pick_span: 'First pick a span: hold S and drag on the 2nd or 3rd plot, or drag under the frame picker',
+          analyse_archive_hint:
+            'Archive the measurements of the picked span - only staff see them then',
+          analyse_archive_pick_span:
+            'First pick a span: hold S and drag on the 2nd or 3rd plot, or drag under the frame picker',
           analyse_archive_span: 'Span: {{from}} – {{to}}',
           analyse_archive_scope_device: 'Only {{device}}',
           analyse_archive_scope_all: 'All devices of the location',
           analyse_archive_action_archive: 'Archive (only staff see them)',
           analyse_archive_action_restore: 'Restore (everyone sees them again)',
-          analyse_archive_counts: '{{total}} measurement(s) in the span, {{archived}} of them archived',
+          analyse_archive_counts:
+            '{{total}} measurement(s) in the span, {{archived}} of them archived',
           analyse_archive_confirm: 'Archive',
           analyse_archive_restore: 'Restore',
           analyse_archive_done: '{{count}} measurement(s) archived.',
@@ -1314,8 +1536,10 @@ i18n
           analyse_mean_hint:
             'Every value as the mean of this many neighbouring loaded measurements - reduces noise.',
           analyse_compare: 'Compare',
-          analyse_compare_hint: 'Compare with the same period earlier - only as far back as there are measurements',
-          analyse_compare_unavailable: 'No earlier measurements to compare with',
+          analyse_compare_hint:
+            'Compare with the same period earlier - only as far back as there are measurements',
+          analyse_compare_unavailable:
+            'No earlier measurements to compare with',
           analyse_compare_none: 'None',
           analyse_compare_1d: '1 day ago',
           analyse_compare_7d: '7 days ago',
@@ -1326,19 +1550,24 @@ i18n
           analyse_compare_1y: '1 year ago',
           analyse_compare_end: 'End comparison',
           analyse_export_csv_raw: 'CSV raw data',
-          analyse_export_csv_raw_hint: 'Staff: the measured values without any noise profile',
+          analyse_export_csv_raw_hint:
+            'Staff: the measured values without any noise profile',
           noise_profile_label: 'Noise profile',
-          noise_profile_hint: 'Noise profiles of the shown device - per sensor the noise floor of EP and WP, taken off every value (never below 0). The rating says how well a profile fits the loaded period.',
+          noise_profile_hint:
+            'Noise profiles of the shown device - per sensor the noise floor of EP and WP, taken off every value (never below 0). The rating says how well a profile fits the loaded period.',
           noise_profile_choose: '- choose -',
           noise_profile_empty: 'No profiles yet',
           noise_profile_active_badge: 'active',
           noise_profile_apply: 'Apply',
           noise_profile_apply_end: 'End test',
-          noise_profile_apply_hint: 'Try the profile on this page only - nobody else sees it, alarms are not affected',
+          noise_profile_apply_hint:
+            'Try the profile on this page only - nobody else sees it, alarms are not affected',
           noise_profile_activate: 'Activate',
-          noise_profile_activate_hint: 'Clean this device\'s values with the profile everywhere from now on - displays, heatmaps and the alarm evaluation (past alarms stay as they are)',
+          noise_profile_activate_hint:
+            "Clean this device's values with the profile everywhere from now on - displays, heatmaps and the alarm evaluation (past alarms stay as they are)",
           noise_profile_deactivate: 'Deactivate',
-          noise_profile_deactivate_hint: 'Switch off "{{name}}" - the device\'s values are raw again',
+          noise_profile_deactivate_hint:
+            'Switch off "{{name}}" - the device\'s values are raw again',
           noise_profile_edit: 'Edit',
           noise_profile_delete: 'Delete',
           noise_profile_delete_title: 'Delete the noise profile?',
@@ -1348,32 +1577,44 @@ i18n
             'Delete the noise profile "{{name}}"? It is the ACTIVE profile: the device\'s values are raw again everywhere - displays, heatmaps and the alarm evaluation (past alarms stay as they are). This cannot be undone.',
           noise_profile_delete_cancel: 'Cancel',
           noise_profile_new: 'New from selection',
-          noise_profile_new_hint: 'A new profile from the lowest EP / WP per sensor of all measurements in the selected period - saved only when you click Save',
+          noise_profile_new_hint:
+            'A new profile from the lowest EP / WP per sensor of all measurements in the selected period - saved only when you click Save',
           noise_profile_csv: 'CSV',
-          noise_profile_csv_hint: 'Download the profile\'s masks (sensor, EP, WP) as CSV',
+          noise_profile_csv_hint:
+            "Download the profile's masks (sensor, EP, WP) as CSV",
           noise_profile_view_active: 'Shown: cleaned by "{{name}}" (active)',
           noise_profile_view_none: 'Shown: raw values - no active profile',
           noise_profile_view_raw: 'Shown: raw data',
           noise_profile_view_test: 'Shown: test of "{{name}}" (only here)',
-          noise_profile_view_draft: 'Shown: preview of the draft (measurements only - the heatmap after saving)',
-          noise_profile_rating_hint: 'For the loaded measurements: fit = share of the values at or above the mask (below, the profile cuts into the signal), effect = how much of the mean |WP - EP| it removes, exceedances = values over the alarm threshold before -> after. Rating = fit x effect.',
+          noise_profile_view_draft:
+            'Shown: preview of the draft (measurements only - the heatmap after saving)',
+          noise_profile_rating_hint:
+            'For the loaded measurements: fit = share of the values at or above the mask (below, the profile cuts into the signal), effect = how much of the mean |WP - EP| it removes, exceedances = values over the alarm threshold before -> after. Rating = fit x effect.',
           noise_profile_mask_ep: 'Profile EP',
           noise_profile_mask_wp: 'Profile WP',
           noise_profile_masks_legend: 'Profile (EP / WP)',
           // The measurements' first plot (components/device/SensorColumnsPlot.tsx).
-          measurement_columns_filter_hint: 'Drag the grip on the axis to hide quiet sensors',
-          measurement_columns_grip_title: 'Hide sensors whose |WP − EP| stays below this level in the period - drag, or arrow keys',
-          measurement_columns_hidden: '{{count}} of {{total}} sensors below {{value}} hidden',
+          measurement_columns_filter_hint:
+            'Drag the grip on the axis to hide quiet sensors',
+          measurement_columns_grip_title:
+            'Hide sensors whose |WP − EP| stays below this level in the period - drag, or arrow keys',
+          measurement_columns_hidden:
+            '{{count}} of {{total}} sensors below {{value}} hidden',
           measurement_columns_show_all: 'Show all',
           measurement_columns_zoom_reset: 'Reset zoom',
-          measurement_columns_shown: '{{shown}} of {{total}} sensors · Ctrl + scroll: zoom',
-          measurement_columns_kept_selected: 'shown although below the level - it is followed',
+          measurement_columns_shown:
+            '{{shown}} of {{total}} sensors · Ctrl + scroll: zoom',
+          measurement_columns_kept_selected:
+            'shown although below the level - it is followed',
           noise_profile_name: 'Name',
-          noise_profile_source: 'From {{count}} measurements, {{from}} - {{to}}',
+          noise_profile_source:
+            'From {{count}} measurements, {{from}} - {{to}}',
           noise_profile_now: 'now',
-          noise_profile_sums: 'Sum EP {{sumE}} · sum WP {{sumW}} · {{sensors}} sensors',
+          noise_profile_sums:
+            'Sum EP {{sumE}} · sum WP {{sumW}} · {{sensors}} sensors',
           noise_profile_preview: 'Preview',
-          noise_profile_preview_hint: 'On: the plots show the draft applied. Off: the raw values with the masks as dashed lines.',
+          noise_profile_preview_hint:
+            'On: the plots show the draft applied. Off: the raw values with the masks as dashed lines.',
           noise_profile_save: 'Save',
           noise_profile_cancel: 'Discard',
           noise_profile_draft_hint: 'Not saved yet - only you see the preview.',
@@ -1381,21 +1622,31 @@ i18n
           usage_help: 'Usage',
           usage_help_now: 'Useful right now',
           usage_help_keys: 'Keys and mouse',
-          usage_tip_frames: 'Space plays the frames - ← / → step one frame, ↑ / ↓ ten.',
-          usage_tip_range_pick: 'Pick a span for a noise profile: hold S and drag on the 2nd or 3rd plot, drag under the frame picker - or take "Last 7 days".',
-          usage_tip_range_selected: 'A span is picked: "New from span" makes a profile of it, C clears it, ← / → move the focused band.',
-          usage_tip_draft: 'A draft is open: drag values in the profile plot, Ctrl + Z takes the last change back - only "Save" stores it.',
-          usage_tip_active: 'Every value here and in the alarms is cleaned with "{{name}}".',
+          usage_tip_frames:
+            'Space plays the frames - ← / → step one frame, ↑ / ↓ ten.',
+          usage_tip_range_pick:
+            'Pick a span for a noise profile: hold S and drag on the 2nd or 3rd plot, drag under the frame picker - or take "Last 7 days".',
+          usage_tip_range_selected:
+            'A span is picked: "New from span" makes a profile of it, C clears it, ← / → move the focused band.',
+          usage_tip_draft:
+            'A draft is open: drag values in the profile plot, Ctrl + Z takes the last change back - only "Save" stores it.',
+          usage_tip_active:
+            'Every value here and in the alarms is cleaned with "{{name}}".',
           usage_tip_plot_click: 'Click the plot - then the arrow keys work.',
-          usage_tip_plot_pick: 'Click or drag a point - then ↑ / ↓ change its value.',
-          usage_tip_plot_point: 'Sensor {{sensor}} ({{series}}) is picked: ↑ / ↓ change its value, ← / → go to the next sensor.',
+          usage_tip_plot_pick:
+            'Click or drag a point - then ↑ / ↓ change its value.',
+          usage_tip_plot_point:
+            'Sensor {{sensor}} ({{series}}) is picked: ↑ / ↓ change its value, ← / → go to the next sensor.',
           key_hint_range_clear: 'clear the picked span',
           noise_badge_active: 'Noise profile: {{name}}',
-          noise_badge_active_hint: 'The shown values are cleaned with the active noise profile "{{name}}" - for everyone and in the alarms. Click: to the profile panel.',
+          noise_badge_active_hint:
+            'The shown values are cleaned with the active noise profile "{{name}}" - for everyone and in the alarms. Click: to the profile panel.',
           noise_badge_test: 'Test: {{name}}',
-          noise_badge_test_hint: 'A noise profile tried out here only - nobody else sees it. Click: to the profile panel.',
+          noise_badge_test_hint:
+            'A noise profile tried out here only - nobody else sees it. Click: to the profile panel.',
           noise_badge_draft: 'Preview: draft',
-          noise_badge_draft_hint: 'The measurements preview the unsaved draft. Click: to the profile panel.',
+          noise_badge_draft_hint:
+            'The measurements preview the unsaved draft. Click: to the profile panel.',
           key_space: 'Space',
           frame_slider_alarm_jump: 'Click below the track: to its start',
           key_ctrl: 'Ctrl',
@@ -1407,8 +1658,10 @@ i18n
           key_hint_plan: 'switch the Lageplan',
           analyse_plan_key: 'key {{key}}',
           analyse_open_wizard: 'Lageplan wizard',
-          analyse_open_wizard_hint: 'Open this location and plan in the Lageplan wizard - alignment, sensors and heat limitations',
-          key_hint_range_select: 'on the 2nd / 3rd plot: pick the span for a noise profile',
+          analyse_open_wizard_hint:
+            'Open this location and plan in the Lageplan wizard - alignment, sensors and heat limitations',
+          key_hint_range_select:
+            'on the 2nd / 3rd plot: pick the span for a noise profile',
           key_hint_zoom: 'zoom',
           key_hint_plot_drag: 'change a value - across sensors: paint',
           key_hint_plot_both: 'EP and WP together',
@@ -1423,73 +1676,97 @@ i18n
           span_minute_one: '{{count}} minute',
           span_minute_other: '{{count}} minutes',
           noise_profile_plot_tooltip_title: 'Sensor {{sensor}}',
-          noise_profile_plot_tooltip_subtitle: 'Profile and the raw measurement at the frame picker',
+          noise_profile_plot_tooltip_subtitle:
+            'Profile and the raw measurement at the frame picker',
           noise_profile_changes: 'Manual changes ({{count}})',
           noise_profile_no_changes: 'None yet - drag a point in the plot.',
           noise_profile_change_sensor: 'Sensor {{sensor}}',
-          noise_profile_change_sensors: 'Sensors {{first}}–{{last}} ({{count}})',
+          noise_profile_change_sensors:
+            'Sensors {{first}}–{{last}} ({{count}})',
           noise_profile_undo: 'Undo',
           noise_profile_undo_hint: 'Undo the last manual change (Ctrl + Z)',
           noise_profile_undo_all: 'Undo all changes',
           noise_profile_range_last_days_one: 'Last day',
           noise_profile_range_last_days_other: 'Last {{count}} days',
-          noise_profile_range_last_days_hint_one: 'The last day up to now as the span of a new profile',
-          noise_profile_range_last_days_hint_other: 'The last {{count}} days up to now as the span of a new profile',
+          noise_profile_range_last_days_hint_one:
+            'The last day up to now as the span of a new profile',
+          noise_profile_range_last_days_hint_other:
+            'The last {{count}} days up to now as the span of a new profile',
           thresholds_toggle_title: 'Thresholds',
           thresholds_toggle_object: 'Object: {{value}} mV',
           plot_help_noise_profile_title: 'Noise profile',
-          plot_help_noise_profile_what: 'Per sensor the noise floor of the profile being edited: EP mask (red), WP mask (blue). Every measurement is cleaned with it: value minus mask, never below 0. Dashed behind it: the raw measurement at the frame picker - a mask above it cuts into the signal.',
-          plot_help_noise_profile_actions: 'Drag a point up / down::change that sensor\'s value (the nearer line)\nDrag across sensors::paint them along the line you draw\nShift + drag::EP and WP together\nClick, then ← / →::next sensor - ↑ / ↓: value ±1 (Shift ±10)\nCtrl + Z or "Undo"::take back the last change - all of them are listed next to Save\nHover::the sensor\'s values; the nearest line (or legend entry) is highlighted',
-          plot_help_noise_profile_workflows: 'Lower a mask that cuts into the signal::compare it with the dashed measurement → drag it below → watch the rating\'s fit\nIgnore a noisy sensor::raise its EP and WP together with Shift + drag → check the exceedances',
+          plot_help_noise_profile_what:
+            'Per sensor the noise floor of the profile being edited: EP mask (red), WP mask (blue). Every measurement is cleaned with it: value minus mask, never below 0. Dashed behind it: the raw measurement at the frame picker - a mask above it cuts into the signal.',
+          plot_help_noise_profile_actions:
+            'Drag a point up / down::change that sensor\'s value (the nearer line)\nDrag across sensors::paint them along the line you draw\nShift + drag::EP and WP together\nClick, then ← / →::next sensor - ↑ / ↓: value ±1 (Shift ±10)\nCtrl + Z or "Undo"::take back the last change - all of them are listed next to Save\nHover::the sensor\'s values; the nearest line (or legend entry) is highlighted',
+          plot_help_noise_profile_workflows:
+            "Lower a mask that cuts into the signal::compare it with the dashed measurement → drag it below → watch the rating's fit\nIgnore a noisy sensor::raise its EP and WP together with Shift + drag → check the exceedances",
           noise_profile_saved: 'Noise profile saved.',
-          noise_profile_activated: '"{{name}}" is active - the device\'s values are cleaned everywhere.',
-          noise_profile_deactivated: 'Noise profile deactivated - the values are raw again.',
+          noise_profile_activated:
+            '"{{name}}" is active - the device\'s values are cleaned everywhere.',
+          noise_profile_deactivated:
+            'Noise profile deactivated - the values are raw again.',
           noise_profile_error: 'Noise profile: the request failed',
           noise_profile_range: 'Selection:',
-          noise_profile_range_none: 'No period selected - hold S and drag over the 2nd or 3rd plot, or drag in the strip below the time slider.',
+          noise_profile_range_none:
+            'No period selected - hold S and drag over the 2nd or 3rd plot, or drag in the strip below the time slider.',
           noise_profile_range_clear: 'Clear the selection',
-          noise_profile_range_band: 'Period for a new noise profile - drag to move it, drag its edges to change its length',
+          noise_profile_range_band:
+            'Period for a new noise profile - drag to move it, drag its edges to change its length',
           noise_profile_score: 'Rating',
-          noise_profile_score_hint: 'Fit x effect - how useful the profile is for the loaded measurements',
+          noise_profile_score_hint:
+            'Fit x effect - how useful the profile is for the loaded measurements',
           noise_profile_fit: 'Fit',
-          noise_profile_fit_hint: 'Share of the values at or above the mask - below it, the profile cuts into the signal',
+          noise_profile_fit_hint:
+            'Share of the values at or above the mask - below it, the profile cuts into the signal',
           noise_profile_effect: 'Effect',
-          noise_profile_effect_hint: 'How much of the mean |WP - EP| the profile removes',
+          noise_profile_effect_hint:
+            'How much of the mean |WP - EP| the profile removes',
           noise_profile_rating_of: 'Rating of "{{name}}" for the loaded period',
-          noise_profile_rating_details: 'Values over the alarm threshold: {{before}} -> {{after}} · {{count}} measurements',
+          noise_profile_rating_details:
+            'Values over the alarm threshold: {{before}} -> {{after}} · {{count}} measurements',
           noise_profile_plot_label: 'Noise profile per sensor',
           noise_profile_plot_reference: 'Measurement (raw)',
           measurement_compare_range_select_hint: 'Drag: select a period',
           thresholds_toggle_load: 'Load thresholds',
           thresholds_toggle_hide: 'Hide thresholds',
-          thresholds_toggle_hint: 'Show and edit the thresholds from the settings here - the rating counts the values over them',
+          thresholds_toggle_hint:
+            'Show and edit the thresholds from the settings here - the rating counts the values over them',
           analyse_compare_title: 'Comparison: now vs. {{label}}',
           analyse_compare_changes_title: 'Biggest changes',
-          analyse_compare_changes_hint: 'Sensors by their biggest change of WP or EP since then - click one to show it in the second plot.',
+          analyse_compare_changes_hint:
+            'Sensors by their biggest change of WP or EP since then - click one to show it in the second plot.',
           analyse_compare_changes_empty: 'No values to compare.',
           analyse_compare_col_wp: 'Δ WP',
           analyse_compare_col_ep: 'Δ EP',
           analyse_compare_row_add: 'Show sensor {{sensor}} in the second plot',
-          analyse_compare_row_remove: 'Remove sensor {{sensor}} from the second plot',
-          analyse_compare_measurements: 'Measurement now: {{now}} · then: {{then}}',
+          analyse_compare_row_remove:
+            'Remove sensor {{sensor}} from the second plot',
+          analyse_compare_measurements:
+            'Measurement now: {{now}} · then: {{then}}',
           analyse_compare_no_data: 'No measurements in the comparison period.',
           analyse_compare_ep_then: 'EP then',
           analyse_compare_wp_then: 'WP then',
           analyse_compare_wp_change: 'WP change',
           analyse_compare_change_mean: 'Mean WP change',
-          analyse_compare_change_deviation: 'Deviation of the WP change (middle 50 %)',
+          analyse_compare_change_deviation:
+            'Deviation of the WP change (middle 50 %)',
           analyse_sensors_disable: 'Disable sensors ({{count}})',
           analyse_sensors_enable: 'Enable sensors ({{count}})',
-          analyse_sensors_pick_hint: 'Select sensors in the column chart or on the plan to disable or enable them.',
-          analyse_sensors_disable_title: 'Switch the selected sensors off: they never trigger an alarm and are drawn gray',
+          analyse_sensors_pick_hint:
+            'Select sensors in the column chart or on the plan to disable or enable them.',
+          analyse_sensors_disable_title:
+            'Switch the selected sensors off: they never trigger an alarm and are drawn gray',
           analyse_sensors_enable_title: 'Switch the selected sensors on again',
           analyse_sensors_disable_confirm_title: 'Disable sensors?',
-          analyse_sensors_disable_confirm: 'Sensor(s) {{sensors}} will no longer trigger alarms until they are enabled again.',
+          analyse_sensors_disable_confirm:
+            'Sensor(s) {{sensors}} will no longer trigger alarms until they are enabled again.',
           analyse_sensors_disable_confirm_button: 'Disable',
           analyse_sensors_disabled: 'Sensor(s) {{sensors}} disabled',
           analyse_sensors_enabled: 'Sensor(s) {{sensors}} enabled',
           analyse_sensors_switch_failed: 'Could not switch the sensors',
-          analyse_sensors_switch_unknown: 'The selected sensors have no measure point of this location',
+          analyse_sensors_switch_unknown:
+            'The selected sensors have no measure point of this location',
           analyse_compare_change_range: 'Range of the WP change (min–max)',
           analyse_compare_ep_change: 'EP change',
           analyse_heatmap_change: 'Change since {{label}} (normalized)',
@@ -1528,7 +1805,8 @@ i18n
           verwaltung_existing_user: 'Add an existing user',
           verwaltung_user_filter_placeholder: 'Filter name or e-mail…',
           verwaltung_select_user_count_one: 'Select user ({{count}} match)…',
-          verwaltung_select_user_count_other: 'Select user ({{count}} matches)…',
+          verwaltung_select_user_count_other:
+            'Select user ({{count}} matches)…',
           verwaltung_invite_title: 'Invite a new address',
           verwaltung_invite_send: 'Send invitation',
           verwaltung_open: 'Open',
@@ -1632,7 +1910,8 @@ i18n
           selection_more_one: '+ {{count}} more',
           selection_more_other: '+ {{count}} more',
           selection_users_failed: 'The users could not be loaded',
-          selection_users_empty: 'Nobody has access to these objects yet - invite someone by e-mail.',
+          selection_users_empty:
+            'Nobody has access to these objects yet - invite someone by e-mail.',
           selection_user_name: 'Name',
           selection_user_email: 'E-mail',
           selection_users_search: 'Search name or e-mail…',
@@ -1641,12 +1920,17 @@ i18n
           selection_assign_email: 'By e-mail',
           selection_assign_confirm_one: 'Assign {{count}} object',
           selection_assign_confirm_other: 'Assign {{count}} objects',
-          selection_assign_granted_one: 'Access to {{count}} object granted - the user was notified.',
-          selection_assign_granted_other: 'Access to {{count}} objects granted - the user was notified.',
+          selection_assign_granted_one:
+            'Access to {{count}} object granted - the user was notified.',
+          selection_assign_granted_other:
+            'Access to {{count}} objects granted - the user was notified.',
           selection_assign_invited_one: 'Invitation for {{count}} object sent.',
-          selection_assign_invited_other: 'Invitation for {{count}} objects sent.',
-          selection_assign_already: 'The user already has access to these objects.',
-          selection_assign_staff: 'This address belongs to the ProGeo team - they can already access every object.',
+          selection_assign_invited_other:
+            'Invitation for {{count}} objects sent.',
+          selection_assign_already:
+            'The user already has access to these objects.',
+          selection_assign_staff:
+            'This address belongs to the ProGeo team - they can already access every object.',
           selection_assign_failed: 'The objects could not be assigned',
           selection_merge_title: 'Merge projects',
           selection_merge_intro:
@@ -1676,9 +1960,12 @@ i18n
             'No background worker has taken the merge - nothing was moved yet. Is the celery worker running the current version? Restart it, then start the merge again.',
           selection_merge_retry: 'Start again',
           selection_merge_failed: 'The projects could not be merged',
-          selection_merge_need_two: 'Select at least two objects to merge them.',
-          selection_merge_has_merged: 'Several merged projects are selected - merge them one after another.',
-          selection_merge_already_merged: 'A selected object is already merged into another project.',
+          selection_merge_need_two:
+            'Select at least two objects to merge them.',
+          selection_merge_has_merged:
+            'Several merged projects are selected - merge them one after another.',
+          selection_merge_already_merged:
+            'A selected object is already merged into another project.',
           locations_group_badge_one: '{{count}} part',
           locations_group_badge_other: '{{count}} parts',
           locations_merged_badge: '+{{count}} merged',
@@ -1690,17 +1977,20 @@ i18n
           location_group_dissolved: 'The merge was dissolved.',
           location_group_dissolve_failed: 'The merge could not be dissolved',
           rechte_title: 'Users of this object',
-          rechte_own_only: 'You can change your own notifications - other people\'s are managed by your administrator.',
+          rechte_own_only:
+            "You can change your own notifications - other people's are managed by your administrator.",
           rechte_add_user: 'Add user',
           rechte_invite_email: 'E-mail address',
           rechte_invite_first_name: 'First name (optional)',
           rechte_invite_last_name: 'Last name (optional)',
           rechte_invite_hint:
             'If the address already has an account, the person gets access right away and is notified. Otherwise we send an invitation to register.',
-          rechte_invite_granted: 'User already exists, we sent them a notification.',
+          rechte_invite_granted:
+            'User already exists, we sent them a notification.',
           rechte_invite_invited: 'Invitation sent to {{email}}.',
           rechte_invite_already: '{{email}} already has access to this object.',
-          rechte_invite_staff: 'This address belongs to the ProGeo team - they can already access every object.',
+          rechte_invite_staff:
+            'This address belongs to the ProGeo team - they can already access every object.',
           rechte_add_confirm: 'Add',
           rechte_cancel: 'Cancel',
           rechte_empty: 'Nobody has access to this object yet.',
@@ -1714,7 +2004,8 @@ i18n
           rechte_transport_sms: 'SMS',
           rechte_transport_both: 'E-mail + SMS',
           rechte_transport_messenger: 'Messenger',
-          rechte_messenger_missing: 'The user has not set up a messenger in their profile yet.',
+          rechte_messenger_missing:
+            'The user has not set up a messenger in their profile yet.',
           rechte_type_alarm: 'Alarm',
           rechte_type_timeout: 'Timeout',
           rechte_type_news: 'News',
@@ -1726,8 +2017,10 @@ i18n
           rechte_scope: 'Access',
           rechte_scope_single: 'This object only',
           rechte_scope_account: 'All objects of the account',
-          rechte_scope_account_named_one: 'All objects of {{account}} ({{count}} object)',
-          rechte_scope_account_named_other: 'All objects of {{account}} ({{count}} objects)',
+          rechte_scope_account_named_one:
+            'All objects of {{account}} ({{count}} object)',
+          rechte_scope_account_named_other:
+            'All objects of {{account}} ({{count}} objects)',
           rechte_revoke_account_message:
             '{{name}} is removed from the account and loses access to all its objects ({{scope}}) and the notifications for them.',
           rechte_revoke_own_hint: 'You cannot revoke your own access.',
@@ -1744,22 +2037,26 @@ i18n
             '{{name}} loses access to the object {{object}} and no longer receives notifications for it.',
           rechte_summary:
             '{{account}} via account · {{single}} individually · {{staff}} ProGeo team',
-          rechte_summary_customer: '{{account}} via account · {{single}} individually',
+          rechte_summary_customer:
+            '{{account}} via account · {{single}} individually',
           rechte_scope_staff: 'ProGeo team (all objects)',
-          rechte_staff_hint: 'ProGeo staff can access every object. The Objektleitung is assigned by ProGeo in the settings tab.',
+          rechte_staff_hint:
+            'ProGeo staff can access every object. The Objektleitung is assigned by ProGeo in the settings tab.',
           rechte_staff_hint_staff:
             'ProGeo staff can access every object. Customers do not see staff here - only staff assigned as Objektleitung (settings tab).',
           rechte_objektleitung: 'Objektleitung',
           benach_title: 'Event history',
           benach_event_open_status: 'Show the heatmap at this time',
           channel_title: 'Notifications on your phone',
-          channel_intro: 'Enter your mobile number and choose how alarms reach you.',
+          channel_intro:
+            'Enter your mobile number and choose how alarms reach you.',
           channel_mobile: 'Mobile number',
           channel_choose: 'Channel',
           channel_sms: 'SMS',
           channel_matrix: 'ProGeo Chat',
           channel_sms_hint: 'Alarms arrive as SMS on this number.',
-          channel_matrix_hint: 'Free chat app on our own server - the setup takes about two minutes.',
+          channel_matrix_hint:
+            'Free chat app on our own server - the setup takes about two minutes.',
           channel_save: 'Save',
           channel_save_matrix: 'Continue to the chat setup',
           channel_change: 'Change',
@@ -1800,19 +2097,26 @@ i18n
           einstell_points_sensor: 'Sensor {{sensor}}',
           einstell_points_empty: 'No sensors known for this object yet.',
           einstell_points_threshold: 'Threshold',
-          einstell_mixer_hint: 'Inherited by every sensor without its own threshold. Drag the orange grip on the axis or type the value.',
-          einstell_mixer_usage: 'Click a bar: disable / enable the sensor · click above it or drag from the bar: own threshold at that height · click a marker: remove it · drag a marker or the line · Ctrl+click: select (Shift: range) · Ctrl + wheel: zoom',
+          einstell_mixer_hint:
+            'Inherited by every sensor without its own threshold. Drag the orange grip on the axis or type the value.',
+          einstell_mixer_usage:
+            'Click a bar: disable / enable the sensor · click above it or drag from the bar: own threshold at that height · click a marker: remove it · drag a marker or the line · Ctrl+click: select (Shift: range) · Ctrl + wheel: zoom',
           einstell_mixer_marker_hint: 'Click: remove · drag: move',
           einstell_mixer_bar_hint: 'Click the bar: disable / enable',
-          thresholds_source_raw: 'Maxima of the loaded measurements ({{period}}, {{count}}) - raw',
-          thresholds_source_profile: 'Maxima of the loaded measurements ({{period}}, {{count}}) - cleaned with "{{name}}"',
-          einstell_mixer_protected_legend: 'Above the object threshold, protected by its own',
+          thresholds_source_raw:
+            'Maxima of the loaded measurements ({{period}}, {{count}}) - raw',
+          thresholds_source_profile:
+            'Maxima of the loaded measurements ({{period}}, {{count}}) - cleaned with "{{name}}"',
+          einstell_mixer_protected_legend:
+            'Above the object threshold, protected by its own',
           einstell_mixer_plot_label: 'Sensors - ← → scroll',
-          einstell_mixer_range: 'Sensors {{first}}–{{last}} of {{total}} · scroll with ← → or Shift + wheel',
+          einstell_mixer_range:
+            'Sensors {{first}}–{{last}} of {{total}} · scroll with ← → or Shift + wheel',
           einstell_mixer_all_shown: 'All {{total}} sensors',
           einstell_mixer_quiet_hidden: '{{count}} quiet hidden',
           einstell_mixer_hide_quiet: 'Hide quiet sensors ({{count}})',
-          einstell_mixer_hide_quiet_hint: 'Sensors whose highest value stays below {{percent}} % of their threshold',
+          einstell_mixer_hide_quiet_hint:
+            'Sensors whose highest value stays below {{percent}} % of their threshold',
           einstell_mixer_scroll_left: 'Scroll left',
           einstell_mixer_scroll_right: 'Scroll right',
           einstell_mixer_24h: '24 h',
@@ -1835,7 +2139,8 @@ i18n
           einstell_mixer_remove_selected: 'Remove own thresholds',
           einstell_mixer_disable_selected: 'Disable sensors',
           einstell_mixer_enable_selected: 'Enable sensors',
-          einstell_mixer_disabled_hint: 'Disabled - triggers no alarm, shown gray',
+          einstell_mixer_disabled_hint:
+            'Disabled - triggers no alarm, shown gray',
           einstell_mixer_disabled_legend: 'Disabled ({{count}})',
           einstell_mixer_change_disabled: 'disabled',
           einstell_mixer_change_enabled: 'enabled again',
@@ -1880,11 +2185,13 @@ i18n
           devcfg_qrcodes: 'Print controller QR codes',
           legacycfg_loading: 'Loading the controller configuration...',
           legacycfg_load_failed: 'Could not load the controller configuration',
-          legacycfg_second_of: 'Second sensor configuration - the interval comes from project {{project}} ({{interval}} s).',
+          legacycfg_second_of:
+            'Second sensor configuration - the interval comes from project {{project}} ({{interval}} s).',
           legacycfg_interval: 'Interval',
           legacycfg_sensors: 'Sensors',
           legacycfg_reply: 'Next answer to the controller',
-          legacycfg_fields: 'The controller reads: pulldown {{pd}}, interval {{interval}} s, sensors {{sensors}}, PE {{earth}}',
+          legacycfg_fields:
+            'The controller reads: pulldown {{pd}}, interval {{interval}} s, sensors {{sensors}}, PE {{earth}}',
           legacycfg_reply_hint:
             'The controller takes changes with its next transmission and restarts with the new configuration.',
           legacycfg_not_answered:
@@ -1897,7 +2204,8 @@ i18n
           legacycfg_reload: 'Reload',
           legacycfg_save: 'Save',
           legacycfg_saving: 'Saving...',
-          legacycfg_saved: 'Saved - the controller takes it with its next transmission.',
+          legacycfg_saved:
+            'Saved - the controller takes it with its next transmission.',
           legacycfg_save_failed: 'Could not save',
           qrprint_print: 'Print',
           qrprint_wifi: 'Controller Wi-Fi',
@@ -1906,7 +2214,8 @@ i18n
           einstell_pe_geschaltet: 'PE switched',
           einstell_rain_check: 'Rain check',
           einstell_language: 'Language of the object',
-          einstell_language_hint: 'Invitations to new users of this object are sent in this language.',
+          einstell_language_hint:
+            'Invitations to new users of this object are sent in this language.',
           einstell_rain_check_hint:
             'Fetches the rain at the object hourly and shows it on the alarm timeline',
           einstell_rain_check_no_coordinates:
@@ -1963,10 +2272,12 @@ i18n
           topbar_logout_confirm_text: 'Do you really want to log out?',
           topbar_view_as_user: 'Show as normal user',
           topbar_view_as_staff: 'Back as staff user',
-          topbar_view_as_user_title: 'Shows the portal without staff functions, the way a normal user sees it',
+          topbar_view_as_user_title:
+            'Shows the portal without staff functions, the way a normal user sees it',
           topbar_archived_shown: 'Archived: shown',
           topbar_archived_hidden: 'Archived: hidden',
-          topbar_archived_title: 'Archived measurements are only shown to staff - click to hide or show them in every view',
+          topbar_archived_title:
+            'Archived measurements are only shown to staff - click to hide or show them in every view',
           sidebar_locations: 'Locations',
           sidebar_devices: 'Devices',
           sidebar_device_statistics: 'Device statistics',
@@ -1977,8 +2288,10 @@ i18n
           sidebar_staff_admin: 'Staff Admin',
           sidebar_threshold_fine_tune: 'Threshold fine-tuning',
           ftt_title: 'Alarm threshold fine-tuning',
-          ftt_intro: 'The findings of manage.py fine_tune_thresholds - pick a threshold per location and apply it.',
-          ftt_subtitle: 'Scanned {{at}} · last {{days}} days · buffer {{buffer}} % · minimum {{minimum}} · raise < {{raise}} %',
+          ftt_intro:
+            'The findings of manage.py fine_tune_thresholds - pick a threshold per location and apply it.',
+          ftt_subtitle:
+            'Scanned {{at}} · last {{days}} days · buffer {{buffer}} % · minimum {{minimum}} · raise < {{raise}} %',
           ftt_file: 'Findings file',
           ftt_file_locations: '{{count}} locations',
           ftt_file_applied: '{{count}} applied',
@@ -2008,32 +2321,40 @@ i18n
           ftt_scanned: 'scanned {{value}}',
           ftt_now: 'now {{value}}',
           ftt_gone: 'location gone',
-          ftt_drift_hint: 'The threshold changed since the scan - applying is refused, scan again.',
+          ftt_drift_hint:
+            'The threshold changed since the scan - applying is refused, scan again.',
           ftt_margin_hint: 'Threshold {{value}} above the true maximum {{max}}',
           ftt_margin_no_data: 'No measurements in the window - no maximum',
           ftt_margin_short: 'margin {{margin}}',
-          ftt_zone_unsafe: 'Below the maximum {{max}}: the location would alarm',
-          ftt_zone_buffer: 'Safety buffer: up to {{buffer}} % above the maximum',
+          ftt_zone_unsafe:
+            'Below the maximum {{max}}: the location would alarm',
+          ftt_zone_buffer:
+            'Safety buffer: up to {{buffer}} % above the maximum',
           ftt_apply: 'Apply selected ({{count}})',
           ftt_apply_title: 'Apply {{count}} threshold(s)?',
           ftt_apply_confirm: 'Apply {{count}}',
-          ftt_apply_note: 'Locations whose threshold changed since the scan, or with a new active alarm, are skipped. Undo on the server: manage.py fine_tune_thresholds --revert <file>.',
+          ftt_apply_note:
+            'Locations whose threshold changed since the scan, or with a new active alarm, are skipped. Undo on the server: manage.py fine_tune_thresholds --revert <file>.',
           ftt_result_applied: '{{count}} threshold(s) applied.',
           ftt_remove: 'Remove from file ({{count}})',
           ftt_remove_title: 'Remove {{count}} location(s) from the file?',
           ftt_remove_confirm: 'Remove {{count}}',
-          ftt_remove_note: 'Only the findings file changes - the locations keep their thresholds.',
+          ftt_remove_note:
+            'Only the findings file changes - the locations keep their thresholds.',
           ftt_reset: 'Reset sliders',
           ftt_cancel: 'Cancel',
-          ftt_note: 'Safety margin = how far the new threshold lies above the true maximum of the window. Green: at least the buffer ({{buffer}} %), yellow: less, red: below the maximum (the location would alarm). On the slider: red marks the maximum, orange the threshold now, green the proposal; red stripes are the unsafe range below the maximum, green stripes the safety buffer. Moving a slider selects the row.',
+          ftt_note:
+            'Safety margin = how far the new threshold lies above the true maximum of the window. Green: at least the buffer ({{buffer}} %), yellow: less, red: below the maximum (the location would alarm). On the slider: red marks the maximum, orange the threshold now, green the proposal; red stripes are the unsafe range below the maximum, green stripes the safety buffer. Moving a slider selects the row.',
           sidebar_database_usage: 'Database usage',
           sidebar_user_activity: 'User activity',
           dbu_title: 'Database usage',
           dbu_intro: 'How the project databases are used - and which are dead.',
-          dbu_subtitle: 'As of {{at}} (refreshed every few minutes). Dead: no devices, or not a single measurement. Stale: no measurement for {{days}} days.',
+          dbu_subtitle:
+            'As of {{at}} (refreshed every few minutes). Dead: no devices, or not a single measurement. Stale: no measurement for {{days}} days.',
           dbu_load_failed: 'Could not load the database usage',
           dbu_refresh: 'Refresh',
-          dbu_refresh_hint: 'Compute anew - asks every project database (takes a few seconds)',
+          dbu_refresh_hint:
+            'Compute anew - asks every project database (takes a few seconds)',
           dbu_status_active: 'Active',
           dbu_status_stale: 'Stale',
           dbu_status_no_measurements: 'Dead: no measurements',
@@ -2052,9 +2373,11 @@ i18n
           dbu_pie_center_count: 'databases',
           dbu_pie_center_size: 'in total',
           dbu_pie_select: 'Show these databases in the table',
-          dbu_status_help: 'Active: measurements in the last {{days}} days. Click a status to filter the table.',
+          dbu_status_help:
+            'Active: measurements in the last {{days}} days. Click a status to filter the table.',
           dbu_largest: 'The {{count}} largest databases',
-          dbu_largest_note: 'Coloured by status - a large dead database is storage to free.',
+          dbu_largest_note:
+            'Coloured by status - a large dead database is storage to free.',
           dbu_table_title: 'All project databases',
           dbu_show_ids: 'Show selected IDs ({{count}})',
           dbu_clear_selection: 'Clear selection',
@@ -2062,17 +2385,23 @@ i18n
           dbu_ids_label: 'Project IDs, one per line',
           dbu_ids_copy: 'Copy IDs',
           dbu_ids_copied: '{{count}} IDs copied',
-          dbu_ids_copy_failed: 'Could not copy - select the text and copy it by hand',
-          dbu_ids_in_use: '{{count}} of them are in use (devices and measurements): {{ids}}. The script refuses them without --allow-active.',
-          dbu_ids_unreadable: '{{count}} of them could not be read - check them before deleting.',
-          dbu_ids_how: 'To delete these databases, save the IDs to a file on the server and run there:',
-          dbu_ids_safety: 'Only by hand in a terminal: the script shows every database in detail, dumps it first and asks for a typed confirmation before it deletes anything. Deleted databases cannot be restored without that dump.',
+          dbu_ids_copy_failed:
+            'Could not copy - select the text and copy it by hand',
+          dbu_ids_in_use:
+            '{{count}} of them are in use (devices and measurements): {{ids}}. The script refuses them without --allow-active.',
+          dbu_ids_unreadable:
+            '{{count}} of them could not be read - check them before deleting.',
+          dbu_ids_how:
+            'To delete these databases, save the IDs to a file on the server and run there:',
+          dbu_ids_safety:
+            'Only by hand in a terminal: the script shows every database in detail, dumps it first and asks for a typed confirmation before it deletes anything. Deleted databases cannot be restored without that dump.',
           dbu_close: 'Close',
           dbu_scanning: 'Scanning the project databases: {{done}} of {{total}}',
           dbu_merging: 'Merging the results…',
           dbu_kpi_scanned: 'of {{total}} - scanning',
           dbu_waiting: 'Scanning the databases…',
-          dbu_split_off: 'The database split is off on this server (PROJECT_DB_SPLIT): the portal still reads and writes the main database. The project databases hold a copy - stale or dead here does not mean the project is.',
+          dbu_split_off:
+            'The database split is off on this server (PROJECT_DB_SPLIT): the portal still reads and writes the main database. The project databases hold a copy - stale or dead here does not mean the project is.',
           dbu_empty: 'No project databases on this server.',
           dbu_filter_all: 'All ({{count}})',
           dbu_filter_dead: 'Dead ({{count}})',
@@ -2085,11 +2414,13 @@ i18n
           dbu_col_last_measurement: 'Last measurement',
           dbu_col_size: 'Size',
           ua_title: 'User activity',
-          ua_intro: 'How long users stay and which pages they visit - users who consented to usage statistics; staff is never tracked.',
+          ua_intro:
+            'How long users stay and which pages they visit - users who consented to usage statistics; staff is never tracked.',
           ua_period: 'Period',
           ua_days: '{{count}} days',
           ua_load_failed: 'Could not load the user activity',
-          ua_disabled: 'Tracking is switched off (ACTIVITY_TRACKING_ENABLED) - only events stored before are shown (kept {{days}} days).',
+          ua_disabled:
+            'Tracking is switched off (ACTIVITY_TRACKING_ENABLED) - only events stored before are shown (kept {{days}} days).',
           ua_kpi_sessions: 'Sessions',
           ua_kpi_limit: 'the newest {{count}}',
           ua_kpi_users: 'Users',
@@ -2099,7 +2430,8 @@ i18n
           ua_per_day: 'Sessions per day',
           ua_lengths: 'How long sessions last',
           ua_page_time: 'Time per page (top {{count}})',
-          ua_page_time_note: 'Total time the page was visible, all sessions of the period.',
+          ua_page_time_note:
+            'Total time the page was visible, all sessions of the period.',
           ua_when: 'When sessions start',
           ua_hour: 'Hour',
           ua_sessions: 'sessions',
@@ -2119,9 +2451,11 @@ i18n
           ua_back: 'All sessions',
           ua_session_of: 'Session of {{user}}, {{at}}',
           ua_session_failed: 'Could not load the session',
-          ua_session_missing: 'This session does not exist (any more) - events are kept for a limited time.',
+          ua_session_missing:
+            'This session does not exist (any more) - events are kept for a limited time.',
           ua_timeline: 'Timeline',
-          ua_timeline_note: 'A bar: the time the page was visible (hidden tab time left out). A dot: a click.',
+          ua_timeline_note:
+            'A bar: the time the page was visible (hidden tab time left out). A dot: a click.',
           ua_legend_visible: 'Page visible',
           ua_legend_click: 'Click',
           ua_session_pages: 'Time per page',
@@ -2156,12 +2490,14 @@ i18n
           favorites_failed: 'Could not save the favorite',
           locations_title: 'Object overview',
           locations_count: '{{count}} of {{total}}',
-          locations_search_placeholder: 'Search by name, address, postcode, city, project no.…',
+          locations_search_placeholder:
+            'Search by name, address, postcode, city, project no.…',
           locations_search_clear: 'Clear search',
           locations_only_connected: 'Only objects with connected devices',
           locations_active_alarms: 'Active alarms',
           locations_active_alarms_count: 'Active alarms ({{count}}{{more}})',
-          locations_active_alarms_truncated: 'Only the newest {{count}} active alarms are listed.',
+          locations_active_alarms_truncated:
+            'Only the newest {{count}} active alarms are listed.',
           locations_no_active_alarms: 'No active alarms.',
           locations_close: 'Close',
           locations_empty: 'No objects found.',
@@ -2190,7 +2526,8 @@ i18n
           locations_error_details: 'Could not load the object details',
           locations_error_alarm_summary: 'Could not load the alarm summary',
           locations_preload_progress: 'Loading state … {{done}}/{{total}}',
-          locations_row_failed: 'Could not be loaded - reload the page to try again',
+          locations_row_failed:
+            'Could not be loaded - reload the page to try again',
           locations_error_active_alarms: 'Could not load the active alarms',
           heat_limit_create: 'Create Heat-Limitation',
           heat_limit_copy: 'Copy from existing project',
@@ -2203,12 +2540,16 @@ i18n
           heat_limit_copy_locations_failed: 'Could not load the locations',
           heat_limit_copy_load_failed: 'Could not load the heat limitations',
           heat_limit_name: 'Name of the area',
-          heat_limit_hint_create: 'Click on the plan to set points ({{count}} set) - drag to move, double-click removes one, D + drag removes several.',
-          heat_limit_hint_edit: 'Drag the points - a click on the plan adds one, a double-click removes one, D + drag removes several.',
+          heat_limit_hint_create:
+            'Click on the plan to set points ({{count}} set) - drag to move, double-click removes one, D + drag removes several.',
+          heat_limit_hint_edit:
+            'Drag the points - a click on the plan adds one, a double-click removes one, D + drag removes several.',
           heat_limit_undo: 'Undo point',
           heat_limit_confirm: 'Confirm',
-          heat_limit_floating: 'Heat limitation with {{count}} point(s) - not stored yet',
-          heat_limit_floating_more: 'An area needs at least 3 points - click on the plan to add them.',
+          heat_limit_floating:
+            'Heat limitation with {{count}} point(s) - not stored yet',
+          heat_limit_floating_more:
+            'An area needs at least 3 points - click on the plan to add them.',
           heat_limit_cancel: 'Cancel',
           heat_limit_edit: 'Edit area',
           heat_limit_delete: 'Delete area',
@@ -2235,9 +2576,11 @@ i18n
           flow_tab_list: 'Escalations',
           flow_tab_flow: 'Alarm flow',
           flow_title: 'Open notification cases',
-          flow_hint: 'What was sent to whom and what comes next - the next message first. Messages go out with the next run (every {{minutes}} min).',
+          flow_hint:
+            'What was sent to whom and what comes next - the next message first. Messages go out with the next run (every {{minutes}} min).',
           flow_empty: 'No open notification cases.',
-          flow_truncated: 'Showing the next {{shown}} of {{total}} open cases - the rest come later in the order.',
+          flow_truncated:
+            'Showing the next {{shown}} of {{total}} open cases - the rest come later in the order.',
           flow_load_failed: 'Could not load the alarm flow.',
           flow_kind_alarm: 'Alarm',
           flow_kind_offline: 'Offline',
@@ -2255,8 +2598,10 @@ i18n
           flow_sent: 'Stage {{stage}} sent',
           flow_sent_withheld: 'Stage {{stage}} not sent (notifications off)',
           flow_sent_escalation: 'Stage {{stage}}: escalation to the team',
-          flow_withheld_sent: 'logged, not sent - notifications of the object are off',
-          flow_withheld_planned: 'will not be sent - notifications of the object are off',
+          flow_withheld_sent:
+            'logged, not sent - notifications of the object are off',
+          flow_withheld_planned:
+            'will not be sent - notifications of the object are off',
           flow_failed_count_one: '{{count}} undeliverable',
           flow_failed_count_other: '{{count}} undeliverable',
           flow_reached_nobody: 'reached nobody',
@@ -2286,8 +2631,10 @@ i18n
           flow_back_since: 'devices back online since {{when}}',
           flow_unreachable: 'the last stage reached nobody',
           flow_end: 'End',
-          flow_end_acknowledge: 'as soon as someone acknowledges (mail link or portal)',
-          flow_end_back_online: 'as soon as every device sends again for {{hours}} h',
+          flow_end_acknowledge:
+            'as soon as someone acknowledges (mail link or portal)',
+          flow_end_back_online:
+            'as soon as every device sends again for {{hours}} h',
           flow_end_after_last: 'no further message after stage {{stage}}',
           flow_channel_mail: 'Mail',
           flow_channel_sms: 'SMS',
@@ -2309,9 +2656,11 @@ i18n
           escalation_opened_by: 'opened by {{name}}',
           escalation_closed_by: 'closed by {{name}}',
           escalation_message_placeholder: 'Message…',
-          escalation_message_hint: 'Goes into the protocol - as a comment, or with the status change, assignment or closing below.',
+          escalation_message_hint:
+            'Goes into the protocol - as a comment, or with the status change, assignment or closing below.',
           escalation_comment: 'Comment',
-          escalation_search: 'Filter by title, project, object, person, status…',
+          escalation_search:
+            'Filter by title, project, object, person, status…',
           escalation_search_clear: 'Clear filter',
           escalation_search_none: 'No escalation matches the filter.',
           escalation_status: 'Status',
@@ -2320,7 +2669,8 @@ i18n
           escalation_assign: 'Assign',
           escalation_close: 'Close escalation',
           escalation_close_confirm_title: 'Close escalation?',
-          escalation_close_confirm: 'The escalation <strong>"{{title}}"</strong> (project <strong>{{location}}</strong>) is closed; your message goes into its protocol. A closed escalation can <strong>no longer be commented on, reassigned or changed</strong> - this cannot be undone.',
+          escalation_close_confirm:
+            'The escalation <strong>"{{title}}"</strong> (project <strong>{{location}}</strong>) is closed; your message goes into its protocol. A closed escalation can <strong>no longer be commented on, reassigned or changed</strong> - this cannot be undone.',
           escalation_closed_hint: 'This escalation is closed.',
           escalation_entry_created: 'opened the escalation',
           escalation_entry_status: 'changed the status: {{from}} → {{to}}',
@@ -2360,11 +2710,14 @@ i18n
           docker_restart_failed: 'Could not restart {{name}}',
           docker_remove_failed: 'Could not remove {{name}}',
           docker_confirm_restart_title: 'Restart container?',
-          docker_confirm_restart_message: '{{name}} is stopped and started again - it is unreachable for a moment.',
+          docker_confirm_restart_message:
+            '{{name}} is stopped and started again - it is unreachable for a moment.',
           docker_confirm_remove_title: 'Remove container?',
-          docker_confirm_remove_message: '{{name}} is deleted for good, including its logs.',
+          docker_confirm_remove_message:
+            '{{name}} is deleted for good, including its logs.',
           docker_confirm_stop_title: 'Stop container?',
-          docker_confirm_stop_message: '{{name}} is stopped: the service it runs is down until someone starts the container again (play button). Requests to it fail meanwhile.',
+          docker_confirm_stop_message:
+            '{{name}} is stopped: the service it runs is down until someone starts the container again (play button). Requests to it fail meanwhile.',
           docker_cancel: 'Cancel',
           docker_logs_title: 'Logs of {{name}}',
           docker_logs_tail: 'Last lines',
@@ -2401,7 +2754,8 @@ i18n
           provision_section_save: 'Save',
           provision_section_cancel: 'Cancel',
           provision_generated_later: 'on generate',
-          provision_generate_hint: 'Device hash, token and URL are filled in when the config is generated.',
+          provision_generate_hint:
+            'Device hash, token and URL are filled in when the config is generated.',
           provision_config_show: 'Show config',
           provision_config_hide: 'Hide config',
           sidebar_ws_debug: 'WS Debug',
@@ -2437,24 +2791,31 @@ i18n
           device_stats_title: 'Device statistics',
           locmap_purgeable_mark: 'Mark purgeable',
           locmap_purgeable_unmark: 'Unmark',
-          locmap_purgeable_mark_title: 'Mark this location for deletion - only the flag, nothing is deleted now',
-          locmap_purgeable_unmark_title: 'Keep this location (remove the purge mark)',
+          locmap_purgeable_mark_title:
+            'Mark this location for deletion - only the flag, nothing is deleted now',
+          locmap_purgeable_unmark_title:
+            'Keep this location (remove the purge mark)',
           locmap_purgeable_badge: 'purgeable',
           locmap_purgeable_marked: 'Marked as purgeable',
           locmap_purgeable_marked_toast: '{{name}} marked as purgeable',
-          locmap_purgeable_unmarked_toast: '{{name}} is no longer marked as purgeable',
+          locmap_purgeable_unmarked_toast:
+            '{{name}} is no longer marked as purgeable',
           locmap_purgeable_error: 'Could not save the purge mark',
           device_stats_col_purgeable: 'Purge',
           device_stats_purgeable_mark: 'Mark purgeable',
           device_stats_purgeable_unmark: 'Unmark',
-          device_stats_purgeable_mark_title: 'Mark this location for deletion - only the flag, nothing is deleted now',
-          device_stats_purgeable_unmark_title: 'Keep this location (remove the purge mark)',
+          device_stats_purgeable_mark_title:
+            'Mark this location for deletion - only the flag, nothing is deleted now',
+          device_stats_purgeable_unmark_title:
+            'Keep this location (remove the purge mark)',
           device_stats_purgeable_marked: 'Marked as purgeable',
           device_stats_purgeable_marked_toast: '{{name}} marked as purgeable',
-          device_stats_purgeable_unmarked_toast: '{{name}} is no longer marked as purgeable',
+          device_stats_purgeable_unmarked_toast:
+            '{{name}} is no longer marked as purgeable',
           device_stats_purgeable_error: 'Could not save the purge mark',
           notification_locations_title: 'Notifications per location',
-          notification_locations_hint: 'Locations with notifications switched off still get their cases and logged messages - nothing is sent. Switch them on one after another.',
+          notification_locations_hint:
+            'Locations with notifications switched off still get their cases and logged messages - nothing is sent. Switch them on one after another.',
           notification_locations_filter_disabled: 'Off ({{count}})',
           notification_locations_filter_enabled: 'On ({{count}})',
           notification_locations_filter_all: 'All',
@@ -2466,20 +2827,26 @@ i18n
           notification_locations_col_switch: 'Notifications',
           notification_locations_on: 'on',
           notification_locations_off: 'off',
-          notification_locations_switched_on: 'Notifications of {{name}} switched on',
-          notification_locations_switched_off: 'Notifications of {{name}} switched off',
+          notification_locations_switched_on:
+            'Notifications of {{name}} switched on',
+          notification_locations_switched_off:
+            'Notifications of {{name}} switched off',
           notification_locations_empty: 'No locations',
           notification_locations_load_error: 'Could not load the locations',
-          notification_locations_toggle_error: 'Could not switch the notifications',
+          notification_locations_toggle_error:
+            'Could not switch the notifications',
           device_stats_hint:
             'Inventory of all devices and locations of this account: types, chip IDs, activity of the last 24 hours and missing site plans. Dead = no measurement for 30 days; an unused location has no devices or no measurement for 30 days.',
-          device_stats_staff_only: 'Device statistics are available to staff users only.',
+          device_stats_staff_only:
+            'Device statistics are available to staff users only.',
           device_stats_refresh: 'Refresh',
           device_stats_generated_at: 'As of {{date}}',
           device_stats_load_failed: 'Could not load device statistics',
-          device_stats_scanning: 'Scanning project databases: {{done}} / {{total}}',
+          device_stats_scanning:
+            'Scanning project databases: {{done}} / {{total}}',
           device_stats_merging: 'Merging the results…',
-          device_stats_lists_after_scan: 'The lists appear once all project databases are scanned.',
+          device_stats_lists_after_scan:
+            'The lists appear once all project databases are scanned.',
           device_stats_empty: 'Nothing here.',
           device_stats_by_type_title: 'Devices by type',
           device_stats_lists_title: 'Details',
@@ -2488,7 +2855,8 @@ i18n
           device_stats_missing_points: 'No measure points',
           device_stats_dead_devices: 'Dead devices',
           device_stats_unused_locations: 'Unused locations',
-          device_stats_locations_missing_points: 'Locations without measure points',
+          device_stats_locations_missing_points:
+            'Locations without measure points',
           device_stats_dead_locations: 'Dead locations',
           device_stats_locations_without_gps: 'Locations without GPS position',
           device_stats_with_chip_id: 'Devices with chip ID',
@@ -2574,25 +2942,33 @@ i18n
           devices_deleted: 'Device deleted',
           devices_cancel: 'Cancel',
           devices_action_commands: 'Controller commands',
-          devices_action_commands_project_only: 'Commands only for devices on the new hash schema (e.g. {{example}})',
+          devices_action_commands_project_only:
+            'Commands only for devices on the new hash schema (e.g. {{example}})',
           devices_search: 'Search devices…',
           devices_search_count: '{{count}} of {{total}}',
           device_commands_title: 'Commands',
           device_commands_last_poll: 'Last poll {{time}}',
           device_commands_never_polled: 'Has not polled for commands yet',
-          device_commands_ttl: 'not taken within {{hours}} h, a command expires',
+          device_commands_ttl:
+            'not taken within {{hours}} h, a command expires',
           device_commands_send: 'Send command',
           device_commands_confirm_restart_title: 'Restart controller?',
-          device_commands_confirm_restart: '{{device}} restarts when it next polls for commands. While it boots it takes no measurements and cannot be reached for a short while.',
-          device_commands_confirm_update_title: 'Overwrite the file on the controller?',
-          device_commands_confirm_update: 'When it next polls, {{device}} replaces the file {{path}} completely with this content ({{bytes}} bytes). The old content is lost unless you read it before (Get config). A faulty file can stop the controller from working until it is fixed on site.',
+          device_commands_confirm_restart:
+            '{{device}} restarts when it next polls for commands. While it boots it takes no measurements and cannot be reached for a short while.',
+          device_commands_confirm_update_title:
+            'Overwrite the file on the controller?',
+          device_commands_confirm_update:
+            'When it next polls, {{device}} replaces the file {{path}} completely with this content ({{bytes}} bytes). The old content is lost unless you read it before (Get config). A faulty file can stop the controller from working until it is fixed on site.',
           device_commands_confirm_params_title: 'Set parameters?',
-          device_commands_confirm_params: 'When it next polls, {{device}} takes these values: {{params}}. They replace the current settings and apply to all following measurements.',
+          device_commands_confirm_params:
+            'When it next polls, {{device}} takes these values: {{params}}. They replace the current settings and apply to all following measurements.',
           device_commands_confirm_cancel_title: 'Cancel the queued command?',
-          device_commands_confirm_cancel: 'The command "{{command}}" (#{{id}}) is not sent to {{device}}. To run it later, you have to queue it again.',
+          device_commands_confirm_cancel:
+            'The command "{{command}}" (#{{id}}) is not sent to {{device}}. To run it later, you have to queue it again.',
           device_commands_cancel_command: 'Cancel command',
           device_commands_keep_command: 'Keep command',
-          device_commands_queued: '{{command}} queued - sent with the next poll',
+          device_commands_queued:
+            '{{command}} queued - sent with the next poll',
           device_commands_queue_failed: 'Could not queue {{command}}',
           device_commands_load_failed: 'Could not load the commands',
           device_commands_cancel_failed: 'Could not cancel the command',
@@ -2606,7 +2982,8 @@ i18n
           device_commands_param_poll_sec: 'Command poll interval',
           device_commands_poll_never: 'Never poll (0)',
           device_commands_send_params: 'Send parameters',
-          device_commands_params_hint: 'Only the values the controller accepts are offered.',
+          device_commands_params_hint:
+            'Only the values the controller accepts are offered.',
           device_commands_identity_device_hash: 'Device hash',
           device_commands_identity_project_id: 'Project ID',
           device_commands_identity_chip_id: 'Chip ID',
@@ -2618,9 +2995,11 @@ i18n
           device_commands_update_path: 'File path',
           device_commands_update_content: 'File content',
           device_commands_send_update: 'Send file',
-          device_commands_update_hint: 'Stored encrypted until the controller took it - the history keeps path and size only.',
+          device_commands_update_hint:
+            'Stored encrypted until the controller took it - the history keeps path and size only.',
           device_commands_update_open: 'Overwrite config',
-          device_commands_update_open_hint: 'Replace a file on the controller (e.g. its config) - opens the editor',
+          device_commands_update_open_hint:
+            'Replace a file on the controller (e.g. its config) - opens the editor',
           device_commands_update_close: 'Cancel',
           device_commands_result_title: 'Result of {{command}} #{{id}}',
           device_commands_result_edit: 'Edit and send as update',
@@ -2644,11 +3023,13 @@ i18n
           device_commands_status_expired: 'expired',
           device_commands_status_cancelled: 'cancelled',
           device_command_identify: 'Identify',
-          device_command_identify_hint: 'The controller sends its identity (chip ID, IP, MAC)',
+          device_command_identify_hint:
+            'The controller sends its identity (chip ID, IP, MAC)',
           device_command_measure: 'Measure',
           device_command_measure_hint: 'Take a measurement now',
           device_command_get_config: 'Get config',
-          device_command_get_config_hint: 'The controller sends its config file back',
+          device_command_get_config_hint:
+            'The controller sends its config file back',
           device_command_maintenance: 'Maintenance',
           device_command_normal: 'Normal',
           device_command_restart: 'Restart',
@@ -2658,27 +3039,40 @@ i18n
           device_command_update: 'Update file',
           device_command_update_hint: 'Write a file on the controller',
           device_command_logs: 'Get logs',
-          device_command_logs_hint: 'The controller sends the log of one hour back',
+          device_command_logs_hint:
+            'The controller sends the log of one hour back',
           device_commands_logs_hour: '{{hour}}:00 h',
           device_commands_logs_hour_label: 'Hour of the day',
           device_commands_logs_get: 'Get this hour',
           device_commands_logs_day: 'Whole day (24 commands)',
-          device_commands_logs_hint: "One command per hour; the hour is the controller's time of day.",
+          device_commands_logs_hint:
+            "One command per hour; the hour is the controller's time of day.",
           device_command_upgrade: 'Firmware update',
+          device_command_set_thresholds: 'Set thresholds',
+          device_thresholds_location: 'Location {{value}}',
+          device_thresholds_input: 'Input {{input}}: {{value}}',
+          device_thresholds_inputs_one: '{{count}} input',
+          device_thresholds_inputs_other: '{{count}} inputs',
+          device_thresholds_off: 'off',
           device_firmware_title: 'Firmware update',
           device_firmware_current: 'Runs {{bundle}}',
-          device_firmware_unknown: 'The controller does not report its bundle yet - it needs a release that can update itself, flashed on site once.',
+          device_firmware_unknown:
+            'The controller does not report its bundle yet - it needs a release that can update itself, flashed on site once.',
           device_firmware_target: 'Update to',
           device_firmware_start: 'Update',
           device_firmware_confirm_title: 'Update firmware?',
-          device_firmware_confirm: '<strong>{{device}}</strong> is updated from <strong>{{current}}</strong> to <strong>{{bundle}}</strong>. When it next polls, it downloads the changed files, installs them and restarts - <strong>no measurements meanwhile</strong>. Going back needs another update.',
+          device_firmware_confirm:
+            '<strong>{{device}}</strong> is updated from <strong>{{current}}</strong> to <strong>{{bundle}}</strong>. When it next polls, it downloads the changed files, installs them and restarts - <strong>no measurements meanwhile</strong>. Going back needs another update.',
           device_firmware_started: 'Firmware update to {{bundle}} started',
           device_firmware_start_failed: 'Could not start the firmware update',
           device_firmware_load_failed: 'Could not load the firmware bundles',
-          device_firmware_none: 'No bundle on the server can be installed remotely.',
+          device_firmware_none:
+            'No bundle on the server can be installed remotely.',
           device_firmware_not_remote: 'Not remotely: {{reason}}',
-          device_firmware_hint: 'Only the files that differ are sent; the controller installs them at its next poll and restarts. Another firmware needs the app on site.',
-          device_firmware_phase_reading_config: 'Reading the config for its migration',
+          device_firmware_hint:
+            'Only the files that differ are sent; the controller installs them at its next poll and restarts. Another firmware needs the app on site.',
+          device_firmware_phase_reading_config:
+            'Reading the config for its migration',
           device_firmware_phase_upgrading: 'Installing',
           device_firmware_step: '{{from}} → {{to}}',
           device_firmware_target_note: 'target {{target}}',
@@ -2690,12 +3084,16 @@ i18n
           staff_add_user: 'Add user',
           staff_title_customer: 'Users of my account',
           staff_field_accounts: 'Accounts',
-          staff_field_accounts_hint: '- members see every object of the account',
+          staff_field_accounts_hint:
+            '- members see every object of the account',
           staff_accounts_search: 'Search accounts',
           staff_accounts_no_match: 'No account matches.',
-          staff_accounts_locked: 'Only ProGeo staff can change the accounts of a customer admin.',
-          staff_accounts_required: 'Choose at least one of your accounts - otherwise you could not see the user.',
-          staff_accounts_leave_hint: 'Without any of your accounts the user no longer appears in your list.',
+          staff_accounts_locked:
+            'Only ProGeo staff can change the accounts of a customer admin.',
+          staff_accounts_required:
+            'Choose at least one of your accounts - otherwise you could not see the user.',
+          staff_accounts_leave_hint:
+            'Without any of your accounts the user no longer appears in your list.',
           staff_edit_user: 'Edit user',
           staff_edit_user_title: 'Edit user: {{username}}',
           staff_delete_user: 'Delete user',
@@ -2707,9 +3105,11 @@ i18n
           staff_accounts_none: 'No account',
           staff_accounts_full_access: 'Full access: {{name}}',
           staff_single_access_one: 'Single access to {{count}} further object',
-          staff_single_access_other: 'Single access to {{count}} further objects',
+          staff_single_access_other:
+            'Single access to {{count}} further objects',
           staff_accounts_legend: 'Accounts:',
-          staff_accounts_legend_filter: 'Show only the users of this account (click again: all)',
+          staff_accounts_legend_filter:
+            'Show only the users of this account (click again: all)',
           staff_col_staff: 'Staff',
           staff_col_active: 'Active',
           staff_col_permissions: 'Permissions',
@@ -2739,8 +3139,10 @@ i18n
           staff_permission_customize: 'Add or remove permissions',
           staff_permission_copy_from: 'Copy permissions from…',
           staff_permission_copy_option: '{{username}} ({{count}} permissions)',
-          staff_permission_copied: 'Permissions of {{username}} copied - not saved yet.',
-          staff_permission_copy_skipped: 'Not copied (you may not grant them): {{codes}}.',
+          staff_permission_copied:
+            'Permissions of {{username}} copied - not saved yet.',
+          staff_permission_copy_skipped:
+            'Not copied (you may not grant them): {{codes}}.',
           staff_permission_custom: 'Custom',
           staff_permission_preset_none: 'No access',
           staff_permission_preset_viewer: 'Viewer',
@@ -2793,34 +3195,48 @@ i18n
           staff_filter_clear: 'Reset filters',
           staff_filter_count: '{{shown}} of {{total}} users',
           staff_impersonate: 'Log in as this user',
-          staff_impersonate_confirm: 'Log in as "{{username}}"? You will see the portal exactly as this user does, for at most one hour. Your changes are logged with your name.',
+          staff_impersonate_confirm:
+            'Log in as "{{username}}"? You will see the portal exactly as this user does, for at most one hour. Your changes are logged with your name.',
           staff_impersonate_confirm_title: 'Log in as this user?',
           staff_impersonate_error: 'Could not log in as this user',
-          impersonation_banner: 'You are logged in as <strong>{{username}}</strong> (via {{impersonator}}).',
+          impersonation_banner:
+            'You are logged in as <strong>{{username}}</strong> (via {{impersonator}}).',
           impersonation_back: 'Back to my account',
-          impersonation_blocked: 'Not possible while logged in as another user.',
+          impersonation_blocked:
+            'Not possible while logged in as another user.',
           staff_reset_two_factor: 'Reset 2FA',
-          staff_reset_two_factor_confirm: 'Reset the two-factor authentication of "{{username}}" (e.g. lost phone)? All their logins end; they set it up again afterwards.',
-          staff_reset_two_factor_confirm_title: 'Reset two-factor authentication?',
-          staff_reset_two_factor_done: 'Two-factor authentication of "{{username}}" reset.',
-          staff_reset_two_factor_error: 'Could not reset two-factor authentication',
-          staff_password_invite_hint: 'Better: send an invitation (login link) instead - a link by email is safer than reading out a password.',
+          staff_reset_two_factor_confirm:
+            'Reset the two-factor authentication of "{{username}}" (e.g. lost phone)? All their logins end; they set it up again afterwards.',
+          staff_reset_two_factor_confirm_title:
+            'Reset two-factor authentication?',
+          staff_reset_two_factor_done:
+            'Two-factor authentication of "{{username}}" reset.',
+          staff_reset_two_factor_error:
+            'Could not reset two-factor authentication',
+          staff_password_invite_hint:
+            'Better: send an invitation (login link) instead - a link by email is safer than reading out a password.',
           staff_password_confirm_title: 'Generate a new password?',
-          staff_password_confirm_body: 'A new random password is set for "{{username}}". The old password stops working immediately, and all of their logins end on every device. You then have to pass the new password on yourself. Better: send an invitation (login link) instead.',
+          staff_password_confirm_body:
+            'A new random password is set for "{{username}}". The old password stops working immediately, and all of their logins end on every device. You then have to pass the new password on yourself. Better: send an invitation (login link) instead.',
           staff_password_confirm_yes: 'Yes, replace password',
           staff_deactivate_confirm_title: 'Deactivate user?',
-          staff_deactivate_confirm_body: 'Once saved, "{{username}}" can no longer log in, and open sessions stop working. The account with its access rights and settings is kept: switching "Active" on again gives the access back.',
+          staff_deactivate_confirm_body:
+            'Once saved, "{{username}}" can no longer log in, and open sessions stop working. The account with its access rights and settings is kept: switching "Active" on again gives the access back.',
           staff_deactivate_confirm_yes: 'Yes, deactivate and save',
           staff_requests_projects: 'Projects',
-          staff_requests_projects_placeholder: 'Search by number, name or city - or type numbers',
+          staff_requests_projects_placeholder:
+            'Search by number, name or city - or type numbers',
           staff_requests_projects_none: 'No project found',
           staff_requests_accounts: 'Accounts (all their objects)',
           staff_requests_accounts_placeholder: 'Search account…',
           staff_requests_accounts_none: 'No account found',
-          staff_requests_accounts_hint: 'Optional: the user becomes a member and sees every object of these accounts.',
+          staff_requests_accounts_hint:
+            'Optional: the user becomes a member and sees every object of these accounts.',
           staff_requests_accounts_granted: 'Member of: {{accounts}}',
-          staff_requests_projects_hint: 'Grants access to these projects right away (optional).',
-          staff_requests_projects_stated: 'Stated in the request: "{{project}}"',
+          staff_requests_projects_hint:
+            'Grants access to these projects right away (optional).',
+          staff_requests_projects_stated:
+            'Stated in the request: "{{project}}"',
           staff_requests_projects_granted: 'Access granted: {{ids}}',
           staff_requests_projects_existing: 'Already had access: {{ids}}',
           staff_requests_projects_missing: 'Not granted: {{ids}}',
@@ -2866,29 +3282,39 @@ i18n
           alarm_tooltip_ago: '{{duration}} ago',
           alarm_tooltip_acknowledged: 'Acknowledged',
           alarms_overview_title: 'Alarms',
-          alarms_overview_count: '{{shown}} of {{total}} alarms · last {{days}} days',
-          alarms_overview_count_24h: '{{shown}} of {{total}} alarms · last 24 h',
+          alarms_overview_count:
+            '{{shown}} of {{total}} alarms · last {{days}} days',
+          alarms_overview_count_24h:
+            '{{shown}} of {{total}} alarms · last 24 h',
           alarms_overview_last_24h: 'Last 24 h',
           alarms_overview_loading_chunks: 'Loading … {{done}}/{{total}}',
           alarms_overview_only_active: 'Only with active alarms',
-          alarms_overview_only_active_hint: 'Show only alarms that are currently active',
+          alarms_overview_only_active_hint:
+            'Show only alarms that are currently active',
           alarms_overview_last_hour: 'Only show last hour',
-          alarms_overview_last_hour_hint: 'Show only alarms triggered within the last hour',
+          alarms_overview_last_hour_hint:
+            'Show only alarms triggered within the last hour',
           alarms_overview_window: 'Alarm window (days)',
           alarms_overview_days_one: '{{count}} day',
           alarms_overview_days_other: '{{count}} days',
-          alarms_overview_load_more_hint: 'Load older alarms (fetch only the missing days)',
+          alarms_overview_load_more_hint:
+            'Load older alarms (fetch only the missing days)',
           alarms_overview_refresh: 'Refresh',
-          alarms_overview_timeline_hint: 'Grouped by location — hover a bar for details, click to load the heatmap',
+          alarms_overview_timeline_hint:
+            'Grouped by location — hover a bar for details, click to load the heatmap',
           alarms_overview_heatmap: 'Alarm heatmap',
-          alarms_overview_heatmap_hint: 'Click an alarm row or timeline bar to load its location heatmap',
+          alarms_overview_heatmap_hint:
+            'Click an alarm row or timeline bar to load its location heatmap',
           alarms_overview_heatmap_loading: 'Loading alarm heatmap…',
-          alarms_overview_heatmap_select: 'Select an alarm to display its location heatmap.',
+          alarms_overview_heatmap_select:
+            'Select an alarm to display its location heatmap.',
           alarms_overview_heatmap_failed: 'Could not load alarm heatmap',
-          alarms_overview_no_location: 'Alarm has no location to render a heatmap for.',
+          alarms_overview_no_location:
+            'Alarm has no location to render a heatmap for.',
           alarms_overview_measurements: 'Measurements',
           alarms_overview_measurements_hint: '±6h around the alarm start',
-          alarms_overview_measurements_select: 'Select an alarm to compare its measurements.',
+          alarms_overview_measurements_select:
+            'Select an alarm to compare its measurements.',
           alarms_overview_col_id: 'ID',
           alarms_overview_unnamed: 'Unnamed',
           alarms_overview_unknown_location: 'unknown location',
@@ -2901,11 +3327,13 @@ i18n
           zoom_hint_touch: 'Use two fingers to move and zoom',
           // The location map (main/LocationsMapView.jsx).
           locmap_zoom_area_hint: 'drag: zoom to area',
-          locmap_loading_activity: 'Last measurements: {{done}} / {{total}} databases',
+          locmap_loading_activity:
+            'Last measurements: {{done}} / {{total}} databases',
           locmap_show_all: 'Show all',
           locmap_toasts_on: 'Live messages on',
           locmap_toasts_off: 'Live messages muted',
-          locmap_toasts_title: 'Show or mute the message for every live measurement',
+          locmap_toasts_title:
+            'Show or mute the message for every live measurement',
         },
       },
       de: {
@@ -2932,7 +3360,8 @@ i18n
           backup_reloaded: 'Backups neu geladen.',
           backup_reload_error:
             'Backups konnten nicht neu geladen werden: {{reason}}',
-          backup_created: 'Backup gestartet - es erscheint in wenigen Minuten in der Liste (Backups neuladen).',
+          backup_created:
+            'Backup gestartet - es erscheint in wenigen Minuten in der Liste (Backups neuladen).',
           backup_create_error:
             'Backup konnte nicht erstellt werden: {{reason}}',
           backup_deleted: 'Backup gelöscht.',
@@ -2955,11 +3384,14 @@ i18n
           backup_deleted_selected: '{{count}} Backup(s) gelöscht.',
           backup_confirm_yes: 'Ja, löschen',
           backup_confirm_cancel: 'Abbrechen',
-          backup_restore_confirm_title: 'Backup wiederherstellen und Datenbank überschreiben?',
-          backup_restore_confirm_body: 'Das Backup <strong>{{name}}</strong> vom <strong>{{date}}</strong> wird in seine Datenbank (<strong>{{target}}</strong>) zurückgespielt. Dabei werden ALLE aktuellen Daten dieser Datenbank überschrieben: Was nach dem Backup gemessen oder geändert wurde - Messungen, Alarme, Einstellungen -, geht verloren. Andere Datenbanken bleiben unberührt. Das kann nicht rückgängig gemacht werden. Wenn Sie den aktuellen Stand noch brauchen könnten, legen Sie vorher ein Backup davon an.',
+          backup_restore_confirm_title:
+            'Backup wiederherstellen und Datenbank überschreiben?',
+          backup_restore_confirm_body:
+            'Das Backup <strong>{{name}}</strong> vom <strong>{{date}}</strong> wird in seine Datenbank (<strong>{{target}}</strong>) zurückgespielt. Dabei werden ALLE aktuellen Daten dieser Datenbank überschrieben: Was nach dem Backup gemessen oder geändert wurde - Messungen, Alarme, Einstellungen -, geht verloren. Andere Datenbanken bleiben unberührt. Das kann nicht rückgängig gemacht werden. Wenn Sie den aktuellen Stand noch brauchen könnten, legen Sie vorher ein Backup davon an.',
           backup_restore_confirm_yes: 'Ja, überschreiben und wiederherstellen',
           backup_delete_one_confirm_title: 'Backup löschen?',
-          backup_delete_one_confirm_body: 'Das Backup <strong>{{name}}</strong> (<strong>{{date}}</strong>, <strong>{{size}}</strong>) wird vom Server gelöscht. Es kann danach weder heruntergeladen noch wiederhergestellt werden. Die Datenbank selbst bleibt unverändert. Das kann nicht rückgängig gemacht werden.',
+          backup_delete_one_confirm_body:
+            'Das Backup <strong>{{name}}</strong> (<strong>{{date}}</strong>, <strong>{{size}}</strong>) wird vom Server gelöscht. Es kann danach weder heruntergeladen noch wiederhergestellt werden. Die Datenbank selbst bleibt unverändert. Das kann nicht rückgängig gemacht werden.',
           backup_filter_project: 'Projekt:',
           backup_project_all: 'Alle Datenbanken',
           backup_filter_date: 'Tag:',
@@ -3012,9 +3444,12 @@ i18n
           profile_request_access_project: 'Objekt- / Projektname',
           profile_request_access_message: 'Nachricht',
           profile_request_access_send: 'Anfrage senden',
-          profile_request_access_sent: 'Ihre Anfrage wurde an das ProGeo®-Team gesendet.',
-          profile_request_access_error: 'Die Anfrage konnte nicht gesendet werden',
-          profile_request_access_too_many: 'Zu viele Anfragen - bitte versuchen Sie es später erneut.',
+          profile_request_access_sent:
+            'Ihre Anfrage wurde an das ProGeo®-Team gesendet.',
+          profile_request_access_error:
+            'Die Anfrage konnte nicht gesendet werden',
+          profile_request_access_too_many:
+            'Zu viele Anfragen - bitte versuchen Sie es später erneut.',
           profile_qr_code_title: 'Anmelde-QR-Code',
           profile_qr_code_generate: 'QR-Code generieren',
           profile_qr_code_show: 'QR-Code zeigen',
@@ -3028,8 +3463,10 @@ i18n
           profile_qr_code_revoke_text:
             'Nutzen Sie dies, wenn der Code in falsche Hände geraten sein könnte. Der bisherige Code ist sofort ungültig: Jedes Gerät, das damit angemeldet wurde, wird abgemeldet und muss den neuen Code scannen. Es wird ein neuer QR-Code erzeugt.',
           profile_qr_code_revoke_confirm: 'Widerrufen und neu erzeugen',
-          profile_qr_code_revoked: 'Der alte QR-Code ist nicht mehr gültig. Dies ist der neue.',
-          profile_qr_code_revoke_error: 'Der QR-Code konnte nicht widerrufen werden',
+          profile_qr_code_revoked:
+            'Der alte QR-Code ist nicht mehr gültig. Dies ist der neue.',
+          profile_qr_code_revoke_error:
+            'Der QR-Code konnte nicht widerrufen werden',
           profile_delete_account: 'Konto löschen',
           profile_delete_account_hint:
             'Ihr Konto und Ihre persönlichen Daten werden gelöscht, die Messdaten der Objekte bleiben erhalten.',
@@ -3038,8 +3475,10 @@ i18n
             'Ihr Konto wird endgültig gelöscht und Sie werden auf allen Geräten abgemeldet. Das kann nicht rückgängig gemacht werden.',
           profile_delete_account_confirm: 'Konto endgültig löschen',
           profile_delete_account_done: 'Ihr Konto wurde gelöscht.',
-          profile_delete_account_error: 'Das Konto konnte nicht gelöscht werden',
-          profile_delete_account_last_superuser: 'Der letzte Superuser kann nicht gelöscht werden.',
+          profile_delete_account_error:
+            'Das Konto konnte nicht gelöscht werden',
+          profile_delete_account_last_superuser:
+            'Der letzte Superuser kann nicht gelöscht werden.',
           profile_settings_saved: 'Einstellungen gespeichert',
           profile_settings_saving_info:
             'Profileinstellungen werden gespeichert...',
@@ -3089,19 +3528,29 @@ i18n
           measurement_compare_pair_sum_label: 'Sensor-Summe',
           measurement_compare_pair_mean_label: 'Sensor-Durchschnitt',
           measurement_compare_pair_sum_diff_label: 'Sensor-Summe-Differenz',
-          measurement_compare_pair_mean_diff_label: 'Sensor-Durchschnitt-Differenz',
-          measurement_compare_sensor_hint: 'Sensor im oberen Diagramm anklicken, um ihn über die Zeit zu verfolgen',
-          measurement_compare_sensor_click_add: 'Klicken: Sensor {{sensor}} über die Zeit verfolgen',
-          measurement_compare_sensor_click_remove: 'Klicken: Sensor {{sensor}} nicht mehr verfolgen',
-          measurement_compare_add_most_active: 'Die {{n}} aktivsten Sensoren hinzufügen',
-          measurement_compare_add_least_active: 'Die {{n}} am wenigsten aktiven Sensoren hinzufügen',
-          measurement_compare_activity_hint: 'Aktivität: mittleres |EP − WP| über die gezeigten Messungen - ein zweiter Klick entfernt sie',
-          measurement_compare_selected_sensors: 'Angezeigte Sensoren: {{count}}',
+          measurement_compare_pair_mean_diff_label:
+            'Sensor-Durchschnitt-Differenz',
+          measurement_compare_sensor_hint:
+            'Sensor im oberen Diagramm anklicken, um ihn über die Zeit zu verfolgen',
+          measurement_compare_sensor_click_add:
+            'Klicken: Sensor {{sensor}} über die Zeit verfolgen',
+          measurement_compare_sensor_click_remove:
+            'Klicken: Sensor {{sensor}} nicht mehr verfolgen',
+          measurement_compare_add_most_active:
+            'Die {{n}} aktivsten Sensoren hinzufügen',
+          measurement_compare_add_least_active:
+            'Die {{n}} am wenigsten aktiven Sensoren hinzufügen',
+          measurement_compare_activity_hint:
+            'Aktivität: mittleres |EP − WP| über die gezeigten Messungen - ein zweiter Klick entfernt sie',
+          measurement_compare_selected_sensors:
+            'Angezeigte Sensoren: {{count}}',
           measurement_compare_clear_sensors: 'Sensoren leeren',
           measurement_compare_add_random: 'Zufälligen Sensor hinzufügen',
-          measurement_compare_add_random_hint: 'Fügt einen der noch nicht angezeigten Sensoren hinzu',
+          measurement_compare_add_random_hint:
+            'Fügt einen der noch nicht angezeigten Sensoren hinzu',
           measurement_compare_sensor_history: 'Letzte 3 Monate',
-          measurement_compare_sensor_history_hint: 'Zeigt die gewählten Sensoren über die letzten 3 Monate (um Trends zu erkennen) - der schattierte Teil ist der gewählte Zeitraum',
+          measurement_compare_sensor_history_hint:
+            'Zeigt die gewählten Sensoren über die letzten 3 Monate (um Trends zu erkennen) - der schattierte Teil ist der gewählte Zeitraum',
           measurement_compare_samples_label: 'Stichproben',
           measurement_compare_measurement_datetime_label: 'Messungszeitpunkt',
           measurement_compare_measurements_included: 'Enthaltene Messungen',
@@ -3123,70 +3572,104 @@ i18n
           heatmap_zoom_in: 'Vergrößern',
           heatmap_zoom_out: 'Verkleinern',
           heatmap_zoom_reset: 'Ansicht zurücksetzen',
-          heatmap_canvas_hint: 'Strg + Mausrad: zoomen · Ziehen: verschieben · Doppelklick: zurücksetzen',
+          heatmap_canvas_hint:
+            'Strg + Mausrad: zoomen · Ziehen: verschieben · Doppelklick: zurücksetzen',
           heatmap_heat: 'Wärme',
           heatmap_show_dots: 'Punkte',
           heatmap_show_dots_hint: 'Sensorpunkte anzeigen',
           heatmap_show_labels: 'Beschriftung',
           heatmap_show_labels_hint: 'Sensornummern neben den Punkten anzeigen',
           heatmap_show_names: 'Namen',
-          heatmap_show_names_hint: 'Sensornamen (z. B. A2-15) statt der Nummern anzeigen',
+          heatmap_show_names_hint:
+            'Sensornamen (z. B. A2-15) statt der Nummern anzeigen',
           heatmap_scale_unit: 'mV',
           heatmap_show_lines: 'Linien',
           heatmap_show_lines_hint: 'Bandlinien der Sensoren anzeigen',
           heatmap_normalize: 'Absolutskala',
-          heatmap_normalize_hint: 'Wärme auf den höchsten Wert des geladenen Zeitraums skalieren, in mV, statt auf den Alarmschwellwert - Werte über dem Schwellwert bleiben unterscheidbar (orange Marke auf der Skala: Alarmschwellwert)',
-          heatmap_normalize_forced: 'WP, EP und WP + EP haben keinen Alarmschwellwert - immer auf den höchsten Wert des Zeitraums skaliert',
+          heatmap_normalize_hint:
+            'Wärme auf den höchsten Wert des geladenen Zeitraums skalieren, in mV, statt auf den Alarmschwellwert - Werte über dem Schwellwert bleiben unterscheidbar (orange Marke auf der Skala: Alarmschwellwert)',
+          heatmap_normalize_forced:
+            'WP, EP und WP + EP haben keinen Alarmschwellwert - immer auf den höchsten Wert des Zeitraums skaliert',
           heatmap_profile: 'Profil',
-          heatmap_profile_hint: 'Welcher Wert eines Sensors als Wärme gezeigt wird',
+          heatmap_profile_hint:
+            'Welcher Wert eines Sensors als Wärme gezeigt wird',
           heatmap_profile_diff: 'WP − EP',
           heatmap_profile_wp: 'WP',
           heatmap_profile_ep: 'EP',
           heatmap_profile_sum: 'WP + EP',
           heatmap_change: 'Änderung',
           heatmap_area_select: 'Bereich',
-          heatmap_area_select_hint: 'Einen Bereich auf dem Plan aufziehen - seine Sensoren erscheinen im zweiten Diagramm (auch: Shift + Ziehen)',
+          heatmap_area_select_hint:
+            'Einen Bereich auf dem Plan aufziehen - seine Sensoren erscheinen im zweiten Diagramm (auch: Shift + Ziehen)',
           plot_help_actions: 'Bedienung',
           plot_help_workflows: 'Typische Abläufe',
           plot_help_open: 'Hilfe: {{title}}',
           plot_reset_scale: 'Skala zurücksetzen',
-          plot_reset_scale_hint: 'Nach Zoomen oder Verschieben zurück zur Gesamtansicht (Rahmen ziehen: zoomen, Achse ziehen: verschieben, Strg + Mausrad: zoomen)',
+          plot_reset_scale_hint:
+            'Nach Zoomen oder Verschieben zurück zur Gesamtansicht (Rahmen ziehen: zoomen, Achse ziehen: verschieben, Strg + Mausrad: zoomen)',
           plot_help_heatmap_title: 'Wärmekarte',
-          plot_help_heatmap_what: 'Alle Sensoren auf dem Lageplan zum Zeitpunkt des Zeitreglers - je wärmer, desto höher (standardmäßig |WP − EP|). Rote Punkte oder Linien: über ihrem Schwellwert. Lila Ring: die Sensoren im zweiten Diagramm; weißer Ring: der zuletzt gewählte. Beim Vergleich: die Änderung jedes Sensors seit damals.',
-          plot_help_heatmap_actions: 'Leertaste / ▶::Bilder abspielen\n← / →::ein Bild zurück / vor (↑ / ↓: zehn)\nKlick auf einen Sensor::im zweiten Messdiagramm verfolgen\nShift + Ziehen (oder "Bereich")::alle Sensoren im Bereich auswählen\nStrg + Mausrad::zoomen - Ziehen verschiebt den Plan\nSchalter oben links::Punkte und Linien ein- / ausblenden',
-          plot_help_heatmap_workflows: 'Auffällige Stelle finden::▶ Zeitraum abspielen → anhalten, wo es rot wird → Sensor anklicken → Verlauf unten prüfen\nBereich prüfen::mit Shift darüberziehen → seine Sensoren erscheinen im zweiten Diagramm → Linien vergleichen',
+          plot_help_heatmap_what:
+            'Alle Sensoren auf dem Lageplan zum Zeitpunkt des Zeitreglers - je wärmer, desto höher (standardmäßig |WP − EP|). Rote Punkte oder Linien: über ihrem Schwellwert. Lila Ring: die Sensoren im zweiten Diagramm; weißer Ring: der zuletzt gewählte. Beim Vergleich: die Änderung jedes Sensors seit damals.',
+          plot_help_heatmap_actions:
+            'Leertaste / ▶::Bilder abspielen\n← / →::ein Bild zurück / vor (↑ / ↓: zehn)\nKlick auf einen Sensor::im zweiten Messdiagramm verfolgen\nShift + Ziehen (oder "Bereich")::alle Sensoren im Bereich auswählen\nStrg + Mausrad::zoomen - Ziehen verschiebt den Plan\nSchalter oben links::Punkte und Linien ein- / ausblenden',
+          plot_help_heatmap_workflows:
+            'Auffällige Stelle finden::▶ Zeitraum abspielen → anhalten, wo es rot wird → Sensor anklicken → Verlauf unten prüfen\nBereich prüfen::mit Shift darüberziehen → seine Sensoren erscheinen im zweiten Diagramm → Linien vergleichen',
           plot_help_by_sensor_title: 'Messung je Sensor',
-          plot_help_by_sensor_what: 'Eine Spalte je Sensor. Links: sein WP − EP über den ganzen Zeitraum - Strich Min–Max, Kasten die mittleren 50 % der Werte (25.–75. Perzentil), Linie der Mittelwert. Rechts: die Messung am Zeitregler als Balken EP (rot) | WP (blau), WP + EP bei Bedarf; gestrichelte Umrisse: das Störungsprofil. Grün: innerhalb des Alarm-Schwellwerts (ein Sensor mit eigenem Schwellwert hat seine eigene Höhe). Grau: ein deaktivierter Sensor.',
-          plot_help_by_sensor_actions: 'Klick auf eine Spalte::den Sensor im zweiten Diagramm über die Zeit verfolgen\nKlick auf einen Legendeneintrag::diesen Teil ein- / ausblenden (WP + EP bei Bedarf)\nGriff an der Achse ziehen::Sensoren ausblenden, deren |WP − EP| darunter bleibt - verfolgte bleiben; "Alle zeigen" holt sie zurück\nDarüberfahren::die Werte dieses Sensors\nStrg + Mausrad::die Spalten zoomen - viele Sensoren scrollen seitlich',
-          plot_help_by_sensor_workflows: 'Aktive Sensoren finden::Griff hochziehen, bis nur die bewegten übrig sind → anklicken → im Verlauf verfolgen\nAusreißer erkennen::Balken außerhalb des Kastens suchen → Sensor anklicken → prüfen, ob er im Verlauf steigt\nSchwellwert prüfen::ein Balken außerhalb der grünen Fläche löst Alarm aus → Zeitregler abspielen → sehen, wann er sie verlässt',
+          plot_help_by_sensor_what:
+            'Eine Spalte je Sensor. Links: sein WP − EP über den ganzen Zeitraum - Strich Min–Max, Kasten die mittleren 50 % der Werte (25.–75. Perzentil), Linie der Mittelwert. Rechts: die Messung am Zeitregler als Balken EP (rot) | WP (blau), WP + EP bei Bedarf; gestrichelte Umrisse: das Störungsprofil. Grün: innerhalb des Alarm-Schwellwerts (ein Sensor mit eigenem Schwellwert hat seine eigene Höhe). Grau: ein deaktivierter Sensor.',
+          plot_help_by_sensor_actions:
+            'Klick auf eine Spalte::den Sensor im zweiten Diagramm über die Zeit verfolgen\nKlick auf einen Legendeneintrag::diesen Teil ein- / ausblenden (WP + EP bei Bedarf)\nGriff an der Achse ziehen::Sensoren ausblenden, deren |WP − EP| darunter bleibt - verfolgte bleiben; "Alle zeigen" holt sie zurück\nDarüberfahren::die Werte dieses Sensors\nStrg + Mausrad::die Spalten zoomen - viele Sensoren scrollen seitlich',
+          plot_help_by_sensor_workflows:
+            'Aktive Sensoren finden::Griff hochziehen, bis nur die bewegten übrig sind → anklicken → im Verlauf verfolgen\nAusreißer erkennen::Balken außerhalb des Kastens suchen → Sensor anklicken → prüfen, ob er im Verlauf steigt\nSchwellwert prüfen::ein Balken außerhalb der grünen Fläche löst Alarm aus → Zeitregler abspielen → sehen, wann er sie verlässt',
           plot_help_sensors_over_time_title: 'Ausgewählte Sensoren im Verlauf',
-          plot_help_sensors_over_time_what: 'Das |WP − EP| der ausgewählten Sensoren über den Zeitraum. Grüner Bereich: unter dem Alarmschwellwert - kein Alarm (gestrichelte Linie: der eigene, höhere Schwellwert eines Sensors). Orange gepunktete Linie: der Zeitpunkt des Zeitreglers.',
-          plot_help_sensors_over_time_actions: 'Klick im ersten Diagramm oder auf der Wärmekarte::Sensor hinzufügen\nShift + Ziehen auf der Wärmekarte::alle Sensoren eines Bereichs hinzufügen\nButtons (zufällig, aktivste / am wenigsten aktive)::Sensoren hinzufügen\n✕ am Sensor::ihn entfernen\nKlick ins Diagramm::Zeitregler dorthin setzen\n"Letzte 3 Monate" (Staff)::längeren Verlauf zeigen',
-          plot_help_sensors_over_time_workflows: 'Verdächtigen Sensor verfolgen::auf der Wärmekarte anklicken → seine Linie beobachten → Spitze anklicken → die Wärmekarte zeigt diesen Moment\nNachbarn vergleichen::Bereich auf der Wärmekarte aufziehen → eine abweichende Linie fällt auf',
+          plot_help_sensors_over_time_what:
+            'Das |WP − EP| der ausgewählten Sensoren über den Zeitraum. Grüner Bereich: unter dem Alarmschwellwert - kein Alarm (gestrichelte Linie: der eigene, höhere Schwellwert eines Sensors). Orange gepunktete Linie: der Zeitpunkt des Zeitreglers.',
+          plot_help_sensors_over_time_actions:
+            'Klick im ersten Diagramm oder auf der Wärmekarte::Sensor hinzufügen\nShift + Ziehen auf der Wärmekarte::alle Sensoren eines Bereichs hinzufügen\nButtons (zufällig, aktivste / am wenigsten aktive)::Sensoren hinzufügen\n✕ am Sensor::ihn entfernen\nKlick ins Diagramm::Zeitregler dorthin setzen\n"Letzte 3 Monate" (Staff)::längeren Verlauf zeigen',
+          plot_help_sensors_over_time_workflows:
+            'Verdächtigen Sensor verfolgen::auf der Wärmekarte anklicken → seine Linie beobachten → Spitze anklicken → die Wärmekarte zeigt diesen Moment\nNachbarn vergleichen::Bereich auf der Wärmekarte aufziehen → eine abweichende Linie fällt auf',
           plot_help_sensor_sum_title: 'Sensor-Summe / Sensor-Durchschnitt',
-          plot_help_sensor_sum_what: 'Je Messung das |WP − EP| aller Sensoren, aufsummiert (Summe) oder gemittelt (Durchschnitt) - der Gesamtzustand im Verlauf. Ein Balken je Messung; kein Balken: keine Messung.',
-          plot_help_sensor_sum_actions: 'Ausgegrauter Legendeneintrag::zwischen Summe ↔ Durchschnitt wechseln\n"Differenz" in der Legende::Sprünge zwischen Messungen zeigen\nKlick auf einen Balken::Zeitregler dorthin setzen\nZiehen / Strg + Mausrad::in der Zeit zoomen - auch das zweite Diagramm, als Band auf dem Zeitregler\n"Skala zurücksetzen"::zurück zum ganzen Zeitraum',
-          plot_help_sensor_sum_workflows: 'Wann hat es sich verändert?::Stufe in den Balken suchen → "Differenz" einschalten → Sprung anklicken → die Wärmekarte zeigt diesen Moment',
+          plot_help_sensor_sum_what:
+            'Je Messung das |WP − EP| aller Sensoren, aufsummiert (Summe) oder gemittelt (Durchschnitt) - der Gesamtzustand im Verlauf. Ein Balken je Messung; kein Balken: keine Messung.',
+          plot_help_sensor_sum_actions:
+            'Ausgegrauter Legendeneintrag::zwischen Summe ↔ Durchschnitt wechseln\n"Differenz" in der Legende::Sprünge zwischen Messungen zeigen\nKlick auf einen Balken::Zeitregler dorthin setzen\nZiehen / Strg + Mausrad::in der Zeit zoomen - auch das zweite Diagramm, als Band auf dem Zeitregler\n"Skala zurücksetzen"::zurück zum ganzen Zeitraum',
+          plot_help_sensor_sum_workflows:
+            'Wann hat es sich verändert?::Stufe in den Balken suchen → "Differenz" einschalten → Sprung anklicken → die Wärmekarte zeigt diesen Moment',
           plot_help_compare_title: 'Vergleich mit früher',
-          plot_help_compare_what: 'Die Messung am Zeitregler gegenüber derselben Zeit damals (gepunktet: EP / WP damals). Grün / gelb: die Änderung von WP / EP seitdem. Bänder: Mittelwert, Abweichung und Spannweite der WP-Änderung über den Zeitraum.',
-          plot_help_compare_actions: '"Vergleich" oben::wählen, wie weit zurück\nKlick auf einen Listeneintrag::Sensor im zweiten Messdiagramm zeigen\n"Vergleich beenden"::zurück zur normalen Ansicht',
-          plot_help_compare_workflows: 'Was hat sich seitdem verändert?::Vergleich wählen → grüne Linien außerhalb der Bänder suchen → obersten Listeneintrag anklicken → im Verlauf verfolgen',
+          plot_help_compare_what:
+            'Die Messung am Zeitregler gegenüber derselben Zeit damals (gepunktet: EP / WP damals). Grün / gelb: die Änderung von WP / EP seitdem. Bänder: Mittelwert, Abweichung und Spannweite der WP-Änderung über den Zeitraum.',
+          plot_help_compare_actions:
+            '"Vergleich" oben::wählen, wie weit zurück\nKlick auf einen Listeneintrag::Sensor im zweiten Messdiagramm zeigen\n"Vergleich beenden"::zurück zur normalen Ansicht',
+          plot_help_compare_workflows:
+            'Was hat sich seitdem verändert?::Vergleich wählen → grüne Linien außerhalb der Bänder suchen → obersten Listeneintrag anklicken → im Verlauf verfolgen',
           plot_help_status_plan_title: 'Lageplan',
-          plot_help_status_plan_what: 'Die Sensoren auf dem Lageplan zum Zeitpunkt des Zeitreglers - je nach Produkt als Wärme, Linien oder Punkte. Rote Marken auf dem Zeitregler: Alarmzeiträume.',
-          plot_help_status_plan_actions: 'Leertaste / ▶::Bilder abspielen\nKlick auf eine rote Alarmmarke::zu ihrem Beginn springen\nZeitraum oben, Schrittweite neben ▶::was der Zeitregler abdeckt\nKlick auf einen Sensor::auswählen - er steht in der Zeitreihe an erster Stelle\nPunkte / Beschriftung::Sensorpunkte / ihre Nummern zeigen\nStrg + Mausrad::zoomen - Ziehen verschiebt den Plan',
-          plot_help_status_plan_workflows: 'Alarm nachvollziehen::rote Marke anklicken → ▶ ab dort abspielen → beobachten, wohin es sich ausbreitet',
+          plot_help_status_plan_what:
+            'Die Sensoren auf dem Lageplan zum Zeitpunkt des Zeitreglers - je nach Produkt als Wärme, Linien oder Punkte. Rote Marken auf dem Zeitregler: Alarmzeiträume.',
+          plot_help_status_plan_actions:
+            'Leertaste / ▶::Bilder abspielen\nKlick auf eine rote Alarmmarke::zu ihrem Beginn springen\nZeitraum oben, Schrittweite neben ▶::was der Zeitregler abdeckt\nKlick auf einen Sensor::auswählen - er steht in der Zeitreihe an erster Stelle\nPunkte / Beschriftung::Sensorpunkte / ihre Nummern zeigen\nStrg + Mausrad::zoomen - Ziehen verschiebt den Plan',
+          plot_help_status_plan_workflows:
+            'Alarm nachvollziehen::rote Marke anklicken → ▶ ab dort abspielen → beobachten, wohin es sich ausbreitet',
           plot_help_status_zeitreihe_title: 'Zeitreihe',
-          plot_help_status_zeitreihe_what: 'Die Messwerte über den Zeitraum als Vielfaches ihres Schwellwerts (1x = am Schwellwert, darüber rot). Zuerst angezeigt: bis zu 5 Sensoren - die ausgelösten, dann die aktivsten. Die drei Tabellen darunter listen die ausgelösten, aktiven und ruhigen Sensoren.',
-          plot_help_status_zeitreihe_actions: 'Über Linie, Legendeneintrag oder Tabellenzeile fahren::Sensor hervorheben\nKlick auf eine Tabellenzeile::im Plot ein- / ausblenden\nKlick auf einen Legendeneintrag::aus dem Plot nehmen\n"Nur ausgelöste Sensoren"::genau die über dem Schwellwert zeigen\n"Zurücksetzen"::zurück zur ersten Auswahl\n"Glättung"::nahe Messwerte mitteln (an) oder jeden Messwert zeigen (aus)\nKlick auf einen Sensor im Lageplan::er wird der erste Eintrag ("ausgewählt")',
-          plot_help_status_zeitreihe_workflows: 'Welcher Sensor ist kritisch?::Linien im roten Bereich suchen → darüberfahren für Name und Wert → auf dem Lageplan finden',
+          plot_help_status_zeitreihe_what:
+            'Die Messwerte über den Zeitraum als Vielfaches ihres Schwellwerts (1x = am Schwellwert, darüber rot). Zuerst angezeigt: bis zu 5 Sensoren - die ausgelösten, dann die aktivsten. Die drei Tabellen darunter listen die ausgelösten, aktiven und ruhigen Sensoren.',
+          plot_help_status_zeitreihe_actions:
+            'Über Linie, Legendeneintrag oder Tabellenzeile fahren::Sensor hervorheben\nKlick auf eine Tabellenzeile::im Plot ein- / ausblenden\nKlick auf einen Legendeneintrag::aus dem Plot nehmen\n"Nur ausgelöste Sensoren"::genau die über dem Schwellwert zeigen\n"Zurücksetzen"::zurück zur ersten Auswahl\n"Glättung"::nahe Messwerte mitteln (an) oder jeden Messwert zeigen (aus)\nKlick auf einen Sensor im Lageplan::er wird der erste Eintrag ("ausgewählt")',
+          plot_help_status_zeitreihe_workflows:
+            'Welcher Sensor ist kritisch?::Linien im roten Bereich suchen → darüberfahren für Name und Wert → auf dem Lageplan finden',
           plot_help_climate_heatmap_title: 'Klima-Wärmekarte',
-          plot_help_climate_heatmap_what: 'Feuchte oder Temperatur zum Zeitpunkt des Zeitreglers, interpoliert zwischen den auf dem Lageplan platzierten Sensoren.',
-          plot_help_climate_heatmap_actions: 'Feuchte / Temperatur::Messgröße wechseln\nLeertaste / ▶ oder der Zeitregler::durch die Bilder gehen\nÜber einen Sensor fahren::seine Linie in den Diagrammen hervorheben',
-          plot_help_climate_heatmap_workflows: 'Feuchte Stellen finden::Feuchte → ▶ abspielen → Bereiche merken, die hoch bleiben → über den Sensor fahren → seine Linie unten prüfen',
+          plot_help_climate_heatmap_what:
+            'Feuchte oder Temperatur zum Zeitpunkt des Zeitreglers, interpoliert zwischen den auf dem Lageplan platzierten Sensoren.',
+          plot_help_climate_heatmap_actions:
+            'Feuchte / Temperatur::Messgröße wechseln\nLeertaste / ▶ oder der Zeitregler::durch die Bilder gehen\nÜber einen Sensor fahren::seine Linie in den Diagrammen hervorheben',
+          plot_help_climate_heatmap_workflows:
+            'Feuchte Stellen finden::Feuchte → ▶ abspielen → Bereiche merken, die hoch bleiben → über den Sensor fahren → seine Linie unten prüfen',
           plot_help_climate_chart_title: 'Klimadiagramm',
-          plot_help_climate_chart_what: 'Eine Linie je Gerät über den Zeitraum; grau gestrichelt: der Mittelwert aller Geräte. Orange gepunktete Linie: der Zeitpunkt des Zeitreglers. Lange Zeiträume sind gemittelt.',
-          plot_help_climate_chart_actions: 'Über eine Linie oder einen Namen fahren::Gerät hervorheben, seinen Mittelwert zeigen\nKlick auf einen Punkt::alle Werte mit diesem Moment vergleichen (in %)\nErneuter Klick / "Entfernen"::Vergleich beenden\nRahmen ziehen::zoomen - Achse ziehen: verschieben\n"Skala zurücksetzen"::zurück zur Gesamtansicht',
-          plot_help_climate_chart_workflows: 'Wie stark ist es abgetrocknet?::Punkt am Anfang anklicken → über einen späteren fahren → Änderung in % ablesen',
+          plot_help_climate_chart_what:
+            'Eine Linie je Gerät über den Zeitraum; grau gestrichelt: der Mittelwert aller Geräte. Orange gepunktete Linie: der Zeitpunkt des Zeitreglers. Lange Zeiträume sind gemittelt.',
+          plot_help_climate_chart_actions:
+            'Über eine Linie oder einen Namen fahren::Gerät hervorheben, seinen Mittelwert zeigen\nKlick auf einen Punkt::alle Werte mit diesem Moment vergleichen (in %)\nErneuter Klick / "Entfernen"::Vergleich beenden\nRahmen ziehen::zoomen - Achse ziehen: verschieben\n"Skala zurücksetzen"::zurück zur Gesamtansicht',
+          plot_help_climate_chart_workflows:
+            'Wie stark ist es abgetrocknet?::Punkt am Anfang anklicken → über einen späteren fahren → Änderung in % ablesen',
           heatmap_no_data: 'Keine Sensor-Messwerte vorhanden.',
           heatmap_step_label: 'Schrittweite',
           heatmap_animation_start: 'Animation starten',
@@ -3233,11 +3716,13 @@ i18n
           ui_fullscreen: 'Vollbild',
           ui_fullscreen_exit: 'Vollbild beenden',
           demo_badge: 'Demo',
-          demo_read_only: 'Dies ist eine Demo - Änderungen werden nicht gespeichert.',
+          demo_read_only:
+            'Dies ist eine Demo - Änderungen werden nicht gespeichert.',
           permission_denied: 'Dafür fehlt Ihnen die Berechtigung.',
           permission_denied_reason: 'Keine Berechtigung: {{reason}}',
           location_no_access: 'Sie haben keinen Zugriff auf dieses Objekt.',
-          location_no_access_hint: 'Es gehört vielleicht zu einem anderen Konto, oder Ihr Zugriff wurde entfernt.',
+          location_no_access_hint:
+            'Es gehört vielleicht zu einem anderen Konto, oder Ihr Zugriff wurde entfernt.',
           location_no_access_home: 'Zur Startseite',
           measurements_export: 'Messwerte exportieren',
           device_rename_title: 'Geräte umbenennen',
@@ -3266,7 +3751,8 @@ i18n
             'Die {{count}} offenen Alarm(e) der Verdachtsstelle an {{sensor}} quittieren? Sie werden als von Ihnen quittiert vermerkt; sind alle Alarme des Objekts quittiert, enden die Erinnerungen. Das kann nicht rückgängig gemacht werden.',
           acknowledge_alarms_point_message:
             'Die <strong>{{count}} offenen Alarm(e)</strong> des Verdachtspunkts <strong>{{letter}}</strong> (<strong>{{sensors}} Sensoren</strong>) quittieren? Sie werden als von Ihnen quittiert vermerkt; sind alle Alarme des Objekts quittiert, enden die Erinnerungen. Das kann nicht rückgängig gemacht werden.',
-          demo_subtitle: 'Reine Demo-Daten (nur lesend) - keine echten Kundendaten.',
+          demo_subtitle:
+            'Reine Demo-Daten (nur lesend) - keine echten Kundendaten.',
           demo_login_checking: 'Demo wird geöffnet…',
           demo_login_invalid: 'Dieser Demo-Link ist ungültig oder abgelaufen.',
           demo_load_error: 'Die Demo konnte nicht geladen werden.',
@@ -3301,28 +3787,36 @@ i18n
           status_view_zeitreihe: 'Zeitreihe',
           status_zeitreihe_title: 'Messwerte im Zeitverlauf',
           status_zeitreihe_empty: 'Keine Messwerte in diesem Zeitraum.',
-          status_zeitreihe_nothing_shown: 'Kein Sensor ausgewählt - in den Tabellen unten einen wählen.',
+          status_zeitreihe_nothing_shown:
+            'Kein Sensor ausgewählt - in den Tabellen unten einen wählen.',
           status_zeitreihe_shown: '{{shown}} von {{total}} Sensoren angezeigt',
-          status_zeitreihe_only_triggered: 'Nur ausgelöste Sensoren ({{count}})',
+          status_zeitreihe_only_triggered:
+            'Nur ausgelöste Sensoren ({{count}})',
           status_zeitreihe_reset: 'Zurücksetzen',
           status_zeitreihe_triggered_title: 'Ausgelöste Sensoren',
-          status_zeitreihe_triggered_hint: 'Mindestens ein Wert über dem Schwellwert',
+          status_zeitreihe_triggered_hint:
+            'Mindestens ein Wert über dem Schwellwert',
           status_zeitreihe_active_title: 'Aktive Sensoren',
-          status_zeitreihe_active_hint: 'Große Spanne zwischen Min und Max (mindestens {{percent}} % des Schwellwerts)',
+          status_zeitreihe_active_hint:
+            'Große Spanne zwischen Min und Max (mindestens {{percent}} % des Schwellwerts)',
           status_zeitreihe_silent_title: 'Ruhige Sensoren',
-          status_zeitreihe_silent_hint: 'Kaum Veränderung (Spanne unter {{percent}} % des Schwellwerts)',
+          status_zeitreihe_silent_hint:
+            'Kaum Veränderung (Spanne unter {{percent}} % des Schwellwerts)',
           status_zeitreihe_table_empty: 'Keine in diesem Zeitraum.',
-          status_zeitreihe_table_click: 'Klick auf eine Zeile blendet den Sensor im Plot ein oder aus. Trend: erster bis letzter Wert des Zeitraums.',
+          status_zeitreihe_table_click:
+            'Klick auf eine Zeile blendet den Sensor im Plot ein oder aus. Trend: erster bis letzter Wert des Zeitraums.',
           status_zeitreihe_col_sensor: 'Sensor',
           status_zeitreihe_col_max: 'Max',
           status_zeitreihe_col_range: 'Spanne',
           status_zeitreihe_col_trend: 'Trend',
           status_zeitreihe_threshold_of: 'Schwellwert {{value}}',
           status_zeitreihe_mean_of: 'Ø aus {{count}}',
-          status_zeitreihe_threshold_legend: 'Alarmschwelle (1,00x) – Werte darüber lösen Alarm aus',
+          status_zeitreihe_threshold_legend:
+            'Alarmschwelle (1,00x) – Werte darüber lösen Alarm aus',
           status_zeitreihe_selected: 'ausgewählt',
           status_zeitreihe_smooth: 'Glättung',
-          status_zeitreihe_smooth_hint: 'An: nah beieinander liegende Messwerte werden zu ihrem Mittelwert (Ø) zusammengefasst. Aus: jeder Messwert wird gezeigt - abrupte Änderungen wie Abschalten oder Kalibrierung bleiben sichtbar.',
+          status_zeitreihe_smooth_hint:
+            'An: nah beieinander liegende Messwerte werden zu ihrem Mittelwert (Ø) zusammengefasst. Aus: jeder Messwert wird gezeigt - abrupte Änderungen wie Abschalten oder Kalibrierung bleiben sichtbar.',
           status_range_latest: 'Letzte Messung',
           status_range_24h: 'Letzte 24 h',
           status_range_7d: 'Letzte 7 Tage',
@@ -3363,23 +3857,29 @@ i18n
           climate_reference_none: 'Kein Referenzwert in der Nähe',
           climate_mean_all: 'Alle Sensoren',
           climate_rain_legend: 'Regen',
-          climate_rain_legend_hint: 'Regen am Objekt (Regenabgleich) - für Details über ein blaues Band fahren',
+          climate_rain_legend_hint:
+            'Regen am Objekt (Regenabgleich) - für Details über ein blaues Band fahren',
           climate_rain_count_one: 'Regen ({{count}} Ereignis)',
           climate_rain_count_other: 'Regen ({{count}} Ereignisse)',
           climate_rain_start: 'Beginn',
           climate_rain_end: 'Ende',
           climate_rain_duration: 'Dauer',
           climate_rain_amount: 'Menge',
-          climate_heatmap_no_points: 'Auf dem Lageplan sind noch keine Sensoren platziert.',
-          climate_heatmap_open_wizard: 'Sensoren im Lageplan-Assistenten platzieren',
-          climate_heatmap_frames: 'Ein Bild je {{hours}} h - Sensoren ohne Messwert seit 6 h bleiben leer.',
+          climate_heatmap_no_points:
+            'Auf dem Lageplan sind noch keine Sensoren platziert.',
+          climate_heatmap_open_wizard:
+            'Sensoren im Lageplan-Assistenten platzieren',
+          climate_heatmap_frames:
+            'Ein Bild je {{hours}} h - Sensoren ohne Messwert seit 6 h bleiben leer.',
           admin_title: 'Admin-Panel',
-          admin_no_sections: 'Für keinen Bereich des Admin-Panels freigeschaltet.',
+          admin_no_sections:
+            'Für keinen Bereich des Admin-Panels freigeschaltet.',
           admin_refresh: 'Aktualisieren',
           admin_days_one: '{{count}} Tag',
           admin_days_other: '{{count}} Tage',
           admin_storage_title: 'Speicher des Hosts',
-          admin_storage_queued: 'Speicher-Abfrage gestartet - gleich noch einmal aktualisieren.',
+          admin_storage_queued:
+            'Speicher-Abfrage gestartet - gleich noch einmal aktualisieren.',
           admin_storage_generated: 'Stand {{time}}',
           admin_storage_root: 'Systemplatte',
           admin_storage_media: 'Medien',
@@ -3389,9 +3889,12 @@ i18n
           admin_lageplan_title: 'Lagepläne exportieren',
           admin_lageplan_period: 'Erstellt in den letzten',
           admin_lageplan_download: '.tar erstellen & herunterladen',
-          admin_lageplan_hint: 'Packt die im gewählten Zeitraum erstellten Lagepläne in eine .tar-Datei. Gibt es dort keinen, wird der Zeitraum erweitert, bis mindestens einer gefunden ist.',
-          admin_lageplan_done: '{{count}} Lageplan/-pläne der letzten {{days}} Tage heruntergeladen.',
-          admin_lageplan_widened: '(Keiner im gewählten Zeitraum - auf {{days}} Tage erweitert.)',
+          admin_lageplan_hint:
+            'Packt die im gewählten Zeitraum erstellten Lagepläne in eine .tar-Datei. Gibt es dort keinen, wird der Zeitraum erweitert, bis mindestens einer gefunden ist.',
+          admin_lageplan_done:
+            '{{count}} Lageplan/-pläne der letzten {{days}} Tage heruntergeladen.',
+          admin_lageplan_widened:
+            '(Keiner im gewählten Zeitraum - auf {{days}} Tage erweitert.)',
           admin_lageplan_none: 'Keine Lageplan-Dateien gefunden.',
           admin_logs_title: 'Log-Dateien',
           admin_logs_filter_files: 'Dateien filtern…',
@@ -3412,7 +3915,8 @@ i18n
           admin_logs_status_connecting: 'Verbinde…',
           admin_logs_status_reconnecting: 'Verbinde neu… (Abfrage)',
           admin_logs_status_denied: 'Kein Live-Zugriff (Abfrage)',
-          location_picker_placeholder: 'Nach Name, Adresse, PLZ, Ort, Projektnummer suchen…',
+          location_picker_placeholder:
+            'Nach Name, Adresse, PLZ, Ort, Projektnummer suchen…',
           location_picker_loading: 'Objekte werden geladen…',
           location_picker_empty: 'Keine Objekte verfügbar',
           location_picker_no_match: 'Kein passendes Objekt',
@@ -3420,16 +3924,20 @@ i18n
           status_legend_title: 'Wirkpotenzial',
           status_verdachtsstellen_title: 'Verdachtsstellen',
           suspicion_computed_title: 'Berechnete Verdachtsstellen',
-          suspicion_computed_hint: 'Berechnet aus allen Sensoren über ihrem Schwellwert im gewählten Zeitraum.',
-          suspicion_computed_empty: 'Keine Verdachtsstelle im gewählten Zeitraum.',
+          suspicion_computed_hint:
+            'Berechnet aus allen Sensoren über ihrem Schwellwert im gewählten Zeitraum.',
+          suspicion_computed_empty:
+            'Keine Verdachtsstelle im gewählten Zeitraum.',
           suspicion_computed_point_one: 'Bereich um {{count}} Sensor',
           suspicion_computed_point_other: 'Bereich um {{count}} Sensoren',
           suspicion_mode_computed: 'Berechnet',
-          suspicion_mode_computed_hint: 'Verdachtsstellen, wie Kunden sie sehen',
+          suspicion_mode_computed_hint:
+            'Verdachtsstellen, wie Kunden sie sehen',
           suspicion_mode_sensors: 'Je Sensor',
           suspicion_member_sensors: 'Sensoren in diesem Bereich',
           suspicion_show_first_seen: 'Erstes Auftreten anzeigen',
-          suspicion_show_first_seen_hint: 'Stellt den Zeitregler des Plans auf das erste Auftreten ({{date}})',
+          suspicion_show_first_seen_hint:
+            'Stellt den Zeitregler des Plans auf das erste Auftreten ({{date}})',
           suspicion_last_seen: 'zuletzt {{date}}',
           suspicion_first_seen: 'zuerst {{date}}',
           suspicion_strength: 'Stärke {{value}} %',
@@ -3443,8 +3951,10 @@ i18n
           status_col_lvl: 'LVL',
           status_sensor_label: 'Sensor #{{sensor}}',
           status_line_label: 'Linie {{line}}',
-          status_alarm_span: 'Alarm {{sensor}}: {{from}} – {{to}} (Klick: dorthin springen)',
-          status_alarm_span_active: 'Alarm {{sensor}}: seit {{from}}, aktiv (Klick: dorthin springen)',
+          status_alarm_span:
+            'Alarm {{sensor}}: {{from}} – {{to}} (Klick: dorthin springen)',
+          status_alarm_span_active:
+            'Alarm {{sensor}}: seit {{from}}, aktiv (Klick: dorthin springen)',
           status_alarm_history: 'Alarm-Verlauf',
           status_alarm_history_empty: 'Keine Messwerte im Zeitraum.',
           status_col_sensor: 'Sensor',
@@ -3468,7 +3978,8 @@ i18n
           status_sensor_table_max: 'Maximaler Wert',
           status_sensor_table_threshold: 'Schwellwert',
           status_sensor_table_disabled: 'deaktiviert',
-          status_sensor_table_disabled_hint: 'Deaktiviert - löst keinen Alarm aus',
+          status_sensor_table_disabled_hint:
+            'Deaktiviert - löst keinen Alarm aus',
           status_sensor_table_empty: 'Noch keine Sensordaten verfügbar.',
           status_request_measurement: 'Messung anfordern',
           status_request_measurement_device: 'Gerät',
@@ -3513,24 +4024,28 @@ i18n
           objekt_geocode_error:
             'GPS-Position konnte nicht ermittelt werden: {{reason}}',
           objekt_geocode_save_first: 'Bitte zuerst die Adresse speichern.',
-          objekt_geocode_updated: 'Die Kartenposition wurde an die neue Adresse angepasst.',
+          objekt_geocode_updated:
+            'Die Kartenposition wurde an die neue Adresse angepasst.',
           objekt_geocode_not_found:
             'Für die neue Adresse wurde keine Position gefunden - die Karte zeigt weiter die bisherige. Bitte die Adresse prüfen.',
           objekt_fact_devices: 'Messeinheiten',
           objekt_fact_last_measurement: 'Letzte Messung',
           objekt_position_title: 'GPS-Position',
           objekt_regeocode: 'Aus Adresse neu laden',
-          objekt_regeocode_hint: 'Ermittelt die Position neu aus der gespeicherten Adresse – ersetzt die aktuelle.',
+          objekt_regeocode_hint:
+            'Ermittelt die Position neu aus der gespeicherten Adresse – ersetzt die aktuelle.',
           objekt_latitude: 'Breitengrad',
           objekt_longitude: 'Längengrad',
           objekt_position_save: 'Position speichern',
           objekt_position_pick: 'Auf der Karte korrigieren',
           objekt_position_pick_new: 'Auf der Karte setzen',
-          objekt_position_pick_hint: 'Karte verschieben, bis die Nadel auf dem Gebäude sitzt.',
+          objekt_position_pick_hint:
+            'Karte verschieben, bis die Nadel auf dem Gebäude sitzt.',
           objekt_position_pick_moved: 'um {{distance}} verschoben',
           objekt_position_cancel: 'Abbrechen',
           objekt_position_saved: 'Position gespeichert.',
-          objekt_position_invalid: 'Breitengrad -90 bis 90, Längengrad -180 bis 180, in Dezimalgrad.',
+          objekt_position_invalid:
+            'Breitengrad -90 bis 90, Längengrad -180 bis 180, in Dezimalgrad.',
           objekt_save: 'Änderungen speichern',
           objekt_saved: 'Standort aktualisiert.',
           objekt_save_error:
@@ -3551,7 +4066,8 @@ i18n
           login_magic_link: 'Anmeldelink per E-Mail erhalten',
           login_request_access: 'Zugang beantragen',
           auth_back_to_login: 'Zurück zur Anmeldung',
-          auth_too_many_requests: 'Zu viele Versuche. Bitte versuchen Sie es später erneut.',
+          auth_too_many_requests:
+            'Zu viele Versuche. Bitte versuchen Sie es später erneut.',
           access_first_name: 'Vorname',
           access_last_name: 'Nachname',
           access_company: 'Firma',
@@ -3561,127 +4077,181 @@ i18n
           access_message: 'Nachricht',
           access_optional: 'optional',
           access_privacy_prefix: 'Ich habe die',
-          access_privacy_suffix: 'gelesen und bin einverstanden, dass meine Angaben zur Prüfung meiner Anfrage verarbeitet werden.',
+          access_privacy_suffix:
+            'gelesen und bin einverstanden, dass meine Angaben zur Prüfung meiner Anfrage verarbeitet werden.',
           access_request_title: 'Zugang beantragen',
-          access_request_intro: 'Teilen Sie uns mit, wer Sie sind. Nach der Bestätigung Ihrer E-Mail-Adresse prüfen wir Ihre Anfrage und schalten Ihren Zugang frei.',
+          access_request_intro:
+            'Teilen Sie uns mit, wer Sie sind. Nach der Bestätigung Ihrer E-Mail-Adresse prüfen wir Ihre Anfrage und schalten Ihren Zugang frei.',
           access_request_submit: 'Anfrage senden',
-          access_request_error: 'Die Anfrage konnte nicht gesendet werden. Bitte prüfen Sie Ihre Angaben.',
+          access_request_error:
+            'Die Anfrage konnte nicht gesendet werden. Bitte prüfen Sie Ihre Angaben.',
           access_request_sent_title: 'Bitte prüfen Sie Ihr Postfach',
-          access_request_sent_text: 'Bitte bestätigen Sie Ihre E-Mail-Adresse über den Link, den wir Ihnen gesendet haben.',
+          access_request_sent_text:
+            'Bitte bestätigen Sie Ihre E-Mail-Adresse über den Link, den wir Ihnen gesendet haben.',
           access_verify_title: 'E-Mail-Adresse bestätigen',
           access_verify_checking: 'Link wird geprüft…',
-          access_verify_invalid: 'Dieser Bestätigungslink ist ungültig oder abgelaufen.',
-          access_verify_intro: 'Hallo {{name}}, bitte wählen Sie ein Passwort für Ihren Zugang.',
+          access_verify_invalid:
+            'Dieser Bestätigungslink ist ungültig oder abgelaufen.',
+          access_verify_intro:
+            'Hallo {{name}}, bitte wählen Sie ein Passwort für Ihren Zugang.',
           access_verify_repeat: 'Passwort wiederholen',
           access_verify_submit: 'Bestätigen und Passwort festlegen',
           access_verify_mismatch: 'Die Passwörter stimmen nicht überein.',
           migration_setup_title: 'Zugang einrichten',
-          migration_setup_intro: 'Willkommen im neuen ProGeo-Portal, {{name}}! Legen Sie Ihr Passwort fest - danach sind Sie direkt angemeldet.',
+          migration_setup_intro:
+            'Willkommen im neuen ProGeo-Portal, {{name}}! Legen Sie Ihr Passwort fest - danach sind Sie direkt angemeldet.',
           migration_setup_password: 'Neues Passwort',
           migration_setup_submit: 'Passwort speichern und anmelden',
-          migration_setup_invalid: 'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet. Fordern Sie stattdessen einen Anmeldelink per E-Mail an - oder sprechen Sie uns an.',
-          migration_setup_error: 'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
+          migration_setup_invalid:
+            'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet. Fordern Sie stattdessen einen Anmeldelink per E-Mail an - oder sprechen Sie uns an.',
+          migration_setup_error:
+            'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
           access_verify_password_invalid: 'Dieses Passwort ist nicht zulässig.',
-          access_verify_error: 'Die Bestätigung ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
+          access_verify_error:
+            'Die Bestätigung ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
           pending_title: 'Ihr Zugang wird geprüft',
-          pending_text: 'Vielen Dank für Ihre Anfrage. Unser Team prüft sie und schaltet Ihren Zugang zu Ihren Projekten frei.',
-          pending_text_mail: 'Sie erhalten eine E-Mail, sobald Ihr Zugang freigegeben wurde.',
-          pending_login_blocked: 'Ihr Konto muss zuerst von unserem Team geprüft werden - bis dahin ist die Anmeldung im Portal nicht möglich. Sie müssen nichts tun: Wir benachrichtigen Sie per E-Mail, sobald es freigegeben ist.',
+          pending_text:
+            'Vielen Dank für Ihre Anfrage. Unser Team prüft sie und schaltet Ihren Zugang zu Ihren Projekten frei.',
+          pending_text_mail:
+            'Sie erhalten eine E-Mail, sobald Ihr Zugang freigegeben wurde.',
+          pending_login_blocked:
+            'Ihr Konto muss zuerst von unserem Team geprüft werden - bis dahin ist die Anmeldung im Portal nicht möglich. Sie müssen nichts tun: Wir benachrichtigen Sie per E-Mail, sobald es freigegeben ist.',
           pending_logout: 'Abmelden',
           pending_approved_title: 'Ihr Zugang wurde freigegeben',
-          pending_approved_text: 'Bitte melden Sie sich erneut an, um das Portal zu nutzen.',
+          pending_approved_text:
+            'Bitte melden Sie sich erneut an, um das Portal zu nutzen.',
           pending_login_again: 'Erneut anmelden',
-          pending_rejected_title: 'Ihre Anfrage konnte nicht freigegeben werden',
-          pending_rejected_text: 'Leider konnten wir Ihren Zugang nicht freigeben. Bei Fragen wenden Sie sich bitte an uns.',
+          pending_rejected_title:
+            'Ihre Anfrage konnte nicht freigegeben werden',
+          pending_rejected_text:
+            'Leider konnten wir Ihren Zugang nicht freigeben. Bei Fragen wenden Sie sich bitte an uns.',
           magic_link_title: 'Anmeldelink per E-Mail',
-          magic_link_intro: 'Geben Sie Ihre E-Mail-Adresse ein. Gehört sie zu einem Zugang, senden wir Ihnen einen einmaligen Anmeldelink.',
+          magic_link_intro:
+            'Geben Sie Ihre E-Mail-Adresse ein. Gehört sie zu einem Zugang, senden wir Ihnen einen einmaligen Anmeldelink.',
           magic_link_submit: 'Anmeldelink senden',
-          magic_link_request_error: 'Die Anfrage ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
+          magic_link_request_error:
+            'Die Anfrage ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
           magic_link_sent_title: 'Bitte prüfen Sie Ihr Postfach',
-          magic_link_sent_text: 'Gehört die Adresse zu einem Zugang, ist ein Anmeldelink unterwegs. Er ist kurze Zeit gültig und nur einmal verwendbar.',
+          magic_link_sent_text:
+            'Gehört die Adresse zu einem Zugang, ist ein Anmeldelink unterwegs. Er ist kurze Zeit gültig und nur einmal verwendbar.',
           magic_link_login_title: 'Anmelden',
-          magic_link_login_intro: 'Melden Sie sich mit Ihrem einmaligen Anmeldelink an.',
+          magic_link_login_intro:
+            'Melden Sie sich mit Ihrem einmaligen Anmeldelink an.',
           magic_link_login_submit: 'Jetzt anmelden',
-          magic_link_invalid: 'Dieser Anmeldelink ist ungültig, abgelaufen oder wurde bereits verwendet.',
+          magic_link_invalid:
+            'Dieser Anmeldelink ist ungültig, abgelaufen oder wurde bereits verwendet.',
           magic_link_request_new: 'Neuen Anmeldelink anfordern',
           login_forgot_password: 'Passwort vergessen?',
           login_otp_title: 'Zwei-Faktor-Anmeldung',
-          login_otp_intro: 'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein. Alternativ können Sie einen Ihrer Wiederherstellungscodes verwenden.',
+          login_otp_intro:
+            'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein. Alternativ können Sie einen Ihrer Wiederherstellungscodes verwenden.',
           login_otp_code: 'Code',
           login_otp_invalid: 'Code ungültig',
-          login_failed: 'Anmeldung fehlgeschlagen. Bitte E-Mail-Adresse und Passwort prüfen.',
-          login_throttled: 'Zu viele Fehlversuche. Erneut versuchen in {{seconds}} s.',
+          login_failed:
+            'Anmeldung fehlgeschlagen. Bitte E-Mail-Adresse und Passwort prüfen.',
+          login_throttled:
+            'Zu viele Fehlversuche. Erneut versuchen in {{seconds}} s.',
           login_otp_submit: 'Bestätigen',
           login_otp_back: 'Zurück zur Anmeldung',
           password_reset_title: 'Passwort vergessen',
-          password_reset_intro: 'Geben Sie Ihre E-Mail-Adresse ein. Gehört sie zu einem Zugang, senden wir Ihnen eine E-Mail.',
-          password_reset_2fa_hint: 'Das Passwort selbst zurücksetzen können Sie nur mit eingerichteter Zwei-Faktor-Anmeldung. Andernfalls erklärt Ihnen die E-Mail, wie Sie hineinkommen: mit einem Anmeldelink anmelden und danach die Zwei-Faktor-Anmeldung im Profil einrichten.',
+          password_reset_intro:
+            'Geben Sie Ihre E-Mail-Adresse ein. Gehört sie zu einem Zugang, senden wir Ihnen eine E-Mail.',
+          password_reset_2fa_hint:
+            'Das Passwort selbst zurücksetzen können Sie nur mit eingerichteter Zwei-Faktor-Anmeldung. Andernfalls erklärt Ihnen die E-Mail, wie Sie hineinkommen: mit einem Anmeldelink anmelden und danach die Zwei-Faktor-Anmeldung im Profil einrichten.',
           password_reset_submit: 'E-Mail senden',
-          password_reset_sent_text: 'Falls ein Zugang zu dieser Adresse existiert, erhalten Sie in Kürze eine E-Mail.',
+          password_reset_sent_text:
+            'Falls ein Zugang zu dieser Adresse existiert, erhalten Sie in Kürze eine E-Mail.',
           password_new_title: 'Neues Passwort festlegen',
-          password_new_intro: 'Hallo {{name}}, wählen Sie ein neues Passwort und bestätigen Sie es mit dem Code aus Ihrer Authenticator-App.',
+          password_new_intro:
+            'Hallo {{name}}, wählen Sie ein neues Passwort und bestätigen Sie es mit dem Code aus Ihrer Authenticator-App.',
           password_new_submit: 'Passwort speichern und anmelden',
-          password_new_invalid: 'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet.',
+          password_new_invalid:
+            'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet.',
           password_new_request_new: 'Neuen Link anfordern',
-          password_new_otp_missing: 'Bitte geben Sie den Code aus Ihrer Authenticator-App ein.',
-          password_new_error: 'Das Passwort konnte nicht geändert werden. Bitte versuchen Sie es erneut.',
+          password_new_otp_missing:
+            'Bitte geben Sie den Code aus Ihrer Authenticator-App ein.',
+          password_new_error:
+            'Das Passwort konnte nicht geändert werden. Bitte versuchen Sie es erneut.',
           tfa_title: 'Zwei-Faktor-Anmeldung',
           tfa_status_on: 'Aktiv',
           tfa_status_off: 'Nicht eingerichtet',
-          tfa_intro: 'Schützen Sie Ihr Konto mit einem zweiten Faktor: Bei der Anmeldung geben Sie zusätzlich einen Code aus einer Authenticator-App ein (z. B. Google oder Microsoft Authenticator).',
-          tfa_required_hint: 'Für Mitarbeiterkonten ist die Zwei-Faktor-Anmeldung Pflicht.',
+          tfa_intro:
+            'Schützen Sie Ihr Konto mit einem zweiten Faktor: Bei der Anmeldung geben Sie zusätzlich einen Code aus einer Authenticator-App ein (z. B. Google oder Microsoft Authenticator).',
+          tfa_required_hint:
+            'Für Mitarbeiterkonten ist die Zwei-Faktor-Anmeldung Pflicht.',
           tfa_codes_left: 'Verbleibende Wiederherstellungscodes: {{count}}',
           tfa_setup: 'Einrichten',
           tfa_setup_button: 'Zwei-Faktor-Anmeldung einrichten',
           tfa_manage_button: 'Zwei-Faktor-Anmeldung verwalten',
           tfa_password_wrong: 'Das aktuelle Passwort ist falsch',
-          tfa_already_enabled: 'Die Zwei-Faktor-Anmeldung ist bereits eingerichtet.',
-          password_rule_too_short: 'Das Passwort ist zu kurz (mindestens 8 Zeichen).',
+          tfa_already_enabled:
+            'Die Zwei-Faktor-Anmeldung ist bereits eingerichtet.',
+          password_rule_too_short:
+            'Das Passwort ist zu kurz (mindestens 8 Zeichen).',
           password_rule_too_common: 'Das Passwort ist zu gebräuchlich.',
-          password_rule_entirely_numeric: 'Das Passwort darf nicht nur aus Ziffern bestehen.',
-          password_rule_too_similar: 'Das Passwort ist Ihrem Namen oder Ihrer E-Mail-Adresse zu ähnlich.',
-          tfa_scan: 'Scannen Sie den QR-Code mit Ihrer Authenticator-App und geben Sie dann den angezeigten 6-stelligen Code ein.',
+          password_rule_entirely_numeric:
+            'Das Passwort darf nicht nur aus Ziffern bestehen.',
+          password_rule_too_similar:
+            'Das Passwort ist Ihrem Namen oder Ihrer E-Mail-Adresse zu ähnlich.',
+          tfa_scan:
+            'Scannen Sie den QR-Code mit Ihrer Authenticator-App und geben Sie dann den angezeigten 6-stelligen Code ein.',
           tfa_qr_alt: 'QR-Code für die Authenticator-App',
           tfa_secret: 'Oder geben Sie diesen Schlüssel manuell ein:',
           tfa_code: 'Code aus der Authenticator-App',
           tfa_confirm: 'Aktivieren',
           tfa_cancel: 'Abbrechen',
-          tfa_enabled: 'Die Zwei-Faktor-Anmeldung ist aktiv. Alle anderen Sitzungen wurden abgemeldet.',
+          tfa_enabled:
+            'Die Zwei-Faktor-Anmeldung ist aktiv. Alle anderen Sitzungen wurden abgemeldet.',
           tfa_disable: 'Deaktivieren',
-          tfa_disable_hint: 'Geben Sie einen Code aus Ihrer App (oder einen Wiederherstellungscode) ein, um die Zwei-Faktor-Anmeldung zu deaktivieren. Alle anderen Sitzungen werden abgemeldet.',
+          tfa_disable_hint:
+            'Geben Sie einen Code aus Ihrer App (oder einen Wiederherstellungscode) ein, um die Zwei-Faktor-Anmeldung zu deaktivieren. Alle anderen Sitzungen werden abgemeldet.',
           tfa_disabled: 'Die Zwei-Faktor-Anmeldung ist deaktiviert.',
           tfa_recovery_title: 'Ihre Wiederherstellungscodes',
-          tfa_recovery_hint: 'Sichern Sie diese Codes jetzt - sie werden nur einmal angezeigt. Mit jedem Code können Sie sich einmal anmelden, falls Sie keinen Zugriff auf Ihre Authenticator-App haben.',
+          tfa_recovery_hint:
+            'Sichern Sie diese Codes jetzt - sie werden nur einmal angezeigt. Mit jedem Code können Sie sich einmal anmelden, falls Sie keinen Zugriff auf Ihre Authenticator-App haben.',
           tfa_recovery_copy: 'Kopieren',
           tfa_recovery_copied: 'Wiederherstellungscodes kopiert.',
           tfa_recovery_download: 'Herunterladen (.txt)',
           tfa_recovery_done: 'Ich habe die Codes gesichert',
           tfa_recovery_regenerate: 'Neue Wiederherstellungscodes',
-          tfa_recovery_regenerate_hint: 'Geben Sie einen aktuellen Code aus Ihrer App ein (keinen Wiederherstellungscode). Die bisherigen Wiederherstellungscodes werden ungültig.',
+          tfa_recovery_regenerate_hint:
+            'Geben Sie einen aktuellen Code aus Ihrer App ein (keinen Wiederherstellungscode). Die bisherigen Wiederherstellungscodes werden ungültig.',
           tfa_error: 'Aktion fehlgeschlagen',
-          tfa_load_error: 'Status der Zwei-Faktor-Anmeldung konnte nicht geladen werden',
+          tfa_load_error:
+            'Status der Zwei-Faktor-Anmeldung konnte nicht geladen werden',
           tfa_required_title: 'Zwei-Faktor-Anmeldung einrichten',
-          tfa_required_text: 'Für Ihr Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richten Sie sie jetzt ein - bis dahin ist das Portal gesperrt.',
+          tfa_required_text:
+            'Für Ihr Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richten Sie sie jetzt ein - bis dahin ist das Portal gesperrt.',
           tfa_required_continue: 'Weiter zum Portal',
           profile_set_password: 'Passwort festlegen',
-          profile_set_password_hint: 'Ihr Konto hat noch kein Passwort. Sie können eines mit einem Code aus Ihrer Authenticator-App festlegen.',
-          profile_set_password_needs_2fa: 'Ihr Konto hat noch kein Passwort. Um eines festzulegen, richten Sie zuerst unten die Zwei-Faktor-Anmeldung ein.',
-          profile_forgot_password_2fa: 'Passwort vergessen? Mit 2FA-Code neu festlegen',
+          profile_set_password_hint:
+            'Ihr Konto hat noch kein Passwort. Sie können eines mit einem Code aus Ihrer Authenticator-App festlegen.',
+          profile_set_password_needs_2fa:
+            'Ihr Konto hat noch kein Passwort. Um eines festzulegen, richten Sie zuerst unten die Zwei-Faktor-Anmeldung ein.',
+          profile_forgot_password_2fa:
+            'Passwort vergessen? Mit 2FA-Code neu festlegen',
           pending_demo: 'Demo ansehen',
-          pending_demo_hint: 'In der Zwischenzeit können Sie sich in unserer Demo umsehen - ein schreibgeschütztes Beispiel mit Beispieldaten. Beim Öffnen werden Sie hier abgemeldet; nach der Freigabe melden Sie sich einfach wieder mit Ihrem eigenen Zugang an.',
+          pending_demo_hint:
+            'In der Zwischenzeit können Sie sich in unserer Demo umsehen - ein schreibgeschütztes Beispiel mit Beispieldaten. Beim Öffnen werden Sie hier abgemeldet; nach der Freigabe melden Sie sich einfach wieder mit Ihrem eigenen Zugang an.',
           staff_field_send_invite: 'Einladung per E-Mail senden',
-          staff_field_send_invite_hint: 'Sendet dem Benutzer einen einmaligen Anmeldelink (72 Stunden gültig).',
+          staff_field_send_invite_hint:
+            'Sendet dem Benutzer einen einmaligen Anmeldelink (72 Stunden gültig).',
           staff_invite_sent: 'Einladung gesendet.',
-          staff_invite_confirm: '{{username}} einen einmaligen Anmeldelink an {{email}} senden?',
+          staff_invite_confirm:
+            '{{username}} einen einmaligen Anmeldelink an {{email}} senden?',
           staff_invite_confirm_title: 'Einladung senden?',
           staff_invite_error: 'Einladung konnte nicht gesendet werden',
           staff_send_invite: 'Einladung senden (Anmeldelink)',
           staff_send_invite_no_email: 'Keine E-Mail-Adresse',
           staff_requests_title: 'Zugangsanfragen',
-          staff_requests_load_error: 'Zugangsanfragen konnten nicht geladen werden',
-          staff_requests_approved: 'Anfrage freigegeben - der Antragsteller wurde benachrichtigt.',
-          staff_requests_rejected: 'Anfrage abgelehnt - der Antragsteller wurde benachrichtigt.',
-          staff_requests_decision_error: 'Entscheidung konnte nicht gespeichert werden',
+          staff_requests_load_error:
+            'Zugangsanfragen konnten nicht geladen werden',
+          staff_requests_approved:
+            'Anfrage freigegeben - der Antragsteller wurde benachrichtigt.',
+          staff_requests_rejected:
+            'Anfrage abgelehnt - der Antragsteller wurde benachrichtigt.',
+          staff_requests_decision_error:
+            'Entscheidung konnte nicht gespeichert werden',
           staff_requests_col_status: 'Status',
           staff_requests_col_name: 'Name / Firma',
           staff_requests_col_contact: 'Kontakt',
@@ -3696,76 +4266,111 @@ i18n
           staff_requests_filter_pending: 'Wartend',
           staff_requests_filter_all: 'Alle',
           staff_requests_empty: 'Keine Zugangsanfragen.',
-          staff_requests_approve_text: 'Zugang von {{name}} ({{email}}) freigeben? Ohne Projektnummern sieht der Zugang noch kein Projekt, bis eines für ihn freigegeben wird.',
-          staff_requests_reject_text: 'Anfrage von {{name}} ({{email}}) ablehnen? Der Zugang wird deaktiviert.',
+          staff_requests_approve_text:
+            'Zugang von {{name}} ({{email}}) freigeben? Ohne Projektnummern sieht der Zugang noch kein Projekt, bis eines für ihn freigegeben wird.',
+          staff_requests_reject_text:
+            'Anfrage von {{name}} ({{email}}) ablehnen? Der Zugang wird deaktiviert.',
           staff_requests_note: 'Interne Notiz',
-          staff_requests_note_hint: 'Nur für Mitarbeiter sichtbar, wird nicht an den Antragsteller gesendet.',
+          staff_requests_note_hint:
+            'Nur für Mitarbeiter sichtbar, wird nicht an den Antragsteller gesendet.',
           notification_kind_offline: 'Offline',
           notification_kind_alarm: 'Alarm',
           notification_link_title: 'Benachrichtigung',
-          notification_link_invalid: 'Dieser Link ist ungültig oder abgelaufen.',
+          notification_link_invalid:
+            'Dieser Link ist ungültig oder abgelaufen.',
           notification_link_project: 'Objekt {{nr}} · {{name}}',
           notification_link_case: 'Vorgang {{number}}',
-          notification_link_alarm_intro: 'Quittieren Sie den Alarm, sobald Sie sich darum kümmern - dann enden die Erinnerungen.',
-          notification_link_alarm_already_done: 'Dieser Alarm wurde bereits quittiert.',
+          notification_link_alarm_intro:
+            'Quittieren Sie den Alarm, sobald Sie sich darum kümmern - dann enden die Erinnerungen.',
+          notification_link_alarm_already_done:
+            'Dieser Alarm wurde bereits quittiert.',
           notification_link_alarm_button: 'Alarm quittieren',
-          notification_link_alarm_acknowledged: 'Danke - der Alarm ist quittiert, es folgen keine weiteren Erinnerungen.',
-          notification_link_offline_intro: 'Bestätigen Sie, dass Sie die Nachricht erhalten haben. Wir erinnern Sie weiter, bis wieder Daten ankommen.',
-          notification_link_offline_resolved: 'Die Datenübertragung läuft wieder - der Vorgang ist abgeschlossen.',
+          notification_link_alarm_acknowledged:
+            'Danke - der Alarm ist quittiert, es folgen keine weiteren Erinnerungen.',
+          notification_link_offline_intro:
+            'Bestätigen Sie, dass Sie die Nachricht erhalten haben. Wir erinnern Sie weiter, bis wieder Daten ankommen.',
+          notification_link_offline_resolved:
+            'Die Datenübertragung läuft wieder - der Vorgang ist abgeschlossen.',
           notification_link_offline_button: 'Kenntnisnahme bestätigen',
-          notification_link_offline_acknowledged: 'Danke - Ihre Bestätigung ist vermerkt. Die Erinnerungen laufen weiter, bis die Störung behoben ist.',
-          notification_link_unsubscribe_intro: 'Keine {{kind}}-Benachrichtigungen mehr für Objekt {{project}} erhalten? Ihr Portalzugang bleibt bestehen.',
+          notification_link_offline_acknowledged:
+            'Danke - Ihre Bestätigung ist vermerkt. Die Erinnerungen laufen weiter, bis die Störung behoben ist.',
+          notification_link_unsubscribe_intro:
+            'Keine {{kind}}-Benachrichtigungen mehr für Objekt {{project}} erhalten? Ihr Portalzugang bleibt bestehen.',
           notification_link_unsubscribe_button: 'Abmelden',
-          notification_link_unsubscribed: 'Sie sind abgemeldet. In den Benachrichtigungs-Einstellungen des Portals können Sie sich wieder anmelden.',
-          notification_link_already_unsubscribed: 'Sie sind von diesen Benachrichtigungen bereits abgemeldet.',
-          notification_link_switch_unsubscribe: 'Diese Benachrichtigungen abbestellen',
+          notification_link_unsubscribed:
+            'Sie sind abgemeldet. In den Benachrichtigungs-Einstellungen des Portals können Sie sich wieder anmelden.',
+          notification_link_already_unsubscribed:
+            'Sie sind von diesen Benachrichtigungen bereits abgemeldet.',
+          notification_link_switch_unsubscribe:
+            'Diese Benachrichtigungen abbestellen',
           notification_link_to_portal: 'Zum Portal',
-          notification_link_failed: 'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
+          notification_link_failed:
+            'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
           matrix_setup_open: 'ProGeo Chat einrichten',
-          matrix_not_primary_hint: 'Ihre Benachrichtigungen nutzen den Chat noch nicht.',
+          matrix_not_primary_hint:
+            'Ihre Benachrichtigungen nutzen den Chat noch nicht.',
           matrix_other_app: 'Andere App verwenden (FluffyChat)',
           matrix_setup_title: 'ProGeo Chat einrichten',
           matrix_setup_step_install: 'App installieren',
           matrix_setup_step_scan: 'Scannen & anmelden',
           matrix_setup_step_test: 'Testnachricht',
           matrix_setup_install_title: '1. Element X installieren',
-          matrix_setup_install_text: 'Der ProGeo Chat läuft in der kostenlosen App Element X. Installieren Sie sie auf Ihrem Smartphone aus dem App Store oder Google Play - oder scannen Sie den Code mit der Handy-Kamera.',
+          matrix_setup_install_text:
+            'Der ProGeo Chat läuft in der kostenlosen App Element X. Installieren Sie sie auf Ihrem Smartphone aus dem App Store oder Google Play - oder scannen Sie den Code mit der Handy-Kamera.',
           matrix_setup_download_qr_alt: 'QR-Code: Element X herunterladen',
-          matrix_setup_download_qr_hint: 'Mit der Handy-Kamera scannen: öffnet den Store, oder die App, wenn sie schon installiert ist.',
+          matrix_setup_download_qr_hint:
+            'Mit der Handy-Kamera scannen: öffnet den Store, oder die App, wenn sie schon installiert ist.',
           matrix_setup_installed: 'Die App ist installiert',
           matrix_setup_scan_title: '2. Code scannen - angemeldet',
-          matrix_setup_scan_text: 'Öffnen Sie die Kamera Ihres Handys und scannen Sie diesen Code. Element X öffnet sich mit dem ProGeo-Server; tippen Sie auf „Weiter" - Sie sind ohne Passwort angemeldet, Ihr Chat-Konto entsteht automatisch.',
+          matrix_setup_scan_text:
+            'Öffnen Sie die Kamera Ihres Handys und scannen Sie diesen Code. Element X öffnet sich mit dem ProGeo-Server; tippen Sie auf „Weiter" - Sie sind ohne Passwort angemeldet, Ihr Chat-Konto entsteht automatisch.',
           matrix_setup_login_qr_alt: 'QR-Code: Anmeldung im ProGeo Chat',
           matrix_setup_new_code: 'Neuer Code',
-          matrix_setup_valid_for: 'Gültig für {{minutes}}:{{seconds}} Min., einmal verwendbar',
+          matrix_setup_valid_for:
+            'Gültig für {{minutes}}:{{seconds}} Min., einmal verwendbar',
           matrix_setup_open_here: 'Schon am Handy? Hier öffnen',
-          matrix_setup_waiting: 'Dieser Dialog erkennt die Anmeldung von selbst.',
+          matrix_setup_waiting:
+            'Dieser Dialog erkennt die Anmeldung von selbst.',
           matrix_setup_connected: 'Angemeldet - die Chat-App ist verbunden.',
           matrix_setup_manual_title: 'Ohne Code anmelden',
-          matrix_setup_manual_text: 'In der App „Anbieter ändern" wählen, {{server}} eingeben und mit Ihrem ProGeo-Login anmelden.',
+          matrix_setup_manual_text:
+            'In der App „Anbieter ändern" wählen, {{server}} eingeben und mit Ihrem ProGeo-Login anmelden.',
           matrix_setup_test_title: '3. Testnachricht',
-          matrix_setup_test_text: 'Wir schicken eine Nachricht an {{id}}. Die erste Nachricht kommt als Einladung vom ProGeo-Bot - nehmen Sie sie in der App an.',
+          matrix_setup_test_text:
+            'Wir schicken eine Nachricht an {{id}}. Die erste Nachricht kommt als Einladung vom ProGeo-Bot - nehmen Sie sie in der App an.',
           matrix_setup_test_send: 'Testnachricht senden',
           matrix_setup_test_again: 'Erneut senden',
-          matrix_setup_test_sent: 'Gesendet - schauen Sie in ein paar Sekunden aufs Handy.',
-          matrix_setup_is_primary: 'Ihre Benachrichtigungen kommen auch im Chat an.',
-          matrix_setup_primary_text: 'Angekommen? Dann schalten Sie den Chat für alle Objekte ein, zu denen Sie Alarme oder Störungsmeldungen erhalten (die E-Mail bleibt zusätzlich).',
+          matrix_setup_test_sent:
+            'Gesendet - schauen Sie in ein paar Sekunden aufs Handy.',
+          matrix_setup_is_primary:
+            'Ihre Benachrichtigungen kommen auch im Chat an.',
+          matrix_setup_primary_text:
+            'Angekommen? Dann schalten Sie den Chat für alle Objekte ein, zu denen Sie Alarme oder Störungsmeldungen erhalten (die E-Mail bleibt zusätzlich).',
           matrix_setup_primary_button: 'Chat für Benachrichtigungen nutzen',
-          matrix_setup_primary_done: 'Chat für {{count}} Benachrichtigungs-Einstellung(en) eingeschaltet.',
-          matrix_setup_primary_failed: 'Die Benachrichtigungen konnten nicht auf den Chat umgestellt werden',
+          matrix_setup_primary_done:
+            'Chat für {{count}} Benachrichtigungs-Einstellung(en) eingeschaltet.',
+          matrix_setup_primary_failed:
+            'Die Benachrichtigungen konnten nicht auf den Chat umgestellt werden',
           matrix_setup_done: 'Fertig',
           matrix_setup_qr_error: 'Anmeldecode konnte nicht erstellt werden',
-          matrix_setup_test_failed: 'Die Testnachricht konnte nicht gesendet werden',
-          matrix_setup_error_matrix_not_connected: 'Bitte zuerst in der App anmelden (Schritt 2).',
-          matrix_setup_error_matrix_test_wait: 'Eine Testnachricht pro Minute - bitte einen Moment warten.',
-          matrix_setup_error_matrix_test_failed: 'Die Testnachricht konnte nicht gesendet werden.',
-          matrix_setup_error_matrix_disabled: 'Dieser Server hat keinen ProGeo Chat.',
-          matrix_setup_error_matrix_not_allowed: 'Dieses Konto kann den ProGeo Chat nicht nutzen.',
+          matrix_setup_test_failed:
+            'Die Testnachricht konnte nicht gesendet werden',
+          matrix_setup_error_matrix_not_connected:
+            'Bitte zuerst in der App anmelden (Schritt 2).',
+          matrix_setup_error_matrix_test_wait:
+            'Eine Testnachricht pro Minute - bitte einen Moment warten.',
+          matrix_setup_error_matrix_test_failed:
+            'Die Testnachricht konnte nicht gesendet werden.',
+          matrix_setup_error_matrix_disabled:
+            'Dieser Server hat keinen ProGeo Chat.',
+          matrix_setup_error_matrix_not_allowed:
+            'Dieses Konto kann den ProGeo Chat nicht nutzen.',
           ua_messaging_title: 'Chat und Anmeldelinks',
           ua_matrix_server_accounts: 'Chat-Konten',
           ua_matrix_server_accounts_note: 'aktiv auf dem Matrix-Server',
           ua_matrix_connected: 'Verbundene Nutzer',
-          ua_matrix_connected_note: 'mindestens einmal in einer Chat-App angemeldet',
+          ua_matrix_connected_note:
+            'mindestens einmal in einer Chat-App angemeldet',
           ua_matrix_active: 'Aktiv (7 Tage)',
           ua_matrix_active_note: '{{count}} in 30 Tagen',
           ua_matrix_primary: 'Chat als Messenger',
@@ -3773,9 +4378,11 @@ i18n
           ua_links_24h: 'Genutzte Links (24 h)',
           ua_links_7d: 'Genutzte Links (7 Tage)',
           ua_links_30d: 'Genutzte Links (30 Tage)',
-          ua_links_note: 'Anmeldung {{login}} · Einladung {{invite}} · Passwort {{reset}} · Chat-QR {{matrix}} · Umzug {{migration}}',
+          ua_links_note:
+            'Anmeldung {{login}} · Einladung {{invite}} · Passwort {{reset}} · Chat-QR {{matrix}} · Umzug {{migration}}',
           staff_notifications_title: 'Benachrichtigungen (Offline / Alarm)',
-          staff_notifications_load_error: 'Benachrichtigungen konnten nicht geladen werden',
+          staff_notifications_load_error:
+            'Benachrichtigungen konnten nicht geladen werden',
           staff_notifications_action_error: 'Aktion fehlgeschlagen',
           staff_notifications_col_kind: 'Art',
           staff_notifications_col_project: 'Objekt',
@@ -3798,7 +4405,8 @@ i18n
           staff_notifications_in_window: 'Versandfenster offen (09-22 Uhr)',
           staff_notifications_quiet_hours: 'Ruhezeit: Offline-Mails warten',
           staff_notifications_no_baseline: 'Offline-Erkennung lief noch nicht',
-          staff_notifications_no_recipients_left: '{{count}} Objekt(e) ohne letzten Empfänger (7 Tage)',
+          staff_notifications_no_recipients_left:
+            '{{count}} Objekt(e) ohne letzten Empfänger (7 Tage)',
           staff_notifications_state_open: 'Offen',
           staff_notifications_state_resolved: 'Erledigt',
           staff_notifications_state_all: 'Alle',
@@ -3820,7 +4428,8 @@ i18n
           staff_notifications_unmuted: 'Freigegeben',
           staff_notifications_close: 'Vorgang schließen',
           staff_notifications_close_confirm_title: 'Vorgang schließen?',
-          staff_notifications_close_confirm: 'Der Vorgang ({{kind}}) von {{location}} wird von Hand geschlossen: Es werden keine Erinnerungen oder Eskalationsnachrichten mehr dazu versendet, auch wenn das Problem weiter besteht. Ein geschlossener Vorgang kann nicht wieder geöffnet werden.',
+          staff_notifications_close_confirm:
+            'Der Vorgang ({{kind}}) von {{location}} wird von Hand geschlossen: Es werden keine Erinnerungen oder Eskalationsnachrichten mehr dazu versendet, auch wenn das Problem weiter besteht. Ein geschlossener Vorgang kann nicht wieder geöffnet werden.',
           staff_notifications_closed: 'Vorgang geschlossen',
           staff_notifications_event_opened: 'Erkannt',
           staff_notifications_event_reopened: 'Wieder geöffnet',
@@ -3837,12 +4446,16 @@ i18n
           staff_notifications_event_online_mail: 'Wieder-online-Mail',
           staff_notifications_event_resolved: 'Erledigt',
           staff_notifications_event_switched: 'Objekt geschaltet',
-          staff_notifications_switch_enabled: 'Benachrichtigungen aktiv: {{enabled}} von {{total}} Objekten',
-          staff_notifications_switch_withheld: '{{count}} Nachricht(en) in den letzten 24 h zurückgehalten',
-          staff_notifications_switch_link: 'Objekte freischalten (Gerätestatistik)',
+          staff_notifications_switch_enabled:
+            'Benachrichtigungen aktiv: {{enabled}} von {{total}} Objekten',
+          staff_notifications_switch_withheld:
+            '{{count}} Nachricht(en) in den letzten 24 h zurückgehalten',
+          staff_notifications_switch_link:
+            'Objekte freischalten (Gerätestatistik)',
           location_flag_notifications_off: 'Benachrichtigungen aus',
           location_flag_purgeable: 'zum Löschen markiert',
-          readiness_badge_title: 'Bereitschaft {{score}}/100 - Checkliste öffnen',
+          readiness_badge_title:
+            'Bereitschaft {{score}}/100 - Checkliste öffnen',
           readiness_title: 'Ist das Objekt bereit?',
           readiness_intro:
             'Alle Prüfungen des Objekts, gewichtet - 100, wenn alle erfüllt sind; optionale zählen weniger. Die Werte werden jede Nacht neu berechnet und immer, wenn ein Objekt hier geöffnet wird.',
@@ -3850,11 +4463,15 @@ i18n
           readiness_load_failed: 'Die Checkliste konnte nicht geladen werden',
           readiness_overview_title: 'Alle Objekte - höchster Wert zuerst',
           readiness_never_checked: 'Nie geprüft',
-          readiness_never_hint: 'Nie geprüfte Objekte bekommen ihren Wert beim nächsten nächtlichen Lauf (oder: python manage.py location_readiness).',
+          readiness_never_hint:
+            'Nie geprüfte Objekte bekommen ihren Wert beim nächsten nächtlichen Lauf (oder: python manage.py location_readiness).',
           escalation_view_title: 'Gespeicherte Ansicht',
-          escalation_view_include: 'Aktuelle Statusansicht mit der Eskalation speichern',
-          escalation_view_hint: 'Der Link der Eskalation öffnet die Statusseite genau so.',
-          escalation_view_none: 'Die Eskalation auf der Statusseite erstellen, um deren Ansicht (Zeitraum, Zeitpunkt, Sensoren) mitzuspeichern.',
+          escalation_view_include:
+            'Aktuelle Statusansicht mit der Eskalation speichern',
+          escalation_view_hint:
+            'Der Link der Eskalation öffnet die Statusseite genau so.',
+          escalation_view_none:
+            'Die Eskalation auf der Statusseite erstellen, um deren Ansicht (Zeitraum, Zeitpunkt, Sensoren) mitzuspeichern.',
           escalation_view_open: 'Gespeicherte Ansicht öffnen',
           escalation_view_view: 'Ansicht',
           escalation_view_range: 'Zeitraum',
@@ -3864,11 +4481,14 @@ i18n
           escalation_view_profile: 'Heat-Wert',
           sidebar_screen_review: 'Screen-Review',
           screens_title: 'Screen-Review',
-          screens_intro: 'Ganzseitige Screenshots aller Seiten eines Builds (python manage.py e2e_screenshots - PC und Mobil, als Nutzer und als Team, mit Testdaten), in nummerierte Teile geschnitten. Einen Screenshot öffnen, um ihn zu kommentieren; der Export liefert die kommentierten Screenshots mit einer PROMPT.md.',
+          screens_intro:
+            'Ganzseitige Screenshots aller Seiten eines Builds (python manage.py e2e_screenshots - PC und Mobil, als Nutzer und als Team, mit Testdaten), in nummerierte Teile geschnitten. Einen Screenshot öffnen, um ihn zu kommentieren; der Export liefert die kommentierten Screenshots mit einer PROMPT.md.',
           screens_run: 'Lauf',
-          screens_no_runs: 'Noch keine Screenshots - python manage.py e2e_screenshots ausführen (oder von Staging holen).',
+          screens_no_runs:
+            'Noch keine Screenshots - python manage.py e2e_screenshots ausführen (oder von Staging holen).',
           screens_fetch: 'Von Staging holen',
-          screens_fetch_hint: 'Dieser Server erstellt selbst keine Screenshots (kein e2e_screens-Profil): die Läufe des Staging-Servers laden, die hier noch fehlen.',
+          screens_fetch_hint:
+            'Dieser Server erstellt selbst keine Screenshots (kein e2e_screens-Profil): die Läufe des Staging-Servers laden, die hier noch fehlen.',
           screens_fetch_running_one: 'Wird geholt… ({{count}} Lauf bisher)',
           screens_fetch_running_other: 'Wird geholt… ({{count}} Läufe bisher)',
           screens_fetch_done_one: '{{count}} neuer Lauf von Staging geholt.',
@@ -3899,15 +4519,19 @@ i18n
           screens_step_press: 'Taste {{value}}',
           screens_step_wait: '{{value}} ms warten',
           screens_scenario: 'Testdaten: {{name}}',
-          screens_failures_one: '{{count}} Screenshot nicht aufgenommen (Dialog ging nicht auf)',
-          screens_failures_other: '{{count}} Screenshots nicht aufgenommen (Dialoge gingen nicht auf)',
+          screens_failures_one:
+            '{{count}} Screenshot nicht aufgenommen (Dialog ging nicht auf)',
+          screens_failures_other:
+            '{{count}} Screenshots nicht aufgenommen (Dialoge gingen nicht auf)',
           screens_comment: 'Kommentieren',
           screens_export_one: '{{count}} Kommentar exportieren (ZIP)',
           screens_export_other: '{{count}} Kommentare exportieren (ZIP)',
           screens_export_failed: 'Der Export ist fehlgeschlagen',
           screens_delete_run: 'Lauf löschen',
-          screens_delete_confirm: 'Den Lauf {{run}} mit seinen Screenshots und Kommentaren löschen? Das kann nicht rückgängig gemacht werden.',
-          screens_delete_note_confirm: 'Kommentar {{number}} ("{{comment}}") zum Screen {{screen}} wird samt Pfeil bzw. Bereich gelöscht und ist nicht mehr Teil des Exports. Das kann nicht rückgängig gemacht werden.',
+          screens_delete_confirm:
+            'Den Lauf {{run}} mit seinen Screenshots und Kommentaren löschen? Das kann nicht rückgängig gemacht werden.',
+          screens_delete_note_confirm:
+            'Kommentar {{number}} ("{{comment}}") zum Screen {{screen}} wird samt Pfeil bzw. Bereich gelöscht und ist nicht mehr Teil des Exports. Das kann nicht rückgängig gemacht werden.',
           screens_delete_failed: 'Der Lauf konnte nicht gelöscht werden',
           screens_empty_filter: 'Keine Screenshots passen zu den Filtern.',
           screens_part: 'Teil {{number}}',
@@ -3920,28 +4544,34 @@ i18n
           screens_hide_reviewed: 'Geprüfte ausblenden',
           screens_reviewed: 'Geprüft',
           screens_mark_reviewed: 'Als geprüft markieren',
-          screens_mark_reviewed_hint: 'Den ganzen Screenshot als geprüft markieren (Taste R)',
-          screens_reviewed_by: 'Geprüft von {{name}}, {{date}} - Klick nimmt es zurück',
-          screens_reviewed_failed: 'Die Prüfmarkierung konnte nicht gespeichert werden',
+          screens_mark_reviewed_hint:
+            'Den ganzen Screenshot als geprüft markieren (Taste R)',
+          screens_reviewed_by:
+            'Geprüft von {{name}}, {{date}} - Klick nimmt es zurück',
+          screens_reviewed_failed:
+            'Die Prüfmarkierung konnte nicht gespeichert werden',
           screens_reviewed_count: '{{count}} von {{total}} geprüft',
           screens_keys_title: 'Tastatur',
           screens_key_parts: 'Teil (am Ende: nächste Seite)',
           screens_key_screens: 'Seite',
           screens_key_reviewed: 'geprüft',
           screens_key_open: 'kommentieren',
-          screens_swipe_hint: 'Über einen Screenshot nach links/rechts wischen: seine Teile, am Ende die nächste Seite. Scrollen für die anderen Seiten, „Als geprüft markieren“ markiert die ganze Seite.',
+          screens_swipe_hint:
+            'Über einen Screenshot nach links/rechts wischen: seine Teile, am Ende die nächste Seite. Scrollen für die anderen Seiten, „Als geprüft markieren“ markiert die ganze Seite.',
           screens_previous: 'Vorheriger Screenshot',
           screens_next: 'Nächster Screenshot',
           screens_position: '{{number}} von {{total}}',
           screens_key_step: 'vorheriger / nächster Screenshot',
           screens_key_close: 'schließen',
           screens_step_unsaved: 'Erst den Kommentar speichern oder abbrechen',
-          screens_editor_swipe_hint: 'Über den Screenshot nach links/rechts wischen: vorheriger / nächster Screenshot (sobald seine Teile bis zu diesem Ende gescrollt sind).',
+          screens_editor_swipe_hint:
+            'Über den Screenshot nach links/rechts wischen: vorheriger / nächster Screenshot (sobald seine Teile bis zu diesem Ende gescrollt sind).',
           screens_size: 'Größe der Teile',
           screens_tool_arrow: 'Pfeil A → B',
           screens_tool_area: 'Bereich markieren',
           screens_tool_note: 'Ganze Seite',
-          screens_tool_hint_arrow: 'Vom Element dorthin ziehen, wo es hin soll - auch über Teile hinweg.',
+          screens_tool_hint_arrow:
+            'Vom Element dorthin ziehen, wo es hin soll - auch über Teile hinweg.',
           screens_tool_hint_area: 'Einen Rahmen um das Element ziehen.',
           screens_action_label: 'Was tun',
           screens_action_move: 'Verschieben',
@@ -3952,11 +4582,13 @@ i18n
           screens_kind_arrow: 'Pfeil',
           screens_kind_area: 'Bereich',
           screens_kind_note: 'ganze Seite',
-          screens_comment_placeholder: 'Was stimmt nicht, was soll sich ändern?',
+          screens_comment_placeholder:
+            'Was stimmt nicht, was soll sich ändern?',
           screens_save: 'Kommentar speichern',
           screens_cancel: 'Abbrechen',
           screens_notes_title: 'Kommentare',
-          screens_no_notes: 'Noch keine Kommentare - ein Werkzeug wählen und auf dem Screenshot zeichnen.',
+          screens_no_notes:
+            'Noch keine Kommentare - ein Werkzeug wählen und auf dem Screenshot zeichnen.',
           screens_delete_note: 'Kommentar löschen',
           screens_note_failed: 'Der Kommentar konnte nicht gespeichert werden',
           screens_action_question: 'Frage / prüfen',
@@ -3966,21 +4598,26 @@ i18n
           screens_scope_device_pc: 'Alle PC-Screens',
           screens_scope_device_mobile: 'Alle Handy-Screens',
           screens_scope_all: 'Überall',
-          screens_comment_required: '„{{action}}" braucht einen Kommentar - was ist gemeint?',
+          screens_comment_required:
+            '„{{action}}" braucht einen Kommentar - was ist gemeint?',
           screens_note_done: 'Erledigt',
           screens_note_mark_done: 'Als erledigt markieren',
           screens_note_reopen: 'Erledigt - Klick öffnet ihn wieder',
           screens_note_done_by: 'Erledigt von {{name}}, {{date}}',
           screens_notes_done_count_one: '{{count}} erledigt',
           screens_notes_done_count_other: '{{count}} erledigt',
-          screens_scaled_hint: 'Die Screenshots werden verkleinert gezeigt - Markierungen werden in Seitenpixeln gespeichert.',
+          screens_scaled_hint:
+            'Die Screenshots werden verkleinert gezeigt - Markierungen werden in Seitenpixeln gespeichert.',
           screens_general_note: 'Allgemeine Notiz',
-          screens_general_hint: 'Eine Anmerkung zum ganzen Lauf oder zum Review-Werkzeug - nicht zu einem Screen. Sie ist Teil des Exports.',
-          screens_general_placeholder: 'Was gilt für den ganzen Lauf oder das Review-Werkzeug?',
+          screens_general_hint:
+            'Eine Anmerkung zum ganzen Lauf oder zum Review-Werkzeug - nicht zu einem Screen. Sie ist Teil des Exports.',
+          screens_general_placeholder:
+            'Was gilt für den ganzen Lauf oder das Review-Werkzeug?',
           screens_general_title: 'Allgemeine Notizen',
           screens_general_edit: 'Allgemeine Notiz bearbeiten',
           screens_edit_note: 'Bearbeiten',
-          screens_delete_general_confirm: 'Die allgemeine Notiz „{{comment}}" wird gelöscht und ist nicht mehr Teil des Exports. Das kann nicht rückgängig gemacht werden.',
+          screens_delete_general_confirm:
+            'Die allgemeine Notiz „{{comment}}" wird gelöscht und ist nicht mehr Teil des Exports. Das kann nicht rückgängig gemacht werden.',
           qa_scoreboard_title: 'Scoreboard',
           qa_scoreboard_intro:
             'Punkte für jede Prüfung, die jemand aus dem Team behoben hat: was die Prüfung im Wert des Objekts zählt - einmal je Objekt und Prüfung.',
@@ -3989,7 +4626,8 @@ i18n
           qa_scoreboard_collapse: 'Scoreboard minimieren',
           qa_scoreboard_expand: 'Scoreboard anzeigen',
           qa_scoreboard_failed: 'Das Scoreboard konnte nicht geladen werden',
-          qa_scoreboard_empty: 'Noch keine behobenen Prüfungen - Punkte gibt es mit der ersten Prüfung, die von nicht erfüllt auf erfüllt wechselt.',
+          qa_scoreboard_empty:
+            'Noch keine behobenen Prüfungen - Punkte gibt es mit der ersten Prüfung, die von nicht erfüllt auf erfüllt wechselt.',
           qa_mean_line: 'Mittlerer Wert aller Objekte',
           qa_mean_locations_one: '{{count}} Objekt',
           qa_mean_locations_other: '{{count}} Objekte',
@@ -4000,7 +4638,8 @@ i18n
           qa_pie_today_empty: 'Heute noch keine Punkte.',
           qa_pie_overall: 'Punkte gesamt',
           qa_column_daily: '⌀ Tageszuwachs',
-          qa_column_daily_hint: 'Durchschnittlicher Tageszuwachs: Punkte pro Tag seit Beginn des Scoreboards',
+          qa_column_daily_hint:
+            'Durchschnittlicher Tageszuwachs: Punkte pro Tag seit Beginn des Scoreboards',
           qa_total: 'Bisher gesamt',
           qa_column_user: 'Teammitglied',
           qa_column_points: 'Punkte',
@@ -4016,7 +4655,8 @@ i18n
           qa_unnamed_location: 'Unbenanntes Objekt',
           qa_toast_one: '+{{points}} Punkte: {{fix}}',
           qa_toast_many: '+{{points}} Punkte für {{count}} behobene Prüfungen',
-          qa_toast_revoked: '−{{points}} Punkte: Löschmarkierung zurückgenommen',
+          qa_toast_revoked:
+            '−{{points}} Punkte: Löschmarkierung zurückgenommen',
           readiness_column_score: 'Wert',
           readiness_column_location: 'Objekt',
           readiness_column_open: 'Offene Prüfungen',
@@ -4025,7 +4665,8 @@ i18n
           readiness_level_almost: 'Fast bereit',
           readiness_level_progress: 'In Arbeit',
           readiness_level_open: 'Nicht bereit',
-          readiness_open_count: '{{count}} von {{total}} Pflichtprüfungen offen',
+          readiness_open_count:
+            '{{count}} von {{total}} Pflichtprüfungen offen',
           readiness_all_passed: 'Alle Prüfungen erfüllt',
           readiness_required_passed: 'Alle Pflichtprüfungen erfüllt',
           readiness_warn_count: '{{count}} optionale offen',
@@ -4033,20 +4674,29 @@ i18n
           readiness_optional: 'optional',
           readiness_points: '{{points}} Pkt.',
           readiness_points_pass: 'Erfüllt: zählt {{points}} von 100 Punkten',
-          readiness_points_fail: 'Offen: bringt behoben {{points}} von 100 Punkten',
-          readiness_points_warn: 'Optional, offen: bringt behoben {{points}} von 100 Punkten',
+          readiness_points_fail:
+            'Offen: bringt behoben {{points}} von 100 Punkten',
+          readiness_points_warn:
+            'Optional, offen: bringt behoben {{points}} von 100 Punkten',
           readiness_points_na: 'Trifft nicht zu – zählt nicht',
           readiness_airtable_filled: 'Eben aus Airtable übernommen: {{fields}}',
-          readiness_points_explain: 'Jede Prüfung ist ihren Anteil an 100 Punkten wert (ihr Gewicht unter den zutreffenden Prüfungen); optionale wiegen weniger.',
+          readiness_points_explain:
+            'Jede Prüfung ist ihren Anteil an 100 Punkten wert (ihr Gewicht unter den zutreffenden Prüfungen); optionale wiegen weniger.',
           readiness_fix: 'Beheben',
-          readiness_airtable_fix_hint: 'Lädt das Projekt anhand der Projektnummer aus Airtable und zeigt, was sich ändern würde',
+          readiness_airtable_fix_hint:
+            'Lädt das Projekt anhand der Projektnummer aus Airtable und zeigt, was sich ändern würde',
           readiness_airtable_updated: 'Aus Airtable übernommen: {{fields}}',
-          readiness_airtable_unchanged: 'Airtable hat nichts Neues für dieses Objekt',
-          readiness_airtable_not_found: 'In Airtable gibt es kein Projekt mit der Nummer {{project}}',
-          readiness_airtable_failed: 'Das Projekt konnte nicht aus Airtable geladen werden',
-          readiness_airtable_skipped: 'Nicht übernommen - Airtable hat inzwischen einen anderen Wert: {{fields}}',
+          readiness_airtable_unchanged:
+            'Airtable hat nichts Neues für dieses Objekt',
+          readiness_airtable_not_found:
+            'In Airtable gibt es kein Projekt mit der Nummer {{project}}',
+          readiness_airtable_failed:
+            'Das Projekt konnte nicht aus Airtable geladen werden',
+          readiness_airtable_skipped:
+            'Nicht übernommen - Airtable hat inzwischen einen anderen Wert: {{fields}}',
           readiness_airtable_confirm_title: 'Aus Airtable übernehmen?',
-          readiness_airtable_confirm_intro: 'Airtable würde diese Felder des Objekts ändern. Abwählen, was bleiben soll.',
+          readiness_airtable_confirm_intro:
+            'Airtable würde diese Felder des Objekts ändern. Abwählen, was bleiben soll.',
           readiness_airtable_confirm_one: '{{count}} Änderung übernehmen',
           readiness_airtable_confirm_other: '{{count}} Änderungen übernehmen',
           readiness_airtable_cancel: 'Abbrechen',
@@ -4069,7 +4719,8 @@ i18n
           readiness_check_lageplan: 'Lageplan hochgeladen',
           readiness_check_lageplan_aligned: 'Lageplan ausgerichtet',
           readiness_check_lageplan_calibrated: 'Maßstab gesetzt',
-          readiness_check_lageplan_cropped: 'Lageplan auf das Objekt zugeschnitten',
+          readiness_check_lageplan_cropped:
+            'Lageplan auf das Objekt zugeschnitten',
           readiness_check_heat_limitation: 'Heat-Begrenzung gezeichnet',
           readiness_check_purgeable: 'Zum Löschen markiert',
           readiness_check_lageplan_resolution: 'Lageplan-Auflösung ausreichend',
@@ -4087,60 +4738,91 @@ i18n
           readiness_check_users: 'Benutzer zugeordnet',
           readiness_check_objektleitung: 'Objektleitung zugeordnet',
           readiness_check_alarm_recipient: 'Jemand erhält Alarme (nicht stumm)',
-          readiness_check_notifications_enabled: 'Benachrichtigungen eingeschaltet',
+          readiness_check_notifications_enabled:
+            'Benachrichtigungen eingeschaltet',
           readiness_check_rain_check: 'Regenprüfung an',
           readiness_detail_error: 'Nicht geprüft: {{error}}',
           readiness_detail_needs_plan: 'Braucht einen Lageplan mit Messpunkten',
           readiness_detail_address: 'Fehlt: {{missing}}',
-          readiness_detail_product: 'Kein Produkt gewählt - im Objekt-Tab setzen',
-          readiness_detail_geo: 'Keine Koordinaten - nötig für die Karte und die Regenprüfung',
+          readiness_detail_product:
+            'Kein Produkt gewählt - im Objekt-Tab setzen',
+          readiness_detail_geo:
+            'Keine Koordinaten - nötig für die Karte und die Regenprüfung',
           readiness_detail_airtable: 'Kein Airtable-Link',
           readiness_detail_lageplan: 'Kein Lageplan hochgeladen',
-          readiness_detail_lageplan_aligned: '{{missing}} von {{total}} genutzten Plänen nicht ausgerichtet (Wizard Schritt 5)',
-          readiness_detail_lageplan_calibrated: '{{missing}} von {{total}} genutzten Plänen ohne Referenzpunkt und Kalibrierung',
-          readiness_detail_lageplan_cropped: 'Die Messpunkte decken nur {{span}} % des Plans ab - auf das Objekt zuschneiden',
-          readiness_detail_heat_limitation: 'Keine Heat-Begrenzung auf dem Hauptplan',
+          readiness_detail_lageplan_aligned:
+            '{{missing}} von {{total}} genutzten Plänen nicht ausgerichtet (Wizard Schritt 5)',
+          readiness_detail_lageplan_calibrated:
+            '{{missing}} von {{total}} genutzten Plänen ohne Referenzpunkt und Kalibrierung',
+          readiness_detail_lageplan_cropped:
+            'Die Messpunkte decken nur {{span}} % des Plans ab - auf das Objekt zuschneiden',
+          readiness_detail_heat_limitation:
+            'Keine Heat-Begrenzung auf dem Hauptplan',
           readiness_detail_devices: 'Dem Objekt ist kein Gerät zugeordnet',
-          readiness_detail_devices_online: '{{offline}} von {{total}} offline: {{names}}',
+          readiness_detail_devices_online:
+            '{{offline}} von {{total}} offline: {{names}}',
           readiness_detail_measure_points: 'Keine Messpunkte',
-          readiness_detail_sensor_devices_uncovered: '{{count}} Messpunkt(e) auf keinem Gerät',
-          readiness_detail_sensor_devices_ambiguous: '{{count}} Messpunkt(e) in zwei Gerätebereichen',
-          readiness_detail_sensor_devices_count: 'Geräte für {{counted}} Sensoren konfiguriert, {{points}} Messpunkte',
-          readiness_detail_points_named: '{{unnamed}} von {{total}} ohne Namen (Klemmliste)',
-          readiness_detail_threshold: 'Schwelle {{threshold}}, {{invalid}} Messpunkt-Schwelle(n) bei oder unter 0',
+          readiness_detail_sensor_devices_uncovered:
+            '{{count}} Messpunkt(e) auf keinem Gerät',
+          readiness_detail_sensor_devices_ambiguous:
+            '{{count}} Messpunkt(e) in zwei Gerätebereichen',
+          readiness_detail_sensor_devices_count:
+            'Geräte für {{counted}} Sensoren konfiguriert, {{points}} Messpunkte',
+          readiness_detail_points_named:
+            '{{unnamed}} von {{total}} ohne Namen (Klemmliste)',
+          readiness_detail_threshold:
+            'Schwelle {{threshold}}, {{invalid}} Messpunkt-Schwelle(n) bei oder unter 0',
           readiness_detail_users: 'Niemand hat Zugriff auf das Objekt',
           readiness_detail_objektleitung: 'Keine Objektleitung zugeordnet',
-          readiness_detail_alarm_recipient: 'Niemand erhält Alarme - alle Regeln stumm oder ohne Alarme',
-          readiness_detail_notifications_enabled: 'Benachrichtigungen des Objekts sind ausgeschaltet (Gerätestatistik)',
+          readiness_detail_alarm_recipient:
+            'Niemand erhält Alarme - alle Regeln stumm oder ohne Alarme',
+          readiness_detail_notifications_enabled:
+            'Benachrichtigungen des Objekts sind ausgeschaltet (Gerätestatistik)',
           readiness_detail_rain_check: 'Regenprüfung ist aus',
           location_flag_legend: 'Gestreift: Objekt abgeschaltet -',
-          staff_notifications_location_disabled: 'Benachrichtigungen dieses Objekts sind ausgeschaltet',
-          staff_notifications_legend_disabled: 'Gestreift: Benachrichtigungen des Objekts aus (es wird nichts versendet)',
-          staff_notifications_switch_logic_created: 'Vorgänge, Stufen, Eskalationen und Nachrichten entstehen für jedes Objekt.',
-          staff_notifications_switch_logic_sent: 'Mails, SMS und Messenger-Nachrichten gehen nur für freigeschaltete Objekte raus - bei den anderen werden sie als „zurückgehalten“ protokolliert, und die Stufe gilt nicht als unerreichbar.',
-          staff_notifications_switch_logic_system: 'System-Mails ohne Objekt (Login-Links, Einladungen, Passwort-Reset) sind nicht betroffen.',
-          staff_notifications_switch_logic_test: 'Die Testleckage durch Staff geht immer raus.',
+          staff_notifications_location_disabled:
+            'Benachrichtigungen dieses Objekts sind ausgeschaltet',
+          staff_notifications_legend_disabled:
+            'Gestreift: Benachrichtigungen des Objekts aus (es wird nichts versendet)',
+          staff_notifications_switch_logic_created:
+            'Vorgänge, Stufen, Eskalationen und Nachrichten entstehen für jedes Objekt.',
+          staff_notifications_switch_logic_sent:
+            'Mails, SMS und Messenger-Nachrichten gehen nur für freigeschaltete Objekte raus - bei den anderen werden sie als „zurückgehalten“ protokolliert, und die Stufe gilt nicht als unerreichbar.',
+          staff_notifications_switch_logic_system:
+            'System-Mails ohne Objekt (Login-Links, Einladungen, Passwort-Reset) sind nicht betroffen.',
+          staff_notifications_switch_logic_test:
+            'Die Testleckage durch Staff geht immer raus.',
           staff_requests_language: 'Sprache',
-          staff_requests_language_hint_approve: 'Sprache der Freigabe-Mail - und aller weiteren Mails und Messenger-Nachrichten an diese Person (im Profil änderbar). Vorbelegt: die Sprache des Anfrageformulars.',
-          staff_requests_language_hint_reject: 'Sprache der Absage-Mail. Vorbelegt: die Sprache des Anfrageformulars.',
+          staff_requests_language_hint_approve:
+            'Sprache der Freigabe-Mail - und aller weiteren Mails und Messenger-Nachrichten an diese Person (im Profil änderbar). Vorbelegt: die Sprache des Anfrageformulars.',
+          staff_requests_language_hint_reject:
+            'Sprache der Absage-Mail. Vorbelegt: die Sprache des Anfrageformulars.',
           staff_messaging_title: 'Versand (E-Mail/SMS)',
-          staff_messaging_load_error: 'Versandstatus konnte nicht geladen werden',
+          staff_messaging_load_error:
+            'Versandstatus konnte nicht geladen werden',
           staff_messaging_action_error: 'Aktion fehlgeschlagen',
-          staff_messaging_mailing_disabled: 'Mailversand auf diesem Server deaktiviert',
-          staff_messaging_live_mode: 'Mails: live (Benachrichtigungen nur für freigeschaltete Objekte)',
-          staff_messaging_sms_dry_run: 'SMS-Testmodus: es wird nichts versendet',
+          staff_messaging_mailing_disabled:
+            'Mailversand auf diesem Server deaktiviert',
+          staff_messaging_live_mode:
+            'Mails: live (Benachrichtigungen nur für freigeschaltete Objekte)',
+          staff_messaging_sms_dry_run:
+            'SMS-Testmodus: es wird nichts versendet',
           staff_messaging_sms_live: 'SMS: live',
-          staff_messaging_messenger_dry_run: 'Messenger-Testmodus: nichts wird versendet',
+          staff_messaging_messenger_dry_run:
+            'Messenger-Testmodus: nichts wird versendet',
           staff_messaging_messenger_live: 'Messenger: live',
-          staff_messaging_breaker_tripped: 'Notbremse aktiv - jeder Versand ist gestoppt.',
+          staff_messaging_breaker_tripped:
+            'Notbremse aktiv - jeder Versand ist gestoppt.',
           staff_messaging_breaker_reset: 'Notbremse lösen',
           staff_messaging_breaker_reset_confirm_title: 'Notbremse lösen?',
-          staff_messaging_breaker_reset_confirm: 'Die Notbremse hat alle ausgehenden E-Mails, SMS und Messenger-Nachrichten gestoppt, weil ein globales Versandlimit erreicht wurde (Grund: {{reason}}). Nach dem Lösen wird sofort wieder versendet. Besteht die Ursache noch - z. B. eine Schleife, die denselben Alarm verschickt -, werden Empfänger überflutet, bis das Limit erneut greift. Prüfen Sie vorher die letzten Sendungen.',
+          staff_messaging_breaker_reset_confirm:
+            'Die Notbremse hat alle ausgehenden E-Mails, SMS und Messenger-Nachrichten gestoppt, weil ein globales Versandlimit erreicht wurde (Grund: {{reason}}). Nach dem Lösen wird sofort wieder versendet. Besteht die Ursache noch - z. B. eine Schleife, die denselben Alarm verschickt -, werden Empfänger überflutet, bis das Limit erneut greift. Prüfen Sie vorher die letzten Sendungen.',
           staff_messaging_breaker_reset_done: 'Notbremse gelöst.',
           staff_messaging_count_mail_hour: 'Mails in der letzten Stunde',
           staff_messaging_count_sms_hour: 'SMS in der letzten Stunde',
           staff_messaging_count_sms_today: 'SMS heute',
-          staff_messaging_count_messenger_hour: 'Messenger-Nachrichten in der letzten Stunde',
+          staff_messaging_count_messenger_hour:
+            'Messenger-Nachrichten in der letzten Stunde',
           staff_messaging_count_messenger_today: 'Messenger-Nachrichten heute',
           staff_messaging_recent: 'Letzte Sendungen',
           staff_messaging_no_messages: 'Noch nichts versendet.',
@@ -4160,15 +4842,18 @@ i18n
           staff_messaging_status_failed: 'fehlgeschlagen',
           staff_messaging_status_bounced: 'unzustellbar',
           staff_messaging_suppressions: 'Unzustellbare Adressen',
-          staff_messaging_suppressions_hint: 'Diese Adressen waren unzustellbar und erhalten keine Mails mehr. Entfernen Sie einen Eintrag, sobald die Adresse korrigiert ist.',
+          staff_messaging_suppressions_hint:
+            'Diese Adressen waren unzustellbar und erhalten keine Mails mehr. Entfernen Sie einen Eintrag, sobald die Adresse korrigiert ist.',
           staff_messaging_no_suppressions: 'Keine gesperrten Adressen.',
           staff_messaging_col_address: 'Adresse',
           staff_messaging_col_reason: 'Grund',
           staff_messaging_col_bounces: 'Rückläufer',
           staff_messaging_col_last_bounce: 'Letzter Rückläufer',
           staff_messaging_suppression_delete: 'Sperre aufheben',
-          staff_messaging_suppression_delete_confirm_title: 'Mail-Sperre aufheben?',
-          staff_messaging_suppression_delete_confirm: 'Mails an {{address}} sind gesperrt, weil sie zurückkamen ({{bounces}}x, {{reason}}). Ohne Sperre bekommt diese Adresse wieder Mails - auch Alarme und Benachrichtigungen. Funktioniert sie noch nicht, kommen sie erneut zurück, was dem Ruf unseres Mailservers schadet.',
+          staff_messaging_suppression_delete_confirm_title:
+            'Mail-Sperre aufheben?',
+          staff_messaging_suppression_delete_confirm:
+            'Mails an {{address}} sind gesperrt, weil sie zurückkamen ({{bounces}}x, {{reason}}). Ohne Sperre bekommt diese Adresse wieder Mails - auch Alarme und Benachrichtigungen. Funktioniert sie noch nicht, kommen sie erneut zurück, was dem Ruf unseres Mailservers schadet.',
           staff_messaging_suppression_deleted: 'Sperre aufgehoben.',
           nav_menu_toggle: 'Menü',
           nav_sidebar_collapse: 'Seitenleiste einklappen',
@@ -4182,14 +4867,18 @@ i18n
           analyse_export_csv: 'CSV-Export',
           analyse_export_pdf: 'PDF-Report',
           analyse_archive: 'Messungen archivieren',
-          analyse_archive_hint: 'Die Messungen des gewählten Zeitraums archivieren – danach sieht sie nur noch Staff',
-          analyse_archive_pick_span: 'Zuerst einen Zeitraum wählen: S halten und im 2. oder 3. Plot ziehen, oder unter dem Zeitregler ziehen',
+          analyse_archive_hint:
+            'Die Messungen des gewählten Zeitraums archivieren – danach sieht sie nur noch Staff',
+          analyse_archive_pick_span:
+            'Zuerst einen Zeitraum wählen: S halten und im 2. oder 3. Plot ziehen, oder unter dem Zeitregler ziehen',
           analyse_archive_span: 'Zeitraum: {{from}} – {{to}}',
           analyse_archive_scope_device: 'Nur {{device}}',
           analyse_archive_scope_all: 'Alle Geräte des Objekts',
           analyse_archive_action_archive: 'Archivieren (nur Staff sieht sie)',
-          analyse_archive_action_restore: 'Wiederherstellen (alle sehen sie wieder)',
-          analyse_archive_counts: '{{total}} Messung(en) im Zeitraum, davon {{archived}} archiviert',
+          analyse_archive_action_restore:
+            'Wiederherstellen (alle sehen sie wieder)',
+          analyse_archive_counts:
+            '{{total}} Messung(en) im Zeitraum, davon {{archived}} archiviert',
           analyse_archive_confirm: 'Archivieren',
           analyse_archive_restore: 'Wiederherstellen',
           analyse_archive_done: '{{count}} Messung(en) archiviert.',
@@ -4214,8 +4903,10 @@ i18n
           analyse_mean_hint:
             'Jeder Wert als Mittelwert aus so vielen benachbarten geladenen Messungen - reduziert Rauschen.',
           analyse_compare: 'Vergleich',
-          analyse_compare_hint: 'Mit demselben Zeitraum früher vergleichen - nur so weit zurück, wie Messungen vorliegen',
-          analyse_compare_unavailable: 'Keine früheren Messungen zum Vergleichen',
+          analyse_compare_hint:
+            'Mit demselben Zeitraum früher vergleichen - nur so weit zurück, wie Messungen vorliegen',
+          analyse_compare_unavailable:
+            'Keine früheren Messungen zum Vergleichen',
           analyse_compare_none: 'Keiner',
           analyse_compare_1d: 'vor 1 Tag',
           analyse_compare_7d: 'vor 7 Tagen',
@@ -4226,19 +4917,24 @@ i18n
           analyse_compare_1y: 'vor 1 Jahr',
           analyse_compare_end: 'Vergleich beenden',
           analyse_export_csv_raw: 'CSV Rohdaten',
-          analyse_export_csv_raw_hint: 'Staff: die Messwerte ohne Störungsprofil',
+          analyse_export_csv_raw_hint:
+            'Staff: die Messwerte ohne Störungsprofil',
           noise_profile_label: 'Störungsprofil',
-          noise_profile_hint: 'Störungsprofile des gezeigten Geräts - je Sensor das Grundrauschen von EP und WP, das von jedem Wert abgezogen wird (nie unter 0). Die Bewertung sagt, wie gut ein Profil zum geladenen Zeitraum passt.',
+          noise_profile_hint:
+            'Störungsprofile des gezeigten Geräts - je Sensor das Grundrauschen von EP und WP, das von jedem Wert abgezogen wird (nie unter 0). Die Bewertung sagt, wie gut ein Profil zum geladenen Zeitraum passt.',
           noise_profile_choose: '- wählen -',
           noise_profile_empty: 'Noch keine Profile',
           noise_profile_active_badge: 'aktiv',
           noise_profile_apply: 'Anwenden',
           noise_profile_apply_end: 'Test beenden',
-          noise_profile_apply_hint: 'Das Profil nur hier ausprobieren - niemand sonst sieht es, Alarme bleiben unberührt',
+          noise_profile_apply_hint:
+            'Das Profil nur hier ausprobieren - niemand sonst sieht es, Alarme bleiben unberührt',
           noise_profile_activate: 'Aktiv schalten',
-          noise_profile_activate_hint: 'Die Werte dieses Geräts ab jetzt überall mit dem Profil bereinigen - Anzeigen, Heatmaps und die Alarmauswertung (vergangene Alarme bleiben)',
+          noise_profile_activate_hint:
+            'Die Werte dieses Geräts ab jetzt überall mit dem Profil bereinigen - Anzeigen, Heatmaps und die Alarmauswertung (vergangene Alarme bleiben)',
           noise_profile_deactivate: 'Deaktivieren',
-          noise_profile_deactivate_hint: '"{{name}}" abschalten - die Werte des Geräts sind wieder roh',
+          noise_profile_deactivate_hint:
+            '"{{name}}" abschalten - die Werte des Geräts sind wieder roh',
           noise_profile_edit: 'Bearbeiten',
           noise_profile_delete: 'Löschen',
           noise_profile_delete_title: 'Störungsprofil löschen?',
@@ -4248,54 +4944,77 @@ i18n
             'Störungsprofil „{{name}}“ löschen? Es ist das AKTIVE Profil: Die Werte des Geräts sind danach überall wieder roh - Anzeigen, Heatmaps und die Alarmauswertung (vergangene Alarme bleiben). Das kann nicht rückgängig gemacht werden.',
           noise_profile_delete_cancel: 'Abbrechen',
           noise_profile_new: 'Neu aus Auswahl',
-          noise_profile_new_hint: 'Ein neues Profil aus dem niedrigsten EP / WP je Sensor aller Messungen im ausgewählten Zeitraum - gespeichert erst mit Speichern',
+          noise_profile_new_hint:
+            'Ein neues Profil aus dem niedrigsten EP / WP je Sensor aller Messungen im ausgewählten Zeitraum - gespeichert erst mit Speichern',
           noise_profile_csv: 'CSV',
-          noise_profile_csv_hint: 'Die Masken des Profils (Sensor, EP, WP) als CSV herunterladen',
-          noise_profile_view_active: 'Angezeigt: bereinigt mit "{{name}}" (aktiv)',
+          noise_profile_csv_hint:
+            'Die Masken des Profils (Sensor, EP, WP) als CSV herunterladen',
+          noise_profile_view_active:
+            'Angezeigt: bereinigt mit "{{name}}" (aktiv)',
           noise_profile_view_none: 'Angezeigt: Rohwerte - kein aktives Profil',
           noise_profile_view_raw: 'Angezeigt: Rohdaten',
           noise_profile_view_test: 'Angezeigt: Test von "{{name}}" (nur hier)',
-          noise_profile_view_draft: 'Angezeigt: Vorschau des Entwurfs (nur die Messwerte - die Heatmap nach dem Speichern)',
-          noise_profile_rating_hint: 'Für die geladenen Messungen: Passung = Anteil der Werte auf oder über der Maske (darunter schneidet das Profil ins Signal), Wirkung = wie viel des mittleren |WP - EP| es entfernt, Überschreitungen = Werte über der Alarmschwelle vorher -> nachher. Bewertung = Passung x Wirkung.',
+          noise_profile_view_draft:
+            'Angezeigt: Vorschau des Entwurfs (nur die Messwerte - die Heatmap nach dem Speichern)',
+          noise_profile_rating_hint:
+            'Für die geladenen Messungen: Passung = Anteil der Werte auf oder über der Maske (darunter schneidet das Profil ins Signal), Wirkung = wie viel des mittleren |WP - EP| es entfernt, Überschreitungen = Werte über der Alarmschwelle vorher -> nachher. Bewertung = Passung x Wirkung.',
           noise_profile_mask_ep: 'Profil EP',
           noise_profile_mask_wp: 'Profil WP',
           noise_profile_masks_legend: 'Profil (EP / WP)',
           // Das erste Diagramm der Messungen (components/device/SensorColumnsPlot.tsx).
-          measurement_columns_filter_hint: 'Griff an der Achse ziehen, um ruhige Sensoren auszublenden',
-          measurement_columns_grip_title: 'Sensoren ausblenden, deren |WP − EP| im Zeitraum unter dieser Höhe bleibt - ziehen oder Pfeiltasten',
-          measurement_columns_hidden: '{{count}} von {{total}} Sensoren unter {{value}} ausgeblendet',
+          measurement_columns_filter_hint:
+            'Griff an der Achse ziehen, um ruhige Sensoren auszublenden',
+          measurement_columns_grip_title:
+            'Sensoren ausblenden, deren |WP − EP| im Zeitraum unter dieser Höhe bleibt - ziehen oder Pfeiltasten',
+          measurement_columns_hidden:
+            '{{count}} von {{total}} Sensoren unter {{value}} ausgeblendet',
           measurement_columns_show_all: 'Alle zeigen',
           measurement_columns_zoom_reset: 'Zoom zurücksetzen',
-          measurement_columns_shown: '{{shown}} von {{total}} Sensoren · Strg + Mausrad: zoomen',
-          measurement_columns_kept_selected: 'trotz der Höhe gezeigt - er wird verfolgt',
+          measurement_columns_shown:
+            '{{shown}} von {{total}} Sensoren · Strg + Mausrad: zoomen',
+          measurement_columns_kept_selected:
+            'trotz der Höhe gezeigt - er wird verfolgt',
           noise_profile_name: 'Name',
           noise_profile_source: 'Aus {{count}} Messungen, {{from}} - {{to}}',
           noise_profile_now: 'jetzt',
-          noise_profile_sums: 'Summe EP {{sumE}} · Summe WP {{sumW}} · {{sensors}} Sensoren',
+          noise_profile_sums:
+            'Summe EP {{sumE}} · Summe WP {{sumW}} · {{sensors}} Sensoren',
           noise_profile_preview: 'Vorschau',
-          noise_profile_preview_hint: 'An: die Plots zeigen den Entwurf angewendet. Aus: die Rohwerte mit den Masken als gestrichelte Linien.',
+          noise_profile_preview_hint:
+            'An: die Plots zeigen den Entwurf angewendet. Aus: die Rohwerte mit den Masken als gestrichelte Linien.',
           noise_profile_save: 'Speichern',
           noise_profile_cancel: 'Verwerfen',
-          noise_profile_draft_hint: 'Noch nicht gespeichert - die Vorschau siehst nur du.',
+          noise_profile_draft_hint:
+            'Noch nicht gespeichert - die Vorschau siehst nur du.',
           noise_profile_default_name: 'Profil {{date}} · {{span}}',
           usage_help: 'Bedienung',
           usage_help_now: 'Jetzt sinnvoll',
           usage_help_keys: 'Tasten und Maus',
-          usage_tip_frames: 'Die Leertaste spielt die Bilder ab – ← / → ein Bild, ↑ / ↓ zehn.',
-          usage_tip_range_pick: 'Zeitraum für ein Störungsprofil wählen: S halten und im 2. oder 3. Plot ziehen, unter dem Zeitregler ziehen – oder „Letzte 7 Tage“ nehmen.',
-          usage_tip_range_selected: 'Ein Zeitraum ist gewählt: „Neu aus Zeitraum“ macht daraus ein Profil, C hebt ihn auf, ← / → verschieben das fokussierte Band.',
-          usage_tip_draft: 'Ein Entwurf ist offen: im Profil-Plot Werte ziehen, Strg + Z nimmt die letzte Änderung zurück – erst „Speichern“ legt ihn an.',
-          usage_tip_active: 'Alle Werte hier und in den Alarmen sind mit „{{name}}“ bereinigt.',
+          usage_tip_frames:
+            'Die Leertaste spielt die Bilder ab – ← / → ein Bild, ↑ / ↓ zehn.',
+          usage_tip_range_pick:
+            'Zeitraum für ein Störungsprofil wählen: S halten und im 2. oder 3. Plot ziehen, unter dem Zeitregler ziehen – oder „Letzte 7 Tage“ nehmen.',
+          usage_tip_range_selected:
+            'Ein Zeitraum ist gewählt: „Neu aus Zeitraum“ macht daraus ein Profil, C hebt ihn auf, ← / → verschieben das fokussierte Band.',
+          usage_tip_draft:
+            'Ein Entwurf ist offen: im Profil-Plot Werte ziehen, Strg + Z nimmt die letzte Änderung zurück – erst „Speichern“ legt ihn an.',
+          usage_tip_active:
+            'Alle Werte hier und in den Alarmen sind mit „{{name}}“ bereinigt.',
           usage_tip_plot_click: 'Plot anklicken – dann wirken die Pfeiltasten.',
-          usage_tip_plot_pick: 'Einen Punkt anklicken oder ziehen – danach ändern ↑ / ↓ seinen Wert.',
-          usage_tip_plot_point: 'Sensor {{sensor}} ({{series}}) ist gewählt: ↑ / ↓ ändern den Wert, ← / → wechseln den Sensor.',
+          usage_tip_plot_pick:
+            'Einen Punkt anklicken oder ziehen – danach ändern ↑ / ↓ seinen Wert.',
+          usage_tip_plot_point:
+            'Sensor {{sensor}} ({{series}}) ist gewählt: ↑ / ↓ ändern den Wert, ← / → wechseln den Sensor.',
           key_hint_range_clear: 'gewählten Zeitraum aufheben',
           noise_badge_active: 'Störungsprofil: {{name}}',
-          noise_badge_active_hint: 'Die gezeigten Werte sind mit dem aktiven Störungsprofil „{{name}}“ bereinigt – für alle und in den Alarmen. Klick: zum Profil-Bereich.',
+          noise_badge_active_hint:
+            'Die gezeigten Werte sind mit dem aktiven Störungsprofil „{{name}}“ bereinigt – für alle und in den Alarmen. Klick: zum Profil-Bereich.',
           noise_badge_test: 'Test: {{name}}',
-          noise_badge_test_hint: 'Ein Störungsprofil, das nur hier ausprobiert wird – niemand sonst sieht es. Klick: zum Profil-Bereich.',
+          noise_badge_test_hint:
+            'Ein Störungsprofil, das nur hier ausprobiert wird – niemand sonst sieht es. Klick: zum Profil-Bereich.',
           noise_badge_draft: 'Vorschau: Entwurf',
-          noise_badge_draft_hint: 'Die Messungen zeigen den ungespeicherten Entwurf. Klick: zum Profil-Bereich.',
+          noise_badge_draft_hint:
+            'Die Messungen zeigen den ungespeicherten Entwurf. Klick: zum Profil-Bereich.',
           key_space: 'Leertaste',
           frame_slider_alarm_jump: 'Klick unter der Leiste: zum Beginn',
           key_ctrl: 'Strg',
@@ -4307,8 +5026,10 @@ i18n
           key_hint_plan: 'Lageplan wechseln',
           analyse_plan_key: 'Taste {{key}}',
           analyse_open_wizard: 'Lageplan-Wizard',
-          analyse_open_wizard_hint: 'Diesen Standort und Plan im Lageplan-Wizard öffnen - Ausrichtung, Sensoren und Heat-Limitations',
-          key_hint_range_select: 'im 2. / 3. Plot: Zeitraum für ein Störungsprofil wählen',
+          analyse_open_wizard_hint:
+            'Diesen Standort und Plan im Lageplan-Wizard öffnen - Ausrichtung, Sensoren und Heat-Limitations',
+          key_hint_range_select:
+            'im 2. / 3. Plot: Zeitraum für ein Störungsprofil wählen',
           key_hint_zoom: 'zoomen',
           key_hint_plot_drag: 'Wert ändern – über Sensoren: malen',
           key_hint_plot_both: 'EP und WP zusammen',
@@ -4323,73 +5044,102 @@ i18n
           span_minute_one: '{{count}} Minute',
           span_minute_other: '{{count}} Minuten',
           noise_profile_plot_tooltip_title: 'Sensor {{sensor}}',
-          noise_profile_plot_tooltip_subtitle: 'Profil und Rohmessung am Zeitregler',
+          noise_profile_plot_tooltip_subtitle:
+            'Profil und Rohmessung am Zeitregler',
           noise_profile_changes: 'Manuelle Änderungen ({{count}})',
           noise_profile_no_changes: 'Noch keine – einen Punkt im Plot ziehen.',
           noise_profile_change_sensor: 'Sensor {{sensor}}',
-          noise_profile_change_sensors: 'Sensoren {{first}}–{{last}} ({{count}})',
+          noise_profile_change_sensors:
+            'Sensoren {{first}}–{{last}} ({{count}})',
           noise_profile_undo: 'Rückgängig',
-          noise_profile_undo_hint: 'Letzte manuelle Änderung rückgängig (Strg + Z)',
+          noise_profile_undo_hint:
+            'Letzte manuelle Änderung rückgängig (Strg + Z)',
           noise_profile_undo_all: 'Alle Änderungen zurücknehmen',
           noise_profile_range_last_days_one: 'Letzter Tag',
           noise_profile_range_last_days_other: 'Letzte {{count}} Tage',
-          noise_profile_range_last_days_hint_one: 'Den letzten Tag bis jetzt als Zeitraum eines neuen Profils',
-          noise_profile_range_last_days_hint_other: 'Die letzten {{count}} Tage bis jetzt als Zeitraum eines neuen Profils',
+          noise_profile_range_last_days_hint_one:
+            'Den letzten Tag bis jetzt als Zeitraum eines neuen Profils',
+          noise_profile_range_last_days_hint_other:
+            'Die letzten {{count}} Tage bis jetzt als Zeitraum eines neuen Profils',
           thresholds_toggle_title: 'Schwellwerte',
           thresholds_toggle_object: 'Objekt: {{value}} mV',
           plot_help_noise_profile_title: 'Störungsprofil',
-          plot_help_noise_profile_what: 'Je Sensor das Grundrauschen des bearbeiteten Profils: EP-Maske (rot), WP-Maske (blau). Jede Messung wird damit bereinigt: Wert minus Maske, nie unter 0. Gestrichelt dahinter: die Rohmessung am Zeitregler – liegt eine Maske darüber, schneidet sie ins Signal.',
-          plot_help_noise_profile_actions: 'Punkt hoch / runter ziehen::den Wert dieses Sensors ändern (die nähere Linie)\nÜber Sensoren ziehen::sie entlang der gezogenen Linie malen\nShift + Ziehen::EP und WP zusammen\nAnklicken, dann ← / →::Sensor wechseln – ↑ / ↓: Wert ±1 (Shift ±10)\nStrg + Z oder „Rückgängig“::die letzte Änderung zurücknehmen – alle stehen neben Speichern\nÜberfahren::die Werte des Sensors; die nächste Linie (oder ihr Legendeneintrag) wird hervorgehoben',
-          plot_help_noise_profile_workflows: 'Maske senken, die ins Signal schneidet::mit der gestrichelten Messung vergleichen → darunter ziehen → Passung der Bewertung beobachten\nVerrauschten Sensor ausblenden::EP und WP mit Shift + Ziehen gemeinsam anheben → Überschreitungen prüfen',
+          plot_help_noise_profile_what:
+            'Je Sensor das Grundrauschen des bearbeiteten Profils: EP-Maske (rot), WP-Maske (blau). Jede Messung wird damit bereinigt: Wert minus Maske, nie unter 0. Gestrichelt dahinter: die Rohmessung am Zeitregler – liegt eine Maske darüber, schneidet sie ins Signal.',
+          plot_help_noise_profile_actions:
+            'Punkt hoch / runter ziehen::den Wert dieses Sensors ändern (die nähere Linie)\nÜber Sensoren ziehen::sie entlang der gezogenen Linie malen\nShift + Ziehen::EP und WP zusammen\nAnklicken, dann ← / →::Sensor wechseln – ↑ / ↓: Wert ±1 (Shift ±10)\nStrg + Z oder „Rückgängig“::die letzte Änderung zurücknehmen – alle stehen neben Speichern\nÜberfahren::die Werte des Sensors; die nächste Linie (oder ihr Legendeneintrag) wird hervorgehoben',
+          plot_help_noise_profile_workflows:
+            'Maske senken, die ins Signal schneidet::mit der gestrichelten Messung vergleichen → darunter ziehen → Passung der Bewertung beobachten\nVerrauschten Sensor ausblenden::EP und WP mit Shift + Ziehen gemeinsam anheben → Überschreitungen prüfen',
           noise_profile_saved: 'Störungsprofil gespeichert.',
-          noise_profile_activated: '"{{name}}" ist aktiv - die Werte des Geräts werden überall bereinigt.',
-          noise_profile_deactivated: 'Störungsprofil deaktiviert - die Werte sind wieder roh.',
+          noise_profile_activated:
+            '"{{name}}" ist aktiv - die Werte des Geräts werden überall bereinigt.',
+          noise_profile_deactivated:
+            'Störungsprofil deaktiviert - die Werte sind wieder roh.',
           noise_profile_error: 'Störungsprofil: die Anfrage ist fehlgeschlagen',
           noise_profile_range: 'Auswahl:',
-          noise_profile_range_none: 'Kein Zeitraum gewählt - S gedrückt halten und im 2. oder 3. Plot ziehen, oder im Streifen unter dem Zeitschieber ziehen.',
+          noise_profile_range_none:
+            'Kein Zeitraum gewählt - S gedrückt halten und im 2. oder 3. Plot ziehen, oder im Streifen unter dem Zeitschieber ziehen.',
           noise_profile_range_clear: 'Auswahl aufheben',
-          noise_profile_range_band: 'Zeitraum für ein neues Störungsprofil - ziehen verschiebt ihn, die Ränder ändern die Länge',
+          noise_profile_range_band:
+            'Zeitraum für ein neues Störungsprofil - ziehen verschiebt ihn, die Ränder ändern die Länge',
           noise_profile_score: 'Bewertung',
-          noise_profile_score_hint: 'Passung x Wirkung - wie nützlich das Profil für die geladenen Messungen ist',
+          noise_profile_score_hint:
+            'Passung x Wirkung - wie nützlich das Profil für die geladenen Messungen ist',
           noise_profile_fit: 'Passung',
-          noise_profile_fit_hint: 'Anteil der Werte auf oder über der Maske - darunter schneidet das Profil ins Signal',
+          noise_profile_fit_hint:
+            'Anteil der Werte auf oder über der Maske - darunter schneidet das Profil ins Signal',
           noise_profile_effect: 'Wirkung',
-          noise_profile_effect_hint: 'Wie viel des mittleren |WP - EP| das Profil entfernt',
-          noise_profile_rating_of: 'Bewertung von "{{name}}" für den geladenen Zeitraum',
-          noise_profile_rating_details: 'Werte über der Alarmschwelle: {{before}} -> {{after}} · {{count}} Messungen',
+          noise_profile_effect_hint:
+            'Wie viel des mittleren |WP - EP| das Profil entfernt',
+          noise_profile_rating_of:
+            'Bewertung von "{{name}}" für den geladenen Zeitraum',
+          noise_profile_rating_details:
+            'Werte über der Alarmschwelle: {{before}} -> {{after}} · {{count}} Messungen',
           noise_profile_plot_label: 'Störungsprofil je Sensor',
           noise_profile_plot_reference: 'Messung (roh)',
           measurement_compare_range_select_hint: 'Ziehen: Zeitraum wählen',
           thresholds_toggle_load: 'Schwellwerte laden',
           thresholds_toggle_hide: 'Schwellwerte ausblenden',
-          thresholds_toggle_hint: 'Die Schwellwerte aus den Einstellungen hier zeigen und bearbeiten - die Bewertung zählt die Werte darüber',
+          thresholds_toggle_hint:
+            'Die Schwellwerte aus den Einstellungen hier zeigen und bearbeiten - die Bewertung zählt die Werte darüber',
           analyse_compare_title: 'Vergleich: jetzt gegenüber {{label}}',
           analyse_compare_changes_title: 'Größte Änderungen',
-          analyse_compare_changes_hint: 'Sensoren nach ihrer größten Änderung von WP oder EP seitdem - ein Klick zeigt den Sensor im zweiten Diagramm.',
+          analyse_compare_changes_hint:
+            'Sensoren nach ihrer größten Änderung von WP oder EP seitdem - ein Klick zeigt den Sensor im zweiten Diagramm.',
           analyse_compare_changes_empty: 'Keine Werte zum Vergleichen.',
           analyse_compare_col_wp: 'Δ WP',
           analyse_compare_col_ep: 'Δ EP',
-          analyse_compare_row_add: 'Sensor {{sensor}} im zweiten Diagramm anzeigen',
-          analyse_compare_row_remove: 'Sensor {{sensor}} aus dem zweiten Diagramm entfernen',
-          analyse_compare_measurements: 'Messung jetzt: {{now}} · damals: {{then}}',
+          analyse_compare_row_add:
+            'Sensor {{sensor}} im zweiten Diagramm anzeigen',
+          analyse_compare_row_remove:
+            'Sensor {{sensor}} aus dem zweiten Diagramm entfernen',
+          analyse_compare_measurements:
+            'Messung jetzt: {{now}} · damals: {{then}}',
           analyse_compare_no_data: 'Keine Messungen im Vergleichszeitraum.',
           analyse_compare_ep_then: 'EP damals',
           analyse_compare_wp_then: 'WP damals',
           analyse_compare_wp_change: 'WP-Änderung',
           analyse_compare_change_mean: 'Mittlere WP-Änderung',
-          analyse_compare_change_deviation: 'Abweichung der WP-Änderung (mittlere 50 %)',
+          analyse_compare_change_deviation:
+            'Abweichung der WP-Änderung (mittlere 50 %)',
           analyse_sensors_disable: 'Sensoren deaktivieren ({{count}})',
           analyse_sensors_enable: 'Sensoren aktivieren ({{count}})',
-          analyse_sensors_pick_hint: 'Sensoren in der Spaltengrafik oder im Plan auswählen, um sie zu deaktivieren oder zu aktivieren.',
-          analyse_sensors_disable_title: 'Die ausgewählten Sensoren abschalten: sie lösen keinen Alarm mehr aus und werden grau gezeichnet',
-          analyse_sensors_enable_title: 'Die ausgewählten Sensoren wieder einschalten',
+          analyse_sensors_pick_hint:
+            'Sensoren in der Spaltengrafik oder im Plan auswählen, um sie zu deaktivieren oder zu aktivieren.',
+          analyse_sensors_disable_title:
+            'Die ausgewählten Sensoren abschalten: sie lösen keinen Alarm mehr aus und werden grau gezeichnet',
+          analyse_sensors_enable_title:
+            'Die ausgewählten Sensoren wieder einschalten',
           analyse_sensors_disable_confirm_title: 'Sensoren deaktivieren?',
-          analyse_sensors_disable_confirm: 'Sensor(en) {{sensors}} lösen keinen Alarm mehr aus, bis sie wieder aktiviert werden.',
+          analyse_sensors_disable_confirm:
+            'Sensor(en) {{sensors}} lösen keinen Alarm mehr aus, bis sie wieder aktiviert werden.',
           analyse_sensors_disable_confirm_button: 'Deaktivieren',
           analyse_sensors_disabled: 'Sensor(en) {{sensors}} deaktiviert',
           analyse_sensors_enabled: 'Sensor(en) {{sensors}} aktiviert',
-          analyse_sensors_switch_failed: 'Sensoren konnten nicht umgeschaltet werden',
-          analyse_sensors_switch_unknown: 'Die ausgewählten Sensoren haben keinen Messpunkt in diesem Objekt',
+          analyse_sensors_switch_failed:
+            'Sensoren konnten nicht umgeschaltet werden',
+          analyse_sensors_switch_unknown:
+            'Die ausgewählten Sensoren haben keinen Messpunkt in diesem Objekt',
           analyse_compare_change_range: 'Spannweite der WP-Änderung (Min–Max)',
           analyse_compare_ep_change: 'EP-Änderung',
           analyse_heatmap_change: 'Änderung seit {{label}} (normiert)',
@@ -4406,7 +5156,8 @@ i18n
           portal_no_access:
             'Keine Zugriffsberechtigung für die Inhalte dieser Location.',
           page_no_access: 'Keine Zugriffsberechtigung für diese Seite.',
-          page_permissions_failed: 'Ihre Berechtigungen konnten nicht geladen werden.',
+          page_permissions_failed:
+            'Ihre Berechtigungen konnten nicht geladen werden.',
           page_permissions_retry: 'Erneut versuchen',
           verwaltung_title: 'Objektverwaltung',
           verwaltung_denied: 'Nur für ProGeo®-Mitarbeitende.',
@@ -4428,8 +5179,10 @@ i18n
           verwaltung_permissions: 'Berechtigungen',
           verwaltung_existing_user: 'Vorhandenen Nutzer hinzufügen',
           verwaltung_user_filter_placeholder: 'Name oder E-Mail filtern…',
-          verwaltung_select_user_count_one: 'Nutzer auswählen ({{count}} Treffer)…',
-          verwaltung_select_user_count_other: 'Nutzer auswählen ({{count}} Treffer)…',
+          verwaltung_select_user_count_one:
+            'Nutzer auswählen ({{count}} Treffer)…',
+          verwaltung_select_user_count_other:
+            'Nutzer auswählen ({{count}} Treffer)…',
           verwaltung_invite_title: 'Neue Adresse einladen',
           verwaltung_invite_send: 'Einladung senden',
           verwaltung_open: 'Objekt laden',
@@ -4534,7 +5287,8 @@ i18n
           selection_more_one: '+ {{count}} weiteres',
           selection_more_other: '+ {{count}} weitere',
           selection_users_failed: 'Die Nutzer konnten nicht geladen werden',
-          selection_users_empty: 'Noch niemand hat Zugriff auf diese Objekte - laden Sie jemanden per E-Mail ein.',
+          selection_users_empty:
+            'Noch niemand hat Zugriff auf diese Objekte - laden Sie jemanden per E-Mail ein.',
           selection_user_name: 'Name',
           selection_user_email: 'E-Mail',
           selection_users_search: 'Name oder E-Mail suchen…',
@@ -4543,13 +5297,20 @@ i18n
           selection_assign_email: 'Per E-Mail',
           selection_assign_confirm_one: '{{count}} Objekt zuweisen',
           selection_assign_confirm_other: '{{count}} Objekte zuweisen',
-          selection_assign_granted_one: 'Zugriff auf {{count}} Objekt erteilt - der Nutzer wurde benachrichtigt.',
-          selection_assign_granted_other: 'Zugriff auf {{count}} Objekte erteilt - der Nutzer wurde benachrichtigt.',
-          selection_assign_invited_one: 'Einladung für {{count}} Objekt verschickt.',
-          selection_assign_invited_other: 'Einladung für {{count}} Objekte verschickt.',
-          selection_assign_already: 'Der Nutzer hat bereits Zugriff auf diese Objekte.',
-          selection_assign_staff: 'Diese Adresse gehört zum ProGeo-Team - es hat bereits Zugriff auf alle Objekte.',
-          selection_assign_failed: 'Die Objekte konnten nicht zugewiesen werden',
+          selection_assign_granted_one:
+            'Zugriff auf {{count}} Objekt erteilt - der Nutzer wurde benachrichtigt.',
+          selection_assign_granted_other:
+            'Zugriff auf {{count}} Objekte erteilt - der Nutzer wurde benachrichtigt.',
+          selection_assign_invited_one:
+            'Einladung für {{count}} Objekt verschickt.',
+          selection_assign_invited_other:
+            'Einladung für {{count}} Objekte verschickt.',
+          selection_assign_already:
+            'Der Nutzer hat bereits Zugriff auf diese Objekte.',
+          selection_assign_staff:
+            'Diese Adresse gehört zum ProGeo-Team - es hat bereits Zugriff auf alle Objekte.',
+          selection_assign_failed:
+            'Die Objekte konnten nicht zugewiesen werden',
           selection_merge_title: 'Projekte zusammenführen',
           selection_merge_intro:
             'Die Geräte der ausgewählten Objekte ziehen ins Hauptprojekt um - mit allen Messungen und Alarmen, Lageplänen, Messpunkten und Nutzern. Die übrigen Objekte werden danach ausgeblendet; die Geräte senden weiter unter ihren alten Nummern, ihre Daten kommen im Hauptprojekt an.',
@@ -4570,17 +5331,23 @@ i18n
           selection_merge_background:
             'Eine lange Messhistorie braucht etwas Zeit - das Fenster kann geschlossen werden, das Zusammenführen läuft weiter.',
           selection_merge_close: 'Schließen',
-          selection_merge_done: 'Die Projekte wurden in Projekt {{nr}} zusammengeführt.',
+          selection_merge_done:
+            'Die Projekte wurden in Projekt {{nr}} zusammengeführt.',
           selection_merge_incomplete:
             'Ein Gerät hat während des Verschiebens gesendet - das Zusammenführen bitte erneut starten.',
-          selection_merge_job_failed: 'Das Zusammenführen wurde abgebrochen: {{reason}}',
+          selection_merge_job_failed:
+            'Das Zusammenführen wurde abgebrochen: {{reason}}',
           selection_merge_stale:
             'Kein Hintergrund-Worker hat das Zusammenführen übernommen - es wurde noch nichts verschoben. Läuft der Celery-Worker mit der aktuellen Version? Bitte neu starten und das Zusammenführen erneut starten.',
           selection_merge_retry: 'Erneut starten',
-          selection_merge_failed: 'Die Projekte konnten nicht zusammengeführt werden',
-          selection_merge_need_two: 'Zum Zusammenführen mindestens zwei Objekte auswählen.',
-          selection_merge_has_merged: 'Mehrere zusammengeführte Projekte sind ausgewählt - bitte nacheinander zusammenführen.',
-          selection_merge_already_merged: 'Ein ausgewähltes Objekt ist bereits in ein anderes Projekt zusammengeführt.',
+          selection_merge_failed:
+            'Die Projekte konnten nicht zusammengeführt werden',
+          selection_merge_need_two:
+            'Zum Zusammenführen mindestens zwei Objekte auswählen.',
+          selection_merge_has_merged:
+            'Mehrere zusammengeführte Projekte sind ausgewählt - bitte nacheinander zusammenführen.',
+          selection_merge_already_merged:
+            'Ein ausgewähltes Objekt ist bereits in ein anderes Projekt zusammengeführt.',
           locations_group_badge_one: '{{count}} Teil',
           locations_group_badge_other: '{{count}} Teile',
           locations_merged_badge: '+{{count}} zusammengeführt',
@@ -4590,19 +5357,24 @@ i18n
           location_group_dissolve_message:
             'Die Teile stehen wieder für sich mit ihren eigenen Projektnummern; Projekt #{{nr}} wird entfernt. Es werden keine Daten gelöscht.',
           location_group_dissolved: 'Die Zusammenführung wurde aufgelöst.',
-          location_group_dissolve_failed: 'Die Zusammenführung konnte nicht aufgelöst werden',
+          location_group_dissolve_failed:
+            'Die Zusammenführung konnte nicht aufgelöst werden',
           rechte_title: 'Nutzer dieses Objekts',
-          rechte_own_only: 'Sie können Ihre eigenen Benachrichtigungen ändern – die anderer Personen verwaltet Ihr Administrator.',
+          rechte_own_only:
+            'Sie können Ihre eigenen Benachrichtigungen ändern – die anderer Personen verwaltet Ihr Administrator.',
           rechte_add_user: 'Nutzer hinzufügen',
           rechte_invite_email: 'E-Mail-Adresse',
           rechte_invite_first_name: 'Vorname (optional)',
           rechte_invite_last_name: 'Nachname (optional)',
           rechte_invite_hint:
             'Hat die Adresse schon ein Konto, erhält die Person sofort Zugriff und wird benachrichtigt. Sonst schicken wir eine Einladung zur Registrierung.',
-          rechte_invite_granted: 'Nutzer existiert bereits, wir haben eine Benachrichtigung gesendet.',
+          rechte_invite_granted:
+            'Nutzer existiert bereits, wir haben eine Benachrichtigung gesendet.',
           rechte_invite_invited: 'Einladung an {{email}} gesendet.',
-          rechte_invite_already: '{{email}} hat bereits Zugriff auf dieses Objekt.',
-          rechte_invite_staff: 'Diese Adresse gehört zum ProGeo-Team - sie hat bereits Zugriff auf alle Objekte.',
+          rechte_invite_already:
+            '{{email}} hat bereits Zugriff auf dieses Objekt.',
+          rechte_invite_staff:
+            'Diese Adresse gehört zum ProGeo-Team - sie hat bereits Zugriff auf alle Objekte.',
           rechte_add_confirm: 'Hinzufügen',
           rechte_cancel: 'Abbrechen',
           rechte_empty: 'Für dieses Objekt ist noch niemand berechtigt.',
@@ -4616,7 +5388,8 @@ i18n
           rechte_transport_sms: 'SMS',
           rechte_transport_both: 'E-Mail + SMS',
           rechte_transport_messenger: 'Messenger',
-          rechte_messenger_missing: 'Für diesen Benutzer ist im Profil noch kein Messenger eingerichtet.',
+          rechte_messenger_missing:
+            'Für diesen Benutzer ist im Profil noch kein Messenger eingerichtet.',
           rechte_type_alarm: 'Alarm',
           rechte_type_timeout: 'Timeout',
           rechte_type_news: 'News',
@@ -4628,11 +5401,14 @@ i18n
           rechte_scope: 'Zugriff',
           rechte_scope_single: 'Nur dieses Objekt',
           rechte_scope_account: 'Alle Objekte des Kontos',
-          rechte_scope_account_named_one: 'Alle Objekte von {{account}} ({{count}} Objekt)',
-          rechte_scope_account_named_other: 'Alle Objekte von {{account}} ({{count}} Objekte)',
+          rechte_scope_account_named_one:
+            'Alle Objekte von {{account}} ({{count}} Objekt)',
+          rechte_scope_account_named_other:
+            'Alle Objekte von {{account}} ({{count}} Objekte)',
           rechte_revoke_account_message:
             '{{name}} wird aus dem Konto entfernt und verliert den Zugriff auf alle seine Objekte ({{scope}}) und die Benachrichtigungen dazu.',
-          rechte_revoke_own_hint: 'Den eigenen Zugriff können Sie nicht entziehen.',
+          rechte_revoke_own_hint:
+            'Den eigenen Zugriff können Sie nicht entziehen.',
           rechte_scope_account_hint:
             'Gewährt Zugriff auf alle Objekte dieses Kontos.',
           rechte_account_revoke_hint:
@@ -4646,31 +5422,38 @@ i18n
             '{{name}} verliert den Zugriff auf das Objekt {{object}} und erhält keine Benachrichtigungen mehr dazu.',
           rechte_summary:
             '{{account}} über das Konto · {{single}} einzeln · {{staff}} ProGeo-Team',
-          rechte_summary_customer: '{{account}} über das Konto · {{single}} einzeln',
+          rechte_summary_customer:
+            '{{account}} über das Konto · {{single}} einzeln',
           rechte_scope_staff: 'ProGeo-Team (alle Objekte)',
-          rechte_staff_hint: 'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Die Objektleitung legt ProGeo in den Einstellungen fest.',
+          rechte_staff_hint:
+            'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Die Objektleitung legt ProGeo in den Einstellungen fest.',
           rechte_staff_hint_staff:
             'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Kunden sehen sie hier nicht - nur die als Objektleitung zugewiesenen (Einstellungen).',
           rechte_objektleitung: 'Objektleitung',
           benach_title: 'Ereignisverlauf',
           benach_event_open_status: 'Heatmap zu diesem Zeitpunkt anzeigen',
           channel_title: 'Benachrichtigungen aufs Handy',
-          channel_intro: 'Geben Sie Ihre Mobilnummer ein und wählen Sie, wie Alarme Sie erreichen.',
+          channel_intro:
+            'Geben Sie Ihre Mobilnummer ein und wählen Sie, wie Alarme Sie erreichen.',
           channel_mobile: 'Mobilnummer',
           channel_choose: 'Kanal',
           channel_sms: 'SMS',
           channel_matrix: 'ProGeo Chat',
           channel_sms_hint: 'Alarme kommen per SMS an diese Nummer.',
-          channel_matrix_hint: 'Kostenlose Chat-App auf unserem eigenen Server - in etwa zwei Minuten eingerichtet.',
+          channel_matrix_hint:
+            'Kostenlose Chat-App auf unserem eigenen Server - in etwa zwei Minuten eingerichtet.',
           channel_save: 'Speichern',
           channel_save_matrix: 'Weiter zur Chat-Einrichtung',
           channel_change: 'Ändern',
           channel_summary_sms: 'Alarme per SMS an {{number}}',
           channel_summary_matrix: 'Alarme im ProGeo Chat ({{id}})',
-          channel_saved_sms: 'SMS ist für {{count}} Benachrichtigungseinstellung(en) eingeschaltet.',
+          channel_saved_sms:
+            'SMS ist für {{count}} Benachrichtigungseinstellung(en) eingeschaltet.',
           channel_save_error: 'Der Kanal konnte nicht gespeichert werden',
-          channel_error_phone_invalid: 'Bitte geben Sie eine gültige Mobilnummer ein.',
-          channel_error_mobile_required: 'Für SMS wird eine Mobilnummer benötigt.',
+          channel_error_phone_invalid:
+            'Bitte geben Sie eine gültige Mobilnummer ein.',
+          channel_error_mobile_required:
+            'Für SMS wird eine Mobilnummer benötigt.',
           phone_country_code: 'Ländervorwahl',
           phone_number_placeholder: 'Rufnummer',
           phone_invalid: 'Bitte geben Sie eine gültige Telefonnummer ein.',
@@ -4705,19 +5488,27 @@ i18n
           einstell_points_empty:
             'Für dieses Objekt sind noch keine Sensoren bekannt.',
           einstell_points_threshold: 'Schwellwert',
-          einstell_mixer_hint: 'Gilt für jeden Sensor ohne eigenen Schwellwert. Orangen Griff an der Achse ziehen oder Wert eintippen.',
-          einstell_mixer_usage: 'Klick auf einen Balken: Sensor deaktivieren / aktivieren · Klick darüber oder vom Balken ziehen: eigener Schwellwert auf dieser Höhe · Klick auf einen Regler: entfernen · Regler oder Linie ziehen · Strg+Klick: auswählen (Shift: Bereich) · Strg + Mausrad: Zoom',
+          einstell_mixer_hint:
+            'Gilt für jeden Sensor ohne eigenen Schwellwert. Orangen Griff an der Achse ziehen oder Wert eintippen.',
+          einstell_mixer_usage:
+            'Klick auf einen Balken: Sensor deaktivieren / aktivieren · Klick darüber oder vom Balken ziehen: eigener Schwellwert auf dieser Höhe · Klick auf einen Regler: entfernen · Regler oder Linie ziehen · Strg+Klick: auswählen (Shift: Bereich) · Strg + Mausrad: Zoom',
           einstell_mixer_marker_hint: 'Klick: entfernen · Ziehen: verschieben',
-          einstell_mixer_bar_hint: 'Klick auf den Balken: deaktivieren / aktivieren',
-          thresholds_source_raw: 'Maxima der geladenen Messungen ({{period}}, {{count}}) – roh',
-          thresholds_source_profile: 'Maxima der geladenen Messungen ({{period}}, {{count}}) – bereinigt mit „{{name}}“',
-          einstell_mixer_protected_legend: 'Über dem Objekt-Schwellwert, durch eigenen geschützt',
+          einstell_mixer_bar_hint:
+            'Klick auf den Balken: deaktivieren / aktivieren',
+          thresholds_source_raw:
+            'Maxima der geladenen Messungen ({{period}}, {{count}}) – roh',
+          thresholds_source_profile:
+            'Maxima der geladenen Messungen ({{period}}, {{count}}) – bereinigt mit „{{name}}“',
+          einstell_mixer_protected_legend:
+            'Über dem Objekt-Schwellwert, durch eigenen geschützt',
           einstell_mixer_plot_label: 'Sensoren - ← → blättern',
-          einstell_mixer_range: 'Sensoren {{first}}–{{last}} von {{total}} · blättern mit ← → oder Shift + Mausrad',
+          einstell_mixer_range:
+            'Sensoren {{first}}–{{last}} von {{total}} · blättern mit ← → oder Shift + Mausrad',
           einstell_mixer_all_shown: 'Alle {{total}} Sensoren',
           einstell_mixer_quiet_hidden: '{{count}} ruhige ausgeblendet',
           einstell_mixer_hide_quiet: 'Ruhige Sensoren ausblenden ({{count}})',
-          einstell_mixer_hide_quiet_hint: 'Sensoren, deren Höchstwert unter {{percent}} % ihres Schwellwerts bleibt',
+          einstell_mixer_hide_quiet_hint:
+            'Sensoren, deren Höchstwert unter {{percent}} % ihres Schwellwerts bleibt',
           einstell_mixer_scroll_left: 'Nach links blättern',
           einstell_mixer_scroll_right: 'Nach rechts blättern',
           einstell_mixer_24h: '24 h',
@@ -4735,12 +5526,14 @@ i18n
           einstell_mixer_select_all: 'Alle auswählen',
           einstell_mixer_select_over: 'Die darüber auswählen',
           einstell_mixer_select_none: 'Auswahl aufheben',
-          einstell_mixer_bulk_value: 'Schwellwert für die ausgewählten Sensoren',
+          einstell_mixer_bulk_value:
+            'Schwellwert für die ausgewählten Sensoren',
           einstell_mixer_set_selected: 'Für Auswahl setzen',
           einstell_mixer_remove_selected: 'Eigene Schwellwerte entfernen',
           einstell_mixer_disable_selected: 'Sensoren deaktivieren',
           einstell_mixer_enable_selected: 'Sensoren aktivieren',
-          einstell_mixer_disabled_hint: 'Deaktiviert - löst keinen Alarm aus, wird grau angezeigt',
+          einstell_mixer_disabled_hint:
+            'Deaktiviert - löst keinen Alarm aus, wird grau angezeigt',
           einstell_mixer_disabled_legend: 'Deaktiviert ({{count}})',
           einstell_mixer_change_disabled: 'deaktiviert',
           einstell_mixer_change_enabled: 'wieder aktiviert',
@@ -4751,7 +5544,8 @@ i18n
           einstell_mixer_saving: 'Speichert…',
           einstell_mixer_discard: 'Verwerfen',
           einstell_mixer_saved: '{{count}} Änderung(en) gespeichert.',
-          einstell_mixer_save_failed: 'Schwellwerte konnten nicht gespeichert werden',
+          einstell_mixer_save_failed:
+            'Schwellwerte konnten nicht gespeichert werden',
           einstell_mixer_load_failed: 'Sensoren konnten nicht geladen werden',
           einstell_section_system: 'Systemeinstellungen',
           einstell_product: 'Produkt',
@@ -4784,12 +5578,15 @@ i18n
           devcfg_saved: 'Konfiguration gespeichert.',
           devcfg_qrcodes: 'Controller-QR-Codes drucken',
           legacycfg_loading: 'Controller-Konfiguration wird geladen...',
-          legacycfg_load_failed: 'Controller-Konfiguration konnte nicht geladen werden',
-          legacycfg_second_of: 'Zweite Sensorkonfiguration - das Intervall ist das von Projekt {{project}} ({{interval}} s).',
+          legacycfg_load_failed:
+            'Controller-Konfiguration konnte nicht geladen werden',
+          legacycfg_second_of:
+            'Zweite Sensorkonfiguration - das Intervall ist das von Projekt {{project}} ({{interval}} s).',
           legacycfg_interval: 'Messintervall',
           legacycfg_sensors: 'Sensoren',
           legacycfg_reply: 'Nächste Antwort an den Controller',
-          legacycfg_fields: 'Der Controller liest: Pulldown {{pd}}, Intervall {{interval}} s, Sensoren {{sensors}}, PE {{earth}}',
+          legacycfg_fields:
+            'Der Controller liest: Pulldown {{pd}}, Intervall {{interval}} s, Sensoren {{sensors}}, PE {{earth}}',
           legacycfg_reply_hint:
             'Der Controller übernimmt Änderungen mit seiner nächsten Übertragung und startet mit der neuen Konfiguration neu.',
           legacycfg_not_answered:
@@ -4802,7 +5599,8 @@ i18n
           legacycfg_reload: 'Neu laden',
           legacycfg_save: 'Speichern',
           legacycfg_saving: 'Speichert...',
-          legacycfg_saved: 'Gespeichert - der Controller übernimmt es mit seiner nächsten Übertragung.',
+          legacycfg_saved:
+            'Gespeichert - der Controller übernimmt es mit seiner nächsten Übertragung.',
           legacycfg_save_failed: 'Speichern fehlgeschlagen',
           qrprint_print: 'Drucken',
           qrprint_wifi: 'Controller-WLAN',
@@ -4811,7 +5609,8 @@ i18n
           einstell_pe_geschaltet: 'PE geschaltet',
           einstell_rain_check: 'Regenabgleich',
           einstell_language: 'Sprache des Objekts',
-          einstell_language_hint: 'Einladungen an neue Nutzer dieses Objekts werden in dieser Sprache verschickt.',
+          einstell_language_hint:
+            'Einladungen an neue Nutzer dieses Objekts werden in dieser Sprache verschickt.',
           einstell_rain_check_hint:
             'Ruft stündlich den Regen am Objekt ab und zeigt ihn in der Alarm-Zeitleiste',
           einstell_rain_check_no_coordinates:
@@ -4868,10 +5667,12 @@ i18n
           topbar_logout_confirm_text: 'Möchten Sie sich wirklich abmelden?',
           topbar_view_as_user: 'Als normaler Benutzer anzeigen',
           topbar_view_as_staff: 'Zurück als Mitarbeiter',
-          topbar_view_as_user_title: 'Zeigt das Portal ohne Mitarbeiter-Funktionen, so wie es ein normaler Benutzer sieht',
+          topbar_view_as_user_title:
+            'Zeigt das Portal ohne Mitarbeiter-Funktionen, so wie es ein normaler Benutzer sieht',
           topbar_archived_shown: 'Archivierte: sichtbar',
           topbar_archived_hidden: 'Archivierte: ausgeblendet',
-          topbar_archived_title: 'Archivierte Messungen sehen nur Mitarbeiter - klicken, um sie in allen Ansichten aus- oder einzublenden',
+          topbar_archived_title:
+            'Archivierte Messungen sehen nur Mitarbeiter - klicken, um sie in allen Ansichten aus- oder einzublenden',
           sidebar_locations: 'Standorte',
           sidebar_devices: 'Geräte',
           sidebar_device_statistics: 'Gerätestatistik',
@@ -4882,14 +5683,18 @@ i18n
           sidebar_staff_admin: 'Benutzerverwaltung',
           sidebar_threshold_fine_tune: 'Schwellwert-Feinabstimmung',
           ftt_title: 'Feinabstimmung der Alarmschwellen',
-          ftt_intro: 'Die Ergebnisse von manage.py fine_tune_thresholds - Schwellwert je Objekt wählen und übernehmen.',
-          ftt_subtitle: 'Gescannt {{at}} · letzte {{days}} Tage · Puffer {{buffer}} % · Minimum {{minimum}} · Anheben < {{raise}} %',
+          ftt_intro:
+            'Die Ergebnisse von manage.py fine_tune_thresholds - Schwellwert je Objekt wählen und übernehmen.',
+          ftt_subtitle:
+            'Gescannt {{at}} · letzte {{days}} Tage · Puffer {{buffer}} % · Minimum {{minimum}} · Anheben < {{raise}} %',
           ftt_file: 'Ergebnisdatei',
           ftt_file_locations: '{{count}} Objekte',
           ftt_file_applied: '{{count}} übernommen',
           ftt_reload: 'Neu laden',
-          ftt_no_files: 'Noch keine Ergebnisse - zuerst auf dem Server scannen:',
-          ftt_stale: 'Diese Ergebnisse sind zu alt zum Übernehmen - bitte neu scannen.',
+          ftt_no_files:
+            'Noch keine Ergebnisse - zuerst auf dem Server scannen:',
+          ftt_stale:
+            'Diese Ergebnisse sind zu alt zum Übernehmen - bitte neu scannen.',
           ftt_table_title: 'Objekte',
           ftt_empty: 'Keine Objekte.',
           ftt_filter_all: 'Alle ({{count}})',
@@ -4913,32 +5718,42 @@ i18n
           ftt_scanned: 'gescannt {{value}}',
           ftt_now: 'jetzt {{value}}',
           ftt_gone: 'Objekt gelöscht',
-          ftt_drift_hint: 'Der Schwellwert hat sich seit dem Scan geändert - Übernehmen wird abgelehnt, bitte neu scannen.',
-          ftt_margin_hint: 'Schwellwert {{value}} über dem echten Maximum {{max}}',
+          ftt_drift_hint:
+            'Der Schwellwert hat sich seit dem Scan geändert - Übernehmen wird abgelehnt, bitte neu scannen.',
+          ftt_margin_hint:
+            'Schwellwert {{value}} über dem echten Maximum {{max}}',
           ftt_margin_no_data: 'Keine Messungen im Zeitraum - kein Maximum',
           ftt_margin_short: 'Abstand {{margin}}',
-          ftt_zone_unsafe: 'Unter dem Maximum {{max}}: das Objekt würde alarmieren',
-          ftt_zone_buffer: 'Sicherheitspuffer: bis {{buffer}} % über dem Maximum',
+          ftt_zone_unsafe:
+            'Unter dem Maximum {{max}}: das Objekt würde alarmieren',
+          ftt_zone_buffer:
+            'Sicherheitspuffer: bis {{buffer}} % über dem Maximum',
           ftt_apply: 'Ausgewählte übernehmen ({{count}})',
           ftt_apply_title: '{{count}} Schwellwert(e) übernehmen?',
           ftt_apply_confirm: '{{count}} übernehmen',
-          ftt_apply_note: 'Objekte, deren Schwellwert sich seit dem Scan geändert hat oder die einen neuen aktiven Alarm haben, werden übersprungen. Rückgängig auf dem Server: manage.py fine_tune_thresholds --revert <Datei>.',
+          ftt_apply_note:
+            'Objekte, deren Schwellwert sich seit dem Scan geändert hat oder die einen neuen aktiven Alarm haben, werden übersprungen. Rückgängig auf dem Server: manage.py fine_tune_thresholds --revert <Datei>.',
           ftt_result_applied: '{{count}} Schwellwert(e) übernommen.',
           ftt_remove: 'Aus Datei entfernen ({{count}})',
           ftt_remove_title: '{{count}} Objekt(e) aus der Datei entfernen?',
           ftt_remove_confirm: '{{count}} entfernen',
-          ftt_remove_note: 'Nur die Ergebnisdatei ändert sich - die Objekte behalten ihre Schwellwerte.',
+          ftt_remove_note:
+            'Nur die Ergebnisdatei ändert sich - die Objekte behalten ihre Schwellwerte.',
           ftt_reset: 'Regler zurücksetzen',
           ftt_cancel: 'Abbrechen',
-          ftt_note: 'Sicherheitsabstand = wie weit der neue Schwellwert über dem echten Maximum des Zeitraums liegt. Grün: mindestens der Puffer ({{buffer}} %), gelb: weniger, rot: unter dem Maximum (das Objekt würde alarmieren). Auf dem Regler: rot das Maximum, orange der bisherige Schwellwert, grün der Vorschlag; rote Streifen sind der unsichere Bereich unter dem Maximum, grüne Streifen der Sicherheitspuffer. Ein bewegter Regler wählt die Zeile aus.',
+          ftt_note:
+            'Sicherheitsabstand = wie weit der neue Schwellwert über dem echten Maximum des Zeitraums liegt. Grün: mindestens der Puffer ({{buffer}} %), gelb: weniger, rot: unter dem Maximum (das Objekt würde alarmieren). Auf dem Regler: rot das Maximum, orange der bisherige Schwellwert, grün der Vorschlag; rote Streifen sind der unsichere Bereich unter dem Maximum, grüne Streifen der Sicherheitspuffer. Ein bewegter Regler wählt die Zeile aus.',
           sidebar_database_usage: 'Datenbank-Nutzung',
           sidebar_user_activity: 'Nutzeraktivität',
           dbu_title: 'Datenbank-Nutzung',
-          dbu_intro: 'Wie die Projekt-Datenbanken genutzt werden - und welche tot sind.',
-          dbu_subtitle: 'Stand {{at}} (alle paar Minuten neu). Tot: keine Geräte oder keine einzige Messung. Veraltet: seit {{days}} Tagen keine Messung.',
+          dbu_intro:
+            'Wie die Projekt-Datenbanken genutzt werden - und welche tot sind.',
+          dbu_subtitle:
+            'Stand {{at}} (alle paar Minuten neu). Tot: keine Geräte oder keine einzige Messung. Veraltet: seit {{days}} Tagen keine Messung.',
           dbu_load_failed: 'Die Datenbank-Nutzung konnte nicht geladen werden',
           dbu_refresh: 'Aktualisieren',
-          dbu_refresh_hint: 'Neu berechnen - fragt jede Projekt-Datenbank ab (dauert einige Sekunden)',
+          dbu_refresh_hint:
+            'Neu berechnen - fragt jede Projekt-Datenbank ab (dauert einige Sekunden)',
           dbu_status_active: 'Aktiv',
           dbu_status_stale: 'Veraltet',
           dbu_status_no_measurements: 'Tot: keine Messungen',
@@ -4957,9 +5772,11 @@ i18n
           dbu_pie_center_count: 'Datenbanken',
           dbu_pie_center_size: 'gesamt',
           dbu_pie_select: 'Diese Datenbanken in der Tabelle zeigen',
-          dbu_status_help: 'Aktiv: Messungen in den letzten {{days}} Tagen. Ein Klick auf einen Status filtert die Tabelle.',
+          dbu_status_help:
+            'Aktiv: Messungen in den letzten {{days}} Tagen. Ein Klick auf einen Status filtert die Tabelle.',
           dbu_largest: 'Die {{count}} größten Datenbanken',
-          dbu_largest_note: 'Nach Status gefärbt - eine große tote Datenbank ist freizugebender Speicher.',
+          dbu_largest_note:
+            'Nach Status gefärbt - eine große tote Datenbank ist freizugebender Speicher.',
           dbu_table_title: 'Alle Projekt-Datenbanken',
           dbu_show_ids: 'Ausgewählte IDs zeigen ({{count}})',
           dbu_clear_selection: 'Auswahl aufheben',
@@ -4967,17 +5784,24 @@ i18n
           dbu_ids_label: 'Projekt-IDs, eine pro Zeile',
           dbu_ids_copy: 'IDs kopieren',
           dbu_ids_copied: '{{count}} IDs kopiert',
-          dbu_ids_copy_failed: 'Kopieren fehlgeschlagen - den Text markieren und von Hand kopieren',
-          dbu_ids_in_use: '{{count}} davon sind in Benutzung (Geräte und Messungen): {{ids}}. Das Skript lehnt sie ohne --allow-active ab.',
-          dbu_ids_unreadable: '{{count}} davon konnten nicht gelesen werden - vor dem Löschen prüfen.',
-          dbu_ids_how: 'Zum Löschen die IDs auf dem Server in eine Datei speichern und dort ausführen:',
-          dbu_ids_safety: 'Nur von Hand im Terminal: das Skript zeigt jede Datenbank im Detail, sichert sie vorher und verlangt eine getippte Bestätigung, bevor es etwas löscht. Gelöschte Datenbanken lassen sich nur aus dieser Sicherung wiederherstellen.',
+          dbu_ids_copy_failed:
+            'Kopieren fehlgeschlagen - den Text markieren und von Hand kopieren',
+          dbu_ids_in_use:
+            '{{count}} davon sind in Benutzung (Geräte und Messungen): {{ids}}. Das Skript lehnt sie ohne --allow-active ab.',
+          dbu_ids_unreadable:
+            '{{count}} davon konnten nicht gelesen werden - vor dem Löschen prüfen.',
+          dbu_ids_how:
+            'Zum Löschen die IDs auf dem Server in eine Datei speichern und dort ausführen:',
+          dbu_ids_safety:
+            'Nur von Hand im Terminal: das Skript zeigt jede Datenbank im Detail, sichert sie vorher und verlangt eine getippte Bestätigung, bevor es etwas löscht. Gelöschte Datenbanken lassen sich nur aus dieser Sicherung wiederherstellen.',
           dbu_close: 'Schließen',
-          dbu_scanning: 'Projekt-Datenbanken werden abgefragt: {{done}} von {{total}}',
+          dbu_scanning:
+            'Projekt-Datenbanken werden abgefragt: {{done}} von {{total}}',
           dbu_merging: 'Ergebnisse werden zusammengeführt…',
           dbu_kpi_scanned: 'von {{total}} - wird abgefragt',
           dbu_waiting: 'Die Datenbanken werden abgefragt…',
-          dbu_split_off: 'Die Datenbank-Aufteilung ist auf diesem Server aus (PROJECT_DB_SPLIT): das Portal liest und schreibt weiter die Haupt-Datenbank. Die Projekt-Datenbanken enthalten eine Kopie - veraltet oder tot heißt hier nicht, dass das Projekt es ist.',
+          dbu_split_off:
+            'Die Datenbank-Aufteilung ist auf diesem Server aus (PROJECT_DB_SPLIT): das Portal liest und schreibt weiter die Haupt-Datenbank. Die Projekt-Datenbanken enthalten eine Kopie - veraltet oder tot heißt hier nicht, dass das Projekt es ist.',
           dbu_empty: 'Keine Projekt-Datenbanken auf diesem Server.',
           dbu_filter_all: 'Alle ({{count}})',
           dbu_filter_dead: 'Tot ({{count}})',
@@ -4990,11 +5814,13 @@ i18n
           dbu_col_last_measurement: 'Letzte Messung',
           dbu_col_size: 'Größe',
           ua_title: 'Nutzeraktivität',
-          ua_intro: 'Wie lange Nutzer bleiben und welche Seiten sie besuchen - Nutzer, die der Nutzungsstatistik zugestimmt haben; Staff wird nie erfasst.',
+          ua_intro:
+            'Wie lange Nutzer bleiben und welche Seiten sie besuchen - Nutzer, die der Nutzungsstatistik zugestimmt haben; Staff wird nie erfasst.',
           ua_period: 'Zeitraum',
           ua_days: '{{count}} Tage',
           ua_load_failed: 'Die Nutzeraktivität konnte nicht geladen werden',
-          ua_disabled: 'Die Erfassung ist ausgeschaltet (ACTIVITY_TRACKING_ENABLED) - es werden nur zuvor gespeicherte Ereignisse gezeigt (aufbewahrt {{days}} Tage).',
+          ua_disabled:
+            'Die Erfassung ist ausgeschaltet (ACTIVITY_TRACKING_ENABLED) - es werden nur zuvor gespeicherte Ereignisse gezeigt (aufbewahrt {{days}} Tage).',
           ua_kpi_sessions: 'Sitzungen',
           ua_kpi_limit: 'die neuesten {{count}}',
           ua_kpi_users: 'Nutzer',
@@ -5004,7 +5830,8 @@ i18n
           ua_per_day: 'Sitzungen pro Tag',
           ua_lengths: 'Wie lange Sitzungen dauern',
           ua_page_time: 'Zeit pro Seite (Top {{count}})',
-          ua_page_time_note: 'Gesamtzeit, die die Seite sichtbar war, alle Sitzungen des Zeitraums.',
+          ua_page_time_note:
+            'Gesamtzeit, die die Seite sichtbar war, alle Sitzungen des Zeitraums.',
           ua_when: 'Wann Sitzungen beginnen',
           ua_hour: 'Stunde',
           ua_sessions: 'Sitzungen',
@@ -5024,9 +5851,11 @@ i18n
           ua_back: 'Alle Sitzungen',
           ua_session_of: 'Sitzung von {{user}}, {{at}}',
           ua_session_failed: 'Die Sitzung konnte nicht geladen werden',
-          ua_session_missing: 'Diese Sitzung gibt es (nicht mehr) - Ereignisse werden nur begrenzt aufbewahrt.',
+          ua_session_missing:
+            'Diese Sitzung gibt es (nicht mehr) - Ereignisse werden nur begrenzt aufbewahrt.',
           ua_timeline: 'Verlauf',
-          ua_timeline_note: 'Ein Balken: die Zeit, die die Seite sichtbar war (ohne Zeit im Hintergrund). Ein Punkt: ein Klick.',
+          ua_timeline_note:
+            'Ein Balken: die Zeit, die die Seite sichtbar war (ohne Zeit im Hintergrund). Ein Punkt: ein Klick.',
           ua_legend_visible: 'Seite sichtbar',
           ua_legend_click: 'Klick',
           ua_session_pages: 'Zeit pro Seite',
@@ -5057,16 +5886,19 @@ i18n
           favorites_remove_named: '{{name}} aus Favoriten entfernen',
           favorites_unnamed: 'Objekt ohne Namen',
           favorites_count: '{{count}} von {{max}} Favoriten',
-          favorites_full: 'Höchstens {{max}} Favoriten - bitte erst einen entfernen.',
+          favorites_full:
+            'Höchstens {{max}} Favoriten - bitte erst einen entfernen.',
           favorites_failed: 'Favorit konnte nicht gespeichert werden',
           locations_title: 'Objektübersicht',
           locations_count: '{{count}} von {{total}}',
-          locations_search_placeholder: 'Suche nach Name, Adresse, PLZ, Ort, Projekt-Nr.…',
+          locations_search_placeholder:
+            'Suche nach Name, Adresse, PLZ, Ort, Projekt-Nr.…',
           locations_search_clear: 'Suche leeren',
           locations_only_connected: 'Nur Objekte mit verbundenen Geräten',
           locations_active_alarms: 'Aktive Alarme',
           locations_active_alarms_count: 'Aktive Alarme ({{count}}{{more}})',
-          locations_active_alarms_truncated: 'Nur die neuesten {{count}} aktiven Alarme werden angezeigt.',
+          locations_active_alarms_truncated:
+            'Nur die neuesten {{count}} aktiven Alarme werden angezeigt.',
           locations_no_active_alarms: 'Keine aktiven Alarme.',
           locations_close: 'Schließen',
           locations_empty: 'Keine Objekte gefunden.',
@@ -5093,10 +5925,14 @@ i18n
           locations_state_offline: 'Offline',
           locations_error_load: 'Objekte konnten nicht geladen werden',
           locations_error_details: 'Objektdetails konnten nicht geladen werden',
-          locations_error_alarm_summary: 'Alarmübersicht konnte nicht geladen werden',
-          locations_preload_progress: 'Zustand wird geladen … {{done}}/{{total}}',
-          locations_row_failed: 'Konnte nicht geladen werden - Seite neu laden zum erneuten Versuch',
-          locations_error_active_alarms: 'Aktive Alarme konnten nicht geladen werden',
+          locations_error_alarm_summary:
+            'Alarmübersicht konnte nicht geladen werden',
+          locations_preload_progress:
+            'Zustand wird geladen … {{done}}/{{total}}',
+          locations_row_failed:
+            'Konnte nicht geladen werden - Seite neu laden zum erneuten Versuch',
+          locations_error_active_alarms:
+            'Aktive Alarme konnten nicht geladen werden',
           heat_limit_create: 'Heat-Limitation erstellen',
           heat_limit_copy: 'Aus bestehendem Projekt kopieren',
           heat_limit_copy_source: 'Quell-Projekt / Standort',
@@ -5105,15 +5941,21 @@ i18n
           heat_limit_copy_empty: 'Dieser Lageplan hat keine Heat-Limitations.',
           heat_limit_copy_points: '{{count}} Punkte',
           heat_limit_copy_confirm: '{{count}} Bereich(e) kopieren',
-          heat_limit_copy_locations_failed: 'Standorte konnten nicht geladen werden',
-          heat_limit_copy_load_failed: 'Heat-Limitations konnten nicht geladen werden',
+          heat_limit_copy_locations_failed:
+            'Standorte konnten nicht geladen werden',
+          heat_limit_copy_load_failed:
+            'Heat-Limitations konnten nicht geladen werden',
           heat_limit_name: 'Name des Bereichs',
-          heat_limit_hint_create: 'Auf den Plan klicken, um Punkte zu setzen ({{count}} gesetzt) - ziehen verschiebt, Doppelklick entfernt einen, D + Ziehen entfernt mehrere.',
-          heat_limit_hint_edit: 'Punkte ziehen - ein Klick auf den Plan fügt einen hinzu, ein Doppelklick entfernt einen, D + Ziehen entfernt mehrere.',
+          heat_limit_hint_create:
+            'Auf den Plan klicken, um Punkte zu setzen ({{count}} gesetzt) - ziehen verschiebt, Doppelklick entfernt einen, D + Ziehen entfernt mehrere.',
+          heat_limit_hint_edit:
+            'Punkte ziehen - ein Klick auf den Plan fügt einen hinzu, ein Doppelklick entfernt einen, D + Ziehen entfernt mehrere.',
           heat_limit_undo: 'Punkt zurück',
           heat_limit_confirm: 'Bestätigen',
-          heat_limit_floating: 'Heat-Limitation mit {{count}} Punkt(en) - noch nicht gespeichert',
-          heat_limit_floating_more: 'Ein Bereich braucht mindestens 3 Punkte - auf den Plan klicken, um sie zu setzen.',
+          heat_limit_floating:
+            'Heat-Limitation mit {{count}} Punkt(en) - noch nicht gespeichert',
+          heat_limit_floating_more:
+            'Ein Bereich braucht mindestens 3 Punkte - auf den Plan klicken, um sie zu setzen.',
           heat_limit_cancel: 'Abbrechen',
           heat_limit_edit: 'Bereich bearbeiten',
           heat_limit_delete: 'Bereich löschen',
@@ -5124,9 +5966,12 @@ i18n
           heat_limit_numbered: 'Bereich {{number}}',
           heat_limit_saved: 'Heat-Limitation gespeichert.',
           heat_limit_deleted: 'Heat-Limitation gelöscht.',
-          heat_limit_save_failed: 'Heat-Limitation konnte nicht gespeichert werden',
-          heatmap_sigma_save_failed: 'Kernbreite (σ) konnte nicht gespeichert werden',
-          heat_limit_handle_hint: 'Ziehen: verschieben · Doppelklick: entfernen',
+          heat_limit_save_failed:
+            'Heat-Limitation konnte nicht gespeichert werden',
+          heatmap_sigma_save_failed:
+            'Kernbreite (σ) konnte nicht gespeichert werden',
+          heat_limit_handle_hint:
+            'Ziehen: verschieben · Doppelklick: entfernen',
           escalations_title: 'Eskalationen',
           escalation_filter_open: 'Offen',
           escalation_filter_closed: 'Geschlossen',
@@ -5136,13 +5981,16 @@ i18n
           escalation_unassigned: 'Nicht zugewiesen',
           escalation_load_failed: 'Eskalationen konnten nicht geladen werden',
           escalation_action_failed: 'Konnte nicht gespeichert werden',
-          escalation_staff_only: 'Eskalationen sind nur für Mitarbeiter sichtbar.',
+          escalation_staff_only:
+            'Eskalationen sind nur für Mitarbeiter sichtbar.',
           flow_tab_list: 'Eskalationen',
           flow_tab_flow: 'Alarmablauf',
           flow_title: 'Offene Benachrichtigungsfälle',
-          flow_hint: 'Was wurde wem geschickt, was kommt als Nächstes – die nächste Nachricht zuerst. Versand mit dem nächsten Lauf (alle {{minutes}} min).',
+          flow_hint:
+            'Was wurde wem geschickt, was kommt als Nächstes – die nächste Nachricht zuerst. Versand mit dem nächsten Lauf (alle {{minutes}} min).',
           flow_empty: 'Keine offenen Benachrichtigungsfälle.',
-          flow_truncated: 'Gezeigt: die nächsten {{shown}} von {{total}} offenen Fällen – die übrigen kommen später an die Reihe.',
+          flow_truncated:
+            'Gezeigt: die nächsten {{shown}} von {{total}} offenen Fällen – die übrigen kommen später an die Reihe.',
           flow_load_failed: 'Der Alarmablauf konnte nicht geladen werden.',
           flow_kind_alarm: 'Alarm',
           flow_kind_offline: 'Offline',
@@ -5158,10 +6006,13 @@ i18n
           flow_device_count_one: '{{count}} Gerät sendet nicht',
           flow_device_count_other: '{{count}} Geräte senden nicht',
           flow_sent: 'Stufe {{stage}} versendet',
-          flow_sent_withheld: 'Stufe {{stage}} nicht versendet (Benachrichtigungen aus)',
+          flow_sent_withheld:
+            'Stufe {{stage}} nicht versendet (Benachrichtigungen aus)',
           flow_sent_escalation: 'Stufe {{stage}}: Eskalation an das Team',
-          flow_withheld_sent: 'protokolliert, nicht versendet – Benachrichtigungen des Objekts aus',
-          flow_withheld_planned: 'wird nicht versendet – Benachrichtigungen des Objekts aus',
+          flow_withheld_sent:
+            'protokolliert, nicht versendet – Benachrichtigungen des Objekts aus',
+          flow_withheld_planned:
+            'wird nicht versendet – Benachrichtigungen des Objekts aus',
           flow_failed_count_one: '{{count}} unzustellbar',
           flow_failed_count_other: '{{count}} unzustellbar',
           flow_reached_nobody: 'hat niemanden erreicht',
@@ -5191,7 +6042,8 @@ i18n
           flow_back_since: 'Geräte wieder online seit {{when}}',
           flow_unreachable: 'letzte Stufe hat niemanden erreicht',
           flow_end: 'Ende',
-          flow_end_acknowledge: 'sobald jemand quittiert (Mail-Link oder Portal)',
+          flow_end_acknowledge:
+            'sobald jemand quittiert (Mail-Link oder Portal)',
           flow_end_back_online: 'sobald alle Geräte {{hours}} h wieder senden',
           flow_end_after_last: 'nach Stufe {{stage}} keine weitere Nachricht',
           flow_channel_mail: 'Mail',
@@ -5214,9 +6066,11 @@ i18n
           escalation_opened_by: 'eröffnet von {{name}}',
           escalation_closed_by: 'geschlossen von {{name}}',
           escalation_message_placeholder: 'Nachricht…',
-          escalation_message_hint: 'Kommt ins Protokoll - als Kommentar oder mit Statuswechsel, Zuweisung oder Schließen darunter.',
+          escalation_message_hint:
+            'Kommt ins Protokoll - als Kommentar oder mit Statuswechsel, Zuweisung oder Schließen darunter.',
           escalation_comment: 'Kommentieren',
-          escalation_search: 'Filtern nach Titel, Projekt, Objekt, Person, Status…',
+          escalation_search:
+            'Filtern nach Titel, Projekt, Objekt, Person, Status…',
           escalation_search_clear: 'Filter leeren',
           escalation_search_none: 'Keine Eskalation passt zum Filter.',
           escalation_status: 'Status',
@@ -5225,7 +6079,8 @@ i18n
           escalation_assign: 'Zuweisen',
           escalation_close: 'Eskalation schließen',
           escalation_close_confirm_title: 'Eskalation schließen?',
-          escalation_close_confirm: 'Die Eskalation <strong>"{{title}}"</strong> (Projekt <strong>{{location}}</strong>) wird geschlossen; Ihre Nachricht kommt ins Protokoll. Eine geschlossene Eskalation kann <strong>nicht mehr kommentiert, zugewiesen oder geändert werden</strong> - das kann nicht rückgängig gemacht werden.',
+          escalation_close_confirm:
+            'Die Eskalation <strong>"{{title}}"</strong> (Projekt <strong>{{location}}</strong>) wird geschlossen; Ihre Nachricht kommt ins Protokoll. Eine geschlossene Eskalation kann <strong>nicht mehr kommentiert, zugewiesen oder geändert werden</strong> - das kann nicht rückgängig gemacht werden.',
           escalation_closed_hint: 'Diese Eskalation ist geschlossen.',
           escalation_entry_created: 'hat die Eskalation eröffnet',
           escalation_entry_status: 'hat den Status geändert: {{from}} → {{to}}',
@@ -5265,11 +6120,14 @@ i18n
           docker_restart_failed: '{{name}} konnte nicht neu gestartet werden',
           docker_remove_failed: '{{name}} konnte nicht entfernt werden',
           docker_confirm_restart_title: 'Container neu starten?',
-          docker_confirm_restart_message: '{{name}} wird gestoppt und wieder gestartet - kurz nicht erreichbar.',
+          docker_confirm_restart_message:
+            '{{name}} wird gestoppt und wieder gestartet - kurz nicht erreichbar.',
           docker_confirm_remove_title: 'Container entfernen?',
-          docker_confirm_remove_message: '{{name}} wird endgültig gelöscht, samt Logs.',
+          docker_confirm_remove_message:
+            '{{name}} wird endgültig gelöscht, samt Logs.',
           docker_confirm_stop_title: 'Container stoppen?',
-          docker_confirm_stop_message: '{{name}} wird gestoppt: Der Dienst darin ist nicht erreichbar, bis jemand den Container wieder startet (Play-Knopf). Anfragen an ihn schlagen so lange fehl.',
+          docker_confirm_stop_message:
+            '{{name}} wird gestoppt: Der Dienst darin ist nicht erreichbar, bis jemand den Container wieder startet (Play-Knopf). Anfragen an ihn schlagen so lange fehl.',
           docker_cancel: 'Abbrechen',
           docker_logs_title: 'Logs von {{name}}',
           docker_logs_tail: 'Letzte Zeilen',
@@ -5293,7 +6151,8 @@ i18n
           provision_test_clear_confirm: 'Löschen',
           provision_test_clear_cancel: 'Abbrechen',
           provision_loading: 'Wird geladen…',
-          provision_load_failed: 'Die Einrichtungsdaten konnten nicht geladen werden',
+          provision_load_failed:
+            'Die Einrichtungsdaten konnten nicht geladen werden',
           provision_location_unavailable:
             'Für diesen Standort können keine Geräte eingerichtet werden: Er hat keine Projekt-ID, oder Ihnen fehlt der Zugriff.',
           provision_model: 'Modell (device.model)',
@@ -5306,7 +6165,8 @@ i18n
           provision_section_save: 'Speichern',
           provision_section_cancel: 'Abbrechen',
           provision_generated_later: 'wird erzeugt',
-          provision_generate_hint: 'Device-Hash, Token und URL werden beim Erzeugen der Konfiguration eingetragen.',
+          provision_generate_hint:
+            'Device-Hash, Token und URL werden beim Erzeugen der Konfiguration eingetragen.',
           provision_config_show: 'Konfiguration anzeigen',
           provision_config_hide: 'Konfiguration ausblenden',
           sidebar_ws_debug: 'WS-Debug',
@@ -5342,24 +6202,33 @@ i18n
           device_stats_title: 'Gerätestatistik',
           locmap_purgeable_mark: 'Zum Löschen markieren',
           locmap_purgeable_unmark: 'Markierung aufheben',
-          locmap_purgeable_mark_title: 'Objekt zum Löschen vormerken - nur die Markierung, jetzt wird nichts gelöscht',
-          locmap_purgeable_unmark_title: 'Objekt behalten (Lösch-Markierung aufheben)',
+          locmap_purgeable_mark_title:
+            'Objekt zum Löschen vormerken - nur die Markierung, jetzt wird nichts gelöscht',
+          locmap_purgeable_unmark_title:
+            'Objekt behalten (Lösch-Markierung aufheben)',
           locmap_purgeable_badge: 'löschbar',
           locmap_purgeable_marked: 'Zum Löschen markiert',
           locmap_purgeable_marked_toast: '{{name}} zum Löschen markiert',
-          locmap_purgeable_unmarked_toast: 'Lösch-Markierung von {{name}} aufgehoben',
-          locmap_purgeable_error: 'Lösch-Markierung konnte nicht gespeichert werden',
+          locmap_purgeable_unmarked_toast:
+            'Lösch-Markierung von {{name}} aufgehoben',
+          locmap_purgeable_error:
+            'Lösch-Markierung konnte nicht gespeichert werden',
           device_stats_col_purgeable: 'Löschen',
           device_stats_purgeable_mark: 'Zum Löschen markieren',
           device_stats_purgeable_unmark: 'Markierung aufheben',
-          device_stats_purgeable_mark_title: 'Objekt zum Löschen vormerken - nur die Markierung, jetzt wird nichts gelöscht',
-          device_stats_purgeable_unmark_title: 'Objekt behalten (Lösch-Markierung aufheben)',
+          device_stats_purgeable_mark_title:
+            'Objekt zum Löschen vormerken - nur die Markierung, jetzt wird nichts gelöscht',
+          device_stats_purgeable_unmark_title:
+            'Objekt behalten (Lösch-Markierung aufheben)',
           device_stats_purgeable_marked: 'Zum Löschen markiert',
           device_stats_purgeable_marked_toast: '{{name}} zum Löschen markiert',
-          device_stats_purgeable_unmarked_toast: 'Lösch-Markierung von {{name}} aufgehoben',
-          device_stats_purgeable_error: 'Lösch-Markierung konnte nicht gespeichert werden',
+          device_stats_purgeable_unmarked_toast:
+            'Lösch-Markierung von {{name}} aufgehoben',
+          device_stats_purgeable_error:
+            'Lösch-Markierung konnte nicht gespeichert werden',
           notification_locations_title: 'Benachrichtigungen pro Objekt',
-          notification_locations_hint: 'Für Objekte mit ausgeschalteten Benachrichtigungen werden Vorgänge und Nachrichten weiter erstellt und protokolliert - versendet wird nichts. Objekte nacheinander freischalten.',
+          notification_locations_hint:
+            'Für Objekte mit ausgeschalteten Benachrichtigungen werden Vorgänge und Nachrichten weiter erstellt und protokolliert - versendet wird nichts. Objekte nacheinander freischalten.',
           notification_locations_filter_disabled: 'Aus ({{count}})',
           notification_locations_filter_enabled: 'An ({{count}})',
           notification_locations_filter_all: 'Alle',
@@ -5371,20 +6240,28 @@ i18n
           notification_locations_col_switch: 'Benachrichtigungen',
           notification_locations_on: 'an',
           notification_locations_off: 'aus',
-          notification_locations_switched_on: 'Benachrichtigungen für {{name}} eingeschaltet',
-          notification_locations_switched_off: 'Benachrichtigungen für {{name}} ausgeschaltet',
+          notification_locations_switched_on:
+            'Benachrichtigungen für {{name}} eingeschaltet',
+          notification_locations_switched_off:
+            'Benachrichtigungen für {{name}} ausgeschaltet',
           notification_locations_empty: 'Keine Objekte',
-          notification_locations_load_error: 'Objekte konnten nicht geladen werden',
-          notification_locations_toggle_error: 'Benachrichtigungen konnten nicht umgeschaltet werden',
+          notification_locations_load_error:
+            'Objekte konnten nicht geladen werden',
+          notification_locations_toggle_error:
+            'Benachrichtigungen konnten nicht umgeschaltet werden',
           device_stats_hint:
             'Bestand aller Geräte und Standorte dieses Kontos: Typen, Chip-IDs, Aktivität der letzten 24 Stunden und fehlende Lagepläne. Tot = seit 30 Tagen keine Messung; ein ungenutzter Standort hat keine Geräte oder seit 30 Tagen keine Messung.',
-          device_stats_staff_only: 'Die Gerätestatistik ist nur für Staff-Benutzer verfügbar.',
+          device_stats_staff_only:
+            'Die Gerätestatistik ist nur für Staff-Benutzer verfügbar.',
           device_stats_refresh: 'Aktualisieren',
           device_stats_generated_at: 'Stand {{date}}',
-          device_stats_load_failed: 'Gerätestatistik konnte nicht geladen werden',
-          device_stats_scanning: 'Projektdatenbanken werden durchsucht: {{done}} / {{total}}',
+          device_stats_load_failed:
+            'Gerätestatistik konnte nicht geladen werden',
+          device_stats_scanning:
+            'Projektdatenbanken werden durchsucht: {{done}} / {{total}}',
           device_stats_merging: 'Ergebnisse werden zusammengeführt…',
-          device_stats_lists_after_scan: 'Die Listen erscheinen, sobald alle Projektdatenbanken durchsucht sind.',
+          device_stats_lists_after_scan:
+            'Die Listen erscheinen, sobald alle Projektdatenbanken durchsucht sind.',
           device_stats_empty: 'Hier ist nichts.',
           device_stats_by_type_title: 'Geräte nach Typ',
           device_stats_lists_title: 'Details',
@@ -5455,7 +6332,8 @@ i18n
           devices_col_notify: 'Mail bei Daten',
           devices_notify_hint:
             'Schickt allen Staff-Benutzern einmal eine Mail, sobald die nächste Messung dieses Geräts eingeht, und schaltet sich dann selbst aus.',
-          devices_notify_on: 'Staff wird benachrichtigt, sobald das Gerät Daten sendet',
+          devices_notify_on:
+            'Staff wird benachrichtigt, sobald das Gerät Daten sendet',
           devices_notify_off: 'Mail bei Daten ausgeschaltet',
           devices_notify_failed: 'Mail bei Daten konnte nicht geändert werden',
           devices_status_online: 'Online',
@@ -5480,28 +6358,39 @@ i18n
           devices_deleted: 'Gerät gelöscht',
           devices_cancel: 'Abbrechen',
           devices_action_commands: 'Controller-Befehle',
-          devices_action_commands_project_only: 'Befehle nur für Geräte mit neuem Hash-Schema (z. B. {{example}})',
+          devices_action_commands_project_only:
+            'Befehle nur für Geräte mit neuem Hash-Schema (z. B. {{example}})',
           devices_search: 'Geräte durchsuchen…',
           devices_search_count: '{{count}} von {{total}}',
           device_commands_title: 'Befehle',
           device_commands_last_poll: 'Zuletzt abgefragt {{time}}',
           device_commands_never_polled: 'Hat noch keine Befehle abgefragt',
-          device_commands_ttl: 'nicht innerhalb von {{hours}} h abgeholt, verfällt ein Befehl',
+          device_commands_ttl:
+            'nicht innerhalb von {{hours}} h abgeholt, verfällt ein Befehl',
           device_commands_send: 'Befehl senden',
           device_commands_confirm_restart_title: 'Controller neu starten?',
-          device_commands_confirm_restart: '{{device}} startet bei seiner nächsten Abfrage neu. Während des Neustarts misst er nicht und ist kurz nicht erreichbar.',
-          device_commands_confirm_update_title: 'Datei auf dem Controller überschreiben?',
-          device_commands_confirm_update: 'Bei seiner nächsten Abfrage ersetzt {{device}} die Datei {{path}} vollständig durch diesen Inhalt ({{bytes}} Bytes). Der alte Inhalt geht verloren, wenn Sie ihn nicht vorher ausgelesen haben (Config abrufen). Eine fehlerhafte Datei kann den Controller lahmlegen, bis sie vor Ort repariert wird.',
+          device_commands_confirm_restart:
+            '{{device}} startet bei seiner nächsten Abfrage neu. Während des Neustarts misst er nicht und ist kurz nicht erreichbar.',
+          device_commands_confirm_update_title:
+            'Datei auf dem Controller überschreiben?',
+          device_commands_confirm_update:
+            'Bei seiner nächsten Abfrage ersetzt {{device}} die Datei {{path}} vollständig durch diesen Inhalt ({{bytes}} Bytes). Der alte Inhalt geht verloren, wenn Sie ihn nicht vorher ausgelesen haben (Config abrufen). Eine fehlerhafte Datei kann den Controller lahmlegen, bis sie vor Ort repariert wird.',
           device_commands_confirm_params_title: 'Parameter setzen?',
-          device_commands_confirm_params: 'Bei seiner nächsten Abfrage übernimmt {{device}} diese Werte: {{params}}. Sie ersetzen die aktuellen Einstellungen und gelten für alle folgenden Messungen.',
-          device_commands_confirm_cancel_title: 'Eingereihten Befehl abbrechen?',
-          device_commands_confirm_cancel: 'Der Befehl "{{command}}" (#{{id}}) wird nicht an {{device}} gesendet. Soll er später laufen, müssen Sie ihn neu einreihen.',
+          device_commands_confirm_params:
+            'Bei seiner nächsten Abfrage übernimmt {{device}} diese Werte: {{params}}. Sie ersetzen die aktuellen Einstellungen und gelten für alle folgenden Messungen.',
+          device_commands_confirm_cancel_title:
+            'Eingereihten Befehl abbrechen?',
+          device_commands_confirm_cancel:
+            'Der Befehl "{{command}}" (#{{id}}) wird nicht an {{device}} gesendet. Soll er später laufen, müssen Sie ihn neu einreihen.',
           device_commands_cancel_command: 'Befehl abbrechen',
           device_commands_keep_command: 'Befehl behalten',
-          device_commands_queued: '{{command}} eingereiht - wird bei der nächsten Abfrage gesendet',
-          device_commands_queue_failed: '{{command}} konnte nicht eingereiht werden',
+          device_commands_queued:
+            '{{command}} eingereiht - wird bei der nächsten Abfrage gesendet',
+          device_commands_queue_failed:
+            '{{command}} konnte nicht eingereiht werden',
           device_commands_load_failed: 'Befehle konnten nicht geladen werden',
-          device_commands_cancel_failed: 'Befehl konnte nicht abgebrochen werden',
+          device_commands_cancel_failed:
+            'Befehl konnte nicht abgebrochen werden',
           device_commands_result_failed: 'Ergebnis konnte nicht geladen werden',
           device_commands_param_key: 'Parameter',
           device_commands_param_value: 'Wert',
@@ -5512,7 +6401,8 @@ i18n
           device_commands_param_poll_sec: 'Befehlsabfrage-Intervall',
           device_commands_poll_never: 'Nie abfragen (0)',
           device_commands_send_params: 'Parameter senden',
-          device_commands_params_hint: 'Es werden nur Werte angeboten, die der Controller akzeptiert.',
+          device_commands_params_hint:
+            'Es werden nur Werte angeboten, die der Controller akzeptiert.',
           device_commands_identity_device_hash: 'Device-Hash',
           device_commands_identity_project_id: 'Projekt-ID',
           device_commands_identity_chip_id: 'Chip-ID',
@@ -5524,9 +6414,11 @@ i18n
           device_commands_update_path: 'Dateipfad',
           device_commands_update_content: 'Dateiinhalt',
           device_commands_send_update: 'Datei senden',
-          device_commands_update_hint: 'Verschlüsselt gespeichert, bis der Controller sie abgeholt hat - im Verlauf bleiben nur Pfad und Größe.',
+          device_commands_update_hint:
+            'Verschlüsselt gespeichert, bis der Controller sie abgeholt hat - im Verlauf bleiben nur Pfad und Größe.',
           device_commands_update_open: 'Config überschreiben',
-          device_commands_update_open_hint: 'Eine Datei auf dem Controller ersetzen (z. B. seine Config) - öffnet den Editor',
+          device_commands_update_open_hint:
+            'Eine Datei auf dem Controller ersetzen (z. B. seine Config) - öffnet den Editor',
           device_commands_update_close: 'Abbrechen',
           device_commands_result_title: 'Ergebnis von {{command}} #{{id}}',
           device_commands_result_edit: 'Bearbeiten und als Update senden',
@@ -5550,11 +6442,13 @@ i18n
           device_commands_status_expired: 'verfallen',
           device_commands_status_cancelled: 'abgebrochen',
           device_command_identify: 'Identifizieren',
-          device_command_identify_hint: 'Der Controller schickt seine Kennung (Chip-ID, IP, MAC)',
+          device_command_identify_hint:
+            'Der Controller schickt seine Kennung (Chip-ID, IP, MAC)',
           device_command_measure: 'Messen',
           device_command_measure_hint: 'Jetzt eine Messung durchführen',
           device_command_get_config: 'Config abrufen',
-          device_command_get_config_hint: 'Der Controller schickt seine Config-Datei zurück',
+          device_command_get_config_hint:
+            'Der Controller schickt seine Config-Datei zurück',
           device_command_maintenance: 'Wartung',
           device_command_normal: 'Normalbetrieb',
           device_command_restart: 'Neustart',
@@ -5564,27 +6458,42 @@ i18n
           device_command_update: 'Datei aktualisieren',
           device_command_update_hint: 'Eine Datei auf dem Controller schreiben',
           device_command_logs: 'Logs abrufen',
-          device_command_logs_hint: 'Der Controller schickt das Log einer Stunde zurück',
+          device_command_logs_hint:
+            'Der Controller schickt das Log einer Stunde zurück',
           device_commands_logs_hour: '{{hour}}:00 Uhr',
           device_commands_logs_hour_label: 'Stunde des Tages',
           device_commands_logs_get: 'Diese Stunde abrufen',
           device_commands_logs_day: 'Ganzer Tag (24 Befehle)',
-          device_commands_logs_hint: 'Ein Befehl pro Stunde; die Stunde ist die Uhrzeit des Controllers.',
+          device_commands_logs_hint:
+            'Ein Befehl pro Stunde; die Stunde ist die Uhrzeit des Controllers.',
           device_command_upgrade: 'Firmware-Update',
+          device_command_set_thresholds: 'Schwellwerte setzen',
+          device_thresholds_location: 'Objekt {{value}}',
+          device_thresholds_input: 'Eingang {{input}}: {{value}}',
+          device_thresholds_inputs_one: '{{count}} Eingang',
+          device_thresholds_inputs_other: '{{count}} Eingänge',
+          device_thresholds_off: 'aus',
           device_firmware_title: 'Firmware-Update',
           device_firmware_current: 'Läuft mit {{bundle}}',
-          device_firmware_unknown: 'Der Controller meldet sein Bundle noch nicht - er braucht einmal vor Ort ein Release, das sich selbst aktualisieren kann.',
+          device_firmware_unknown:
+            'Der Controller meldet sein Bundle noch nicht - er braucht einmal vor Ort ein Release, das sich selbst aktualisieren kann.',
           device_firmware_target: 'Aktualisieren auf',
           device_firmware_start: 'Aktualisieren',
           device_firmware_confirm_title: 'Firmware aktualisieren?',
-          device_firmware_confirm: '<strong>{{device}}</strong> wird von <strong>{{current}}</strong> auf <strong>{{bundle}}</strong> aktualisiert. Bei seiner nächsten Abfrage lädt er die geänderten Dateien, installiert sie und startet neu - <strong>so lange misst er nicht</strong>. Zurück geht es nur mit einem weiteren Update.',
+          device_firmware_confirm:
+            '<strong>{{device}}</strong> wird von <strong>{{current}}</strong> auf <strong>{{bundle}}</strong> aktualisiert. Bei seiner nächsten Abfrage lädt er die geänderten Dateien, installiert sie und startet neu - <strong>so lange misst er nicht</strong>. Zurück geht es nur mit einem weiteren Update.',
           device_firmware_started: 'Firmware-Update auf {{bundle}} gestartet',
-          device_firmware_start_failed: 'Firmware-Update konnte nicht gestartet werden',
-          device_firmware_load_failed: 'Firmware-Bundles konnten nicht geladen werden',
-          device_firmware_none: 'Kein Bundle auf dem Server lässt sich aus der Ferne installieren.',
+          device_firmware_start_failed:
+            'Firmware-Update konnte nicht gestartet werden',
+          device_firmware_load_failed:
+            'Firmware-Bundles konnten nicht geladen werden',
+          device_firmware_none:
+            'Kein Bundle auf dem Server lässt sich aus der Ferne installieren.',
           device_firmware_not_remote: 'Nicht aus der Ferne: {{reason}}',
-          device_firmware_hint: 'Nur geänderte Dateien werden gesendet; der Controller installiert sie bei seiner nächsten Abfrage und startet neu. Eine andere Firmware braucht die App vor Ort.',
-          device_firmware_phase_reading_config: 'Liest die Config für ihre Migration',
+          device_firmware_hint:
+            'Nur geänderte Dateien werden gesendet; der Controller installiert sie bei seiner nächsten Abfrage und startet neu. Eine andere Firmware braucht die App vor Ort.',
+          device_firmware_phase_reading_config:
+            'Liest die Config für ihre Migration',
           device_firmware_phase_upgrading: 'Installiert',
           device_firmware_step: '{{from}} → {{to}}',
           device_firmware_target_note: 'Ziel {{target}}',
@@ -5596,12 +6505,16 @@ i18n
           staff_add_user: 'Benutzer hinzufügen',
           staff_title_customer: 'Benutzer meines Accounts',
           staff_field_accounts: 'Accounts',
-          staff_field_accounts_hint: '– Mitglieder sehen alle Objekte des Accounts',
+          staff_field_accounts_hint:
+            '– Mitglieder sehen alle Objekte des Accounts',
           staff_accounts_search: 'Accounts suchen',
           staff_accounts_no_match: 'Kein Account gefunden.',
-          staff_accounts_locked: 'Die Accounts eines Kunden-Admins kann nur ProGeo ändern.',
-          staff_accounts_required: 'Wählen Sie mindestens einen Ihrer Accounts – sonst sehen Sie den Benutzer nicht.',
-          staff_accounts_leave_hint: 'Ohne einen Ihrer Accounts erscheint der Benutzer nicht mehr in Ihrer Liste.',
+          staff_accounts_locked:
+            'Die Accounts eines Kunden-Admins kann nur ProGeo ändern.',
+          staff_accounts_required:
+            'Wählen Sie mindestens einen Ihrer Accounts – sonst sehen Sie den Benutzer nicht.',
+          staff_accounts_leave_hint:
+            'Ohne einen Ihrer Accounts erscheint der Benutzer nicht mehr in Ihrer Liste.',
           staff_edit_user: 'Benutzer bearbeiten',
           staff_edit_user_title: 'Benutzer bearbeiten: {{username}}',
           staff_delete_user: 'Benutzer löschen',
@@ -5612,10 +6525,13 @@ i18n
           staff_col_accounts: 'Accounts',
           staff_accounts_none: 'Kein Account',
           staff_accounts_full_access: 'Vollzugriff: {{name}}',
-          staff_single_access_one: 'Einzelzugriff auf {{count}} weiteres Objekt',
-          staff_single_access_other: 'Einzelzugriff auf {{count}} weitere Objekte',
+          staff_single_access_one:
+            'Einzelzugriff auf {{count}} weiteres Objekt',
+          staff_single_access_other:
+            'Einzelzugriff auf {{count}} weitere Objekte',
           staff_accounts_legend: 'Accounts:',
-          staff_accounts_legend_filter: 'Nur die Nutzer dieses Accounts zeigen (nochmal klicken: alle)',
+          staff_accounts_legend_filter:
+            'Nur die Nutzer dieses Accounts zeigen (nochmal klicken: alle)',
           staff_col_staff: 'Mitarbeiter',
           staff_col_active: 'Aktiv',
           staff_col_permissions: 'Berechtigungen',
@@ -5643,11 +6559,15 @@ i18n
           staff_permission_group_interfaces: 'Schnittstellen & Integrationen',
           staff_permission_group_other: 'Weitere Funktionen',
           staff_permission_preset_label: 'Voreinstellung für {{group}}',
-          staff_permission_customize: 'Berechtigungen hinzufügen oder entfernen',
+          staff_permission_customize:
+            'Berechtigungen hinzufügen oder entfernen',
           staff_permission_copy_from: 'Berechtigungen übernehmen von…',
-          staff_permission_copy_option: '{{username}} ({{count}} Berechtigungen)',
-          staff_permission_copied: 'Berechtigungen von {{username}} übernommen - noch nicht gespeichert.',
-          staff_permission_copy_skipped: 'Nicht übernommen (dürfen Sie nicht vergeben): {{codes}}.',
+          staff_permission_copy_option:
+            '{{username}} ({{count}} Berechtigungen)',
+          staff_permission_copied:
+            'Berechtigungen von {{username}} übernommen - noch nicht gespeichert.',
+          staff_permission_copy_skipped:
+            'Nicht übernommen (dürfen Sie nicht vergeben): {{codes}}.',
           staff_permission_custom: 'Individuell',
           staff_permission_preset_none: 'Kein Zugriff',
           staff_permission_preset_viewer: 'Betrachter',
@@ -5702,51 +6622,69 @@ i18n
           staff_filter_clear: 'Filter zurücksetzen',
           staff_filter_count: '{{shown}} von {{total}} Benutzern',
           staff_impersonate: 'Als dieser Benutzer anmelden',
-          staff_impersonate_confirm: 'Als "{{username}}" anmelden? Sie sehen das Portal genau so wie dieser Benutzer, höchstens eine Stunde lang. Ihre Änderungen werden mit Ihrem Namen protokolliert.',
+          staff_impersonate_confirm:
+            'Als "{{username}}" anmelden? Sie sehen das Portal genau so wie dieser Benutzer, höchstens eine Stunde lang. Ihre Änderungen werden mit Ihrem Namen protokolliert.',
           staff_impersonate_confirm_title: 'Als dieser Benutzer anmelden?',
-          staff_impersonate_error: 'Anmelden als dieser Benutzer fehlgeschlagen',
-          impersonation_banner: 'Sie sind angemeldet als <strong>{{username}}</strong> (über {{impersonator}}).',
+          staff_impersonate_error:
+            'Anmelden als dieser Benutzer fehlgeschlagen',
+          impersonation_banner:
+            'Sie sind angemeldet als <strong>{{username}}</strong> (über {{impersonator}}).',
           impersonation_back: 'Zurück zu meinem Konto',
-          impersonation_blocked: 'Nicht möglich, solange Sie als anderer Benutzer angemeldet sind.',
+          impersonation_blocked:
+            'Nicht möglich, solange Sie als anderer Benutzer angemeldet sind.',
           staff_reset_two_factor: '2FA zurücksetzen',
-          staff_reset_two_factor_confirm: 'Zwei-Faktor-Anmeldung von "{{username}}" zurücksetzen (z. B. Handy verloren)? Alle Anmeldungen des Benutzers enden; danach richtet er sie neu ein.',
-          staff_reset_two_factor_confirm_title: 'Zwei-Faktor-Anmeldung zurücksetzen?',
-          staff_reset_two_factor_done: 'Zwei-Faktor-Anmeldung von "{{username}}" zurückgesetzt.',
-          staff_reset_two_factor_error: 'Zwei-Faktor-Anmeldung konnte nicht zurückgesetzt werden',
-          staff_password_invite_hint: 'Besser: Einladung/Anmeldelink senden - ein Link per E-Mail ist sicherer als ein vorgelesenes Passwort.',
+          staff_reset_two_factor_confirm:
+            'Zwei-Faktor-Anmeldung von "{{username}}" zurücksetzen (z. B. Handy verloren)? Alle Anmeldungen des Benutzers enden; danach richtet er sie neu ein.',
+          staff_reset_two_factor_confirm_title:
+            'Zwei-Faktor-Anmeldung zurücksetzen?',
+          staff_reset_two_factor_done:
+            'Zwei-Faktor-Anmeldung von "{{username}}" zurückgesetzt.',
+          staff_reset_two_factor_error:
+            'Zwei-Faktor-Anmeldung konnte nicht zurückgesetzt werden',
+          staff_password_invite_hint:
+            'Besser: Einladung/Anmeldelink senden - ein Link per E-Mail ist sicherer als ein vorgelesenes Passwort.',
           staff_password_confirm_title: 'Neues Passwort generieren?',
-          staff_password_confirm_body: 'Für "{{username}}" wird ein neues Zufallspasswort gesetzt. Das alte Passwort funktioniert sofort nicht mehr, und alle Anmeldungen des Benutzers enden auf jedem Gerät. Das neue Passwort müssen Sie ihm dann selbst mitteilen. Besser: stattdessen eine Einladung (Anmeldelink) senden.',
+          staff_password_confirm_body:
+            'Für "{{username}}" wird ein neues Zufallspasswort gesetzt. Das alte Passwort funktioniert sofort nicht mehr, und alle Anmeldungen des Benutzers enden auf jedem Gerät. Das neue Passwort müssen Sie ihm dann selbst mitteilen. Besser: stattdessen eine Einladung (Anmeldelink) senden.',
           staff_password_confirm_yes: 'Ja, Passwort ersetzen',
           staff_deactivate_confirm_title: 'Benutzer deaktivieren?',
-          staff_deactivate_confirm_body: 'Nach dem Speichern kann sich "{{username}}" nicht mehr anmelden, und offene Sitzungen funktionieren nicht mehr. Das Konto mit Zugriffsrechten und Einstellungen bleibt erhalten: "Aktiv" wieder einschalten gibt den Zugang zurück.',
+          staff_deactivate_confirm_body:
+            'Nach dem Speichern kann sich "{{username}}" nicht mehr anmelden, und offene Sitzungen funktionieren nicht mehr. Das Konto mit Zugriffsrechten und Einstellungen bleibt erhalten: "Aktiv" wieder einschalten gibt den Zugang zurück.',
           staff_deactivate_confirm_yes: 'Ja, deaktivieren und speichern',
           staff_requests_projects: 'Projekte',
-          staff_requests_projects_placeholder: 'Nach Nummer, Name oder Ort suchen - oder Nummern eingeben',
+          staff_requests_projects_placeholder:
+            'Nach Nummer, Name oder Ort suchen - oder Nummern eingeben',
           staff_requests_projects_none: 'Kein Projekt gefunden',
           staff_requests_accounts: 'Accounts (alle ihre Objekte)',
           staff_requests_accounts_placeholder: 'Account suchen…',
           staff_requests_accounts_none: 'Kein Account gefunden',
-          staff_requests_accounts_hint: 'Optional: Der Nutzer wird Mitglied und sieht alle Objekte dieser Accounts.',
+          staff_requests_accounts_hint:
+            'Optional: Der Nutzer wird Mitglied und sieht alle Objekte dieser Accounts.',
           staff_requests_accounts_granted: 'Mitglied von: {{accounts}}',
-          staff_requests_projects_hint: 'Gibt den Zugriff auf diese Projekte direkt frei (optional).',
+          staff_requests_projects_hint:
+            'Gibt den Zugriff auf diese Projekte direkt frei (optional).',
           staff_requests_projects_stated: 'Angabe im Antrag: "{{project}}"',
           staff_requests_projects_granted: 'Zugriff freigegeben: {{ids}}',
           staff_requests_projects_existing: 'Zugriff bestand bereits: {{ids}}',
           staff_requests_projects_missing: 'Nicht freigegeben: {{ids}}',
           // Alarm views (AlarmTooltip, AlarmsOverview).
-          alarm_detail_load_location_failed: 'Objekt konnte nicht geladen werden',
-          alarm_detail_load_alarms_failed: 'Alarme konnten nicht geladen werden',
+          alarm_detail_load_location_failed:
+            'Objekt konnte nicht geladen werden',
+          alarm_detail_load_alarms_failed:
+            'Alarme konnten nicht geladen werden',
           alarm_detail_location_fallback: 'Objekt {{id}}',
           alarm_detail_count_one: '{{count}} Alarm für dieses Objekt',
           alarm_detail_count_other: '{{count}} Alarme für dieses Objekt',
           alarm_detail_back: 'Zurück zu den Objekten',
           alarm_detail_timeline: 'Alarm-Zeitachse',
-          alarm_detail_timeline_hint: 'Einen Alarmbalken wählen, um seine Details zu sehen',
+          alarm_detail_timeline_hint:
+            'Einen Alarmbalken wählen, um seine Details zu sehen',
           alarm_detail_loading: 'Alarme werden geladen …',
           alarm_detail_title: 'Alarm- und Objektdetails',
           alarm_detail_location: 'Objekt',
           alarm_detail_alarm: 'Alarm',
-          alarm_detail_select_hint: 'Einen Alarm wählen, um seine Details zu sehen.',
+          alarm_detail_select_hint:
+            'Einen Alarm wählen, um seine Details zu sehen.',
           alarm_field_address: 'Adresse',
           alarm_field_coordinates: 'Koordinaten',
           alarm_field_alarm_id: 'Alarm-ID',
@@ -5775,46 +6713,60 @@ i18n
           alarm_tooltip_ago: 'vor {{duration}}',
           alarm_tooltip_acknowledged: 'Quittiert',
           alarms_overview_title: 'Alarme',
-          alarms_overview_count: '{{shown}} von {{total}} Alarmen · letzte {{days}} Tage',
-          alarms_overview_count_24h: '{{shown}} von {{total}} Alarmen · letzte 24 h',
+          alarms_overview_count:
+            '{{shown}} von {{total}} Alarmen · letzte {{days}} Tage',
+          alarms_overview_count_24h:
+            '{{shown}} von {{total}} Alarmen · letzte 24 h',
           alarms_overview_last_24h: 'Letzte 24 h',
           alarms_overview_loading_chunks: 'Wird geladen … {{done}}/{{total}}',
           alarms_overview_only_active: 'Nur aktive Alarme',
-          alarms_overview_only_active_hint: 'Nur Alarme zeigen, die gerade aktiv sind',
+          alarms_overview_only_active_hint:
+            'Nur Alarme zeigen, die gerade aktiv sind',
           alarms_overview_last_hour: 'Nur letzte Stunde',
-          alarms_overview_last_hour_hint: 'Nur Alarme zeigen, die in der letzten Stunde ausgelöst wurden',
+          alarms_overview_last_hour_hint:
+            'Nur Alarme zeigen, die in der letzten Stunde ausgelöst wurden',
           alarms_overview_window: 'Zeitraum der Alarme (Tage)',
           alarms_overview_days_one: '{{count}} Tag',
           alarms_overview_days_other: '{{count}} Tage',
-          alarms_overview_load_more_hint: 'Ältere Alarme laden (nur die fehlenden Tage)',
+          alarms_overview_load_more_hint:
+            'Ältere Alarme laden (nur die fehlenden Tage)',
           alarms_overview_refresh: 'Aktualisieren',
-          alarms_overview_timeline_hint: 'Nach Objekt gruppiert – Balken überfahren für Details, anklicken für die Heatmap',
+          alarms_overview_timeline_hint:
+            'Nach Objekt gruppiert – Balken überfahren für Details, anklicken für die Heatmap',
           alarms_overview_heatmap: 'Alarm-Heatmap',
-          alarms_overview_heatmap_hint: 'Eine Alarmzeile oder einen Balken anklicken, um die Heatmap des Objekts zu laden',
+          alarms_overview_heatmap_hint:
+            'Eine Alarmzeile oder einen Balken anklicken, um die Heatmap des Objekts zu laden',
           alarms_overview_heatmap_loading: 'Alarm-Heatmap wird geladen …',
-          alarms_overview_heatmap_select: 'Einen Alarm wählen, um die Heatmap seines Objekts zu sehen.',
-          alarms_overview_heatmap_failed: 'Alarm-Heatmap konnte nicht geladen werden',
-          alarms_overview_no_location: 'Der Alarm gehört zu keinem Objekt - keine Heatmap möglich.',
+          alarms_overview_heatmap_select:
+            'Einen Alarm wählen, um die Heatmap seines Objekts zu sehen.',
+          alarms_overview_heatmap_failed:
+            'Alarm-Heatmap konnte nicht geladen werden',
+          alarms_overview_no_location:
+            'Der Alarm gehört zu keinem Objekt - keine Heatmap möglich.',
           alarms_overview_measurements: 'Messungen',
           alarms_overview_measurements_hint: '±6 h um den Alarmbeginn',
-          alarms_overview_measurements_select: 'Einen Alarm wählen, um seine Messungen zu vergleichen.',
+          alarms_overview_measurements_select:
+            'Einen Alarm wählen, um seine Messungen zu vergleichen.',
           alarms_overview_col_id: 'ID',
           alarms_overview_unnamed: 'Ohne Namen',
           alarms_overview_unknown_location: 'unbekanntes Objekt',
           alarms_overview_acknowledged_by: 'von {{user}}',
           alarms_overview_acknowledge_hint: 'Diesen Alarm quittieren',
           alarms_overview_acknowledged_done: 'Alarm #{{id}} quittiert.',
-          alarms_overview_acknowledge_failed: 'Alarm konnte nicht quittiert werden',
+          alarms_overview_acknowledge_failed:
+            'Alarm konnte nicht quittiert werden',
           // Over plans and plots (components/ui/wheelZoom.tsx).
           zoom_hint_wheel: 'Strg + Mausrad zum Zoomen',
           zoom_hint_touch: 'Mit zwei Fingern verschieben und zoomen',
           // The location map (main/LocationsMapView.jsx).
           locmap_zoom_area_hint: 'Ziehen: Bereich zoomen',
-          locmap_loading_activity: 'Letzte Messungen: {{done}} / {{total}} Datenbanken',
+          locmap_loading_activity:
+            'Letzte Messungen: {{done}} / {{total}} Datenbanken',
           locmap_show_all: 'Alle zeigen',
           locmap_toasts_on: 'Live-Meldungen an',
           locmap_toasts_off: 'Live-Meldungen stumm',
-          locmap_toasts_title: 'Die Meldung zu jeder Live-Messung zeigen oder stummschalten',
+          locmap_toasts_title:
+            'Die Meldung zu jeder Live-Messung zeigen oder stummschalten',
         },
       },
     },

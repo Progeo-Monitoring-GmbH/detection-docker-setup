@@ -27,6 +27,7 @@ from progeo.helper.project_dbs import demo_alias, is_project_alias, register_dem
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import (
     Account,
+    AlarmDailyReport,
     LimitedToken,
     ProgeoAccess,
     ProgeoAlarm,
@@ -1698,13 +1699,15 @@ def _account_deletion(account, alias):
     # Elsewhere only the project tables: "default"-only ones don't exist there.
     collector = Collector(using=alias) if alias == "default" else _ProjectDbCollector(alias)
     collector.collect(rows)
-    memberships = Account.users.through
+    # Memberships, and the daily alarm reports - derived, the celery task
+    # writes them again for the accounts that are still there.
+    disposable = (Account, Account.users.through, AlarmDailyReport)
     along = {}
     for model, instances in collector.data.items():
-        if model not in (Account, memberships) and instances:
+        if model not in disposable and instances:
             along[model._meta.label] = along.get(model._meta.label, 0) + len(instances)
     for queryset in collector.fast_deletes:
-        if queryset.model is not memberships:
+        if queryset.model not in disposable:
             count = queryset.count()
             if count:
                 along[queryset.model._meta.label] = along.get(queryset.model._meta.label, 0) + count

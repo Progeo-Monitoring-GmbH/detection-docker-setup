@@ -364,7 +364,7 @@ const UserFormModal = ({
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="vorname.nachname@progeo.com"
+              placeholder="email"
               data-testid={childTestId(testId, 'email')}
             />
           </Form.Group>

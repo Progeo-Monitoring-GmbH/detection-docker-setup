@@ -363,13 +363,13 @@ def _stored_text(command_id):
 
 def test_commands_are_handed_out_in_order_with_their_payload_once(api_client, provisioned):
     location, device, preview = provisioned
-    maintenance = _queue(api_client, device, location, "maintenance").json()["command"]
+    restart = _queue(api_client, device, location, "restart").json()["command"]
     params = _queue(api_client, device, location, "set_params", {"pulldown_resistance": 120}).json()["command"]
 
     _as_controller(api_client, preview)
 
     assert _poll(api_client, location) == [
-        {"command": "maintenance", "id": maintenance["id"]},
+        {"command": "restart", "id": restart["id"]},
         {"command": "set_params", "id": params["id"], "payload": {"pulldown_resistance": 120}},
     ]
     assert _poll(api_client, location) == []
@@ -645,7 +645,7 @@ def test_a_result_naming_another_command_is_ignored(api_client, provisioned):
     _as_controller(api_client, preview)
     _poll(api_client, location)
 
-    _poll(api_client, location, [{"command": "normal", "id": restart.pk, "ok": True}])
+    _poll(api_client, location, [{"command": "measure", "id": restart.pk, "ok": True}])
     assert ProgeoDeviceCommand.objects.using(f.DB).get(pk=restart.pk).status == "sent"
 
     _poll(api_client, location, [{"command": "restart", "id": restart.pk, "ok": True}])
@@ -691,11 +691,13 @@ def test_idempotent_commands_are_queued_once_ordered_ones_every_time(api_client,
 
     first = _queue(api_client, device, location, "measure").json()["command"]
     second = _queue(api_client, device, location, "measure").json()["command"]
-    for command in ("maintenance", "normal", "maintenance"):
-        _queue(api_client, device, location, command)
+    # Each set_params changes the controller - both run, the later one last.
+    longer = _queue(api_client, device, location, "set_params", {"interval_sec": 600}).json()["command"]
+    shorter = _queue(api_client, device, location, "set_params", {"interval_sec": 300}).json()["command"]
 
     assert first["id"] == second["id"]
-    assert device_commands.pending_commands(device, f.DB) == ["measure", "maintenance", "normal", "maintenance"]
+    assert longer["id"] != shorter["id"]
+    assert device_commands.pending_commands(device, f.DB) == ["measure", "set_params", "set_params"]
 
 
 def test_pending_commands_can_be_cancelled(api_client, provisioned):
@@ -812,7 +814,7 @@ def test_the_config_is_requested_read_and_edited(api_client, provisioned):
 @pytest.mark.parametrize("params, reason", [
     ({}, "Send at least one of"),
     ({"wifi_pwd": "x"}, "Not editable: wifi_pwd"),
-    ({"interval_sec": 10}, "interval_sec must be between 60 and 86400"),
+    ({"interval_sec": 10}, "interval_sec must be between 30 and 86400"),
     ({"poll_sec": 0}, "poll_sec must be between 60 and 86400"),
     ({"interval_sec": True}, "interval_sec must be an integer"),
     ({"pulldown_resistance": 120}, "pulldown_resistance must be one of"),
@@ -824,6 +826,16 @@ def test_config_params_are_validated(api_client, provisioned, params, reason):
 
     assert reason in response.json()["reason"]
     assert device_commands.pending_commands(device, f.DB) == []
+
+
+def test_config_params_take_thirty_seconds():
+    assert device_commands.clean_config_params({"interval_sec": 30}) == {"interval_sec": 30}
+
+
+@pytest.mark.parametrize("command", ["maintenance", "normal"])
+def test_the_old_mode_commands_are_gone(command):
+    with pytest.raises(device_commands.CommandError, match="Unknown command"):
+        device_commands.clean_payload(command, None)
 
 
 def test_config_params_parse_a_config_file():

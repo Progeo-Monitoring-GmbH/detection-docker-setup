@@ -12,6 +12,8 @@ import './LegacyGprsConfigPanel.css';
 
 /** The answer's interval has 4 digits (seconds). */
 const LEGACY_MAX_INTERVAL = 9999;
+/** The 30 s / 1 min steps are for the WLAN controllers - a GPRS controller starts at 5 min. */
+const LEGACY_MIN_INTERVAL = 300;
 
 type LegacyValues = {
   interval: number | null;
@@ -60,7 +62,9 @@ const toForm = (values: LegacyValues): Form => ({
 /** The interval choices that fit into the answer, plus the current value. */
 export const legacyIntervalOptions = (current: number) => {
   const options = INTERVAL_OPTIONS.filter(
-    (option) => option.value <= LEGACY_MAX_INTERVAL,
+    (option) =>
+      option.value >= LEGACY_MIN_INTERVAL &&
+      option.value <= LEGACY_MAX_INTERVAL,
   );
   return options.some((option) => option.value === current)
     ? options

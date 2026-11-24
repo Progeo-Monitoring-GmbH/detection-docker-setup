@@ -14,7 +14,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.signals import request_started
-from django.db import DEFAULT_DB_ALIAS, connections, transaction
+from django.db import DEFAULT_DB_ALIAS, connections, router, transaction
 from django.db.models.deletion import Collector
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
@@ -29,7 +29,6 @@ from progeo.helper.project_dbs import (
     mirrored_models,
     project_alias,
     project_key,
-    project_models,
     register_project_db,
     split_enabled,
 )
@@ -175,18 +174,16 @@ class _MirrorBatch:
 
 
 class _ProjectDbCollector(Collector):
-    """Django's delete collector, limited to the tables a project database has
-    (project + mirrored models). The plain one also follows User to the
-    "default"-only tables (oauth2, tokens, sessions, ...) - in a project
-    database that failed ("relation oauth2_provider_application does not
-    exist") and the user was never deleted there."""
-
-    def __init__(self, using):
-        super().__init__(using=using)
-        self._tables = {model._meta.concrete_model for model in (*project_models(), *mirrored_models())}
+    """Django's delete collector, limited to the tables `using` has - every
+    one the router migrates there. The plain one also follows User to the
+    "default"-only tables (oauth2) - in a project database that failed
+    ("relation oauth2_provider_application does not exist") and the user was
+    never deleted there. A fixed list of project + mirrored models instead
+    missed the account's own tables of the demo database (AlarmDailyReport):
+    "violates foreign key constraint ... progeo_alarmdailyreport"."""
 
     def related_objects(self, related_model, related_fields, objs):
-        if related_model._meta.concrete_model not in self._tables:
+        if not router.allow_migrate_model(self.using, related_model):
             return related_model._base_manager.using(self.using).none()
         return super().related_objects(related_model, related_fields, objs)
 

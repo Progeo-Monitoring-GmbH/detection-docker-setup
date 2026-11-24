@@ -259,8 +259,11 @@ def note_bundle(device, db_name, message):
     bundle = message.get("bundle") if isinstance(message, dict) else None
     if not isinstance(bundle, str) or not BUNDLE_ID.fullmatch(bundle) or bundle == device.firmware_bundle:
         return
-    device.firmware_bundle = bundle
+    before, device.firmware_bundle = device.firmware_bundle, bundle
     ProgeoDevice.objects.using(db_name).filter(pk=device.pk).update(firmware_bundle=bundle)
+    from progeo.helper import device_thresholds
+
+    device_thresholds.bundle_changed(device, db_name, before, bundle)
 
 
 # ---------------------------------------------------------------------------- queueing
@@ -396,8 +399,11 @@ def after_results(device, db_name, commands):
                 command.save(using=db_name, update_fields=["files_encrypted"])
             if command.status != Status.SUCCESS:
                 continue
-            device.firmware_bundle = step["to"]
+            before, device.firmware_bundle = device.firmware_bundle, step["to"]
             ProgeoDevice.objects.using(db_name).filter(pk=device.pk).update(firmware_bundle=step["to"])
+            from progeo.helper import device_thresholds
+
+            device_thresholds.bundle_changed(device, db_name, before, step["to"])
             if step["to"] == step["target"]:
                 continue
             try:
