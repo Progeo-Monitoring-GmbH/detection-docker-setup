@@ -36,6 +36,19 @@ def configured_accounts():
     ]
 
 
+def location_databases() -> list[str]:
+    """Where locations are stored: "default" and every configured account's
+    database - one alias per physical database (the test settings'
+    "default" and "unit_tests" are the same one, and would list its
+    locations twice). A save there reaches the project database too
+    (project_db_signals)."""
+    databases = {}
+    for alias in [DEFAULT_DB_ALIAS, *(account.db_name for account in configured_accounts())]:
+        config = connections.settings[alias]
+        databases.setdefault((config.get("HOST"), config.get("PORT"), config.get("NAME")), alias)
+    return list(databases.values())
+
+
 def is_account_member(user, account) -> bool:
     if not user or not account or not getattr(user, "pk", None):
         return False

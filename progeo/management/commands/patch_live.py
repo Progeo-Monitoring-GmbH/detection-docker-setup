@@ -911,7 +911,10 @@ class Command(BaseCommand):
         '                            product while Unknown, street/PLZ/city, position) from their Airtable\n'
         '                            project in "Messeinheit und Inbetriebnahme", "Projektabschluss" or\n'
         '                            "Abgerechnet / In Betreuung" - nothing is overwritten; read only\n'
-        '                            unless --apply\n\n'
+        '                            unless --apply\n'
+        '  english_abroad            set the language of the locations whose position lies outside Germany\n'
+        '                            (Nominatim reverse lookup) to English - a chosen language is kept,\n'
+        '                            locations without a position are left alone; read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -924,7 +927,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch sensor_count_from_samples [--apply]\n'
         '  python manage.py patch_live --patch unknown_db_devices [--apply]\n'
         '  python manage.py patch_live --patch clean_heat_limits [--apply]\n'
-        '  python manage.py patch_live --patch airtable_fill_missing [--apply]'
+        '  python manage.py patch_live --patch airtable_fill_missing [--apply]\n'
+        '  python manage.py patch_live --patch english_abroad [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -934,7 +938,7 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true",
                             help="drop_duplicate_locations, drop_is_plans, koords_to_points, "
                                  "sensor_count_from_samples, unknown_db_devices, clean_heat_limits, "
-                                 "airtable_fill_missing: change the data (default: only report)")
+                                 "airtable_fill_missing, english_abroad: change the data (default: only report)")
 
 
 
@@ -975,6 +979,11 @@ class Command(BaseCommand):
                 fill_missing_from_airtable(apply=options["apply"])
             except AirtableSyncError as exc:
                 elog(str(exc))
+
+        if patch == "english_abroad":
+            from progeo.helper.location_language import english_abroad
+
+            english_abroad(apply=options["apply"])
 
         if patch == "fetch_koords":
             fetch_koords()

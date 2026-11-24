@@ -24,12 +24,11 @@ import re
 
 from django.conf import settings
 from django.core import signing
-from django.db import DEFAULT_DB_ALIAS, connections
 
 from progeo.helper.airtable import AirtableHelper
 from progeo.helper.airtable_documents import project_records
 from progeo.helper.basics import ilog, wlog
-from progeo.helper.location_access import configured_accounts
+from progeo.helper.location_access import location_databases
 from progeo.management.commands.airtable_projects_json import is_broken_address
 from progeo.v1.models import ProgeoLocation
 
@@ -155,13 +154,7 @@ def fetch_rows(helper, statuses=STATUSES):
 def existing_locations(project_ids):
     """{project_id: [(location, database)]} over every account's database."""
     found = {}
-    # One alias per physical database - two aliases of the same one (the test
-    # settings' "default" and "unit_tests") would list its locations twice.
-    databases = {}
-    for alias in [DEFAULT_DB_ALIAS, *(account.db_name for account in configured_accounts())]:
-        config = connections.settings[alias]
-        databases.setdefault((config.get("HOST"), config.get("PORT"), config.get("NAME")), alias)
-    for db_name in databases.values():
+    for db_name in location_databases():
         for location in ProgeoLocation.objects.using(db_name).filter(project_id__in=project_ids):
             found.setdefault(location.project_id, []).append((location, db_name))
     return found
