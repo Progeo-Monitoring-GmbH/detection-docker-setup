@@ -231,6 +231,39 @@ export const smoothTotalLine = (
   return smoothCurve(xs, ys);
 };
 
+/** One staff member's row of ticks in the fix strip under the points plot (px). */
+export const FIX_ROW_PX = 9;
+/** From this many staff members on the rows get narrower instead of the strip higher. */
+const FIX_ROWS_MAX = 12;
+/** Between the lines and the strip: the strip's title (px). */
+const FIX_STRIP_GAP = 20;
+
+/**
+ * The points plot with its fix strip: the lines keep `linesHeight` (with the
+ * plot's margins, as without the strip), the strip - one row per staff
+ * member - goes below on the same time axis. The domains are fractions of
+ * the plot area (Plotly's yaxis/yaxis2 domain); `title` is the middle of
+ * the gap between them (the strip's title), `height` the plot's whole height.
+ */
+export const fixStripLayout = (
+  rows: number,
+  linesHeight: number,
+  margin: { t: number; b: number },
+) => {
+  const strip = Math.min(Math.max(rows, 1), FIX_ROWS_MAX) * FIX_ROW_PX + 8;
+  const height = linesHeight + strip + FIX_STRIP_GAP;
+  const area = height - margin.t - margin.b;
+  return {
+    height,
+    strip: [0, strip / area] as [number, number],
+    lines: [(strip + FIX_STRIP_GAP) / area, 1] as [number, number],
+    title: (strip + FIX_STRIP_GAP / 2) / area,
+  };
+};
+
+/** A staff member's row in the fix strip: the first of `count` on top. */
+export const fixStripRow = (index: number, count: number) => count - 1 - index;
+
 /**
  * End labels without overlap: `values` (pixels from the bottom) moved apart
  * to at least `gap`, within min..max, in their order. Returns the new

@@ -56,7 +56,8 @@
   position: relative;
 }
 
-/* LINE_HEIGHT in QaScoreboardChart.tsx (the end labels are placed by it). */
+/* LINE_HEIGHT in QaScoreboardChart.tsx (the end labels are placed by it) - the
+   plots grow by the fix strip under the points (fixStripLayout, inline height). */
 .qa-scoreboard-plot {
   width: 100%;
   height: 240px;

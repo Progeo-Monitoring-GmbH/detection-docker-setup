@@ -14,6 +14,8 @@ import {
   scoreboardStart,
   smoothCurve,
   smoothTotalLine,
+  fixStripLayout,
+  fixStripRow,
   spreadLabels,
   totalAt,
   userColors,
@@ -268,5 +270,32 @@ describe('daily figures', () => {
     expect(
       totalAt(board.users[0].awards, Date.parse('2026-11-10T00:00:00')),
     ).toBe(4);
+  });
+});
+
+describe('fixStripLayout', () => {
+  const margin = { t: 10, b: 28 };
+
+  it('keeps the lines as high as without the strip and puts the strip below', () => {
+    const layout = fixStripLayout(4, 240, margin);
+    const area = layout.height - margin.t - margin.b;
+
+    // 4 rows of 9px + 8px, the gap of 20px on top of the 240px.
+    expect(layout.height).toBe(240 + 44 + 20);
+    expect((layout.lines[1] - layout.lines[0]) * area).toBeCloseTo(240 - 38);
+    expect(layout.strip[0]).toBe(0);
+    expect(layout.strip[1] * area).toBeCloseTo(44);
+    // The strip's title between the two.
+    expect(layout.title).toBeGreaterThan(layout.strip[1]);
+    expect(layout.title).toBeLessThan(layout.lines[0]);
+  });
+
+  it('stops growing with many staff members - and has a row without any', () => {
+    expect(fixStripLayout(30, 240, margin).height).toBe(fixStripLayout(12, 240, margin).height);
+    expect(fixStripLayout(0, 240, margin).height).toBe(fixStripLayout(1, 240, margin).height);
+  });
+
+  it('puts the first staff member on top', () => {
+    expect([0, 1, 2].map((index) => fixStripRow(index, 3))).toEqual([2, 1, 0]);
   });
 });

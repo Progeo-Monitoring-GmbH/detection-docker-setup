@@ -18,6 +18,8 @@ import {
   OTHER_COLOR,
   awardLabel,
   cumulativeLine,
+  fixStripLayout,
+  fixStripRow,
   formatPoints,
   formatScore,
   pointsOnDay,
@@ -33,7 +35,8 @@ import {
 
 /** Up to this many staff lines are named at their end (the legend names all). */
 const DIRECT_LABELS = 6;
-/** Height of the line plots (QaScoreboard.css .qa-scoreboard-plot) and their margins. */
+/** Height of the line plots without the fix strip (QaScoreboard.css
+ * .qa-scoreboard-plot) and their margins - the strip comes on top (fixStripLayout). */
 const LINE_HEIGHT = 240;
 const LINE_MARGIN = { t: 10, b: 28 };
 const LABEL_GAP = 14;
@@ -100,7 +103,7 @@ const restyle = (
 
 // ---------------------------------------------------------------------------- mean score
 
-const MeanPlot = ({ board }: { board: Scoreboard }) => {
+const MeanPlot = ({ board, height }: { board: Scoreboard; height: number }) => {
   const { t } = useTranslation();
   const [, setDiv] = usePlotDiv();
   const [hovered, setHovered] = useState<number | null>(null);
@@ -152,6 +155,8 @@ const MeanPlot = ({ board }: { board: Scoreboard }) => {
       <div className="qa-scoreboard-plot-wrap">
         <Plot
           className="qa-scoreboard-plot"
+          // As high as the points plot beside it (with its fix strip).
+          style={{ height }}
           data={figure.data}
           layout={figure.layout}
           config={PLOT_CONFIG_NO_MODEBAR}
@@ -189,12 +194,14 @@ type PointsHover = { userId: number; time: number; award: QaAward | null };
 const PointsPlot = ({
   board,
   scorers,
+  strip,
   colors,
   active,
   onActive,
 }: {
   board: Scoreboard;
   scorers: QaUser[];
+  strip: ReturnType<typeof fixStripLayout>;
   colors: Map<number, string>;
   active: number | null;
   onActive: (userId: number | null) => void;
@@ -206,12 +213,13 @@ const PointsPlot = ({
   const figure = useMemo(() => {
     const start = scoreboardStart(board);
     const yMax = Math.max(1, ...scorers.map((user) => user.total)) * 1.1;
-    // Each staff member: the smooth line (also the hover target of the
-    // line) and the fixes as markers - owners[i] is trace i's user.
+    // Each staff member: the smooth line and the fixes as ticks in their
+    // row of the strip below (marks on the lines covered them) -
+    // owners[i] is trace i's user.
     const owners: number[] = [];
     // The fixes of each trace in marker order (null: a line).
     const traceAwards: (QaAward[] | null)[] = [];
-    const data = scorers.flatMap((user) => {
+    const data = scorers.flatMap((user, index) => {
       const color = colors.get(user.id) ?? OTHER_COLOR;
       const curve = smoothTotalLine(user.awards, start, board.now);
       const fixes = cumulativeLine(user.awards, start, board.now);
@@ -235,12 +243,14 @@ const PointsPlot = ({
         {
           type: 'scatter' as const,
           mode: 'markers' as const,
-          x: inner.map(({ index }) => fixes.x[index]),
-          y: inner.map(({ index }) => fixes.y[index]),
+          x: inner.map(({ index: fix }) => fixes.x[fix]),
+          y: inner.map(() => fixStripRow(index, scorers.length)),
+          yaxis: 'y2' as const,
           marker: {
+            symbol: 'line-ns' as const,
             color,
-            size: 8,
-            line: { color: plotTheme.white, width: 2 },
+            size: 11,
+            line: { color, width: 2 },
           },
           hoverinfo: 'none' as const,
         },
@@ -281,18 +291,58 @@ const PointsPlot = ({
         ...BASE_LAYOUT,
         margin: { l: 8, r: Math.min(150, 24 + longest * 6.5), ...LINE_MARGIN },
         hovermode: 'closest' as const,
-        annotations,
+        annotations: [
+          ...annotations,
+          {
+            text: t('qa_column_fixes'),
+            xref: 'paper' as const,
+            yref: 'paper' as const,
+            x: 0,
+            y: strip.title,
+            xanchor: 'left' as const,
+            yanchor: 'middle' as const,
+            showarrow: false,
+            font: { color: plotTheme.warmGray4, size: 10.5 },
+          },
+        ],
+        // The lines' baseline - the time axis sits under the strip.
+        shapes: [
+          {
+            type: 'line' as const,
+            xref: 'paper' as const,
+            yref: 'paper' as const,
+            x0: 0,
+            x1: 1,
+            y0: strip.lines[0],
+            y1: strip.lines[0],
+            line: { color: plotTheme.warmGray2, width: 1 },
+          },
+        ],
         xaxis: {
           ...AXIS,
           ...SPIKE,
           type: 'date' as const,
           range: [start, board.now],
+          anchor: 'y2' as const,
           automargin: true,
         },
-        yaxis: { ...AXIS, range: [0, yMax], automargin: true },
+        yaxis: {
+          ...AXIS,
+          range: [0, yMax],
+          domain: strip.lines,
+          automargin: true,
+        },
+        yaxis2: {
+          domain: strip.strip,
+          range: [-0.7, Math.max(scorers.length, 1) - 0.3],
+          showgrid: false,
+          zeroline: false,
+          showticklabels: false,
+          fixedrange: true,
+        },
       },
     };
-  }, [board, colors, scorers]);
+  }, [board, colors, scorers, strip, t]);
 
   // The hovered staff member stands out, the others step back.
   useEffect(() => {
@@ -342,6 +392,7 @@ const PointsPlot = ({
       <div className="qa-scoreboard-plot-wrap">
         <Plot
           className="qa-scoreboard-plot"
+          style={{ height: strip.height }}
           data={figure.data}
           layout={figure.layout}
           config={PLOT_CONFIG_NO_MODEBAR}
@@ -526,14 +577,20 @@ const QaScoreboardChart = ({
     [board, scorers],
   );
   const overall = useMemo(() => scorers.map((user) => user.total), [scorers]);
+  // The points plot's fix strip - the mean plot beside it as high.
+  const strip = useMemo(
+    () => fixStripLayout(scorers.length, LINE_HEIGHT, LINE_MARGIN),
+    [scorers.length],
+  );
 
   return (
     <div className="qa-scoreboard-charts" data-testid="qa-scoreboard-charts">
       <div className="qa-scoreboard-row">
-        <MeanPlot board={board} />
+        <MeanPlot board={board} height={strip.height} />
         <PointsPlot
           board={board}
           scorers={scorers}
+          strip={strip}
           colors={colors}
           active={active}
           onActive={onActive}
