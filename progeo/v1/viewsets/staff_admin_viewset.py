@@ -75,15 +75,26 @@ def _refuse_unheld(request, *codes):
     return permission_denied_response(missing) if missing else None
 
 
-def _has_locations(account) -> bool:
-    """Whether `account` holds a location (in its database; one it doesn't configure: unknown - True)."""
+def _accounts_with_locations(accounts) -> set:
+    """The pks of `accounts` that hold a location (in their database; one it
+    doesn't configure: unknown - counted in). One query per database, not
+    per account - the users table lists them all."""
     from django.db import connections
 
     from progeo.v1.models import ProgeoLocation
 
-    if account.db_name not in connections.databases:
-        return True
-    return ProgeoLocation.objects.using(account.db_name).filter(account=account).exists()
+    found, by_db = set(), defaultdict(list)
+    for account in accounts:
+        if account.db_name in connections.databases:
+            by_db[account.db_name].append(account.pk)
+        else:
+            found.add(account.pk)
+    for db_name, pks in by_db.items():
+        found.update(
+            ProgeoLocation.objects.using(db_name).filter(account_id__in=pks)
+            .values_list("account_id", flat=True).distinct()
+        )
+    return found
 
 
 def _require_user_admin(request):
@@ -332,6 +343,8 @@ class StaffUserListView(APIView):
         admin_accounts = (
             [{"id": account.pk, "name": account.name} for account in _admin_accounts(request.user)] if customer else []
         )
+        account_choices = list(account_members.account_scope(request.user))
+        with_locations = _accounts_with_locations(account_choices)
         return RequestSuccess({
             # "staff": every user; "customer": the users of admin_accounts.
             "scope": "customer" if customer else "staff",
@@ -339,8 +352,8 @@ class StaffUserListView(APIView):
             # The accounts the admin may hand out / take away (account_members.account_scope);
             # has_locations: a customer admin's new user gets the ones without locations ticked.
             "account_choices": [
-                {"id": account.pk, "name": account.name, "has_locations": _has_locations(account)}
-                for account in account_members.account_scope(request.user)
+                {"id": account.pk, "name": account.name, "has_locations": account.pk in with_locations}
+                for account in account_choices
             ],
             "users": [
                 _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts,

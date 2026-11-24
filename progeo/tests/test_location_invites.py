@@ -105,7 +105,9 @@ def test_a_customer_admin_invites_like_a_kundenadmin(api_client, world):
     email = f"{f.unique('new')}@progeo.com"
     assert _invite(api_client, location, email).json()["status"] == "invited"
 
-    without_invitable = f.make_user(perms=(*CUSTOMER, *NOTIF, "module_customer_admin_enabled"), accounts=[account])
+    # Not the button permissions a customer admin gets with it (implied - helper/button_permissions.py).
+    without_invitable = f.make_user(perms=(*CUSTOMER, *NOTIF, "module_customer_admin_enabled"), accounts=[account],
+                                    implied=False)
     api_client.force_authenticate(user=without_invitable)
     response = _invite(api_client, location, f"{f.unique('new')}@progeo.com")
     assert response.status_code == 403

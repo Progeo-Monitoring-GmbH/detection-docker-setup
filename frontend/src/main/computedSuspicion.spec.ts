@@ -5,6 +5,7 @@ import {
   pointLetter,
   sensorList,
   suspicionMarkersOf,
+  suspicionsAtFrame,
   suspicionsOnPlan,
   type ComputedSuspicionPoint,
 } from './computedSuspicion';
@@ -128,5 +129,48 @@ describe('computedSuspicionUrl', () => {
     expect(computedSuspicionUrl(12, 1, true)).toBe(
       '/v1/demo/alarm-computed-clusters/?location=12&days=1',
     );
+  });
+});
+
+describe('suspicionsAtFrame', () => {
+  // Hourly frames from 08:00 to 11:00 (UTC, seconds).
+  const at = (hhmm: string) => Date.parse(`2026-11-02T${hhmm}:00Z`);
+  const timestamps = ['08:00', '09:00', '10:00', '11:00'].map(
+    (hhmm) => at(hhmm) / 1000,
+  );
+  const markers = suspicionMarkersOf([
+    point('early', {
+      first_seen: '2026-11-02T08:20:00Z',
+      last_seen: '2026-11-02T09:10:00Z',
+    }),
+    point('once', {
+      first_seen: '2026-11-02T10:30:00Z',
+      last_seen: '2026-11-02T10:30:00Z',
+    }),
+    point('late', { first_seen: '2026-11-02T12:40:00Z', last_seen: null }),
+    point('unknown'),
+  ]);
+  const shownAt = (frame: number | null) =>
+    suspicionsAtFrame(markers, timestamps, frame)?.map((marker) => marker.id);
+
+  it('reads the detection of the points', () => {
+    expect(markers[0].seenFrom).toBe(at('08:20'));
+    expect(markers[0].seenUntil).toBe(at('09:10'));
+    expect(markers[3].seenFrom).toBeNull();
+  });
+
+  it('shows a point only on the frames it was detected in', () => {
+    expect(shownAt(0)).toEqual(['early', 'unknown']);
+    expect(shownAt(1)).toEqual(['early', 'unknown']);
+    // A single reading: its frame only.
+    expect(shownAt(2)).toEqual(['once', 'unknown']);
+    // The newest frame reaches up to now.
+    expect(shownAt(3)).toEqual(['late', 'unknown']);
+  });
+
+  it('shows all without a frame', () => {
+    expect(shownAt(null)).toHaveLength(4);
+    expect(suspicionsAtFrame(markers, undefined, 2)).toBe(markers);
+    expect(suspicionsAtFrame(undefined, timestamps, 2)).toBeUndefined();
   });
 });

@@ -32,6 +32,15 @@ const jumpedTo =
   (at: number) =>
   (prev: Jump | null): Jump => ({ at, revision: (prev?.revision ?? 0) + 1 });
 
+/** The plan a jump asked for (a suspected leak's "Jump to Event"): shown
+ * until another one is picked - `revision` also when it is asked twice,
+ * counting on (also when reset) so no plan picked before wins again. */
+type PlanJump = { plan: number | null; revision: number };
+
+const planJumpedTo =
+  (plan: number | null) =>
+  (prev: PlanJump): PlanJump => ({ plan, revision: prev.revision + 1 });
+
 const toggledSensor =
   (pos: number) =>
   (current: number | null): number | null =>
@@ -82,13 +91,20 @@ export const useStatusViewSettings = (isStaff: boolean) => {
   // The sensor hovered in a Verdachtsstelle's sensor list - pointed out on the plan.
   const [hoveredSensor, setHoveredSensor] = useState<number | null>(null);
   const [jump, setJump] = useState<Jump | null>(null);
+  const [planJump, setPlanJump] = useState<PlanJump>({
+    plan: null,
+    revision: 0,
+  });
 
   const { searchParams, requested, focusAt, requestKey } = useRequestedView();
   const [applied, setApplied] = useState<string | null>(null);
   if (applied !== requestKey) {
     setApplied(requestKey);
-    // A new ?at= wins over a moment asked for on the page.
+    // A new ?at= wins over a moment (and plan) asked for on the page.
     setJump(null);
+    if (planJump.plan != null) {
+      setPlanJump(planJumpedTo(null));
+    }
     const next = requestedSettings(
       requested,
       focusAt,
@@ -109,7 +125,13 @@ export const useStatusViewSettings = (isStaff: boolean) => {
     setSelectedRange(range);
     setPickedStep(null);
   }, []);
-  const jumpTo = useCallback((at: number) => setJump(jumpedTo(at)), []);
+  /** The plan's slider to a moment - and to its plan, given one. */
+  const jumpTo = useCallback((at: number, plan?: number | null) => {
+    setJump(jumpedTo(at));
+    if (plan != null) {
+      setPlanJump(planJumpedTo(plan));
+    }
+  }, []);
   /** A sensor picked on the plan - again: unpicked. */
   const toggleSensor = useCallback(
     (pos: number) => setSelectedSensor(toggledSensor(pos)),
@@ -135,6 +157,7 @@ export const useStatusViewSettings = (isStaff: boolean) => {
     setHoveredSensor,
     jump,
     jumpTo,
+    planJump,
   };
 };
 
@@ -149,12 +172,12 @@ export const useShowMoment = (
   rangeOptions: readonly TimeRange[],
 ) =>
   useCallback(
-    (iso: string) => {
+    (iso: string, plan?: number | null) => {
       const at = Date.parse(iso);
       if (!Number.isFinite(at)) {
         return;
       }
-      jumpTo(at);
+      jumpTo(at, plan);
       const reaching = rangeForMoment(range, at, now, rangeOptions);
       if (reaching) {
         selectRange(reaching);

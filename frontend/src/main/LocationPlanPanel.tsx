@@ -17,7 +17,7 @@ import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
 import SensorStatusTiles from '../components/device/SensorStatusTiles';
 import type { SuspicionPlanMarker } from '../components/device/SuspicionMarkers';
-import { suspicionsOnPlan } from './computedSuspicion';
+import { suspicionsAtFrame, suspicionsOnPlan } from './computedSuspicion';
 import type {
   HeatProfile,
   SensorHeatmapResponse,
@@ -46,6 +46,11 @@ import './LocationPlanPanel.css';
 type LocationPlanPanelProps = {
   /** The plan to show first (?plan=, planParam.ts) - the first one otherwise. */
   preferredPlanId?: number | null;
+  /** A plan asked for on the page (a suspected leak's "Jump to Event"):
+   * shown instead of preferredPlanId until another one is picked. */
+  focusPlanId?: number | null;
+  /** Raised to show focusPlanId again although a plan was picked since. */
+  focusPlanRevision?: number;
   /** The frames of the selected range (with the location's plans and points). */
   heatmap: SensorHeatmapResponse | null;
   visualization: PlanVisualization;
@@ -147,21 +152,27 @@ const LocationPlanPanel = ({
   onFrameTimeChange,
   testId = 'plan-panel',
   preferredPlanId = null,
+  focusPlanId = null,
+  focusPlanRevision = 0,
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
   const fullscreen = useFullscreen();
   const maxHeight = usePlanMaxHeight();
   // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
   const withHeat = visualization === 'heatmap' || visualization === 'lines';
-  // A plan picked here wins - until another one is asked for (preferredPlanId).
+  // A plan picked here wins - until another one is asked for (preferredPlanId,
+  // or a jump's focusPlanId - the newer one).
   const [pickedPlan, setPickedPlan] = useState<{
     from: number | null;
+    focus: number;
     id: number;
   } | null>(null);
   const selectedPlanId =
-    pickedPlan && pickedPlan.from === preferredPlanId
+    pickedPlan &&
+    pickedPlan.from === preferredPlanId &&
+    pickedPlan.focus === focusPlanRevision
       ? pickedPlan.id
-      : preferredPlanId;
+      : (focusPlanId ?? preferredPlanId);
   // The frame the plan shows (its slider). The heatmap reports its own; the
   // overlays show the newest whenever the frames change (`picked.heatmap`).
   const [picked, setPicked] = useState<{
@@ -209,9 +220,16 @@ const LocationPlanPanel = ({
     planViews.find((plan) => plan.id === selectedPlanId) ??
     planViews[0] ??
     null;
+  // The suspected leaks of the shown view - only on the frames they were
+  // detected in.
   const shownSuspicions = useMemo(
-    () => suspicionsOnPlan(suspicions, shownPlan?.id ?? null),
-    [suspicions, shownPlan],
+    () =>
+      suspicionsAtFrame(
+        suspicionsOnPlan(suspicions, shownPlan?.id ?? null),
+        heatmap?.timestamps,
+        frameIndex,
+      ),
+    [suspicions, shownPlan, heatmap, frameIndex],
   );
   const sensorPoints = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
   const viewPoints = useMemo(
@@ -416,7 +434,11 @@ const LocationPlanPanel = ({
                 }))}
                 value={String(shownPlan?.id)}
                 onChange={(value) =>
-                  setPickedPlan({ from: preferredPlanId, id: Number(value) })
+                  setPickedPlan({
+                    from: preferredPlanId,
+                    focus: focusPlanRevision,
+                    id: Number(value),
+                  })
                 }
               />
             )}

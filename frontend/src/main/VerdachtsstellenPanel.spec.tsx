@@ -139,7 +139,7 @@ describe('VerdachtsstellenPanel', () => {
 });
 
 describe('VerdachtsstellenPanel - Alarm-Verlauf', () => {
-  it('pages the alarm history in a DataTable, 25 rows at a time', () => {
+  it('pages the alarm history in a DataTable, 10 rows at a time', () => {
     const open = cluster('sensor-6', 6, 'neu');
     open.alarms = Array.from({ length: 40 }, (_, index) => ({
       id: index,
@@ -151,7 +151,7 @@ describe('VerdachtsstellenPanel - Alarm-Verlauf', () => {
 
     act(() => (container.querySelector('[data-testid="verdachtsstelle-toggle"]') as HTMLElement).click());
 
-    expect(container.querySelectorAll('[data-testid="verdachtsstelle-history-row"]')).toHaveLength(25);
+    expect(container.querySelectorAll('[data-testid="verdachtsstelle-history-row"]')).toHaveLength(10);
     expect(byTestId('verdachtsstelle-history-sensor-6')).not.toBeNull();
   });
 });

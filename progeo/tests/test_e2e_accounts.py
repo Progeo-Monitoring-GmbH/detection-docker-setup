@@ -228,9 +228,15 @@ def test_customer_does_not_see_another_accounts_location(demo):
     from progeo.v1.models import Account
 
     other = Account.objects.using("default").create(raw_hash="e2e-other", name="Fremd", db_name="default")
-    foreign = ProgeoLocation.objects.using("default").create(account=other, name="Fremdobjekt", project_id=9999)
+    # Ids are per database: the demo account's own may hold the same one (its
+    # sequence runs apart) - a pk past both is the foreign location only.
+    newest = max(ProgeoLocation.objects.using(db).order_by("-pk").values_list("pk", flat=True).first() or 0
+                 for db in ("default", settings.DEMO_DATABASE))
+    foreign = ProgeoLocation.objects.using("default").create(
+        pk=newest + 1000, account=other, name="Fremdobjekt", project_id=9999)
     customer = _client(e2e.E2E_ROLES["customer"])
-    assert customer.get(f"/v1/location/{foreign.pk}/").status_code in (403, 404)
+    response = customer.get(f"/v1/location/{foreign.pk}/")
+    assert response.status_code in (403, 404), response.json()
 
 
 def test_media_backups_only_for_superusers(demo, staff):

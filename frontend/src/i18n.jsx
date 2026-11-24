@@ -609,6 +609,9 @@ i18n
             'Suspected leak locations as customers see them',
           suspicion_mode_sensors: 'Per sensor',
           suspicion_member_sensors: 'Sensors in this area',
+          suspicion_jump_to_event: 'Jump to Event',
+          suspicion_jump_to_event_hint:
+            'Shows the heatmap at the detection ({{date}})',
           suspicion_show_first_seen: 'Show first detection',
           suspicion_show_first_seen_hint:
             "Sets the plan's time slider to the first detection ({{date}})",
@@ -1044,7 +1047,7 @@ i18n
           ua_links_7d: 'Links used (7 days)',
           ua_links_30d: 'Links used (30 days)',
           ua_links_note:
-            'login {{login}} · invitation {{invite}} · password {{reset}} · chat QR {{matrix}} · migration {{migration}}',
+            'login {{login}} · invitation {{invite}} · password {{reset}} · password change {{change}} · chat QR {{matrix}} · migration {{migration}}',
           staff_notifications_title: 'Notifications (offline / alarm)',
           staff_notifications_load_error: 'Could not load the notifications',
           staff_notifications_action_error: 'Action failed',
@@ -3967,6 +3970,9 @@ i18n
             'Verdachtsstellen, wie Kunden sie sehen',
           suspicion_mode_sensors: 'Je Sensor',
           suspicion_member_sensors: 'Sensoren in diesem Bereich',
+          suspicion_jump_to_event: 'Zum Ereignis springen',
+          suspicion_jump_to_event_hint:
+            'Zeigt die Heatmap zum Zeitpunkt der Erkennung ({{date}})',
           suspicion_show_first_seen: 'Erstes Auftreten anzeigen',
           suspicion_show_first_seen_hint:
             'Stellt den Zeitregler des Plans auf das erste Auftreten ({{date}})',
@@ -4425,7 +4431,7 @@ i18n
           ua_links_7d: 'Genutzte Links (7 Tage)',
           ua_links_30d: 'Genutzte Links (30 Tage)',
           ua_links_note:
-            'Anmeldung {{login}} · Einladung {{invite}} · Passwort {{reset}} · Chat-QR {{matrix}} · Umzug {{migration}}',
+            'Anmeldung {{login}} · Einladung {{invite}} · Passwort {{reset}} · Passwortänderung {{change}} · Chat-QR {{matrix}} · Umzug {{migration}}',
           staff_notifications_title: 'Benachrichtigungen (Offline / Alarm)',
           staff_notifications_load_error:
             'Benachrichtigungen konnten nicht geladen werden',

@@ -181,7 +181,7 @@ describe('ComputedSuspicionPanel', () => {
     expect(button.hidden).toBe(true);
   });
 
-  it('pages the alarm history of a point, 25 rows at a time, with the sensor of each', () => {
+  it('pages the alarm history of a point, 10 rows at a time, with the sensor of each', () => {
     renderPanel({ points: [point('computed-3', { alarms: history(30) })] });
 
     act(() => byTestId('computed-suspicion-toggle', 'computed-3')?.click());
@@ -189,7 +189,7 @@ describe('ComputedSuspicionPanel', () => {
     const rows = container.querySelectorAll(
       '[data-testid="computed-suspicion-history-row"]',
     );
-    expect(rows).toHaveLength(25);
+    expect(rows).toHaveLength(10);
     const table = byTestId('computed-suspicion-history-computed-3');
     expect(table?.textContent).toContain('status_col_sensor');
     expect(table?.textContent).toContain('Sensor 4');
@@ -231,20 +231,21 @@ describe('ComputedSuspicionPanel', () => {
     expect(onSensorHover).toHaveBeenLastCalledWith(null);
   });
 
-  it('sets the time slider to the first detection - also in the demo', () => {
+  it('jumps to the event from the row - also in the demo', () => {
     const onShowMoment = vi.fn();
     renderPanel({
       readOnly: true,
       onShowMoment,
       points: [point('computed-3', { first_seen: '2026-11-02T08:00:00Z' }), point('computed-9')],
     });
-    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
-    act(() => byTestId('computed-suspicion-first-seen', 'computed-3')!.click());
-    expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z');
+    // Beside the row, without expanding it - and not toggling it.
+    act(() => byTestId('computed-suspicion-jump', 'computed-3')!.click());
+    // On the point's plan.
+    expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z', 5);
+    expect(byTestId('computed-suspicion-details', 'computed-3')).toBeNull();
 
-    // Without a first detection there is nothing to show.
-    act(() => byTestId('computed-suspicion-toggle', 'computed-9')!.click());
-    expect(byTestId('computed-suspicion-first-seen', 'computed-9')).toBeNull();
+    // Without a detection there is nothing to jump to.
+    expect(byTestId('computed-suspicion-jump', 'computed-9')).toBeNull();
   });
 
   it('says so when there is nothing or no access', () => {

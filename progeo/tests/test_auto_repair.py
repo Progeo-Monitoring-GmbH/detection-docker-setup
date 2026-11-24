@@ -2,6 +2,7 @@
 lines become its measure points - by their number, line by line; run on its
 own after the upload of an mx-PEEL plan, left for the review when a line
 has no readable number."""
+from contextlib import ExitStack
 from types import SimpleNamespace
 
 import pytest
@@ -128,7 +129,8 @@ def test_the_run_leaves_a_line_without_number_for_the_review(location, plan, mon
 
 
 @pytest.mark.django_db
-def test_an_mx_peel_upload_queues_the_run(api_client, location, upload_dir, monkeypatch):
+def test_an_mx_peel_upload_queues_the_run(api_client, location, upload_dir, monkeypatch,
+                                          django_capture_on_commit_callbacks):
     queued = []
     monkeypatch.setattr("progeo.tasks.auto_repair_task.apply_async", lambda args, **kwargs: queued.append(args))
     user = f.make_user(perms=("module_devices_enabled", "module_devices_edit"))
@@ -136,9 +138,13 @@ def test_an_mx_peel_upload_queues_the_run(api_client, location, upload_dir, monk
     api_client.force_authenticate(user=user)
     cache.clear()
 
-    response = api_client.post("/v1/status/measure_points/upload_png/",
-                               {"location_id": location.project_id,
-                                "file": SimpleUploadedFile("plan.png", b"\x89PNG", content_type="image/png")})
+    # Queued once the upload commits - the test's transaction never does.
+    with ExitStack() as commits:
+        for db in {f.DB, location._state.db}:
+            commits.enter_context(django_capture_on_commit_callbacks(using=db, execute=True))
+        response = api_client.post("/v1/status/measure_points/upload_png/",
+                                   {"location_id": location.project_id,
+                                    "file": SimpleUploadedFile("plan.png", b"\x89PNG", content_type="image/png")})
 
     assert response.status_code == 200, response.content
     body = response.json()

@@ -104,3 +104,50 @@ describe('LocationPlanPanel - Sensoransicht', () => {
     expect(byTestId('plan-panel-tiles')).toBeNull();
   });
 });
+
+describe('LocationPlanPanel - the plan of a jump', () => {
+  const OG = { id: 6, url: '/media/og.png', is_active: true, name: 'OG' };
+  const twoPlans = {
+    ...heatmapOf(true),
+    location: { lageplans: [PLAN, OG] },
+  } as unknown as SensorHeatmapResponse;
+
+  const renderJump = (focusPlanId: number | null, focusPlanRevision: number) =>
+    act(() => {
+      root.render(
+        <LocationPlanPanel
+          heatmap={twoPlans}
+          visualization="segments"
+          withSensorTable={false}
+          threshold={100}
+          denied={false}
+          alarmSpans={[]}
+          focusPlanId={focusPlanId}
+          focusPlanRevision={focusPlanRevision}
+        />,
+      );
+    });
+  const option = (id: number) =>
+    container.querySelector<HTMLButtonElement>(
+      `[data-testid="plan-panel-plans-option"][data-test-key="${id}"]`,
+    )!;
+  const shown = () =>
+    container
+      .querySelector('[data-testid="plan-panel-plans-option"][aria-pressed="true"]')
+      ?.getAttribute('data-test-key');
+
+  it('shows the plan a jump asks for - again after another one was picked', () => {
+    renderJump(null, 0);
+    expect(shown()).toBe('5');
+
+    renderJump(6, 1);
+    expect(shown()).toBe('6');
+
+    act(() => option(5).click());
+    expect(shown()).toBe('5');
+
+    // The same plan asked for again: the jump wins over the pick.
+    renderJump(6, 2);
+    expect(shown()).toBe('6');
+  });
+});

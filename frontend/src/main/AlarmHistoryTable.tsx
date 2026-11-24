@@ -10,7 +10,7 @@ import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import './AlarmHistoryTable.css';
 
-const ALARM_HISTORY_PAGE_SIZE = 25;
+const ALARM_HISTORY_PAGE_SIZE = 10;
 
 type AlarmHistoryTableProps = {
   entries: AlarmHistoryEntry[];
@@ -23,7 +23,7 @@ type AlarmHistoryTableProps = {
 
 /**
  * The "Alarm-Verlauf" of a Verdachtsstelle or a computed point: its
- * over-threshold readings, newest first, 25 per page - sortable by every
+ * over-threshold readings, newest first, 10 per page - sortable by every
  * column, searchable (a computed point's history spans several sensors).
  */
 const AlarmHistoryTable = ({

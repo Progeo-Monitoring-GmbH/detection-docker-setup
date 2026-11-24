@@ -27,6 +27,11 @@ export type SuspicionPlanMarker = {
   state: 'neu' | 'quittiert' | 'geloest';
   /** 0..1 of the strongest point: the ring's size. */
   strength: number;
+  /** When it was detected (ms): its first and last reading over the
+   * threshold - the heatmap shows it only on these frames
+   * (suspicionsAtFrame). Unknown (null/left out): on every frame. */
+  seenFrom?: number | null;
+  seenUntil?: number | null;
 };
 
 export type PlacedSuspicionMarker = SuspicionPlanMarker & {

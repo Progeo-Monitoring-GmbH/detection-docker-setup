@@ -66,7 +66,7 @@ const SuspicionColumn = ({
   isStaff: boolean;
   demo: boolean;
   onSensorHover: (sensorId: number | null) => void;
-  onShowMoment: (iso: string) => void;
+  onShowMoment: (iso: string, plan?: number | null) => void;
 }) => {
   // In the panel's header - a row of its own pushed the panel below the plan's top.
   const suspicionSwitch = isStaff ? (
@@ -131,7 +131,7 @@ const LocationStatusRoof = ({
   isStaff: boolean;
   demo: boolean;
   onFrameTimeChange: (ms: number | null) => void;
-  onShowMoment: (iso: string) => void;
+  onShowMoment: (iso: string, plan?: number | null) => void;
 }) => (
   <div className="status-columns" data-testid="status-roof">
     <div className="status-column-plan">
@@ -149,6 +149,8 @@ const LocationStatusRoof = ({
         profileLoading={shown.profileLoading}
         focusTime={settings.jump?.at ?? settings.focusAt}
         focusRevision={settings.jump?.revision ?? 0}
+        focusPlanId={settings.planJump.plan}
+        focusPlanRevision={settings.planJump.revision}
         // The step only matters for the animation: beside its start.
         frameToolbar={
           !isLatest &&

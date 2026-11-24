@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClockHistory,
+  SkipBackwardFill,
 } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
@@ -69,8 +70,9 @@ type ComputedSuspicionPanelProps = {
   headerActions?: ReactNode;
   /** A member sensor hovered (null: left) - the plan points it out. */
   onSensorHover?: (sensorId: number | null) => void;
-  /** Sets the plan's time slider to a moment (ISO-8601) - the first detection. */
-  onShowMoment?: (at: string) => void;
+  /** Sets the plan's time slider to a moment (ISO-8601) - the detection
+   * ("Jump to Event") - and the plan to the point's. */
+  onShowMoment?: (at: string, plan?: number | null) => void;
 };
 
 /**
@@ -206,7 +208,7 @@ type ComputedSuspicionRowProps = {
   readOnly: boolean;
   sensorLabel: (sensorId: number) => string;
   onSensorHover?: (sensorId: number | null) => void;
-  onShowMoment?: (at: string) => void;
+  onShowMoment?: (at: string, plan?: number | null) => void;
 };
 
 const ComputedSuspicionRow = ({
@@ -229,6 +231,7 @@ const ComputedSuspicionRow = ({
 
   return (
     <div {...repeatedTestId('computed-suspicion-row', point.id)}>
+      <div className="computed-suspicion-row-line">
       <button
         type="button"
         onClick={onToggle}
@@ -275,6 +278,14 @@ const ComputedSuspicionRow = ({
             : '–'}
         </span>
       </button>
+      {onShowMoment && point.first_seen && (
+        <EventJumpButton
+          at={point.first_seen}
+          onShow={(at) => onShowMoment(at, point.lageplan)}
+          testKey={point.id}
+        />
+      )}
+      </div>
 
       {expanded && (
         <div
@@ -333,14 +344,6 @@ const ComputedSuspicionRow = ({
             rowTestId="computed-suspicion-history-row"
           />
           <div className="verdachtsstellen-actions">
-            {onShowMoment && point.first_seen && (
-              <FirstDetectionButton
-                at={point.first_seen}
-                onShow={onShowMoment}
-                testId="computed-suspicion-first-seen"
-                testKey={point.id}
-              />
-            )}
             <button
               type="button"
               hidden={readOnly}
@@ -360,6 +363,37 @@ const ComputedSuspicionRow = ({
         </div>
       )}
     </div>
+  );
+};
+
+/** "Jump to Event" in a point's row: the plan's frame picker to its
+ * detection - the frame its ring shows on (suspicionsAtFrame) - on its
+ * plan. */
+const EventJumpButton = ({
+  at,
+  onShow,
+  testKey,
+}: {
+  at: string;
+  onShow: (at: string) => void;
+  testKey: string;
+}) => {
+  const { t } = useTranslation();
+  const hint = t('suspicion_jump_to_event_hint', { date: formatDate(at) });
+  return (
+    <button
+      type="button"
+      className="verdachtsstellen-jump computed-suspicion-jump"
+      title={hint}
+      aria-label={hint}
+      onClick={() => onShow(at)}
+      {...repeatedTestId('computed-suspicion-jump', testKey)}
+    >
+      <SkipBackwardFill size={12} />
+      <span className="computed-suspicion-jump-label">
+        {t('suspicion_jump_to_event')}
+      </span>
+    </button>
   );
 };
 

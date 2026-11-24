@@ -71,3 +71,30 @@
   color: #fff;
   outline: none;
 }
+
+/* A row: the toggle and beside it "Jump to Event". */
+.computed-suspicion-row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.computed-suspicion-row-line > .verdachtsstellen-row-toggle {
+  flex: 1;
+  min-width: 0;
+}
+
+.verdachtsstellen-jump.computed-suspicion-jump {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* Phones: the icon only (the label stays its title). */
+@media (max-width: 640px) {
+  .computed-suspicion-jump-label {
+    display: none;
+  }
+}

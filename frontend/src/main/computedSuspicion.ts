@@ -100,6 +100,8 @@ export const suspicionMarkersOf = (
             label: pointLetter(index),
             state: point.state,
             strength: point.strength,
+            seenFrom: momentOf(point.first_seen),
+            seenUntil: momentOf(point.last_seen),
           },
         ],
   );
@@ -112,6 +114,41 @@ export const suspicionsOnPlan = (
   markers?.filter(
     (marker) => marker.lageplan == null || marker.lageplan === planId,
   );
+
+/** An ISO-8601 moment as ms - null without one or when unreadable. */
+const momentOf = (iso: string | null | undefined) => {
+  const ms = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/**
+ * The markers detected in the shown frame: a frame holds the time from its
+ * start to the next frame's (`timestamps` in seconds, as the heatmap's; the
+ * newest one up to now) - a marker shows while that overlaps its detection
+ * (seenFrom..seenUntil). Without a detection time a marker always shows;
+ * without frames (or none picked) all do.
+ */
+export const suspicionsAtFrame = (
+  markers: SuspicionPlanMarker[] | undefined,
+  timestamps: number[] | undefined,
+  frameIndex: number | null,
+): SuspicionPlanMarker[] | undefined => {
+  const start = frameIndex != null ? timestamps?.[frameIndex] : undefined;
+  if (!markers || timestamps == null || start == null) {
+    return markers;
+  }
+  const next = timestamps[(frameIndex ?? 0) + 1];
+  const from = start * 1000;
+  const until = next != null ? next * 1000 : Number.POSITIVE_INFINITY;
+  return markers.filter((marker) => {
+    if (marker.seenFrom == null) {
+      return true;
+    }
+    return (
+      marker.seenFrom < until && (marker.seenUntil ?? marker.seenFrom) >= from
+    );
+  });
+};
 
 /** The URL of the points for a location and range. */
 export const computedSuspicionUrl = (

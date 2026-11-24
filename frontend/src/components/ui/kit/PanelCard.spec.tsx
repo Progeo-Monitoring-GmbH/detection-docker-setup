@@ -2,12 +2,12 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import PanelCard from './PanelCard';
+import PanelCard, { FOLD_MIN_HEIGHT } from './PanelCard';
 import { duplicateTestIds } from '../../../testIds';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-/** A panel higher than 250px folds (jsdom has no layout: the height is set here). */
+/** A panel higher than FOLD_MIN_HEIGHT folds (jsdom has no layout: the height is set here). */
 
 let height = 0;
 let container: HTMLDivElement;
@@ -41,15 +41,15 @@ afterEach(() => {
 
 describe('PanelCard folding', () => {
   it('offers no toggle for a low panel', () => {
-    height = 250;
+    height = FOLD_MIN_HEIGHT;
     act(() => root.render(<PanelCard title="Low" testId="low">x</PanelCard>));
 
     expect(toggle()).toBeNull();
     expect(shown()).toBe(true);
   });
 
-  it('folds a panel higher than 250px, unfolded first, its body kept mounted', () => {
-    height = 251;
+  it('folds a panel higher than FOLD_MIN_HEIGHT, unfolded first, its body kept mounted', () => {
+    height = FOLD_MIN_HEIGHT + 1;
     act(() =>
       root.render(
         <PanelCard title="High" testId="high">
@@ -77,7 +77,7 @@ describe('PanelCard folding', () => {
   });
 
   it('never folds without a title, inside another panel or when told not to', () => {
-    height = 900;
+    height = FOLD_MIN_HEIGHT * 2;
     act(() =>
       root.render(
         <>

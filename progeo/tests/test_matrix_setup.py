@@ -178,7 +178,7 @@ def test_messaging_statistics_count_chat_accounts_and_used_links(api_client):
 
 
 def test_usage_stats_lists_every_purpose():
-    assert set(login_links.usage_stats()["24h"]) == {"login", "invite", "reset", "matrix", "migration", "total"}
+    assert set(login_links.usage_stats()["24h"]) == {"login", "invite", "reset", "change", "matrix", "migration", "total"}
 
 
 # ---------------------------------------------------------------------------- language
