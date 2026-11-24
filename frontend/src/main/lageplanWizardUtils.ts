@@ -17,6 +17,8 @@ export type WizardDevice = {
   type?: string | null;
   raw_hash?: string | null;
   first_sensor_order?: number | null;
+  /** Saved with a range's "to" (measure_points/device_ranges); null: open. */
+  sensor_count?: number | null;
 };
 
 export type DeviceRange = { deviceId: number | null; from: string; to: string };
@@ -110,31 +112,40 @@ export const placedFromPoints = (
     });
 };
 
-/** Imported points' device ranges, with the last device open-ended. */
+/** The device ranges step 2 shows: each device with imported points (more
+ * than one - a single one is a hand-placed sensor) from its first sensor to
+ * its last point, and each device whose saved range starts behind sensor 1
+ * (measure_points/device_ranges) - also without points yet, ending at its
+ * saved sensor count. The last range is open-ended unless its end was saved. */
 export const defaultDeviceRanges = (
   points: MeasurePoint[],
   devices: WizardDevice[],
 ): DeviceRange[] => {
-  const imported = [...pointsPerDevice(points)]
-    .filter(
-      ([deviceId, count]) =>
-        count > 1 && devices.some((device) => device.id === deviceId),
-    )
-    .map(([deviceId]) => {
+  const counts = pointsPerDevice(points);
+  const ranges = devices
+    .flatMap((device) => {
       const orders = points
-        .filter((point) => Number(point.device) === deviceId)
+        .filter((point) => Number(point.device) === device.id)
         .map((point) => Number(point.sensor_order));
-      const device = devices.find((candidate) => candidate.id === deviceId);
-      return {
-        deviceId,
-        from: String(device?.first_sensor_order ?? Math.min(...orders)),
-        to: String(Math.max(...orders)),
-      };
+      const saved = (device.first_sensor_order ?? 1) > 1;
+      if ((counts.get(device.id) ?? 0) <= 1 && !saved) {
+        return [];
+      }
+      const from = device.first_sensor_order ?? Math.min(...orders);
+      // A saved range without points ends where its sensor count says (or nowhere).
+      const savedEnd = orders.length === 0;
+      const to = savedEnd
+        ? device.sensor_count != null ? String(from + device.sensor_count - 1) : ''
+        : String(Math.max(...orders));
+      return [{ range: { deviceId: device.id, from: String(from), to }, savedEnd }];
     })
-    .sort((a, b) => Number(a.from) - Number(b.from));
-  if (imported.length) {
-    imported[imported.length - 1].to = '';
-    return imported;
+    .sort((a, b) => Number(a.range.from) - Number(b.range.from));
+  if (ranges.length) {
+    const last = ranges[ranges.length - 1];
+    if (!last.savedEnd) {
+      last.range.to = '';
+    }
+    return ranges.map(({ range }) => range);
   }
   return devices.length === 1
     ? [{ deviceId: devices[0].id, from: '1', to: '' }]

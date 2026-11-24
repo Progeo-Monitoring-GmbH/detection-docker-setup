@@ -1687,12 +1687,13 @@ class StatusViewSet(ProgeoModalViewSet):
                     response_data["lageplans"] = []
                     response_data["lageplan_url"] = None
             if (request.query_params.get("with_devices") or "").strip().lower() in {"1", "true", "yes", "on"}:
-                # The devices a point can be assigned to (wizard: "Manually set sensors").
+                # The devices a point can be assigned to (wizard: "Manually set sensors"),
+                # with their saved range (step 2: first sensor, sensor count).
                 response_data["devices"] = list(
                     ProgeoDevice.objects.using(db_name)
                     .filter(location=location)
                     .order_by("mac", "id")
-                    .values("id", "mac", "hardware", "type", "raw_hash", "first_sensor_order")
+                    .values("id", "mac", "hardware", "type", "raw_hash", "first_sensor_order", "sensor_count")
                 )
             return RequestSuccess(response_data)
 

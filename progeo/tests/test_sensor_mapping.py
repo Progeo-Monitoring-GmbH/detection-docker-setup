@@ -272,3 +272,25 @@ def test_step_2_saves_the_device_ranges_without_an_import(api_client, staff, sit
         "point_devices": [{"device_id": device.pk, "from": 1, "to": 4}, {"device_id": second.pk, "from": 4}],
     }, format="json").json()
     assert "overlap" in overlapping["reason"]
+
+
+@pytest.mark.django_db
+def test_step_2_lists_a_saved_range_without_points(api_client, staff, site):
+    """A third device saved in step 2 before its points exist: the wizard
+    reloads the devices and rebuilds the ranges from their saved range."""
+    location, device = site
+    second = f.make_device(location, first_sensor_order=1)
+    third = f.make_device(location, first_sensor_order=1)
+    for order in (1, 2, 3, 4):
+        _point(location, order)
+
+    api_client.post("/v1/status/measure_points/device_ranges/", {
+        "location_id": location.project_id,
+        "point_devices": [{"device_id": device.pk, "from": 1, "to": 2}, {"device_id": second.pk, "from": 3, "to": 4},
+                          {"device_id": third.pk, "from": 5, "to": 8}],
+    }, format="json")
+    body = api_client.get("/v1/status/measure_points/", {"location_id": location.project_id,
+                                                          "with_devices": "1"}).json()
+
+    saved = {row["id"]: (row["first_sensor_order"], row["sensor_count"]) for row in body["devices"]}
+    assert saved[third.pk] == (5, 4)
