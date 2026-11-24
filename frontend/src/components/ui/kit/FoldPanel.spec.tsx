@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FoldPanel from './FoldPanel';
 
 (
@@ -24,14 +24,19 @@ describe('FoldPanel', () => {
   let root: Root;
 
   beforeEach(() => {
+    // The Collapse ends its slide on a timer (dom-helpers' transitionEnd
+    // fallback) - run here, it would fire after jsdom is gone.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
   });
 
   afterEach(() => {
+    act(() => vi.runOnlyPendingTimers());
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
   });
 
   const toggle = () =>

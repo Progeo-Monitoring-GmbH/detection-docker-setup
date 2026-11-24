@@ -18,6 +18,9 @@ const toggle = () => container.querySelector<HTMLButtonElement>('[data-testid="f
 const shown = () => container.querySelector<HTMLElement>('.progeo-panel-fold-body')!.classList.contains('show');
 
 beforeEach(() => {
+  // The Collapse ends its slide on a timer (dom-helpers' transitionEnd
+  // fallback) - run here, it would fire after jsdom is gone.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   height = 0;
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => height);
   vi.stubGlobal(
@@ -33,8 +36,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  act(() => vi.runOnlyPendingTimers());
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
