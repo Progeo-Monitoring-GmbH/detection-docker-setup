@@ -50,40 +50,6 @@ class GeoHelper:
         if self.logger:
             self.logger(*msg)
 
-    def _wait(self):
-        """At most one request per min_delay_seconds (Nominatim's usage policy)."""
-        elapsed = time.time() - self._last_call
-        if elapsed < self.min_delay_seconds:
-            time.sleep(self.min_delay_seconds - elapsed)
-
-    def country_code(self, latitude, longitude):
-        """The ISO country code ("de", "at", ...) of a position - Nominatim
-        reverse geocoding at country level; None when it lies in no country
-        (the sea) or the lookup fails."""
-        key = ("country", round(float(latitude), 4), round(float(longitude), 4))
-        if key in self._cache:
-            return self._cache[key]
-        params = urlencode({"lat": key[1], "lon": key[2], "format": "jsonv2", "zoom": 3})
-        self._wait()
-        request = Request(
-            f"https://nominatim.openstreetmap.org/reverse?{params}",
-            headers={"User-Agent": "geologger/1.0", "Accept": "application/json"},
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as error:
-            self._log(f"Reverse geocoding failed for {latitude}, {longitude}: {error}")
-            data = None
-        finally:
-            self._last_call = time.time()
-        address = data.get("address") if isinstance(data, dict) else None
-        code = address.get("country_code") if isinstance(address, dict) else None
-        result = str(code).lower() if code else None
-        # A failed lookup isn't remembered: the next run may get the answer.
-        if data is not None:
-            self._cache[key] = result
-        return result
 
     def fetch_lat_lon(self, project_id, address, plz, city):
         # Postal codes like "D-21379" (or "D‐21379" with a unicode dash) carry a country
@@ -102,7 +68,10 @@ class GeoHelper:
             "limit": 1,
         })
 
-        self._wait()
+        now = time.time()
+        elapsed = now - self._last_call
+        if elapsed < self.min_delay_seconds:
+            time.sleep(self.min_delay_seconds - elapsed)
 
         request = Request(
             f"https://nominatim.openstreetmap.org/search?{params}",

@@ -1,25 +1,12 @@
 """patch_live --patch english_abroad (helper/location_language.py): locations
-whose position lies outside Germany get English as their language - unless
-one was chosen; GeoHelper.country_code tells the country of a position."""
-import io
-import json
-
+whose position lies outside the rectangle around Germany get English as
+their language - unless one was chosen."""
 import pytest
 
 from progeo.helper import location_language
-from progeo.helper.legacy import geo
 from progeo.v1.models import ProgeoLocation
 
-BERLIN, VIENNA, PRAGUE = (52.52, 13.41), (48.21, 16.37), (50.08, 14.44)
-
-
-class FakeGeocoder:
-    def __init__(self, countries):
-        self.countries, self.calls = countries, []
-
-    def country_code(self, latitude, longitude):
-        self.calls.append((latitude, longitude))
-        return self.countries.get((latitude, longitude))
+BERLIN, VIENNA, COPENHAGEN, PARIS = (52.52, 13.41), (48.21, 16.37), (55.68, 12.57), (48.86, 2.35)
 
 
 def _location(pk, saved, position=None, language=""):
@@ -39,18 +26,37 @@ def locations(monkeypatch):
     return found
 
 
-def test_locations_abroad_get_english(locations):
-    saved = []
-    berlin, vienna, prague = (_location(1, saved, BERLIN), _location(2, saved, VIENNA),
-                              _location(3, saved, PRAGUE))
-    locations += [(berlin, "default"), (vienna, "default"), (prague, "project_3")]
-    geocoder = FakeGeocoder({BERLIN: "de", VIENNA: "at", PRAGUE: "cz"})
+@pytest.mark.parametrize("name, position", [
+    ("Berlin", BERLIN),
+    ("List auf Sylt (north)", (55.058, 8.414)),
+    ("Haldenwanger Eck (south)", (47.271, 10.178)),
+    ("Isenbruch (west)", (51.050, 5.866)),
+    ("Neißeaue (east)", (51.273, 15.042)),
+    ("Konstanz (at the border)", (47.660, 9.176)),
+])
+def test_germany_lies_inside_the_rectangle(name, position):
+    assert location_language.in_germany_bounds(*position), name
 
-    result = location_language.english_abroad(apply=True, geocoder=geocoder)
+
+@pytest.mark.parametrize("name, position", [
+    ("Vienna", VIENNA), ("Copenhagen", COPENHAGEN), ("Paris", PARIS), ("Amsterdam", (52.37, 4.90)),
+    ("Milan", (45.46, 9.19)), ("Warsaw", (52.23, 21.01)),
+])
+def test_farther_neighbours_lie_outside(name, position):
+    assert not location_language.in_germany_bounds(*position), name
+
+
+def test_locations_outside_get_english(locations):
+    saved = []
+    berlin, vienna, paris = (_location(1, saved, BERLIN), _location(2, saved, VIENNA), _location(3, saved, PARIS))
+    locations += [(berlin, "default"), (vienna, "default"), (paris, "project_3")]
+
+    result = location_language.english_abroad(apply=True)
 
     assert saved == [(2, "default", ["language"]), (3, "project_3", ["language"])]
-    assert (berlin.language, vienna.language, prague.language) == ("", "en", "en")
-    assert [(row["id"], row["country"]) for row in result["changed"]] == [(2, "at"), (3, "cz")]
+    assert (berlin.language, vienna.language, paris.language) == ("", "en", "en")
+    assert [row["id"] for row in result["changed"]] == [2, 3]
+    assert result["germany"] == 1
 
 
 def test_dry_run_saves_nothing(locations):
@@ -58,7 +64,7 @@ def test_dry_run_saves_nothing(locations):
     vienna = _location(2, saved, VIENNA)
     locations.append((vienna, "default"))
 
-    result = location_language.english_abroad(apply=False, geocoder=FakeGeocoder({VIENNA: "at"}))
+    result = location_language.english_abroad(apply=False)
 
     assert saved == [] and vienna.language == ""
     assert [row["id"] for row in result["changed"]] == [2]
@@ -67,79 +73,32 @@ def test_dry_run_saves_nothing(locations):
 def test_a_chosen_language_is_kept_and_reported(locations):
     saved = []
     locations += [(_location(2, saved, VIENNA, language="de"), "default"),
-                  (_location(3, saved, PRAGUE, language="en"), "default")]
-    geocoder = FakeGeocoder({VIENNA: "at", PRAGUE: "cz"})
+                  (_location(3, saved, PARIS, language="en"), "default")]
 
-    result = location_language.english_abroad(apply=True, geocoder=geocoder)
+    result = location_language.english_abroad(apply=True)
 
     assert saved == []
-    assert result["kept"] == [{"id": 2, "project_id": 2, "db": "default", "country": "at", "language": "de"}]
-    # Already English: no lookup needed.
-    assert geocoder.calls == [VIENNA]
+    assert [(row["id"], row["language"]) for row in result["kept"]] == [(2, "de")]
+    assert result["english"] == 1
 
 
-def test_no_position_or_unknown_country_is_left_alone(locations):
+def test_no_position_is_left_alone(locations):
     saved = []
-    sea = (54.9, 4.1)
-    locations += [(_location(1, saved), "default"), (_location(2, saved, (0.0, 0.0)), "default"),
-                  (_location(3, saved, sea), "default")]
-    geocoder = FakeGeocoder({})
+    locations += [(_location(1, saved), "default"), (_location(2, saved, (0.0, 0.0)), "default")]
 
-    result = location_language.english_abroad(apply=True, geocoder=geocoder)
+    result = location_language.english_abroad(apply=True)
 
-    assert saved == [] and geocoder.calls == [sea]
-    assert (result["no_position"], result["unknown_country"]) == ([1, 2], [3])
+    assert saved == [] and result["no_position"] == [1, 2]
 
 
-def test_patch_live_runs_it_read_only_without_apply(locations, monkeypatch):
+def test_patch_live_runs_it_read_only_without_apply(locations):
     from django.core.management import call_command
 
     saved = []
     locations.append((_location(2, saved, VIENNA), "default"))
-    monkeypatch.setattr(geo.GeoHelper, "country_code", lambda self, latitude, longitude: "at")
 
     call_command("patch_live", patch="english_abroad")
     assert saved == []
 
     call_command("patch_live", patch="english_abroad", apply=True)
     assert saved == [(2, "default", ["language"])]
-
-
-class _Response(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-def test_country_code_asks_nominatim_once_per_position(monkeypatch):
-    requests = []
-
-    def fake_urlopen(request, timeout):
-        requests.append(request.full_url)
-        return _Response(json.dumps({"address": {"country": "Österreich", "country_code": "AT"}}).encode())
-
-    monkeypatch.setattr(geo, "urlopen", fake_urlopen)
-    helper = geo.GeoHelper(min_delay_seconds=0)
-
-    assert helper.country_code(48.2082, 16.3738) == "at"
-    assert helper.country_code(48.2082, 16.3738) == "at"
-    assert len(requests) == 1
-    assert "/reverse?" in requests[0] and "lat=48.2082" in requests[0] and "lon=16.3738" in requests[0]
-
-
-@pytest.mark.parametrize("answer", [
-    {"error": "Unable to geocode"},
-    {"address": {}},
-    [],
-    OSError("timed out"),
-])
-def test_country_code_is_none_without_a_country(monkeypatch, answer):
-    def fake_urlopen(request, timeout):
-        if isinstance(answer, Exception):
-            raise answer
-        return _Response(json.dumps(answer).encode())
-
-    monkeypatch.setattr(geo, "urlopen", fake_urlopen)
-    assert geo.GeoHelper(min_delay_seconds=0).country_code(54.9, 4.1) is None

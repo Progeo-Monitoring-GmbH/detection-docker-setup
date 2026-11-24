@@ -3,17 +3,28 @@ English. ProgeoLocation.language decides the language of the mails to people
 newly invited to a location (location_invites.invite_language) - unset ("")
 they get the inviter's language, mostly German.
 
-A location whose position (latitude/longitude) lies in another country
-(Nominatim reverse geocoding, GeoHelper.country_code) gets "en" - if its
-language is still unset: one chosen on the Einstellungen tab is kept (and
-reported). Locations without a position, or a position in no country (the
-sea, a failed lookup), are left alone."""
+A location whose position (latitude/longitude) lies outside the rectangle
+around Germany (GERMANY_BOUNDS) gets "en" - if its language is still unset:
+one chosen on the Einstellungen tab is kept (and reported). Locations
+without a position are left alone.
+
+The rectangle is a rough geofence: it also covers the neighbours close to
+Germany (e.g. Basel, Zurich, Strasbourg, Luxembourg, Salzburg, Prague) -
+their locations keep their language. Nothing in Germany falls outside it."""
 from progeo.helper.basics import ilog, wlog
 from progeo.helper.location_access import location_databases
 from progeo.v1.models import ProgeoLocation
 
-GERMANY = "de"
+# (south, west, north, east) in degrees: Germany's extreme points (Natural
+# Earth borders - Haldenwanger Eck, Isenbruch, List auf Sylt, Neißeaue),
+# rounded outwards.
+GERMANY_BOUNDS = (47.26, 5.85, 55.07, 15.05)
 ENGLISH = ProgeoLocation.Language.ENGLISH
+
+
+def in_germany_bounds(latitude, longitude) -> bool:
+    south, west, north, east = GERMANY_BOUNDS
+    return south <= float(latitude) <= north and west <= float(longitude) <= east
 
 
 def all_locations():
@@ -25,17 +36,15 @@ def all_locations():
     ]
 
 
-def english_abroad(apply=False, geocoder=None) -> dict:
-    """Sets the language of the locations outside Germany to English (see
-    above). The positions are looked up in the dry run too (one request a
-    second) - read only unless `apply`. Returns what it found."""
-    from progeo.helper.legacy.geo import GeoHelper, has_position
+def english_abroad(apply=False) -> dict:
+    """Sets the language of the locations outside GERMANY_BOUNDS to English
+    (see above). Read only unless `apply`. Returns what it found."""
+    from progeo.helper.legacy.geo import has_position
 
-    geocoder = geocoder or GeoHelper(timeout=10)
-    result = {"checked": 0, "germany": 0, "english": 0, "changed": [], "kept": [], "no_position": [],
-              "unknown_country": [], "failed": []}
+    result = {"germany": 0, "english": 0, "changed": [], "kept": [], "no_position": [], "failed": []}
     locations = all_locations()
-    ilog(f"Looking up the country of {len(locations)} location(s){'' if apply else ' (dry run, use --apply)'}")
+    ilog(f"Checking {len(locations)} location(s) against the rectangle around Germany {GERMANY_BOUNDS}"
+         f"{'' if apply else ' (dry run, use --apply)'}")
 
     for location, db_name in locations:
         if location.language == ENGLISH:
@@ -44,23 +53,19 @@ def english_abroad(apply=False, geocoder=None) -> dict:
         if not has_position(location.latitude, location.longitude):
             result["no_position"].append(location.pk)
             continue
-        result["checked"] += 1
-        country = geocoder.country_code(location.latitude, location.longitude)
-        if country is None:
-            result["unknown_country"].append(location.pk)
-            continue
-        if country == GERMANY:
+        if in_germany_bounds(location.latitude, location.longitude):
             result["germany"] += 1
             continue
-        row = {"id": location.pk, "project_id": location.project_id, "db": db_name, "country": country}
+        row = {"id": location.pk, "project_id": location.project_id, "db": db_name,
+               "position": (location.latitude, location.longitude)}
+        where = (f"{db_name}: location {location.pk} (project {location.project_id}, {location.name!r}) at "
+                 f"{location.latitude:.4f}, {location.longitude:.4f}")
         if location.language:
             result["kept"].append({**row, "language": location.language})
-            ilog(f"{db_name}: location {location.pk} (project {location.project_id}, {location.name!r}) in "
-                 f"{country.upper()}: language {location.language!r} was chosen - kept")
+            ilog(f"{where}: language {location.language!r} was chosen - kept")
             continue
         result["changed"].append(row)
-        ilog(f"{db_name}: location {location.pk} (project {location.project_id}, {location.name!r}) in "
-             f"{country.upper()}: language -> English{'' if apply else ' (dry run)'}")
+        ilog(f"{where}: language -> English{'' if apply else ' (dry run)'}")
         if apply:
             try:
                 location.language = ENGLISH
@@ -73,17 +78,9 @@ def english_abroad(apply=False, geocoder=None) -> dict:
         from progeo.helper.cacher import forget_location_answers
 
         forget_location_answers()
-    if result["unknown_country"]:
-        wlog(f"{len(result['unknown_country'])} location(s) whose position lies in no country or could not be "
-             f"looked up - left alone: {result['unknown_country']}")
     if result["failed"]:
         wlog(f"{len(result['failed'])} location(s) failed: {result['failed']}")
-    countries = {}
-    for row in result["changed"]:
-        countries[row["country"]] = countries.get(row["country"], 0) + 1
-    by_country = ", ".join(f"{code.upper()}: {count}" for code, count in sorted(countries.items()))
-    ilog(f"{len(result['changed'])} location(s) {'set' if apply else 'to set'} to English"
-         f"{f' ({by_country})' if by_country else ''}, {len(result['kept'])} abroad with a chosen language "
-         f"kept, {result['germany']} in Germany, {result['english']} English already, "
-         f"{len(result['no_position'])} without a position, {len(result['unknown_country'])} country unknown")
+    ilog(f"{len(result['changed'])} location(s) {'set' if apply else 'to set'} to English, "
+         f"{len(result['kept'])} outside with a chosen language kept, {result['germany']} inside the rectangle, "
+         f"{result['english']} English already, {len(result['no_position'])} without a position")
     return result
