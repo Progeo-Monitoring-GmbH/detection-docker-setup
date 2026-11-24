@@ -26,18 +26,18 @@ AREA_MODULES = {
     """,
     "demo": "demo_account_areas demo_view e2e_accounts",
     "devices": """
-        controller_qrcodes controller_wifi device_commands device_legacy_query
+        controller_qrcodes controller_wifi device_commands device_thresholds device_legacy_query
         device_lorawan device_overview device_provisioning device_statistics_api
         firmware_update firmware_upload manusensor
     """,
     "exports": "exports lageplan_export",
     "integrations": """
-        airtable_locations cad_import data_transfer_api interface_api legacy_gprs legacy_gprs_port gprs_state sensor_count_from_samples legacy_gprs_config
+        airtable_locations airtable_fill_missing cad_import data_transfer_api interface_api legacy_gprs legacy_gprs_port gprs_state sensor_count_from_samples legacy_gprs_config
         klemmliste klemmliste_import
         matrix_account_sync modbus_tcp
     """,
     "locations": """
-        auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
+        auto_lageplans customer_project_nr drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api dm_transfer plan_meters plan_ocr
         location_readiness readiness_qa screen_review screen_review_elements screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf project_portal
     """,

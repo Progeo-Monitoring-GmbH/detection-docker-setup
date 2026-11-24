@@ -906,7 +906,12 @@ class Command(BaseCommand):
         '                            measurements and alarms into its database - read only unless --apply\n'
         '  clean_heat_limits         remove the automatic heat limitations made of sensor symbols (one\n'
         '                            tiny area per sensor): plans with only automatic areas are detected\n'
-        '                            again, hand-made areas stay - read only unless --apply\n\n'
+        '                            again, hand-made areas stay - read only unless --apply\n'
+        '  airtable_fill_missing     fill the empty fields of the existing locations (name, Airtable link,\n'
+        '                            product while Unknown, street/PLZ/city, position) from their Airtable\n'
+        '                            project in "Messeinheit und Inbetriebnahme", "Projektabschluss" or\n'
+        '                            "Abgerechnet / In Betreuung" - nothing is overwritten; read only\n'
+        '                            unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -918,7 +923,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch drop_is_plans [--apply]\n'
         '  python manage.py patch_live --patch sensor_count_from_samples [--apply]\n'
         '  python manage.py patch_live --patch unknown_db_devices [--apply]\n'
-        '  python manage.py patch_live --patch clean_heat_limits [--apply]'
+        '  python manage.py patch_live --patch clean_heat_limits [--apply]\n'
+        '  python manage.py patch_live --patch airtable_fill_missing [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -927,8 +933,8 @@ class Command(BaseCommand):
                             default=None)
         parser.add_argument("--apply", action="store_true",
                             help="drop_duplicate_locations, drop_is_plans, koords_to_points, "
-                                 "sensor_count_from_samples, unknown_db_devices, clean_heat_limits: change the data "
-                                 "(default: only report)")
+                                 "sensor_count_from_samples, unknown_db_devices, clean_heat_limits, "
+                                 "airtable_fill_missing: change the data (default: only report)")
 
 
 
@@ -958,6 +964,17 @@ class Command(BaseCommand):
 
         if patch == "clean_heat_limits":
             clean_heat_limits(apply=options["apply"])
+
+        if patch == "airtable_fill_missing":
+            from progeo.helper.airtable_locations import (
+                AirtableSyncError,
+                fill_missing_from_airtable,
+            )
+
+            try:
+                fill_missing_from_airtable(apply=options["apply"])
+            except AirtableSyncError as exc:
+                elog(str(exc))
 
         if patch == "fetch_koords":
             fetch_koords()

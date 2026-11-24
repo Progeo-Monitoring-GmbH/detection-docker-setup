@@ -130,11 +130,11 @@ def project_row(record):
     }
 
 
-def project_rows(records):
-    """The rows of the records in STATUSES, one per project_id."""
+def project_rows(records, statuses=STATUSES):
+    """The rows of the records in `statuses`, one per project_id."""
     rows = {}
     for record in records:
-        if record.get("fields", {}).get("Status") not in STATUSES:
+        if record.get("fields", {}).get("Status") not in statuses:
             continue
         row = project_row(record)
         if row:
@@ -142,14 +142,14 @@ def project_rows(records):
     return sorted(rows.values(), key=lambda row: row["project_id"])
 
 
-def fetch_rows(helper):
+def fetch_rows(helper, statuses=STATUSES):
     if not helper.configured:
         raise AirtableSyncError("Airtable is not configured: AIRTABLE_API_KEY / AIRTABLE_BASE_ID are missing")
     try:
         records = helper.fetch_all_auftraege(fields=FIELDS)
     except Exception as exc:  # noqa: BLE001 - any Airtable client failure becomes an AirtableSyncError
         raise AirtableSyncError(f"Could not fetch the Airtable projects: {exc}") from None
-    return project_rows(records)
+    return project_rows(records, statuses)
 
 
 def existing_locations(project_ids):
@@ -207,6 +207,116 @@ def sync(rows):
             updated.append({"id": location.pk, "project_id": location.project_id, "name": location.name,
                             "fields": changed})
     return {"available": available, "updated": updated, "unchanged": unchanged}
+
+
+# The projects whose data fill_missing_from_airtable trusts: installed or
+# finished, so Airtable's data on them is complete.
+FILL_STATUSES = ("Messeinheit und Inbetriebnahme", "Projektabschluss", "Abgerechnet / In Betreuung")
+
+
+def _blank(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def missing_fields(location, row) -> dict:
+    """{field: value} of `row` for the fields `location` lacks - nothing it
+    has is overwritten. A name that is only the project number (an import
+    without a name) counts as missing, a product only while it is Unknown."""
+    changes = {}
+    name = (location.name or "").strip()
+    if row["name"] and (not name or name == str(location.project_id)):
+        changes["name"] = row["name"]
+    if row["airtable_url"] and _blank(location.airtable_url):
+        changes["airtable_url"] = row["airtable_url"]
+    if row["project_type"] != TYPES.UNKNOWN and location.project_type in (None, TYPES.UNKNOWN):
+        changes["project_type"] = row["project_type"]
+    for field in ADDRESS_FIELDS:
+        if row[field] and _blank(getattr(location, field)):
+            changes[field] = row[field]
+    return changes
+
+
+def fill_missing_from_airtable(apply=False, helper=None, geocoder=None) -> dict:
+    """patch_live --patch airtable_fill_missing: the empty fields of the
+    existing locations (missing_fields: name, Airtable link, product, address
+    parts) from their Airtable project in FILL_STATUSES - and, still without
+    a position, latitude/longitude looked up for the complete address
+    (Nominatim, one request a second). Child locations are left alone, as by
+    the sync. Read only unless `apply` (no lookups then either). Raises
+    AirtableSyncError when Airtable isn't configured or can't be reached."""
+    from progeo.helper.legacy.geo import GeoHelper, has_position
+
+    rows = fetch_rows(helper or AirtableHelper(), FILL_STATUSES)
+    existing = existing_locations([row["project_id"] for row in rows])
+    geocode = getattr(settings, "GEOCODE_ON_SAVE", True)
+    result = {"projects": len(rows), "without_location": 0, "locations": 0, "unchanged": 0, "children": 0,
+              "positions": 0, "no_position": [], "failed": [], "changes": []}
+    ilog(f"[airtable] {len(rows)} Airtable projects in {', '.join(FILL_STATUSES)}"
+         f"{'' if apply else ' (dry run, use --apply)'}")
+
+    for row in rows:
+        locations = existing.get(row["project_id"])
+        if not locations:
+            result["without_location"] += 1
+            continue
+        for location, db_name in locations:
+            if location.parent_location_id:
+                result["children"] += 1
+                continue
+            changes = missing_fields(location, row)
+            complete = all(changes.get(field) or not _blank(getattr(location, field)) for field in ADDRESS_FIELDS)
+            locate = geocode and complete and not has_position(location.latitude, location.longitude)
+            if not changes and not locate:
+                result["unchanged"] += 1
+                continue
+            result["locations"] += 1
+            shown = [*changes, *(["position"] if locate else [])]
+            result["changes"].append({"id": location.pk, "project_id": location.project_id, "db": db_name,
+                                      "fields": shown})
+            ilog(f"[airtable] {db_name}: location {location.pk} (project {location.project_id}, "
+                 f"{location.name!r}): " + "; ".join(
+                     [f"{field}: {getattr(location, field)!r} -> {value!r}" for field, value in changes.items()]
+                     + (["position: look up" if not apply else "position"] if locate else [])))
+            if not apply:
+                continue
+            try:
+                for field, value in changes.items():
+                    setattr(location, field, value)
+                fields = list(changes)
+                if locate:
+                    geocoder = geocoder or GeoHelper(timeout=GEOCODE_TIMEOUT)
+                    try:
+                        latitude, longitude = geocoder.fetch_lat_lon(
+                            location.project_id, location.address or "", location.plz or "", location.city or "")
+                    except Exception as exc:  # noqa: BLE001 - the address is saved without a position
+                        wlog(f"[airtable] position of location {location.pk}: {exc!r}")
+                        latitude = longitude = None
+                    if latitude is not None and longitude is not None:
+                        location.latitude, location.longitude = latitude, longitude
+                        fields += ["latitude", "longitude"]
+                        result["positions"] += 1
+                    else:
+                        result["no_position"].append(location.project_id)
+                if fields:
+                    location.save(using=db_name, update_fields=fields)
+            except Exception as exc:  # noqa: BLE001 - one failing location must not stop the others
+                wlog(f"[airtable] location {location.pk} (project {location.project_id}): {exc!r}")
+                result["failed"].append(location.pk)
+
+    if apply and result["locations"]:
+        from progeo.helper.cacher import forget_location_answers
+
+        forget_location_answers()
+    if result["no_position"]:
+        wlog(f"[airtable] {len(result['no_position'])} location(s) without a position found for their address: "
+             f"{result['no_position']}")
+    if result["failed"]:
+        wlog(f"[airtable] {len(result['failed'])} location(s) failed: {result['failed']}")
+    found = f" ({result['positions']} position(s) found)" if apply else ""
+    ilog(f"[airtable] {result['locations']} location(s) {'completed' if apply else 'to complete'}{found}, "
+         f"{result['unchanged']} complete already, {result['children']} child location(s) left alone, "
+         f"{result['without_location']} project(s) without a location (sync to import them)")
+    return result
 
 
 def fill_address(location, db_name) -> list:
