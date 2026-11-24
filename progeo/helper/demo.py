@@ -135,10 +135,11 @@ def record_demo_request(session_key):
 
 
 def page_section(path):
-    """The portal section of a frontend route, e.g. "/location/40/status" ->
-    "status", "/location/overview/" -> "overview"."""
+    """The portal section of a frontend route, e.g. "/project/40/status" (or
+    the older "/location/40/status") -> "status", "/location/overview/" ->
+    "overview"."""
     parts = [part for part in (path or "").split("/") if part]
-    if len(parts) >= 3 and parts[0] == "location" and parts[1].isdigit():
+    if len(parts) >= 3 and parts[0] in ("project", "location") and parts[1].isdigit():
         return parts[2][:40]
     if len(parts) >= 2 and parts[0] == "location":
         return parts[1][:40]

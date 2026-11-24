@@ -40,6 +40,12 @@ describe('matchesLocationSearch', () => {
     }
   });
 
+  it("finds the customer's own project number", () => {
+    const withNr = { ...location, customer_project_nr: 'KP-2024/017' };
+    expect(matchesLocationSearch(withNr, 'kp-2024')).toBe(true);
+    expect(matchesLocationSearch(location, 'kp-2024')).toBe(false);
+  });
+
   it('needs every word, in any field and order', () => {
     expect(matchesLocationSearch(location, 'berlin müller')).toBe(true);
     expect(matchesLocationSearch(location, 'berlin hamburg')).toBe(false);

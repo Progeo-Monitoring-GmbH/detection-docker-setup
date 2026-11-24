@@ -265,7 +265,7 @@ const AlarmFlowTimeline = ({ flow, now }: { flow: FlowCase; now: number }) => {
         {flow.location_missing ? (
           <span className="alarm-flow-title">{label}</span>
         ) : (
-          <Link className="alarm-flow-title" to={statusViewPath(flow.location_id, null)}>{label}</Link>
+          <Link className="alarm-flow-title" to={statusViewPath({ id: flow.location_id, project_id: flow.project_id }, null)}>{label}</Link>
         )}
         <span className="alarm-flow-muted">
           {flow.stage > 0 ? t('flow_stage_of', { stage: flow.stage, stages: flow.stages }) : t('flow_detected_only')}

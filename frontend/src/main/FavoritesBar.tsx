@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import { repeatedTestId } from '../testIds';
 import { useFavorites } from './favorites';
-import { openLocationId, switchLocationPath } from './portalNav';
+import { isOpenLocation, switchLocationPath } from './portalNav';
 import './Favorites.css';
 
 /**
@@ -20,7 +20,6 @@ const FavoritesBar = ({ className }: { className?: string }) => {
   if (!enabled || favorites.length === 0) {
     return null;
   }
-  const openId = openLocationId(pathname, search);
 
   return (
     <nav
@@ -37,7 +36,9 @@ const FavoritesBar = ({ className }: { className?: string }) => {
         {t('favorites_title')}
       </span>
       {favorites.map((favorite) => {
-        const active = favorite.location === openId;
+        // The favorite's location: its pk and project number.
+        const target = { id: favorite.location, project_id: favorite.project_id };
+        const active = isOpenLocation(target, pathname, search);
         const name = favorite.name || t('favorites_unnamed');
         return (
           <span
@@ -46,7 +47,7 @@ const FavoritesBar = ({ className }: { className?: string }) => {
             className={`d-inline-flex align-items-center favorites-bar-pill${active ? ' favorites-bar-pill--active' : ''}`}
           >
             <Link
-              to={switchLocationPath(pathname, favorite.location, search)}
+              to={switchLocationPath(pathname, target, search)}
               title={[favorite.project_id, favorite.name, favorite.city].filter(Boolean).join(' · ')}
               className="favorites-bar-link"
               {...repeatedTestId('favorites-bar-link', favorite.location)}

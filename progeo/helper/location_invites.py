@@ -79,14 +79,9 @@ def invite_language(location, inviter) -> str | None:
 
 def _start_in_language(user, language):
     """A new account speaks the language it was invited in - later mails too."""
-    from progeo.v1.models import UserProfile
+    from progeo.helper.user_provisioning import start_in_language
 
-    if not language:
-        return
-    profile, _ = UserProfile.objects.using(DB).get_or_create(user_id=user.pk)
-    if not profile.language:
-        profile.language = language
-        profile.save(using=DB, update_fields=["language"])
+    start_in_language(user, language)
 
 
 def _has_single_access(user, location, account) -> bool:
@@ -130,19 +125,19 @@ def _location_name(location) -> str:
 def _mail_context(inviter, targets):
     """The mail's objects: one names it and links to it; several are listed
     (`locations`) and the button opens the overview."""
-    from progeo.helper.emailhelper import portal_url
+    from progeo.helper.emailhelper import location_portal_path, portal_url
 
     if len(targets) == 1:
         location = targets[0][0]
         return {
             "location_name": _location_name(location),
             "inviter_name": _display_name(inviter),
-            "location_url": portal_url(f"/location/{location.pk}/status"),
+            "location_url": portal_url(location_portal_path(location)),
         }
     return {
         "location_name": ", ".join(_location_name(location) for location, _account in targets),
         "locations": [
-            {"name": _location_name(location), "url": portal_url(f"/location/{location.pk}/status")}
+            {"name": _location_name(location), "url": portal_url(location_portal_path(location))}
             for location, _account in targets
         ],
         "inviter_name": _display_name(inviter),

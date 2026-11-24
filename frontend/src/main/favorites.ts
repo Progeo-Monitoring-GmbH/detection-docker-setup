@@ -7,12 +7,13 @@ import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import { staffFlags } from './access';
 import { isDemoUser } from './demo';
 import { createListeners } from '../listeners';
+import { tokenUserKey } from '../tokenRefresh';
 
 /**
  * Favorite locations of the user (/v1/favorite/, FavoriteViewSet) - the
  * favorites bar at the top and every star toggle share this one store, so
  * pinning a location anywhere shows up everywhere at once. Loaded once per
- * login (token).
+ * login - per user (tokenUserKey), so a renewed token keeps them.
  */
 
 type FavoriteLocation = {
@@ -23,8 +24,8 @@ type FavoriteLocation = {
 };
 
 type FavoritesState = {
-  /** The login the favorites belong to. */
-  token: string | null;
+  /** The login the favorites belong to (tokenUserKey). */
+  session: string | null;
   favorites: FavoriteLocation[];
   max: number;
   /** Locations whose toggle is on its way. */
@@ -33,7 +34,7 @@ type FavoritesState = {
 
 const FAVORITES_URL = '/v1/favorite/';
 
-let state: FavoritesState = { token: null, favorites: [], max: 10, pending: [] };
+let state: FavoritesState = { session: null, favorites: [], max: 10, pending: [] };
 const { subscribe, notify } = createListeners();
 
 const setState = (change: Partial<FavoritesState>) => {
@@ -59,20 +60,27 @@ export const useFavorites = () => {
   // Every logged-in user has favorites; the demo user's are its projects (read-only).
   const enabled = Boolean(auth?.user);
   const readOnly = isDemoUser(auth?.user);
-  const token = auth?.token || null;
+  const session = tokenUserKey(auth?.token) || null;
   const current = useSyncExternalStore(subscribe, getState);
 
   useEffect(() => {
-    if (!enabled || !token || state.token === token) {
+    if (!session) {
+      // Logged out: the next login loads them again, also the same user's.
+      if (state.session) {
+        setState({ session: null, favorites: [], pending: [] });
+      }
       return;
     }
-    setState({ token, favorites: [], pending: [] });
+    if (!enabled || state.session === session) {
+      return;
+    }
+    setState({ session, favorites: [], pending: [] });
     void axiosConfig.perform_get(auth, FAVORITES_URL, adopt, () => setState({ favorites: [] }));
     // Once per login - `auth` changes with the path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, token]);
+  }, [enabled, session]);
 
-  const favorites = enabled && current.token === token ? current.favorites : [];
+  const favorites = enabled && current.session === session ? current.favorites : [];
   const isFavorite = (locationId: number) => favorites.some((row) => row.location === locationId);
 
   const toggle = (locationId: number) => {

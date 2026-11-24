@@ -1,11 +1,11 @@
 {% extends "emails/en/base.html" %}
 {# Staff invited a user (English). `action_url` is secret. #}
 {% block subject %}Your access to the ProGeo portal{% endblock %}
-{% block preheader %}Your personal sign-in link, valid for {{ valid_hours }} hours{% endblock %}
+{% block preheader %}Set your password and sign in - the link is valid for {{ valid_hours }} hours{% endblock %}
 {% block content %}
 <h1 style="margin:0 0 12px; font-size:20px;">Welcome to the ProGeo portal</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
-<p style="margin:0 0 4px;">an account for the ProGeo monitoring portal has been set up for you (sign in with: <strong>{{ username }}</strong>). Sign in once with the following link; it is valid for {{ valid_hours }} hours.</p>
-{% include "emails/_button.html" with url=action_url label="To the portal" %}
-<p style="margin:0; font-size:12px; color:#6E6868;">Later you can always request a new link with "Get a login link by email" on the sign-in page.</p>
+<p style="margin:0 0 4px;">an account for the ProGeo monitoring portal has been set up for you (sign in with: <strong>{{ username }}</strong>). With the following link you first set your password and are signed in afterwards; it is valid for {{ valid_hours }} hours.</p>
+{% include "emails/_button.html" with url=action_url label="Set password" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">After that you sign in with your password - or request a link with "Get a login link by email" on the sign-in page.</p>
 {% endblock %}

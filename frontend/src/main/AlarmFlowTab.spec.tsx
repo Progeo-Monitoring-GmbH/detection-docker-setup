@@ -160,7 +160,7 @@ describe('AlarmFlowTab', () => {
     render();
 
     expect(byTestId('alarm-flow-staff-link', 7)!.getAttribute('href')).toBe('/staff/?case=7');
-    expect(container.querySelector('a.alarm-flow-title')!.getAttribute('href')).toBe('/location/11/status');
+    expect(container.querySelector('a.alarm-flow-title')!.getAttribute('href')).toBe('/project/4711/status');
   });
 
   it('shows a mute until unmuted instead of a countdown', () => {

@@ -3,6 +3,11 @@ import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatm
 export type LocationDetail = {
   id?: number | null;
   project_id?: number | null;
+  /** Detail answer only: whether /project/<project_id>/ opens this location (else its pk URL). */
+  project_main?: boolean | null;
+  /** The customer's own project number (max. 16 characters) - only sent to
+   * staff and customer admins; set via /v1/location/<pk>/customer-project-nr/. */
+  customer_project_nr?: string | null;
   name?: string | null;
   address?: string | null;
   city?: string | null;

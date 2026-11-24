@@ -397,23 +397,26 @@ describe('checkDetail', () => {
 });
 
 describe('fixPath', () => {
+  // The portal by project number, the other pages by ?location=<pk>.
+  const LOCATION = { id: 3, project_id: 4711 };
+
   it('opens the wizard at the step that fixes the point', () => {
-    expect(fixPath('lageplan', 3)).toBe('/site-plan/wizard/?location=3#wizard-plans');
-    expect(fixPath('lageplan_resolution', 3)).toBe('/site-plan/wizard/?location=3#wizard-plans');
-    expect(fixPath('measure_points', 3)).toBe('/site-plan/wizard/?location=3#wizard-points');
-    expect(fixPath('lageplan_aligned', 3)).toBe('/site-plan/wizard/?location=3#wizard-align');
-    expect(fixPath('lageplan_calibrated', 3)).toBe('/site-plan/wizard/?location=3#wizard-align');
-    expect(fixPath('heat_limitation', 3)).toBe('/site-plan/wizard/?location=3#wizard-heat-limits');
+    expect(fixPath('lageplan', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-plans');
+    expect(fixPath('lageplan_resolution', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-plans');
+    expect(fixPath('measure_points', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-points');
+    expect(fixPath('lageplan_aligned', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-align');
+    expect(fixPath('lageplan_calibrated', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-align');
+    expect(fixPath('heat_limitation', LOCATION)).toBe('/site-plan/wizard/?location=3#wizard-heat-limits');
   });
 
   it('sends alarm recipients to the Rechte tab and the product to the Objekt tab', () => {
-    expect(fixPath('alarm_recipient', 3)).toBe('/location/3/permissions');
-    expect(fixPath('product', 3)).toBe('/location/3/object');
+    expect(fixPath('alarm_recipient', LOCATION)).toBe('/project/4711/permissions');
+    expect(fixPath('product', LOCATION)).toBe('/project/4711/object');
   });
 
   it('has no link for the Airtable check - it is fixed in place', () => {
-    expect(fixPath('airtable', 3)).toBeNull();
-    expect(fixPath('dead_sensors_disabled', 3)).toBeNull();
+    expect(fixPath('airtable', LOCATION)).toBeNull();
+    expect(fixPath('dead_sensors_disabled', LOCATION)).toBeNull();
   });
 });
 

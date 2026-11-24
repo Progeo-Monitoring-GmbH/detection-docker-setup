@@ -85,7 +85,7 @@ const EscalationBanner = ({ locationId }: { locationId: number }) => {
         {open.view_state && (
           <Link
             className="ms-auto small fw-semibold escalation-banner-link"
-            to={statusViewPath(open.location, open.view_state)}
+            to={statusViewPath({ id: open.location, project_id: open.project_id }, open.view_state)}
             data-testid="escalation-banner-view"
           >
             {t('escalation_view_open')}

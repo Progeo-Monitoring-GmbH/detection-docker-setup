@@ -60,9 +60,17 @@ const { routeRule } = await import('./access');
 let container: HTMLDivElement;
 let root: Root;
 
+// The permissions are cached per user: every test is another user.
+let nextUserId = 100;
+
 beforeEach(() => {
   state.sequence = [];
   state.calls = 0;
+  nextUserId += 1;
+  state.auth = {
+    ...state.auth,
+    user: { user_id: nextUserId, is_staff: false, is_superuser: false },
+  };
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -73,8 +81,15 @@ afterEach(() => {
   container.remove();
 });
 
-const render = async (token: string) => {
-  state.auth = { ...state.auth, token };
+/** An unsigned JWT of the current test user - `label` tells tokens apart. */
+const jwtFor = (label: string) => {
+  const part = (value: object) =>
+    btoa(JSON.stringify(value)).replace(/=+$/, '');
+  return `${part({ alg: 'none' })}.${part({ user_id: state.auth.user.user_id, jti: label })}.sig`;
+};
+
+const render = async (label: string) => {
+  state.auth = { ...state.auth, token: jwtFor(label) };
   await act(async () => {
     root.render(
       <MemoryRouter>
@@ -117,6 +132,22 @@ describe('RequireAccess on /location/overview/', () => {
     await render('token-granted-later');
 
     expect(container.querySelector('[data-testid="page"]')).not.toBeNull();
+  });
+
+  it('keeps the page mounted while the session token is renewed', async () => {
+    // A renewed access token is the same session: the page (and anything
+    // typed into it) must stay - no spinner, no remount, no new request.
+    state.permissions = { module_locations_enabled: true };
+    state.fail = false;
+    await render('token-before-renewal');
+    const page = container.querySelector('[data-testid="page"]');
+    expect(page).not.toBeNull();
+    const calls = state.calls;
+
+    await render('token-after-renewal');
+
+    expect(container.querySelector('[data-testid="page"]')).toBe(page);
+    expect(state.calls).toBe(calls);
   });
 
   it('shows a load error with a retry, not "no access", when the permissions fail', async () => {

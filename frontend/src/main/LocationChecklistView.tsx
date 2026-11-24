@@ -43,6 +43,7 @@ import { repeatedTestId } from '../testIds';
 import useLocationParam from './useLocationParam';
 import usePickableLocations from '../components/location/usePickableLocations';
 import './LocationChecklistView.css';
+import { locationPagePath } from './portalNav';
 
 /**
  * "Is the location ready?" (staff): the checklist of one location
@@ -126,19 +127,24 @@ const LEVELS = ['ready', 'almost', 'progress', 'open'] as const;
  * Airtable check is fixed in place ("Beheben" loads the project), see
  * AIRTABLE_FIX.
  */
-export const fixPath = (key: string, id: number): string | null => {
+export const fixPath = (
+  key: string,
+  location: { id: number; project_id?: number | null },
+): string | null => {
+  // The portal by project number, the other pages by ?location=<pk>.
+  const { id } = location;
   switch (key) {
     case 'product':
     case 'address':
     case 'geo':
-      return `/location/${id}/object`;
+      return locationPagePath(location, 'object');
     case 'threshold':
     case 'rain_check':
     case 'objektleitung':
-      return `/location/${id}/settings`;
+      return locationPagePath(location, 'settings');
     case 'users':
     case 'alarm_recipient':
-      return `/location/${id}/permissions`;
+      return locationPagePath(location, 'permissions');
     case 'notifications_enabled':
       return '/device/statistics/';
     case 'devices':
@@ -684,7 +690,7 @@ const LocationChecklistView = () => {
                   const severity = severityOf(check);
                   const path =
                     check.status === 'fail'
-                      ? fixPath(check.key, data.location.id)
+                      ? fixPath(check.key, data.location)
                       : null;
                   const worth = pointsFormat.format(points.get(check.key) ?? 0);
                   return (

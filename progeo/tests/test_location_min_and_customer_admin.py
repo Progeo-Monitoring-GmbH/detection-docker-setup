@@ -248,8 +248,12 @@ def test_the_account_choices_are_the_admins_own_accounts_for_staff_all(api_clien
     customer_admin["own"].users.add(customer_admin["admin"])
     second.users.add(customer_admin["admin"])
 
+    f.make_location(second, name="Halle")
+
     choices = api_client.get(USERS).json()["account_choices"]
-    assert choices == [{"id": customer_admin["own"].pk, "name": "Eigen"}, {"id": second.pk, "name": "Zweit"}]
+    # has_locations: a new user of the customer admin gets the ones without ticked (frontend).
+    assert choices == [{"id": customer_admin["own"].pk, "name": "Eigen", "has_locations": False},
+                       {"id": second.pk, "name": "Zweit", "has_locations": True}]
 
     api_client.force_authenticate(user=f.make_user(staff=True, perms=(*READ, "module_admin_staff_enabled")))
     staff_choices = {entry["id"] for entry in api_client.get(USERS).json()["account_choices"]}

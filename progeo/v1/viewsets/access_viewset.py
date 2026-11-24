@@ -5,7 +5,10 @@ Public (no login, throttled per IP):
   POST access-requests/verify/check/    is the confirmation token valid?
   POST access-requests/verify/          token + password -> pending user + JWT
   POST login-link/                      mail a login link (answer never tells)
-  POST login-link/exchange/             token (+ otp with 2FA) -> JWT (single use)
+  POST login-link/exchange/             token (+ otp with 2FA) -> JWT (single use);
+                                        an invitation token -> "password_setup_required"
+  POST invite/check/                    is the invitation token valid?
+  POST invite/confirm/                  token + password (+ otp) -> password + JWT (single use)
   POST password-reset/                  mail a reset link (2FA users; answer never tells)
   POST password-reset/check/            is the reset token valid?
   POST password-reset/confirm/          token + otp + password -> new password + JWT
@@ -153,8 +156,13 @@ class LoginLinkExchangeView(APIView):
 
     def post(self, request, *args, **kwargs):
         data = _data(request)
+        token = str(data.get("token") or "")
+        if login_links.find_invite_link(token) is not None:
+            # An invitation (mailed to /login/link/ before): the password
+            # first - it never logs in by itself (InviteConfirmView).
+            return RequestFailed({"reason": "password_setup_required", "forward": f"/account/invite/{token}"})
         try:
-            result = login_links.redeem(str(data.get("token") or ""), otp=data.get("otp"), request=request)
+            result = login_links.redeem(token, otp=data.get("otp"), request=request)
         except login_links.SecondFactorRequired as exc:
             # Ask for the code - the link stays valid meanwhile.
             return RequestFailed({"reason": exc.reason, "otp_required": True})
@@ -204,6 +212,40 @@ class PasswordResetConfirmView(APIView):
             return RequestFailed(error)
         user.last_login = timezone.now()
         user.save(using=DB, update_fields=["last_login"])
+        return RequestSuccess({**_token_pair(user), "forward": "/"})
+
+
+class InviteCheckView(APIView):
+    """The invitation link (/account/invite/<token>, helper/login_links.py):
+    only reads - mail scanners open the link too."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        link = login_links.find_invite_link(str(_data(request).get("token") or ""))
+        if link is None:
+            return RequestFailed({"reason": "invalid_token"})
+        user = link.user
+        return RequestSuccess({"username": login_name(user), "first_name": user.first_name, "email": user.email})
+
+
+class InviteConfirmView(APIView):
+    """The invited user sets a password - only that redeems the invitation
+    and signs them in."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        data = _data(request)
+        user, error = login_links.confirm_invite(
+            str(data.get("token") or ""), str(data.get("password") or ""), data.get("otp"), request,
+        )
+        if error:
+            return RequestFailed(error)
         return RequestSuccess({**_token_pair(user), "forward": "/"})
 
 

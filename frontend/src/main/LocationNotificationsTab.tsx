@@ -16,6 +16,7 @@ import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import NotificationChannelCard from './NotificationChannelCard';
 import './LocationNotificationsTab.css';
+import { projectPath } from './portalNav';
 
 type TimelineEvent = {
   kind: 'email' | 'sms' | 'messenger' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
@@ -45,8 +46,8 @@ const DAYS_WINDOW = 90;
  * Status -> Heatmap at the time of an event (`?at=<ISO>`, read by the
  * status view): a click on an event of the history opens it there.
  */
-const statusAtPath = (locationId: string | number, at: string) =>
-  `/location/${locationId}/status?at=${encodeURIComponent(at)}`;
+const statusAtPath = (projectId: string | number, at: string) =>
+  projectPath(projectId, 'status', `at=${encodeURIComponent(at)}`);
 
 /** Messenger events carry the service (signal/whatsapp/matrix) as title. */
 const MESSENGER_LABELS: Record<string, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
@@ -60,7 +61,7 @@ const MESSENGER_LABELS: Record<string, string> = { signal: 'Signal', whatsapp: '
  * than the finer-grained delivery table the mockup shows.
  */
 const LocationNotificationsTab = () => {
-  const { locationId } = useOutletContext<PortalOutletContext>();
+  const { location, locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -239,7 +240,9 @@ const LocationNotificationsTab = () => {
               className="benach-event"
               disabled={!event.at}
               title={event.at ? t('benach_event_open_status') : undefined}
-              onClick={() => event.at && navigate(statusAtPath(locationId, event.at))}
+              onClick={() =>
+                event.at && location?.project_id != null && navigate(statusAtPath(location.project_id, event.at))
+              }
               // Events have no id: the position in the feed tells them apart.
               {...repeatedTestId('benach-event', index)}
             >

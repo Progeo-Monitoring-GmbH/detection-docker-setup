@@ -12,7 +12,7 @@ import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
-import { useAccess } from './access';
+import { CUSTOMER_ADMIN, useAccess } from './access';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 import './LocationObjektTab.css';
@@ -21,6 +21,7 @@ type ProjectTypeOption = { value: number; label: string };
 
 type FormState = {
   project_id: string;
+  customer_project_nr: string;
   name: string;
   project_type: string;
   address: string;
@@ -35,6 +36,7 @@ type FormState = {
 
 const toForm = (location: LocationDetail | null): FormState => ({
   project_id: location?.project_id != null ? String(location.project_id) : '',
+  customer_project_nr: location?.customer_project_nr ?? '',
   name: location?.name ?? '',
   project_type: location?.project_type != null ? String(location.project_type) : '',
   address: location?.address ?? '',
@@ -49,6 +51,9 @@ const toForm = (location: LocationDetail | null): FormState => ({
 
 // Figures the save answer may lack (an older backend, a cached detail):
 // keep the loaded ones instead of blanking the tab.
+/** ProgeoLocation.customer_project_nr (max_length). */
+export const CUSTOMER_PROJECT_NR_MAX_LENGTH = 16;
+
 const STAT_FIELDS = [
   'device_count',
   'measurement_count',
@@ -85,7 +90,7 @@ const LocationObjektTab = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const role = useProgeoRole();
-  const { isStaffOrSuperuser } = useAccess();
+  const { isStaffOrSuperuser, can } = useAccess();
 
   const [form, setForm] = useState<FormState>(() => toForm(location));
   const [saving, setSaving] = useState(false);
@@ -116,12 +121,51 @@ const LocationObjektTab = () => {
   const canEditIdentity = role === 'progeo-admin';
   // The product: staff and superusers (the backend refuses anyone else's change).
   const canEditProduct = isStaffOrSuperuser;
+  // The customer's own project number: staff and customer admins see and
+  // edit it (its own endpoint - customer admins may lack module_locations_edit).
+  const canEditCustomerProjectNr = isStaffOrSuperuser || can(CUSTOMER_ADMIN);
+  const canSaveLocation = canEditContact || canEditIdentity;
 
   const set = (field: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  const saveFailed = (error: unknown) => {
+    showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason: errorReason(error) }));
+    setSaving(false);
+  };
+
+  // The customer's project number, then (`next`) the rest of the form.
+  const saveCustomerProjectNr = (next: () => void) => {
+    if (!canEditCustomerProjectNr || form.customer_project_nr.trim() === (location?.customer_project_nr ?? '')) {
+      next();
+      return;
+    }
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/customer-project-nr/`,
+      { customer_project_nr: form.customer_project_nr },
+      (response) => {
+        const value = (response?.data?.location?.customer_project_nr ?? null) as string | null;
+        setLocation((current) => (current ? { ...current, customer_project_nr: value } : current));
+        next();
+      },
+      saveFailed,
+    );
+  };
+
   const save = () => {
     setSaving(true);
+    if (!canSaveLocation) {
+      saveCustomerProjectNr(() => {
+        showSuccessBar(enqueueSnackbar, t('objekt_saved'));
+        setSaving(false);
+      });
+      return;
+    }
+    saveCustomerProjectNr(saveLocation);
+  };
+
+  const saveLocation = () => {
     void axiosConfig.perform_patch(
       auth,
       `/v1/location/${locationId}/`,
@@ -153,10 +197,7 @@ const LocationObjektTab = () => {
         }
         setSaving(false);
       },
-      (error) => {
-        showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason: errorReason(error) }));
-        setSaving(false);
-      },
+      saveFailed,
     );
   };
 
@@ -222,6 +263,15 @@ const LocationObjektTab = () => {
               value={form.project_id}
               readOnly
             />
+            {canEditCustomerProjectNr && (
+              <LabeledInput
+                testId="objekt-customer-project-nr"
+                label={t('objekt_field_customer_project_nr')}
+                value={form.customer_project_nr}
+                onChange={set('customer_project_nr')}
+                maxLength={CUSTOMER_PROJECT_NR_MAX_LENGTH}
+              />
+            )}
             <LabeledInput
               testId="objekt-project-name"
               label={t('objekt_field_project_name')}
@@ -356,7 +406,7 @@ const LocationObjektTab = () => {
         </PanelCard>
         )}
 
-        {(canEditContact || canEditIdentity) && (
+        {(canSaveLocation || canEditCustomerProjectNr) && (
           <div>
             <button
               type="button"
@@ -369,7 +419,7 @@ const LocationObjektTab = () => {
             </button>
           </div>
         )}
-        {!canEditContact && (
+        {!canEditContact && !canEditCustomerProjectNr && (
           <span className="objekt-no-permission" data-testid="objekt-no-permission">
             {t('ui_no_permission_edit')}
           </span>

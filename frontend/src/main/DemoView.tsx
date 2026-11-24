@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import type { LocationDetail } from './locationTypes';
 import './DemoView.css';
+import { locationPagePath } from './portalNav';
 
 /**
  * Start of the public demo (/demo/, after DemoLogin): opens the first demo
@@ -17,7 +18,7 @@ const DemoView = () => {
   const { id } = useParams();
   const auth = useAuth();
   const { t } = useTranslation();
-  const [firstId, setFirstId] = useState<number | null>(null);
+  const [first, setFirst] = useState<LocationDetail | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ const DemoView = () => {
       (response) => {
         const locations = (response?.data?.locations || []) as LocationDetail[];
         if (locations.length) {
-          setFirstId(locations[0].id ?? null);
+          setFirst(locations[0]);
         } else {
           setFailed(true);
         }
@@ -44,8 +45,9 @@ const DemoView = () => {
   if (id) {
     return <Navigate to={`/location/${id}/status`} replace />;
   }
-  if (firstId !== null) {
-    return <Navigate to={`/location/${firstId}/status`} replace />;
+  if (first !== null) {
+    // Its portal page: /project/<project_id>/status.
+    return <Navigate to={locationPagePath(first)} replace />;
   }
   return (
     <div

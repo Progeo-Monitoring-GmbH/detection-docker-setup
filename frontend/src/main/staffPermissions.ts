@@ -44,6 +44,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       'module_devices_delete',
       'module_devices_provision',
       'module_devices_commands',
+      // The manuSensor app (re-measuring dm sensors on site) - granted on purpose, in no preset.
+      'module_manusensor_enabled',
     ],
     presets: {
       none: [],

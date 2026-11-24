@@ -46,6 +46,7 @@ import { untaggedRowClick } from './wholeRowClick';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationVerwaltungView.css';
 import { announcePurgeableQa, type PurgeableQa } from './qaScoreboardData';
+import { locationPagePath } from './portalNav';
 
 type VerwaltungRow = {
   /** verwaltungRowKey - DataTable's keyField. */
@@ -64,6 +65,7 @@ type VerwaltungRow = {
   purgeable?: boolean | null;
   notifications_disabled?: boolean | null;
   readiness_score?: number | null;
+  customer_project_nr?: string | null;
 };
 
 /** Location ids are only unique within one account database. */
@@ -269,6 +271,7 @@ const LocationVerwaltungView = () => {
         {
           name: row.name,
           project_id: row.nr,
+          customer_project_nr: row.customer_project_nr,
           city: row.city,
           plz: row.plz,
           address: row.address,
@@ -304,7 +307,7 @@ const LocationVerwaltungView = () => {
   ];
 
   const openRow = useCallback(
-    (row: VerwaltungRow) => navigate(`/location/${row.id}/status`),
+    (row: VerwaltungRow) => navigate(locationPagePath({ id: row.id, project_id: row.nr })),
     [navigate],
   );
 
@@ -499,7 +502,7 @@ const LocationVerwaltungView = () => {
               locationId={row.id}
               name={
                 <Link
-                  to={`/location/${row.id}/status`}
+                  to={locationPagePath({ id: row.id, project_id: row.nr })}
                   title={t('verwaltung_open')}
                   {...repeatedTestId('verwaltung-row-open', key)}
                 >

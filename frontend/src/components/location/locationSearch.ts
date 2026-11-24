@@ -9,6 +9,8 @@
 export type SearchableLocation = {
   id?: number | null;
   project_id?: number | null;
+  /** The customer's own project number - only staff and customer admins get it. */
+  customer_project_nr?: string | null;
   name?: string | null;
   address?: string | null;
   plz?: string | null;
@@ -23,6 +25,7 @@ export type SearchableLocation = {
 
 const SEARCH_FIELDS: Array<keyof SearchableLocation> = [
   'project_id',
+  'customer_project_nr',
   'name',
   'address',
   'plz',

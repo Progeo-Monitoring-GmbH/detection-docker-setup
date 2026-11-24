@@ -13,6 +13,7 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { LocationDetail } from './locationTypes';
 import { PLAN_PARAM, planFromParams } from './planParam';
 import './LocationSelection.css';
+import { locationPagePath } from './portalNav';
 
 type GroupPlan = { id: number; name?: string | null };
 type GroupPart = {
@@ -30,9 +31,9 @@ export type LocationGroup = {
 /** The tabs that show a plan: the merged project itself opens its first part there. */
 const PLAN_SEGMENTS = new Set(['status', 'analysis']);
 
-/** "status" of /location/12/status. */
+/** "status" of /project/4711/status (or /location/12/status). */
 export const portalSegment = (pathname: string) =>
-  /^\/location\/[^/]+\/([^/?#]+)/.exec(pathname)?.[1] ?? 'status';
+  /^\/(?:project|location)\/[^/]+\/([^/?#]+)/.exec(pathname)?.[1] ?? 'status';
 
 /** One pill per plan of every part (a part without plans: one pill for the part). */
 export const groupPills = (group: LocationGroup) =>
@@ -102,7 +103,7 @@ const LocationGroupBar = ({
   // The merged project has no devices: its plan tabs show the first part.
   useEffect(() => {
     if (isParent && firstPart && PLAN_SEGMENTS.has(segment)) {
-      navigate(`/location/${firstPart.id}/${segment}`, { replace: true });
+      navigate(locationPagePath(firstPart, segment), { replace: true });
     }
   }, [firstPart, isParent, navigate, segment]);
 
@@ -153,9 +154,7 @@ const LocationGroupBar = ({
                 active ? 'location-group-plan is-active' : 'location-group-plan'
               }
               onClick={() =>
-                navigate(
-                  `/location/${part.id}/${target}${plan ? `?${PLAN_PARAM}=${plan.id}` : ''}`,
-                )
+                navigate(locationPagePath(part, target, plan ? `${PLAN_PARAM}=${plan.id}` : ''))
               }
               data-testid="location-group-plan"
             >

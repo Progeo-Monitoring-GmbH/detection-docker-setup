@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { markLogin, startsNewSession } from '../src/activity/activityTracker';
@@ -116,6 +117,28 @@ const defaultAuthContextValue: AuthContextType = {
 
 const AuthContext = createContext<AuthContextType>(defaultAuthContextValue);
 
+/** Claims that change with every issued token, not with the user. */
+const PER_TOKEN_CLAIMS = new Set(['exp', 'iat', 'nbf', 'jti', 'token_type']);
+
+/** The same user with the same claims - only the token itself is new. */
+const sameUser = (a: User | null, b: User | null) => {
+  if (!a || !b) {
+    return a === b;
+  }
+  const claims = (user: User) =>
+    Object.keys(user).filter((key) => !PER_TOKEN_CLAIMS.has(key)).sort();
+  const keysA = claims(a);
+  const keysB = claims(b);
+  return (
+    keysA.length === keysB.length &&
+    keysA.every(
+      (key, index) =>
+        key === keysB[index] &&
+        JSON.stringify(a[key as keyof User]) === JSON.stringify(b[key as keyof User]),
+    )
+  );
+};
+
 // At call time, not import: node-environment tests import this module without `window`.
 const apiUrl = () => getBackendBaseUrl();
 
@@ -128,12 +151,17 @@ const CoreAuthProvider = ({ children }) => {
   const [viewAsUser, setViewAsUserState] = useState(readViewAsUser);
   const location = useLocation();
   const navigate = useNavigate();
+  // The current tokens for `value`'s getters and the callbacks: a renewal
+  // (every ~55 min) must not hand out a new auth object.
+  const tokensRef = useRef({ token, refreshToken });
+  tokensRef.current = { token, refreshToken };
 
   useEffect(() => {
     if (token) {
       try {
         const decoded = jwtDecode<User>(token);
-        setUser(decoded);
+        // A renewed token of the same user keeps the object (see `value`).
+        setUser((previous) => (sameUser(previous, decoded) ? previous : decoded));
       } catch (error) {
         console.error('Failed to decode token:', error);
         setUser(null);
@@ -185,7 +213,7 @@ const CoreAuthProvider = ({ children }) => {
     async (forward?: string) => {
       try {
         await axios.post(`${apiUrl()}/api/token/logout/`, {
-          refresh: refreshToken,
+          refresh: tokensRef.current.refreshToken,
         });
       } catch (error) {
         console.error(
@@ -214,7 +242,7 @@ const CoreAuthProvider = ({ children }) => {
         }
       }
     },
-    [navigate, refreshToken, user, setViewAsUser],
+    [navigate, user, setViewAsUser],
   );
 
   const loginAction = useCallback(
@@ -270,10 +298,14 @@ const CoreAuthProvider = ({ children }) => {
     setRefreshToken(refresh);
   }, []);
 
-  // One object per real change (token, user, path): views load their data in
-  // effects that depend on `auth` - a new object on every render of the
-  // provider made them request it again.
+  // One object per real change (login/logout, user, path): views load their
+  // data in effects that depend on `auth` - a new object on every render of
+  // the provider made them request it again. A renewed token of the same
+  // user is no such change: it reloaded every view (and dropped unsaved
+  // input) about once an hour. The tokens are getters - always the current
+  // ones; requests read theirs from the storage anyway (axiosConfig).
   const pathname = location.pathname;
+  const loggedIn = Boolean(token);
   const canViewAsUser = isStaffAccount(user);
   const shownUser = useMemo(
     () => (user && canViewAsUser && viewAsUser ? asNormalUser(user) : user),
@@ -281,26 +313,30 @@ const CoreAuthProvider = ({ children }) => {
   );
   const value = useMemo(
     () => ({
-      token,
-      refreshToken,
+      get token() {
+        return tokensRef.current.token;
+      },
+      get refreshToken() {
+        return tokensRef.current.refreshToken;
+      },
       user: shownUser,
       canViewAsUser,
       viewAsUser: canViewAsUser && viewAsUser,
       setViewAsUser,
-      refreshApi: () => refreshApi(refreshToken),
+      refreshApi: () => refreshApi(tokensRef.current.refreshToken),
       loginAction,
       loginWithTokens,
       logoutAction,
       navigate: (to, options) => navigate(to, options),
       location: pathname,
     }),
+    // loggedIn stands for the tokens (getters).
     [
-      token,
+      loggedIn,
       shownUser,
       canViewAsUser,
       viewAsUser,
       setViewAsUser,
-      refreshToken,
       loginAction,
       loginWithTokens,
       logoutAction,

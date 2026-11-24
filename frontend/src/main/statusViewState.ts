@@ -10,6 +10,7 @@ import {
   type TimeRange,
   isTimeRange,
 } from './timeRanges';
+import { locationPagePath } from './portalNav';
 
 /**
  * What the status page of a location shows - its view, period, step, the
@@ -116,14 +117,11 @@ const statusViewSearch = (
   return params.toString();
 };
 
-/** The status page of `locationId` showing `state` - the escalation's quick link. */
+/** The status page of `location` showing `state` - the escalation's quick link. */
 export const statusViewPath = (
-  locationId: number,
+  location: { id: number; project_id?: number | null },
   state: StatusViewState | null | undefined,
-) => {
-  const search = statusViewSearch(state);
-  return `/location/${locationId}/status${search ? `?${search}` : ''}`;
-};
+) => locationPagePath(location, 'status', statusViewSearch(state));
 
 const positiveInt = (raw: string | null, max: number): number | undefined => {
   if (!raw || !/^\d{1,9}$/.test(raw)) {

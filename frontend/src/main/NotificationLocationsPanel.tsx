@@ -21,6 +21,7 @@ import {
   type LocationFlags,
 } from '../components/location/locationFlags';
 import './NotificationLocationsPanel.css';
+import { locationPagePath } from './portalNav';
 
 /** A row of GET /v1/notification-location/. */
 export type NotificationLocation = {
@@ -144,7 +145,7 @@ const NotificationLocationsPanel = () => {
         cell: (row) => (
           <div className="small">
             <LocationFlagIcons flags={flagsFor(row)} testKey={`notification-${row.id}`} />
-            <Link to={`/location/${row.id}/status`} {...repeatedTestId('notification-locations-link', row.id)}>
+            <Link to={locationPagePath(row)} {...repeatedTestId('notification-locations-link', row.id)}>
               {row.name || '–'}
             </Link>
             {row.project_id != null && <span className="text-muted"> #{row.project_id}</span>}

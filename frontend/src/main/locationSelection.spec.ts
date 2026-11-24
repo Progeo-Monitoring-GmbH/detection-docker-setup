@@ -78,8 +78,9 @@ describe('the merged project bar', () => {
   });
 
   it('knows the tab and the plan of the URL', () => {
+    expect(portalSegment('/project/4711/analysis')).toBe('analysis');
+    expect(portalSegment('/project/4711')).toBe('status');
     expect(portalSegment('/location/12/analysis')).toBe('analysis');
-    expect(portalSegment('/location/12')).toBe('status');
     expect(planFromParams(new URLSearchParams('plan=12'))).toBe(12);
     expect(planFromParams(new URLSearchParams('plan=x'))).toBeNull();
     expect(planFromParams(new URLSearchParams(''))).toBeNull();

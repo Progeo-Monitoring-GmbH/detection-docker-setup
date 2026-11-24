@@ -61,6 +61,12 @@ celery_instance.conf.beat_schedule = {
         # Statistics only - it sends no mails.
         "schedule": crontab(hour=0, minute=37),
     },
+    "push-site-measurements-hourly": {
+        "task": "progeo.tasks.push_pending_site_measurements",
+        # manuSensor: the site measurements whose Airtable copy failed (each
+        # is copied when it arrives - this only catches up).
+        "schedule": crontab(minute=25),
+    },
     "detect-offline-devices-hourly": {
         "task": "progeo.tasks.detect_offline_devices",
         # Per device: still sending? Opens/updates/resolves the offline

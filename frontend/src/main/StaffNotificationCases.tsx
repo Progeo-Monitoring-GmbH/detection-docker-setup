@@ -24,6 +24,7 @@ import {
   type LocationFlags,
 } from '../components/location/locationFlags';
 import './StaffNotificationCases.css';
+import { locationPagePath } from './portalNav';
 
 type Kind = 'offline' | 'alarm';
 type Phase = 'detected' | 'notified' | 'reminder' | 'escalated' | 'recovering' | 'muted' | 'resolved';
@@ -213,7 +214,7 @@ const StaffNotificationCases = () => {
         cell: (row) => (
           <span className="small">
             <LocationFlagIcons flags={flagsFor(row)} testKey={`case-${row.id}`} />
-            <Link to={`/location/${row.location_id}/status`} onClick={(event) => event.stopPropagation()}>
+            <Link to={locationPagePath({ id: row.location_id, project_id: row.project_id })} onClick={(event) => event.stopPropagation()}>
               {row.project_id ?? row.location_id}
             </Link>{' '}
             {row.location_name}

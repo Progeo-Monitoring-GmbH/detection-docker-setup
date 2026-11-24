@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   PORTAL_NAV_ITEMS,
+  isOpenLocation,
+  locationPagePath,
   openLocationId,
+  openProjectId,
   portalNavPath,
   portalTabOf,
+  projectPath,
   switchLocationPath,
 } from './portalNav';
 
@@ -41,16 +45,16 @@ describe('PORTAL_NAV_ITEMS', () => {
 });
 
 describe('portalNavPath', () => {
-  it('builds /location/<id>/<segment> for numeric and string ids', () => {
+  it('builds /project/<project_id>/<segment> for numeric and string numbers', () => {
     const status = PORTAL_NAV_ITEMS[0];
-    expect(portalNavPath(status, 42)).toBe('/location/42/status');
-    expect(portalNavPath(status, '7')).toBe('/location/7/status');
+    expect(portalNavPath(status, 4711)).toBe('/project/4711/status');
+    expect(portalNavPath(status, '7')).toBe('/project/7/status');
   });
 
   it('uses the segment, not the key', () => {
     const benach = PORTAL_NAV_ITEMS.find((item) => item.key === 'benach');
     expect(benach).toBeDefined();
-    expect(portalNavPath(benach!, 1)).toBe('/location/1/notifications');
+    expect(portalNavPath(benach!, 1)).toBe('/project/1/notifications');
   });
 
   it('produces a distinct path for every item', () => {
@@ -59,47 +63,65 @@ describe('portalNavPath', () => {
   });
 });
 
-describe('switchLocationPath', () => {
-  it.each([
-    ['/location/12/object', '/location/7/object'],
-    ['/location/12/notifications', '/location/7/notifications'],
-    ['/location/12/status/', '/location/7/status'],
-    // A deeper path belongs to the open location - only its tab is kept.
-    ['/location/12/settings/lageplan/3', '/location/7/settings'],
-  ])('keeps the tab of %s', (pathname, expected) => {
-    expect(switchLocationPath(pathname, 7)).toBe(expected);
+describe('locationPagePath', () => {
+  it('opens a location by its project number, with a query', () => {
+    expect(projectPath(4711)).toBe('/project/4711/status');
+    expect(projectPath(4711, 'analysis', '?plan=3')).toBe('/project/4711/analysis?plan=3');
+    expect(locationPagePath({ id: 12, project_id: 4711 }, 'object')).toBe('/project/4711/object');
   });
 
-  it.each([ '/location/12/alarms/'])(
-    'stays on the location page %s',
-    (pathname) => {
-      expect(switchLocationPath(pathname, 7)).toBe(pathname.replace('12', '7').replace(/\/$/, ''));
-    },
-  );
+  it('keeps the pk URL without a number or when the number opens another location', () => {
+    expect(locationPagePath({ id: 12, project_id: null }, 'status', 'at=x')).toBe('/location/12/status?at=x');
+    expect(locationPagePath({ id: 12, project_id: 4711, project_main: false })).toBe('/location/12/status');
+    expect(locationPagePath({ id: 12, project_id: 4711, project_main: true })).toBe('/project/4711/status');
+  });
+});
+
+describe('switchLocationPath', () => {
+  const other = { id: 7, project_id: 4700 };
+
+  it.each([
+    ['/project/4711/object', '/project/4700/object'],
+    ['/project/4711/notifications', '/project/4700/notifications'],
+    ['/project/4711/status/', '/project/4700/status'],
+    // A deeper path belongs to the open location - only its tab is kept.
+    ['/project/4711/settings/lageplan/3', '/project/4700/settings'],
+    ['/location/12/object', '/project/4700/object'],
+    ['/project/4711/alarms/', '/project/4700/alarms'],
+  ])('keeps the tab of %s', (pathname, expected) => {
+    expect(switchLocationPath(pathname, other)).toBe(expected);
+  });
 
   it.each([
     ['/checklist/location/', '?location=12', '/checklist/location/?location=7'],
     ['/device/overview', '?location=12&ping=1', '/device/overview?location=7'],
     ['/site-plan/wizard/', '?location=12&plan=3', '/site-plan/wizard/?location=7'],
-  ])('keeps the page of %s%s, only the location changes', (pathname, search, expected) => {
-    expect(switchLocationPath(pathname, 7, search)).toBe(expected);
+  ])('keeps the page of %s%s, only the location (pk) changes', (pathname, search, expected) => {
+    expect(switchLocationPath(pathname, other, search)).toBe(expected);
   });
 
-  it.each(['/alarms/', '/location/overview/', '/location/12/unknown', '/', '/checklist/location/'])(
+  it.each(['/alarms/', '/location/overview/', '/project/4711/unknown', '/', '/checklist/location/'])(
     'opens the status page from %s',
     (pathname) => {
-      expect(switchLocationPath(pathname, 7)).toBe('/location/7/status');
+      expect(switchLocationPath(pathname, other)).toBe('/project/4700/status');
     },
   );
 
   it('knows the location a page shows', () => {
-    expect(openLocationId('/location/12/object')).toBe(12);
+    expect(openProjectId('/project/4711/object')).toBe(4711);
+    expect(openProjectId('/location/overview/')).toBeNull();
     expect(openLocationId('/checklist/location/', '?location=12')).toBe(12);
+    expect(openLocationId('/location/12/status')).toBe(12);
     expect(openLocationId('/checklist/location/', '')).toBeNull();
-    expect(openLocationId('/location/overview/')).toBeNull();
+    expect(isOpenLocation({ id: 12, project_id: 4711 }, '/project/4711/status')).toBe(true);
+    expect(isOpenLocation({ id: 4711, project_id: 1 }, '/project/4711/status')).toBe(false);
+    expect(isOpenLocation({ id: 12, project_id: 4711 }, '/checklist/location/', '?location=12')).toBe(true);
+    expect(isOpenLocation({ id: 12, project_id: 4711 }, '/location/12/object')).toBe(true);
+    expect(isOpenLocation({ id: 13, project_id: 4711 }, '/location/12/object')).toBe(false);
   });
 
   it('knows the tab of a location page only', () => {
+    expect(portalTabOf('/project/3/permissions')?.key).toBe('rechte');
     expect(portalTabOf('/location/3/permissions')?.key).toBe('rechte');
     expect(portalTabOf('/device/overview')).toBeNull();
   });

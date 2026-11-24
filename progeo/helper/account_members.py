@@ -32,6 +32,14 @@ def is_customer_admin(user) -> bool:
     )
 
 
+def sees_customer_project_nr(user) -> bool:
+    """ProgeoLocation.customer_project_nr: staff and customer admins see and
+    edit it - everyone else gets locations without it."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return is_staff_admin(user) or user.has_perm(f"progeo.{CUSTOMER_ADMIN_PERMISSION}")
+
+
 def holds_customer_admin(user) -> bool:
     """Does `user` hold the customer admin permission (active or not)? A
     deactivated customer admin stays protected - reactivated, they are one again."""

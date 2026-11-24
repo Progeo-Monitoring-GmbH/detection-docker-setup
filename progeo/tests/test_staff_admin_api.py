@@ -551,3 +551,29 @@ def test_superuser_can_delete_superuser(api_client, superuser):
 
     assert api_client.post(f"{BASE}{target.pk}/delete/").json()["success"] is True
     assert not User.objects.using(f.DB).filter(pk=target.pk).exists()
+
+
+def _language(user_id):
+    from progeo.v1.models import UserProfile
+
+    return UserProfile.objects.using(f.DB).filter(user_id=user_id).values_list("language", flat=True).first()
+
+
+def test_a_new_user_starts_in_the_language_of_its_creator(api_client, staff):
+    from progeo.v1.models import UserProfile
+
+    UserProfile.objects.using(f.DB).update_or_create(user_id=staff.pk, defaults={"language": "en"})
+
+    body = api_client.post(BASE, {"email": f"{f.unique('lang')}@progeo.com"}, format="json").json()
+
+    assert body["success"] is True, body
+    assert _language(body["user"]["id"]) == "en"
+
+
+def test_a_creator_without_a_language_passes_on_the_portal_language(api_client, staff):
+    body = api_client.post(
+        BASE, {"email": f"{f.unique('lang')}@progeo.com"}, format="json", HTTP_ACCEPT_LANGUAGE="en",
+    ).json()
+
+    assert body["success"] is True, body
+    assert _language(body["user"]["id"]) == "en"

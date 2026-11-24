@@ -19,6 +19,37 @@ from progeo.helper.basics import ilog
 DB = "default"
 
 
+def creator_language(creator, request=None) -> str | None:
+    """The language a user created by `creator` starts with - the creator's
+    portal language: their own (UserProfile.language, saved by the language
+    switch), else the one switched to in this session, else the browser's
+    (Accept-Language - the portal starts in it, i18next's detector).
+    "de" / "en", None when none is known (mails then default to German)."""
+    from progeo.helper.emailhelper import normalize_language
+
+    profile = getattr(creator, "profile", None) if creator is not None else None
+    session = getattr(request, "session", None)
+    meta = getattr(request, "META", None) or {}
+    return (
+        normalize_language(getattr(profile, "language", None))
+        or normalize_language(session.get("django_language") if session is not None else None)
+        or normalize_language(meta.get("HTTP_ACCEPT_LANGUAGE", "").split(",")[0])
+    )
+
+
+def start_in_language(user, language) -> None:
+    """A new account speaks `language` (its mails and messenger messages,
+    UserProfile.language) - a language it already has is kept."""
+    from progeo.v1.models import UserProfile
+
+    if not language:
+        return
+    profile, _ = UserProfile.objects.using(DB).get_or_create(user_id=user.pk)
+    if not profile.language:
+        profile.language = language
+        profile.save(using=DB, update_fields=["language"])
+
+
 def parse_project_ids(raw) -> list[int]:
     """Project numbers from a list or a string ("4711, 4712 4713")."""
     if raw is None:

@@ -19,6 +19,11 @@ from progeo.v1.viewsets.firmware_viewset import (
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.location_selection_viewset import LocationSelectionViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
+from progeo.v1.viewsets.manusensor_views import (
+    FactorySensorsView,
+    ManuSensorMeasurementsView,
+    ManuSensorSensorView,
+)
 from progeo.v1.viewsets.notification_viewset import (
     NotificationCaseViewSet,
     NotificationLocationViewSet,
@@ -95,6 +100,13 @@ threshold_fine_tune_router.register(r'', ThresholdFineTuneViewSet, basename='thr
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
+    # manuSensor app (helper/manusensor.py) - before the location routes:
+    # <projekt> is the project number, not a pk; POST .../messungen comes
+    # without the trailing slash.
+    re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/sensor/(?:(?P<sensor>[0-9]{1,6})/?)?$',
+            ManuSensorSensorView.as_view()),
+    re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/messungen/?$', ManuSensorMeasurementsView.as_view()),
+    re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),

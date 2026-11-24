@@ -28,7 +28,7 @@ AREA_MODULES = {
     "devices": """
         controller_qrcodes controller_wifi device_commands device_legacy_query
         device_lorawan device_overview device_provisioning device_statistics_api
-        firmware_update firmware_upload
+        firmware_update firmware_upload manusensor
     """,
     "exports": "exports lageplan_export",
     "integrations": """
@@ -39,7 +39,7 @@ AREA_MODULES = {
     "locations": """
         auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api dm_transfer plan_meters plan_ocr
-        location_readiness readiness_qa screen_review screen_review_elements screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf
+        location_readiness readiness_qa screen_review screen_review_elements screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf project_portal
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video

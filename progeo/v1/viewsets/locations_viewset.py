@@ -182,9 +182,16 @@ def _is_staff_admin(user) -> bool:
 
 def _is_customer_admin(user) -> bool:
     """Kundenadmin or ProGeo staff (frontend roleModel.ts): may add people to
-    a location. Customers need module_locations_edit - Kundennutzer
-    (view-only) never add anyone."""
-    return _is_staff_admin(user) or has_module_permissions(user, "module_locations_edit")
+    a location. Customers need module_locations_edit or the customer admin
+    permission (module_customer_admin_enabled - they manage the users of
+    their account anyway) - Kundennutzer (view-only) never add anyone. The
+    single actions still need their own permissions (module_notifications_add,
+    module_user_invitable, module_user_revokable)."""
+    return (
+        _is_staff_admin(user)
+        or has_module_permissions(user, "module_locations_edit")
+        or has_module_permissions(user, CUSTOMER_ADMIN_PERMISSION)
+    )
 
 # Geo- and address fields that can be exported / imported (updated) via the
 # dedicated geo_export / geo_import routes. `id`/`project_id` are used for
@@ -492,13 +499,14 @@ def _sensor_points_data(points, location, db_name, names=None):
     return sensor_points
 
 
-def _location_data(location, account):
+def _location_data(location, account, request=None):
     """LocationSerializer data of one location. With the split on, its
     lageplans come from the location's project database - the serializer
-    would load them through the router, i.e. from "default"."""
+    would load them through the router, i.e. from "default". `request`:
+    whose fields (customer_project_nr only for staff / customer admins)."""
     if split_enabled():
         location = prepare_locations([location], account, stats=False)[0]
-    return LocationSerializer(location).data
+    return LocationSerializer(location, context={"request": request}).data
 
 
 class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
@@ -525,10 +533,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     def _find_location(cls, request, pk=None, project_id=None):
         """Look up a location by pk or project_id across every account the
         user has access to, since ids are only unique within one account's db."""
+        from progeo.helper.project_portal import main_location
+
         user = getattr(request, "user", None)
         for account in cls._resolve_request_accounts(request):
             qs = ProgeoLocation.objects.using(account.db_name).filter(location_q(user, account))
-            location = qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
+            # By number: the project's main location (numbers aren't unique).
+            location = qs.filter(pk=pk).first() if pk is not None else main_location(qs.filter(project_id=project_id))
             if location:
                 return location, account
 
@@ -539,7 +550,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             for account in configured_accounts():
                 qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
                 location = (
-                    qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
+                    qs.filter(pk=pk).first() if pk is not None else main_location(qs.filter(project_id=project_id))
                 )
                 if location:
                     return location, account
@@ -553,7 +564,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         (self.object_account)."""
         from django.http import Http404
 
-        location, account = self._find_location(self.request, pk=self.kwargs.get(self.lookup_field))
+        if "project_id" in self.kwargs:
+            # /v1/location/project/<project_id>/ (retrieve_by_project).
+            location, account = self._find_location(self.request, project_id=int(self.kwargs["project_id"]))
+        else:
+            location, account = self._find_location(self.request, pk=self.kwargs.get(self.lookup_field))
         if location is None:
             raise Http404
         if not split_enabled():
@@ -575,7 +590,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if _cache:
             return _cache
         locations = prepare_locations(self.filter_queryset(self.get_queryset()), self._primary_account(request))
-        return cache_save_and_return(cache_key, LocationSerializer(locations, many=True).data)
+        return cache_save_and_return(
+            cache_key, LocationSerializer(locations, many=True, context={"request": request}).data
+        )
     
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="project-types", methods=["GET"])
@@ -607,6 +624,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         )
         # Staff see the readiness score next to the names (location_readiness).
         staff = _is_staff_admin(getattr(request, "user", None))
+        # Staff and customer admins: the customer's project number (shown and searched).
+        project_nr = account_members.sees_customer_project_nr(getattr(request, "user", None))
+        extra_fields = (("readiness_score",) if staff else ()) + (("customer_project_nr",) if project_nr else ())
         # Two aliases of one physical database (the test settings) list it once.
         seen = set()
         for account, scope in listed_locations(request.user):
@@ -614,7 +634,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             physical = (config.get("HOST"), config.get("PORT"), config.get("NAME"))
             locations = [
                 location for location in ProgeoLocation.objects.using(account.db_name).filter(scope)
-                .only(*fields, *(("readiness_score",) if staff else ()))
+                .only(*fields, *extra_fields)
                 if (physical, location.pk) not in seen
             ]
             seen.update((physical, location.pk) for location in locations)
@@ -642,6 +662,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             if staff:
                 for row, location in zip(rows, locations):
                     row["readiness_score"] = location.readiness_score
+            if project_nr:
+                for row, location in zip(rows, locations):
+                    row["customer_project_nr"] = location.customer_project_nr
             data.extend(rows)
         return Response(data=data)
 
@@ -888,6 +911,35 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         return RequestSuccess({"location": {"id": location.pk, "purgeable": location.purgeable}, "qa": qa})
 
     @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="customer-project-nr", methods=["POST"])
+    def customer_project_nr(self, request, pk=None, *args, **kwargs):
+        """Staff and customer admins set the customer's own project number
+        ({customer_project_nr: "..."}, at most 16 characters; blank clears
+        it) - without module_locations_edit, which the rest of the Objekt tab
+        needs. -> {"location": {id, customer_project_nr}}"""
+        if not account_members.sees_customer_project_nr(getattr(request, "user", None)):
+            return permission_denied_response(["module_customer_admin_enabled"])
+        data = request.data if hasattr(request.data, "get") else {}
+        raw = data.get("customer_project_nr")
+        if raw is not None and not isinstance(raw, str | int):
+            return RequestFailed({"reason": "customer_project_nr must be text"})
+        value = str(raw or "").strip() or None
+        max_length = ProgeoLocation._meta.get_field("customer_project_nr").max_length
+        if value is not None and len(value) > max_length:
+            return RequestFailed({"reason": f"customer_project_nr has at most {max_length} characters",
+                                  "code": "too_long"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        if location.customer_project_nr != value:
+            location.customer_project_nr = value
+            location.save(using=account.db_name, update_fields=["customer_project_nr"])
+            forget_location_answers()
+            ilog(f"[locations] location {location.pk} ({location.name}) customer_project_nr={value!r} "
+                 f"by {request.user.username}")
+        return RequestSuccess({"location": {"id": location.pk, "customer_project_nr": location.customer_project_nr}})
+
+    @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="details", methods=["GET"])
     def details(self, request, *args, **kwargs):
         """Batch-load the full location fields (device/measurement counts,
@@ -917,7 +969,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     with_measurement_stats(queryset)
                     .prefetch_related(*location_prefetches(db_name, lageplans=not skip_lageplans))
                 )
-        data = LocationSerializer(locations, many=True, context={"skip_lageplans": skip_lageplans}).data
+        data = LocationSerializer(
+            locations, many=True, context={"skip_lageplans": skip_lageplans, "request": request}
+        ).data
         return Response(data=data)
 
     @require_module_permissions("module_locations_enabled")
@@ -928,12 +982,31 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not split_enabled():
             location = self.get_object()
             location.first_measurement_at = first_measurement_at(location, location._state.db)
+            location.project_main = self._is_project_main(location)
             return cache_save_and_return(cache_key, self.get_serializer(location).data)
         location = self.get_object()
         account = self.object_account
         location = prepare_locations([location], account)[0]
         location.first_measurement_at = first_measurement_at(location, location_db(location, account))
-        return cache_save_and_return(cache_key, LocationSerializer(location).data)
+        location.project_main = self._is_project_main(location)
+        return cache_save_and_return(cache_key, LocationSerializer(location, context={"request": request}).data)
+
+    def _is_project_main(self, location):
+        """Whether /project/<its number>/ opens `location` for this user - the
+        main location of its number among theirs (helper/project_portal.py);
+        else the portal keeps its pk URL."""
+        if location.project_id is None:
+            return False
+        main, _account = self._find_location(self.request, project_id=location.project_id)
+        return main is not None and main.pk == location.pk and main._state.db == location._state.db
+
+    @action(detail=False, url_path=r"project/(?P<project_id>[0-9]+)", methods=["GET"])
+    def retrieve_by_project(self, request, project_id=None, *args, **kwargs):
+        """The location with project number `project_id` - what retrieve
+        answers (the portal: /project/<project_id>/...). get_object() reads
+        the number from self.kwargs; the cache is per path, and
+        forget_location_answers drops /v1/location/* - this one included."""
+        return self.retrieve(request, *args, **kwargs)
 
     @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access", methods=["GET", "POST"])
@@ -1177,6 +1250,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         user = User(username=email, email=email, is_staff=False, is_superuser=False, is_active=True)
         user.set_unusable_password()
         user.save()
+        # The new account starts in the language of the staff member creating it.
+        from progeo.helper.user_provisioning import creator_language, start_in_language
+
+        start_in_language(user, creator_language(request.user, request))
         return user, None
 
     @staticmethod
@@ -2670,7 +2747,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             serialized = ProgeoMeasurementSerializer(queryset, many=True).data
         return RequestSuccess(
             {
-                "location": _location_data(location, account),
+                "location": _location_data(location, account, request),
                 "devices": [{"id": device.pk, "display_name": device.display_name} for device in devices],
                 "device": device_id,
                 "measurements": serialized,
@@ -2959,7 +3036,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             _map = {sensor: values for sensor, values in _map.items() if sensor in plan_sensors}
 
         return RequestSuccess({
-            "location": _location_data(location, account),
+            "location": _location_data(location, account, request),
             "limit": limit,
             "from": time_from.isoformat() if time_from else None,
             "to": time_to.isoformat() if time_to else None,
@@ -3128,7 +3205,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             .order_by("start")
         )
         return RequestSuccess({
-            "location": _location_data(location, account),
+            "location": _location_data(location, account, request),
             "days": days,
             "bucket_seconds": bucket_seconds,
             "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
@@ -3203,7 +3280,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             entry["label"] = devices[point.device_id].display_name
 
         return RequestSuccess({
-            "location": _location_data(location, account),
+            "location": _location_data(location, account, request),
             "days": days,
             "step": step,
             "metric": metric,
@@ -3647,6 +3724,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     # query as the list (plz/address -> address line, project_type -> product).
     ADMIN_OVERVIEW_EXTRA_FIELDS = (
         "plz", "address", "project_type", "purgeable", "notifications_disabled", "readiness_score",
+        "customer_project_nr",
     )
 
     @action(detail=False, url_path="admin_overview", methods=["GET"])
@@ -3818,7 +3896,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         ]
 
         return RequestSuccess({
-            "location": _location_data(location, account),
+            "location": _location_data(location, account, request),
             "lageplan_ids": lageplan_ids,
             "coordinate_files": coordinate_files,
         })

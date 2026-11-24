@@ -80,6 +80,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_reports_enabled", "Can access reports module"),
     ("module_alarms_enabled", "Can access alarms module"),
     ("module_admin_thresholds", "Can fine-tune the alarm thresholds (fine_tune_thresholds)"),
+    ("module_manusensor_enabled", "Can re-measure dm sensors on site (manuSensor app)"),
 )
 
 # Held for real - staff included (holds_permission): the buttons they unlock
@@ -374,8 +375,17 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # pushes to or syncs with Airtable automatically.
     airtable_url = models.URLField(max_length=255, null=True, blank=True)
 
+    # The project number - the portal's URLs use it (/project/<project_id>/
+    # opens the project's main location, see helper/project_portal.py). Not
+    # unique: duplicates and locations without one exist (merge_duplicate_
+    # locations, relink_locations, the "unknown" project database) - those
+    # are opened by pk (/location/<pk>/).
     project_id = models.IntegerField(null=True, blank=True)
     project_type = models.IntegerField(choices=PROJECT_TYPE_CHOICES, default=PROJECT_TYPE_CHOICES.UNKNOWN, null=True, blank=True)
+    # The customer's own project number (free text, not ours - that is
+    # project_id). Only staff and customer admins see and edit it
+    # (account_members.sees_customer_project_nr); the location searches match it.
+    customer_project_nr = models.CharField(max_length=16, null=True, blank=True)
 
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
@@ -1954,6 +1964,94 @@ class ProgeoReadinessSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.day}: {self.mean_score:.1f} ({self.locations})"
+
+
+class ProgeoFactorySensor(models.Model):
+    """A smartex dm sensor as the factory measured it (manuSensor app, see
+    helper/manusensor.py): the band's sensor resistance R_Werk, the project it
+    was made for and its NFC tag. Stored by the factory app (POST
+    /v1/werk/sensoren/) or `manage.py import_factory_sensors`; the site app
+    compares its re-measurement with it. Keyed by (project number, sensor
+    number) - the location may not exist yet when the band is produced.
+    Lives in "default" (ProGeo's own production data, not a customer's)."""
+
+    project_id = models.IntegerField()
+    # 6 digits with leading zeros ("000123") - Airtable "dm Sensoren" Nr.
+    sensor = models.CharField(max_length=6)
+    band = models.CharField(max_length=32, null=True, blank=True)
+    # NTAG21x UID, hex upper case without separators - a check against
+    # swapped or copied tags, not the key.
+    tag_uid = models.CharField(max_length=20, null=True, blank=True)
+    r_werk_ohm = models.PositiveIntegerField()
+    measured_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["project_id", "sensor"], name="progeo_factory_sensor_unique"),
+            models.UniqueConstraint(
+                fields=["project_id", "tag_uid"], condition=models.Q(tag_uid__isnull=False),
+                name="progeo_factory_sensor_tag_unique",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.project_id}/{self.sensor} ({self.r_werk_ohm} Ω)"
+
+
+class ProgeoSiteMeasurement(models.Model):
+    """A re-measurement of a dm sensor on the construction site, sent by the
+    manuSensor app (POST /v1/location/<projekt>/messungen): what the app sent
+    (payload, the main values as columns) and what the backend answered
+    (status from the deviation to R_Werk). Idempotent by mess_id - the app
+    resends until it has an answer. Copied to Airtable afterwards
+    (airtable_* - helper/manusensor.push_to_airtable). Lives in "default"."""
+
+    class Status(models.TextChoices):
+        OK = "ok", "OK"
+        CHECK = "pruefen", "Prüfen"
+        DEFECT = "defekt", "Defekt"
+        UNKNOWN = "unbekannt", "Unbekannt"
+
+    mess_id = models.UUIDField(unique=True)
+    project_id = models.IntegerField(db_index=True)
+    sensor = models.CharField(max_length=6)
+    # The location of the project number (pk in its account database).
+    location_pk = models.IntegerField(null=True, blank=True)
+    factory_sensor = models.ForeignKey(
+        ProgeoFactorySensor, on_delete=models.SET_NULL, null=True, blank=True, related_name="site_measurements"
+    )
+    measured_at = models.DateTimeField()
+    received_at = models.DateTimeField(auto_now_add=True)
+    identification = models.CharField(max_length=10)
+    trigger = models.CharField(max_length=10)
+    tag_uid = models.CharField(max_length=20, null=True, blank=True)
+    r_ohm = models.PositiveIntegerField(null=True, blank=True)
+    r_status = models.CharField(max_length=12)
+    device_id = models.CharField(max_length=16)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # The request as received - a resend must be the same (else 409).
+    payload = models.JSONField()
+    # The answer.
+    r_werk_ohm = models.PositiveIntegerField(null=True, blank=True)
+    delta_percent = models.FloatField(null=True, blank=True)
+    tolerance_percent = models.FloatField()
+    status = models.CharField(max_length=10, choices=Status)
+    # The tag on the band is not the one the factory gave the sensor.
+    tag_mismatch = models.BooleanField(default=False)
+    # Airtable "Baustellenmessungen" (settings.AIRTABLE_SITE_MEASUREMENTS_TABLE).
+    airtable_record_id = models.CharField(max_length=20, null=True, blank=True)
+    airtable_synced_at = models.DateTimeField(null=True, blank=True)
+    airtable_error = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-pk"]
+        indexes = [models.Index(fields=["project_id", "sensor"], name="progeo_site_meas_sensor")]
+
+    def __str__(self):
+        return f"{self.project_id}/{self.sensor} {self.status} ({self.mess_id})"
 
 
 class ProgeoEscalationEntry(models.Model):

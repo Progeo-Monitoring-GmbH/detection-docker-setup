@@ -413,6 +413,66 @@ def test_staff_invite_mails_a_72h_link(client):
     assert "Ihr Zugang" in FakeSMTP.parsed()[-1]["Subject"]
 
 
+def _invited(client):
+    """A user invited by staff - no password yet - and the invitation's token."""
+    staff = f.make_user(staff=True, is_superuser=True)
+    target = f.make_user(email="neu@progeo.com", username="neu")
+    target.set_unusable_password()
+    target.save(using=f.DB)
+    client.force_authenticate(user=staff)
+    assert client.post(f"/api/auth-support/staff/users/{target.pk}/invite/").data["success"]
+    client.force_authenticate(user=None)
+    return target, _link_token("/account/invite/")
+
+
+def test_an_invitation_never_logs_in_without_a_password(client):
+    _target, token = _invited(client)
+
+    # Not through the login link exchange (links mailed to /login/link/ before):
+    # it points to the password page - and the invitation stays valid.
+    response = client.post("/api/auth-support/login-link/exchange/", {"token": token}, format="json")
+    assert response.data["success"] is False
+    assert response.data["reason"] == "password_setup_required"
+    assert response.data["forward"] == f"/account/invite/{token}"
+    assert "access" not in response.data
+    assert login_links.redeem(token) is None
+
+    check = client.post("/api/auth-support/invite/check/", {"token": token}, format="json")
+    assert check.data["success"] and check.data["username"]
+
+
+def test_the_invitation_sets_the_password_and_signs_in_once(client):
+    target, token = _invited(client)
+
+    weak = client.post("/api/auth-support/invite/confirm/", {"token": token, "password": "allessmall1"},
+                       format="json")
+    assert weak.data["success"] is False and weak.data["reason"] == "password"
+    target.refresh_from_db()
+    assert not target.has_usable_password()
+
+    response = client.post("/api/auth-support/invite/confirm/", {"token": token, "password": PASSWORD},
+                           format="json")
+    assert response.data["success"], response.data
+    assert str(AccessToken(response.data["access"])["user_id"]) == str(target.pk)
+    target.refresh_from_db()
+    assert target.check_password(PASSWORD)
+
+    # Used: neither the page nor a second confirm accept it again.
+    assert client.post("/api/auth-support/invite/check/", {"token": token}, format="json").data["success"] is False
+    again = client.post("/api/auth-support/invite/confirm/", {"token": token, "password": PASSWORD + "x"},
+                        format="json")
+    assert again.data["reason"] == "invalid_token"
+
+
+def test_a_login_link_is_no_invitation(client):
+    user = f.make_user(email="login@progeo.com")
+    token = login_links.create_link(user, "login")
+
+    assert client.post("/api/auth-support/invite/check/", {"token": token}, format="json").data["success"] is False
+    assert client.post("/api/auth-support/invite/confirm/", {"token": token, "password": PASSWORD},
+                       format="json").data["reason"] == "invalid_token"
+
+
 def test_create_user_with_invite(client):
     staff = f.make_user(staff=True, is_superuser=True)
     client.force_authenticate(user=staff)

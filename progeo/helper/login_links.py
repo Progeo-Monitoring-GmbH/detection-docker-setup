@@ -1,6 +1,11 @@
 """One-time login links ("magic links").
 
-A link is /login/link/<token> in the frontend. The page does NOT redeem the
+A link is /login/link/<token> in the frontend - an invitation's is
+/account/invite/<token>: an invited user sets a password first, only that
+redeems the link and signs them in (confirm_invite). An invitation token
+never logs in by itself - redeem() takes login links only, and the exchange
+view sends an invitation that arrives there (links mailed before) on to the
+password page. The page does NOT redeem the
 token on load - mail scanners (Outlook Safe Links, ...) open every link in a
 mail, and a link redeemed by a scanner would be gone before the customer
 clicks it. The customer presses "Jetzt anmelden", which POSTs the token to
@@ -114,7 +119,8 @@ def send_login_link(user_id: int, purpose: str = "login", template: str | None =
     return bool(send_template_mail(
         [user.email], name, context,
         category="invite" if invite else "login_link",
-        secret_context={"action_url": portal_url(f"/login/link/{token}")},
+        # An invitation: set the password first (/account/invite/, confirm_invite).
+        secret_context={"action_url": portal_url(f"/account/invite/{token}" if invite else f"/login/link/{token}")},
         language=language,
     ))
 
@@ -150,13 +156,14 @@ def redeem(token: str, otp=None, request=None, purposes=None):
     """(user, purpose) for a valid unused token - marking it used - else
     None. A user with 2FA needs a valid `otp` as well (else
     SecondFactorRequired). `purposes`: the link kinds accepted here (default:
-    login and invite links - a password reset link doesn't log in)."""
+    login links - an invitation needs a password first (confirm_invite), a
+    password reset link doesn't log in)."""
     from progeo.helper.two_factor import check_login_code
     from progeo.v1.models import LoginLink
 
     if not token:
         return None
-    purposes = purposes or (LoginLink.Purpose.LOGIN, LoginLink.Purpose.INVITE)
+    purposes = purposes or (LoginLink.Purpose.LOGIN,)
     with transaction.atomic(using=DB):
         link = (
             LoginLink.objects.using(DB).select_for_update().select_related("user")
@@ -173,6 +180,77 @@ def redeem(token: str, otp=None, request=None, purposes=None):
         link.save(using=DB, update_fields=["used_at"])
     ilog(f"[login_links] {link.purpose} link of user {link.user_id} redeemed")
     return link.user, link.purpose
+
+
+# ---------------------------------------------------------------------------- invitations
+
+WEAK_PASSWORD_DE = ("Mindestens 8 Zeichen aus mindestens drei Zeichenarten "
+                    "(Kleinbuchstaben, Großbuchstaben, Ziffern, Sonderzeichen).")
+WEAK_PASSWORD_EN = ("At least 8 characters from at least three character sets "
+                    "(lowercase, uppercase, digits, special characters).")
+
+
+def find_invite_link(token: str):
+    """The valid, unused invitation link of `token` whose user may use it, else None."""
+    from progeo.v1.models import LoginLink
+
+    if not token:
+        return None
+    link = (
+        LoginLink.objects.using(DB).select_related("user")
+        .filter(token_hash=hash_token(token), purpose=LoginLink.Purpose.INVITE).first()
+    )
+    if link is None or link.used_at is not None or link.expires_at <= timezone.now():
+        return None
+    return link if eligible(link.user) is None else None
+
+
+def confirm_invite(token: str, password: str, otp=None, request=None):
+    """The invited user sets their password - that redeems the invitation
+    and signs them in. Returns (user, None) or (None, {"reason": ...}):
+    invalid_token, password (with "errors" - the strength rules, in the
+    user's language), otp_required / otp_invalid (a user with 2FA - the link
+    stays valid meanwhile)."""
+    from progeo.helper import login_throttle
+    from progeo.helper.access_requests import password_errors
+    from progeo.helper.password_rules import is_minimally_strong
+    from progeo.helper.two_factor import check_login_code
+    from progeo.v1.models import LoginLink
+
+    link = find_invite_link(token)
+    if link is None:
+        return None, {"reason": "invalid_token"}
+    user = link.user
+    language = getattr(getattr(user, "profile", None), "language", None)
+    # As the profile and "Add user" ask (helper/password_rules.py).
+    errors = [] if is_minimally_strong(password) else [
+        WEAK_PASSWORD_EN if str(language or "").lower().startswith("en") else WEAK_PASSWORD_DE
+    ]
+    errors += password_errors(password or "", user, language)
+    if errors:
+        return None, {"reason": "password", "errors": errors}
+    error = check_login_code(user, otp, request)
+    if error:
+        return None, {"reason": error, "otp_required": True}
+
+    now = timezone.now()
+    with transaction.atomic(using=DB):
+        locked = LoginLink.objects.using(DB).select_for_update().filter(pk=link.pk, used_at__isnull=True).first()
+        if locked is None:
+            return None, {"reason": "invalid_token"}
+        locked.used_at = now
+        locked.save(using=DB, update_fields=["used_at"])
+        user.set_password(password)
+        user.last_login = now
+        user.save(using=DB, update_fields=["password", "last_login"])
+        # Other invitations mailed so far are void - the password is set.
+        LoginLink.objects.using(DB).filter(
+            user_id=user.pk, purpose=LoginLink.Purpose.INVITE, used_at__isnull=True,
+        ).delete()
+    login_throttle.clear_failures(user.username)
+    login_throttle.clear_failures(user.email)
+    ilog(f"[login_links] User {user.pk} set the password with the invitation link")
+    return user, None
 
 
 # ---------------------------------------------------------------------------- statistics

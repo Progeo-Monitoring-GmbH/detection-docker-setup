@@ -40,6 +40,7 @@ import './EscalationsView.css';
 import StatusViewSummary from './StatusViewSummary';
 import AlarmFlowTab from './AlarmFlowTab';
 import { statusViewPath } from './statusViewState';
+import { locationPagePath } from './portalNav';
 
 type StateFilter = 'open' | 'closed' | 'all';
 
@@ -418,7 +419,7 @@ const EscalationDetail = ({
     >
       <div className="small text-muted mb-3 d-flex flex-wrap gap-2">
         <Link
-          to={`/location/${escalation.location}/status`}
+          to={locationPagePath({ id: escalation.location, project_id: escalation.project_id })}
           data-testid="escalation-detail-location"
         >
           {t('escalation_project')} {escalation.project_id ?? '–'} ·{' '}
@@ -453,7 +454,7 @@ const EscalationDetail = ({
             </span>
             <Link
               className="ms-auto btn btn-sm btn-primary"
-              to={statusViewPath(escalation.location, escalation.view_state)}
+              to={statusViewPath({ id: escalation.location, project_id: escalation.project_id }, escalation.view_state)}
               data-testid="escalation-detail-view-open"
             >
               {t('escalation_view_open')}

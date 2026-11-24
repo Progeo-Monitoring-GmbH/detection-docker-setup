@@ -214,6 +214,12 @@ AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
 AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
 AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
 AIRTABLE_DOCUMENTS_TABLE = (os.getenv("AIRTABLE_DOCUMENTS_TABLE") or "Dokumente").strip()
+# manuSensor (helper/manusensor.py): the factory's sensor table, and the table
+# every site measurement is copied to (linked to its "dm Sensoren" row).
+AIRTABLE_DM_SENSORS_TABLE = (os.getenv("AIRTABLE_DM_SENSORS_TABLE") or "dm Sensoren").strip()
+AIRTABLE_SITE_MEASUREMENTS_TABLE = (os.getenv("AIRTABLE_SITE_MEASUREMENTS_TABLE") or "Baustellenmessungen").strip()
+# |ΔR| to R_Werk (percent) up to which a site measurement is "ok".
+MANUSENSOR_TOLERANCE_PERCENT = float(os.getenv("MANUSENSOR_TOLERANCE_PERCENT") or 5.0)
 # Field of the projects table that manage.py lageplan_resolution --airtable
 # writes the grade of a low-res Lageplan into (a text field, created by hand).
 AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = (

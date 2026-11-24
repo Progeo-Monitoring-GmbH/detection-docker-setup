@@ -757,7 +757,8 @@ def test_only_demo_sessions_send_heartbeats(api_client, demo):
 def test_page_sections():
     from progeo.helper.demo import page_section
 
-    assert page_section("/location/40/status") == "status"
+    assert page_section("/project/4711/status") == "status"
+    assert page_section("/location/40/status") == "status"  # older links
     assert page_section("/location/overview/") == "overview"
     assert page_section("/demo/") == "demo"
     assert page_section("") == "start"

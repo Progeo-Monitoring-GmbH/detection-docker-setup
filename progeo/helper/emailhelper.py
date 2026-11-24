@@ -75,6 +75,13 @@ def _template_base(template_name: str) -> str:
     return name
 
 
+def location_portal_path(location, segment: str = "status") -> str:
+    """The portal page of a location (helper/project_portal.py)."""
+    from progeo.helper.project_portal import location_portal_path as portal_path
+
+    return portal_path(location, segment)
+
+
 def portal_url(path: str = "") -> str:
     """Absolute frontend URL for links in mails. FRONTEND_URL may carry the
     compose-style "@PROTOCOL://" prefix (django.env.template)."""

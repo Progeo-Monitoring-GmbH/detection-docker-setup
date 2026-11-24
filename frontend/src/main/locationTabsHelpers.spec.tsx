@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCoordinate } from './LocationStandortPanel';
 import { onlineSince } from './LocationObjektTab';
-import { mayEditRule, mayRevoke } from './LocationRechteTab';
+import { mayAddPeople, mayEditRule, mayRevoke } from './LocationRechteTab';
 import {
   locationConnectivity,
   locationState,
@@ -64,6 +64,15 @@ describe('mayEditRule (Rechte tab)', () => {
         viewerIsStaff: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe('mayAddPeople (Rechte tab)', () => {
+  it('lets Kundenadmins and customer admins add people, never a plain Kundennutzer', () => {
+    expect(mayAddPeople({ role: 'kundenadmin', isCustomerAdmin: false })).toBe(true);
+    expect(mayAddPeople({ role: 'progeo-admin', isCustomerAdmin: false })).toBe(true);
+    expect(mayAddPeople({ role: 'nutzer', isCustomerAdmin: true })).toBe(true);
+    expect(mayAddPeople({ role: 'nutzer', isCustomerAdmin: false })).toBe(false);
   });
 });
 

@@ -191,6 +191,16 @@ export const mayRevoke = ({
   );
 };
 
+/**
+ * May the viewer add people here at all? A Kundenadmin (role, from
+ * module_locations_edit) or a customer admin (module_customer_admin_enabled -
+ * they manage their account's users anyway; backend _is_customer_admin) -
+ * never a Kundennutzer. The button also needs module_notifications_add and
+ * module_user_invitable.
+ */
+export const mayAddPeople = ({ role, isCustomerAdmin }: { role: string; isCustomerAdmin: boolean }) =>
+  role !== 'nutzer' || isCustomerAdmin;
+
 const LocationRechteTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
@@ -205,7 +215,7 @@ const LocationRechteTab = () => {
   const [canInvite, setCanInvite] = useState(false);
   const canAdd =
     canInvite &&
-    role !== 'nutzer' &&
+    mayAddPeople({ role, isCustomerAdmin: hasPermission('module_customer_admin_enabled') }) &&
     hasPermission('module_notifications_add') &&
     hasPermission('module_user_invitable');
   // Staff set their own and other staff's notifications here; customers

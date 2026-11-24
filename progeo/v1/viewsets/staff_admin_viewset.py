@@ -75,6 +75,17 @@ def _refuse_unheld(request, *codes):
     return permission_denied_response(missing) if missing else None
 
 
+def _has_locations(account) -> bool:
+    """Whether `account` holds a location (in its database; one it doesn't configure: unknown - True)."""
+    from django.db import connections
+
+    from progeo.v1.models import ProgeoLocation
+
+    if account.db_name not in connections.databases:
+        return True
+    return ProgeoLocation.objects.using(account.db_name).filter(account=account).exists()
+
+
 def _require_user_admin(request):
     """None for staff and customer admins (the users table), else the refusal."""
     if _is_staff_admin(request.user):
@@ -325,9 +336,11 @@ class StaffUserListView(APIView):
             # "staff": every user; "customer": the users of admin_accounts.
             "scope": "customer" if customer else "staff",
             "admin_accounts": admin_accounts,
-            # The accounts the admin may hand out / take away (account_members.account_scope).
+            # The accounts the admin may hand out / take away (account_members.account_scope);
+            # has_locations: a customer admin's new user gets the ones without locations ticked.
             "account_choices": [
-                {"id": account.pk, "name": account.name} for account in account_members.account_scope(request.user)
+                {"id": account.pk, "name": account.name, "has_locations": _has_locations(account)}
+                for account in account_members.account_scope(request.user)
             ],
             "users": [
                 _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions, accounts,
@@ -438,6 +451,13 @@ class StaffUserListView(APIView):
                 is_superuser=is_superuser,
                 is_active=bool(data.get("is_active", True)),
             )
+            # The new user starts in the language of whoever creates them.
+            from progeo.helper.user_provisioning import (
+                creator_language,
+                start_in_language,
+            )
+
+            start_in_language(user, creator_language(request.user, request))
             requested_codes = set(data.get("permissions", []))
             denied_codes = _apply_permissions(user, requested_codes | _DEFAULT_USER_PERMISSION_CODES, grantable)
             # Only what the admin selected counts as denied - defaults they may

@@ -4,8 +4,24 @@ import { Building } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { childTestId, repeatedTestId } from '../testIds';
 
-/** An account a user is a member of (Account.users) - /api/auth-support/staff/users/. */
-export type UserAccount = { id: number; name: string };
+/** An account a user is a member of (Account.users) - /api/auth-support/staff/users/.
+ * `has_locations`: account_choices only - whether it holds a location. */
+export type UserAccount = { id: number; name: string; has_locations?: boolean };
+
+/**
+ * The accounts ticked for a new user. A customer admin adds users without a
+ * location: the accounts of theirs without a location are ticked (their only
+ * account in any case - a new user needs one of them). Staff pick themselves.
+ */
+export const initialNewUserAccounts = (choices: UserAccount[], customerAdmin: boolean): number[] => {
+  if (!customerAdmin) {
+    return [];
+  }
+  if (choices.length === 1) {
+    return [choices[0].id];
+  }
+  return choices.filter((account) => account.has_locations === false).map((account) => account.id);
+};
 
 export type AccountLegendEntry = UserAccount & {
   color: string;

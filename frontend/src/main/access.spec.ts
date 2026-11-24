@@ -209,7 +209,10 @@ describe('CoreRoutes', () => {
     },
   );
 
-  it('guards the portal pages with GuardedPortalPage', () => {
+  it('guards the portal pages with GuardedPortalPage - by number and by pk', () => {
+    expect(gated).toMatch(
+      /path=\{`\/project\/:projectId\/\$\{item\.segment\}`\}\s+element=\{\s+<GuardedPortalPage/,
+    );
     expect(gated).toMatch(
       /path=\{`\/location\/:id\/\$\{item\.segment\}`\}\s+element=\{\s+<GuardedPortalPage/,
     );

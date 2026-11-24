@@ -40,6 +40,13 @@ const MagicLinkLogin = () => {
       },
       (err) => {
         setBusy(false);
+        const data = err?.response?.data;
+        if (data?.reason === 'password_setup_required') {
+          // An invitation (mailed before it had its own page): the password
+          // first - it never logs in by itself (InviteSetup).
+          navigate(internalPath(data.forward) ?? '/login', { replace: true });
+          return;
+        }
         const reason = otpReason(err);
         if (reason) {
           setOtpStep(reason);

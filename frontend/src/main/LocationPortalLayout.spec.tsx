@@ -19,10 +19,16 @@ const state = vi.hoisted(() => ({
   // An HTTP status the location request fails with (null: it loads).
   errorStatus: null as number | null,
   enqueue: vi.fn(),
+  // /project/4711/... by default; { id: '5' } is the pk URL /location/5/...
+  params: { projectId: '4711' } as Record<string, string>,
+  pathname: '/project/4711/status',
+  navigate: vi.fn(),
 }));
 
 vi.mock('react-router', () => ({
-  useParams: () => ({ id: '5' }),
+  useParams: () => state.params,
+  useLocation: () => ({ pathname: state.pathname, search: '?plan=3', hash: '' }),
+  useNavigate: () => state.navigate,
   Outlet: () => <div data-testid="outlet" />,
   Link: ({ to, children, ...rest }: { to: string; children: unknown }) => (
     <a href={to} {...rest}>
@@ -36,11 +42,14 @@ vi.mock('../axiosConfig', () => ({
   default: {
     perform_get: (
       _auth: unknown,
-      _url: string,
+      url: string,
       ok: (response: unknown) => void,
       fail: (error: unknown) => void,
     ) =>
-      state.errorStatus == null
+      // By its project number - or by pk.
+      url !== (state.params.projectId ? '/v1/location/project/4711/' : '/v1/location/5/')
+        ? fail({ message: 'unexpected url', response: { status: 500, data: {} } })
+        : state.errorStatus == null
         ? ok({ data: state.location })
         : fail({ message: 'x', response: { status: state.errorStatus, data: {} } }),
   },
@@ -68,6 +77,9 @@ beforeEach(() => {
   state.staff = true;
   state.errorStatus = null;
   state.enqueue.mockReset();
+  state.params = { projectId: '4711' };
+  state.pathname = '/project/4711/status';
+  state.navigate.mockReset();
 });
 
 afterEach(() => {
@@ -129,5 +141,23 @@ describe('LocationPortalLayout', () => {
     expect(container.querySelector('[data-testid="location-no-access"]')).toBeNull();
     expect(container.querySelector('[data-testid="outlet"]')).not.toBeNull();
     expect(state.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards the pk URL of the main location to its project number, same page', () => {
+    state.params = { id: '5' };
+    state.pathname = '/location/5/analysis';
+    state.location = { ...state.location, project_main: true };
+    act(() => root.render(<LocationPortalLayout />));
+    expect(state.navigate).toHaveBeenCalledWith('/project/4711/analysis?plan=3', { replace: true });
+  });
+
+  it('opens a location its number does not lead to (a duplicate) by pk', () => {
+    state.params = { id: '5' };
+    state.pathname = '/location/5/status';
+    state.location = { ...state.location, project_main: false };
+    act(() => root.render(<LocationPortalLayout />));
+    expect(state.navigate).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="outlet"]')).not.toBeNull();
+    expect(title()!.textContent).toContain('#4711');
   });
 });

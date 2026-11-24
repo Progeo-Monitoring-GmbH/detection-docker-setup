@@ -300,7 +300,7 @@ def _case_number(case):
 
 
 def _base_context(case, location):
-    from progeo.helper.emailhelper import portal_url
+    from progeo.helper.emailhelper import location_portal_path, portal_url
 
     return {
         "project_nr": case.project_id or case.location_id,
@@ -308,7 +308,7 @@ def _base_context(case, location):
         "case_id": _case_number(case),
         "stage": case.stage,
         "is_reminder": case.stage > 1,
-        "portal_link": portal_url(f"/location/{case.location_id}/status"),
+        "portal_link": portal_url(location_portal_path(location)),
     }
 
 
@@ -544,7 +544,7 @@ ALARM_WORDS = {
 
 
 def send_alarm_stage(case):
-    from progeo.helper.emailhelper import portal_url
+    from progeo.helper.emailhelper import location_portal_path, portal_url
 
     location = _location(case)
     if location is None:
@@ -556,7 +556,7 @@ def send_alarm_stage(case):
     context = {**_alarm_context(case, location, alarms), "include_objektleitung": last}
     template = "alarm_notification" if case.stage == 1 else "alarm_reminder"
     sent, failed = _send_mails(case, rows, template, context, "alarm")
-    link = portal_url(f'/location/{case.location_id}/status')
+    link = portal_url(location_portal_path(location))
     reminder = case.stage > 1
     bodies = {}
     for language, words in ALARM_WORDS.items():

@@ -17,6 +17,7 @@ import CursorTooltip, {
   formatClock,
   TooltipRow,
 } from '../components/ui/CursorTooltip';
+import { locationPagePath } from './portalNav';
 
 type AlarmTooltipProps = {
   alarm: TimelineAlarm;
@@ -83,13 +84,13 @@ const AlarmTooltip = ({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const active = isAlarmActive(alarm);
-  const locationId = alarm.location?.id ?? alarm.location?.project_id ?? null;
+  const location = alarm.location;
 
   // The location's status page at the alarm's start (?at=, statusAt.ts).
   const openDetails = () => {
-    if (locationId != null) {
+    if (location?.id != null || location?.project_id != null) {
       navigate(
-        `/location/${locationId}/status?at=${encodeURIComponent(new Date(start).toISOString())}`,
+        locationPagePath(location, 'status', `at=${encodeURIComponent(new Date(start).toISOString())}`),
       );
     }
   };
@@ -118,7 +119,7 @@ const AlarmTooltip = ({
         </span>
       }
       footer={
-        locationId != null && (
+        (location?.id != null || location?.project_id != null) && (
           <div className="alarm-tooltip-actions">
             <Button
               size="sm"

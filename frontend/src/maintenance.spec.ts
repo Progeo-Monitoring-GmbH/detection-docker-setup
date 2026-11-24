@@ -4,6 +4,7 @@ import type { AxiosError } from 'axios';
 import {
   backendReachable,
   checkBackend,
+  CONFIRM_MS,
   HEARTBEAT_MS,
   isMaintenance,
   reportRequestError,
@@ -77,11 +78,34 @@ describe('reportRequestError', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('probes on a request without answer and switches when the probe fails too', async () => {
+  it('probes on a request without answer and switches when two probes fail', async () => {
+    vi.useFakeTimers();
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
     reportRequestError(axiosError({ code: 'ERR_NETWORK' }));
-    await checkBackend();
+    const check = checkBackend();
+
+    await vi.advanceTimersByTimeAsync(CONFIRM_MS - 1);
+    expect(isMaintenance()).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await check).toBe(false);
     expect(isMaintenance()).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays when only one probe fails (a network blip)', async () => {
+    vi.useFakeTimers();
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(answer(204));
+    reportRequestError(axiosError({ code: 'ERR_NETWORK' }));
+    const check = checkBackend();
+
+    await vi.advanceTimersByTimeAsync(CONFIRM_MS);
+    expect(await check).toBe(true);
+    expect(isMaintenance()).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('stays when the probe gets an answer', async () => {
@@ -126,6 +150,8 @@ describe('startMaintenanceWatch', () => {
     const stop = startMaintenanceWatch(reload);
 
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(isMaintenance()).toBe(false);
+    await vi.advanceTimersByTimeAsync(CONFIRM_MS);
     expect(isMaintenance()).toBe(true);
 
     await vi.advanceTimersByTimeAsync(RETRY_MS);

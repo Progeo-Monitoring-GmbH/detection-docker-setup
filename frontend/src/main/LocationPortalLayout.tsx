@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { Link, Outlet, useParams } from 'react-router';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router';
 import { Alert, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -30,13 +30,22 @@ export type PortalOutletContext = {
 
 /**
  * Shell for the object/location monitoring portal: loads the location once
- * (when :id is present), renders the sidebar, and hands location/locationId
+ * - /project/:projectId/... the project's main location (GET
+ * /v1/location/project/<nr>/), /location/:id/... any location by pk (a
+ * duplicate number, none at all; a main location's pk URL is forwarded to
+ * its number) - renders the sidebar, and hands location/locationId (its pk,
+ * what the API takes)
  * down to whichever section route is active via <Outlet context>. Replaces
  * the old LocationDetailView.tsx, which did this fetch itself and switched
  * between tabs internally instead of via routes.
  */
 const LocationPortalLayout = () => {
-  const { id } = useParams();
+  // /project/:projectId/... (the main location of the number) or /location/:id/... (pk).
+  const { projectId, id: pk } = useParams();
+  const id = projectId ?? pk;
+  const url = projectId ? `/v1/location/project/${projectId}/` : `/v1/location/${pk}/`;
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -58,9 +67,18 @@ const LocationPortalLayout = () => {
     setLoading(true);
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${id}/`,
+      url,
       (response) => {
-        setLocation((response?.data || null) as LocationDetail | null);
+        const loaded = (response?.data || null) as LocationDetail | null;
+        if (pk && loaded?.project_main && loaded.project_id != null) {
+          // Its number opens it: the project number's URL, same page.
+          navigate(
+            `${pathname.replace(/^\/location\/\d+/, `/project/${loaded.project_id}`)}${search}${hash}`,
+            { replace: true },
+          );
+          return;
+        }
+        setLocation(loaded);
         setLoading(false);
       },
       (error) => {
@@ -79,9 +97,10 @@ const LocationPortalLayout = () => {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [url]);
 
-  const locationId = location?.id ?? Number(id);
+  // The pk once loaded - the tabs only render then (NaN on the overview).
+  const locationId = location?.id ?? Number.NaN;
   const mobile = typeof window !== 'undefined' && window.innerWidth < 860;
   const staff = isStaffUser(auth?.user);
   // "#4711 · smartex® dm" and "Street 1, 12345 City" under the name.

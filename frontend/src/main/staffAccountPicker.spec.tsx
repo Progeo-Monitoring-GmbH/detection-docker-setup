@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AccountBoxes, AccountPicker, type UserAccount } from './staffAccounts';
+import { AccountBoxes, AccountPicker, initialNewUserAccounts, type UserAccount } from './staffAccounts';
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -17,6 +17,26 @@ const many = (count: number) =>
     id: index + 1,
     name: `Account ${index + 1}`,
   }));
+
+describe('initialNewUserAccounts (Add user)', () => {
+  const choices: UserAccount[] = [
+    { id: 1, name: 'Mit Objekten', has_locations: true },
+    { id: 2, name: 'Leer', has_locations: false },
+    { id: 3, name: 'Auch leer', has_locations: false },
+  ];
+
+  it("ticks a customer admin's accounts without a location", () => {
+    expect(initialNewUserAccounts(choices, true)).toEqual([2, 3]);
+  });
+
+  it('ticks their only account in any case - a new user needs one', () => {
+    expect(initialNewUserAccounts([choices[0]], true)).toEqual([1]);
+  });
+
+  it('leaves the choice to staff', () => {
+    expect(initialNewUserAccounts(choices, false)).toEqual([]);
+  });
+});
 
 describe('AccountPicker', () => {
   let container: HTMLDivElement;

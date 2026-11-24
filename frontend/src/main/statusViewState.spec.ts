@@ -23,9 +23,9 @@ const full: StatusViewState = {
 
 describe('the quick link', () => {
   it('opens the status page with every setting - and reads them back', () => {
-    const path = statusViewPath(12, full);
+    const path = statusViewPath({ id: 12, project_id: 4711 }, full);
 
-    expect(path.startsWith('/location/12/status?')).toBe(true);
+    expect(path.startsWith('/project/4711/status?')).toBe(true);
     const params = new URL(path, 'https://portal.progeo.com').searchParams;
     const { at, ...rest } = full;
     // `at` is read by the page itself (parseStatusAt).
@@ -34,7 +34,9 @@ describe('the quick link', () => {
   });
 
   it('is the plain status page without a view', () => {
-    expect(statusViewPath(12, null)).toBe('/location/12/status');
+    expect(statusViewPath({ id: 12, project_id: 4711 }, null)).toBe('/project/4711/status');
+    // Without its number (rows that carry none): the old link, which redirects.
+    expect(statusViewPath({ id: 12 }, null)).toBe('/location/12/status');
   });
 
   it('leaves out what is not valid', () => {

@@ -275,6 +275,21 @@ def test_objektleitung_by_email_creates_a_passwordless_customer_account(api_clie
     assert response.json()["access"]["objektleitung"] is True
 
 
+def test_objektleitung_by_email_starts_in_the_staff_members_language(api_client, setup):
+    from progeo.v1.models import UserProfile
+
+    _account, location, _admin = setup
+    email = f"{f.unique('objektleitung')}@progeo.com"
+    staff = f.make_user(staff=True)
+    UserProfile.objects.using(f.DB).create(user_id=staff.pk, language="en")
+    api_client.force_authenticate(user=staff)
+
+    assert _assign_by_email(api_client, location, email).status_code == 200
+
+    user = User.objects.using(f.DB).get(email=email)
+    assert UserProfile.objects.using(f.DB).get(user_id=user.pk).language == "en"
+
+
 def test_objektleitung_by_email_reuses_the_existing_account(api_client, setup):
     _account, location, _admin = setup
     existing = f.make_user(email=f"{f.unique('known')}@progeo.com")

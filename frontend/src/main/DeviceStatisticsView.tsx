@@ -46,6 +46,7 @@ import {
 import { repeatedTestId } from '../testIds';
 import './DeviceStatisticsView.css';
 import { announcePurgeableQa, type PurgeableQa } from './qaScoreboardData';
+import { locationPagePath } from './portalNav';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -306,8 +307,7 @@ const useNow = (intervalMs = 30_000) => {
 const deviceDetailUrl = (row: StatisticsDevice) =>
   `/device/overview${row.location_id != null ? `?location=${row.location_id}` : ''}`;
 
-const locationDetailUrl = (row: Pick<StatisticsLocation, 'id'>) =>
-  `/location/${row.id}/status`;
+const locationDetailUrl = (row: Pick<StatisticsLocation, 'id' | 'project_id'>) => locationPagePath(row);
 
 /** The shared device table (device, type, chip id, location, last measurement). */
 const DeviceList = ({
@@ -406,7 +406,7 @@ const DeviceList = ({
           />
           {row.location_id != null ? (
             <Link
-              to={locationDetailUrl({ id: row.location_id })}
+              to={locationDetailUrl({ id: row.location_id, project_id: null })}
               title={t('device_stats_open_location')}
               {...repeatedTestId(
                 'device-stats-device-location-link',

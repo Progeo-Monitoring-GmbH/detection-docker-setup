@@ -2,12 +2,12 @@
 {# Rechte tab: a new address was invited to an object (helper/location_invites.py, LINK_TEMPLATES). `action_url` is secret. #}
 {# Several objects at once ("Assign to user", overview): `locations` lists them. #}
 {% block subject %}Einladung zum ProGeo-Portal: {% if locations %}{{ locations|length }} Objekte{% else %}{{ location_name }}{% endif %}{% endblock %}
-{% block preheader %}Ihr persönlicher Anmeldelink, {{ valid_hours }} Stunden gültig{% endblock %}
+{% block preheader %}Passwort festlegen und anmelden - der Link ist {{ valid_hours }} Stunden gültig{% endblock %}
 {% block content %}
 <h1 style="margin:0 0 12px; font-size:20px;">Willkommen im ProGeo-Portal</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
-<p style="margin:0 0 4px;">{% if locations %}{{ inviter_name }} hat Sie zu {{ locations|length }} Objekten im ProGeo-Monitoring-Portal eingeladen.{% else %}{{ inviter_name }} hat Sie zum Objekt <strong>{{ location_name }}</strong> im ProGeo-Monitoring-Portal eingeladen.{% endif %} Für Sie wurde ein Zugang eingerichtet (Anmeldung mit: <strong>{{ username }}</strong>). Mit dem folgenden Link melden Sie sich einmalig an und können danach im Profil ein Passwort festlegen; der Link ist {{ valid_hours }} Stunden gültig.</p>
+<p style="margin:0 0 4px;">{% if locations %}{{ inviter_name }} hat Sie zu {{ locations|length }} Objekten im ProGeo-Monitoring-Portal eingeladen.{% else %}{{ inviter_name }} hat Sie zum Objekt <strong>{{ location_name }}</strong> im ProGeo-Monitoring-Portal eingeladen.{% endif %} Für Sie wurde ein Zugang eingerichtet (Anmeldung mit: <strong>{{ username }}</strong>). Mit dem folgenden Link legen Sie zuerst Ihr Passwort fest und sind danach angemeldet; der Link ist {{ valid_hours }} Stunden gültig.</p>
 {% if locations %}<ul style="margin:8px 0 4px; padding-left:20px;">{% for item in locations %}<li><a href="{{ item.url }}" style="color:#094b81;">{{ item.name }}</a></li>{% endfor %}</ul>{% endif %}
 {% include "emails/_button.html" with url=action_url label="Einladung annehmen" %}
-<p style="margin:0; font-size:12px; color:#6E6868;">Später können Sie sich jederzeit über „Anmeldelink per E-Mail erhalten" auf der Anmeldeseite einen neuen Link schicken lassen. Falls Sie diese Einladung nicht erwartet haben, können Sie die E-Mail ignorieren.</p>
+<p style="margin:0; font-size:12px; color:#6E6868;">Danach melden Sie sich mit Ihrem Passwort an - oder lassen sich über „Anmeldelink per E-Mail erhalten" auf der Anmeldeseite einen Link schicken. Falls Sie diese Einladung nicht erwartet haben, können Sie die E-Mail ignorieren.</p>
 {% endblock %}

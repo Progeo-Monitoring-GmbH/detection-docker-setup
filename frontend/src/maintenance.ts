@@ -7,8 +7,9 @@ import { createListeners } from './listeners';
  * the app is open, so it can show the "Wartungsarbeiten" screen instead of
  * failing requests (nginx only shows its own page on a full page load,
  * docker/nginx/snippets/maintenance.conf). Signals: nginx's 503 maintenance
- * answer, requests or WebSockets without any answer, and a heartbeat while
- * the tab is visible. Once the backend answers again the page reloads - the
+ * answer (at once), requests or WebSockets without any answer, and a
+ * heartbeat while the tab is visible (both confirmed by two failed probes).
+ * Once the backend answers again the page reloads - the
  * frontend may have been updated meanwhile.
  */
 
@@ -16,6 +17,10 @@ import { createListeners } from './listeners';
 const HEALTH_PATH = '/api/health/';
 export const HEARTBEAT_MS = 30_000;
 export const RETRY_MS = 5_000;
+// A failed probe is confirmed by a second one this much later: one alone is
+// often only a network blip (Wi-Fi switch, laptop waking up) - and the
+// maintenance screen unmounts the app, losing unsaved input.
+export const CONFIRM_MS = 5_000;
 // A backend that is busy but there still counts as there - only "no
 // connection" means gone (nginx then answers 503 at once).
 const PROBE_TIMEOUT_MS = 10_000;
@@ -58,19 +63,33 @@ export async function backendReachable(): Promise<boolean> {
   }
 }
 
-/** Probes the backend (one probe at a time) and switches to maintenance
- * when it doesn't answer. Offline browsers are no maintenance. */
+const isOffline = () =>
+  typeof navigator !== 'undefined' && navigator.onLine === false;
+
+/** Two probes CONFIRM_MS apart - gone only if neither gets an answer. */
+async function backendGone(): Promise<boolean> {
+  if (await backendReachable()) {
+    return false;
+  }
+  await new Promise((resolve) => setTimeout(resolve, CONFIRM_MS));
+  // Went offline meanwhile: no maintenance either.
+  return !isOffline() && !(await backendReachable());
+}
+
+/** Probes the backend (one check at a time) and switches to maintenance
+ * when two probes in a row get no answer. Offline browsers are no
+ * maintenance. */
 export function checkBackend(): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+  if (isOffline()) {
     return Promise.resolve(true);
   }
   if (!probing) {
-    probing = backendReachable()
-      .then((reachable) => {
-        if (!reachable) {
+    probing = backendGone()
+      .then((gone) => {
+        if (gone) {
           setMaintenance(true);
         }
-        return reachable;
+        return !gone;
       })
       .finally(() => {
         probing = null;

@@ -20,6 +20,23 @@ def run_location_merge(job_id: str):
 
 
 @shared_task
+def push_site_measurement_to_airtable(measurement_pk: int):
+    """manuSensor: copies one site measurement to Airtable (helper/manusensor.py)
+    - queued when it is stored, so the app's answer never waits for Airtable."""
+    from progeo.helper.manusensor import push_to_airtable
+
+    return push_to_airtable(measurement_pk)
+
+
+@shared_task
+def push_pending_site_measurements():
+    """manuSensor: the site measurements whose Airtable copy failed or got lost, again."""
+    from progeo.helper.manusensor import push_pending_to_airtable
+
+    return push_pending_to_airtable()
+
+
+@shared_task
 def download_device_config(device_ip: str, path: str | None = None):
     """Download the device config file from a private IPv4 device."""
     import logging

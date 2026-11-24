@@ -174,7 +174,8 @@ def test_new_alarm_mails_each_alarm_subscriber_separately(site):
     assert originals == ["a@progeo.com", "b@progeo.com"]
     message = FakeSMTP.parsed()[0]
     assert "Alarm — Objekt 4711 · Halle Nord" in message["Subject"]
-    assert f"https://dashboard.progeo.com/location/{location.pk}/status" in message.get_body(("plain",)).get_content()
+    # The portal by project number (pks are only unique per account database).
+    assert "https://dashboard.progeo.com/project/4711/status" in message.get_body(("plain",)).get_content()
 
 
 def test_alarm_sms_goes_through_the_dry_run(site):

@@ -20,6 +20,8 @@ type LabeledInputProps = {
   testId?: string;
   /** Muted, not uppercased, after the label - e.g. "(optional)". */
   labelSuffix?: string;
+  /** The longest value the backend stores. */
+  maxLength?: number;
 };
 
 /** Uppercase small label above a soft-surface input, as used on the Objekt/Einstellungen panels. */
@@ -33,6 +35,7 @@ const LabeledInput = ({
   autoComplete = NO_AUTOFILL,
   testId,
   labelSuffix,
+  maxLength,
 }: LabeledInputProps) => {
   const labelId = useId();
   // Firefox ignores autocomplete for address capture and recognises the
@@ -52,6 +55,7 @@ const LabeledInput = ({
         value={value}
         readOnly={readOnly}
         title={title}
+        maxLength={maxLength}
         autoComplete={autoComplete}
         aria-labelledby={noAutofill ? labelId : undefined}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value)}

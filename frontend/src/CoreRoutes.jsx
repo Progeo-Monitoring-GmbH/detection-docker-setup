@@ -12,11 +12,11 @@ const guard = (path, element) => (
   <RequireAccess rule={routeRule(path)}>{element}</RequireAccess>
 );
 
-// The old tab-based /location/:id/detail/ route is replaced by
-// /location/:id/status - redirect any stray bookmarks/links there.
+// The old tab-based detail/ route is replaced by status - redirect any
+// stray bookmarks/links there.
 const RedirectToStatus = () => {
-  const { id } = useParams();
-  return <Navigate to={`/location/${id}/status`} replace />;
+  const { projectId, id } = useParams();
+  return <Navigate to={projectId ? `/project/${projectId}/status` : `/location/${id}/status`} replace />;
 };
 
 const AppLayout = React.lazy(() => import('./main/AppLayout.tsx'));
@@ -30,6 +30,7 @@ const NotificationLinkPage = React.lazy(
   () => import('./main/NotificationLinkPage.tsx'),
 );
 const MigrationSetup = React.lazy(() => import('./main/MigrationSetup.tsx'));
+const InviteSetup = React.lazy(() => import('./main/InviteSetup.tsx'));
 const PasswordResetRequest = React.lazy(
   () => import('./main/PasswordResetRequest.tsx'),
 );
@@ -150,6 +151,8 @@ const CoreRoutes = () => {
       <Route path="/notification/:token" element={<NotificationLinkPage />} />
       {/* Migration info mail: set the first password, then signed in. */}
       <Route path="/account/setup/:token" element={<MigrationSetup />} />
+      {/* Invitation: set the password first - only that signs in. */}
+      <Route path="/account/invite/:token" element={<InviteSetup />} />
       {/* Password reset by mail link + 2FA code; set on click, not on load. */}
       <Route path="/forgot-password" element={<PasswordResetRequest />} />
       <Route path="/password/reset/:token" element={<PasswordResetConfirm />} />
@@ -179,9 +182,22 @@ const CoreRoutes = () => {
             path="/location/overview/"
             element={guard('/location/overview/', <LocationsOverview />)}
           />
+          {/* By project number (its main location) and by pk (any location -
+            a main one is forwarded to its number, LocationPortalLayout). */}
           {PORTAL_NAV_ITEMS.map((item) => (
             <Route
               key={item.key}
+              path={`/project/:projectId/${item.segment}`}
+              element={
+                <GuardedPortalPage item={item}>
+                  {React.createElement(PORTAL_NAV_COMPONENTS[item.key])}
+                </GuardedPortalPage>
+              }
+            />
+          ))}
+          {PORTAL_NAV_ITEMS.map((item) => (
+            <Route
+              key={`pk-${item.key}`}
               path={`/location/:id/${item.segment}`}
               element={
                 <GuardedPortalPage item={item}>
@@ -190,6 +206,10 @@ const CoreRoutes = () => {
               }
             />
           ))}
+          <Route
+            path="/project/:projectId/detail/"
+            element={<RedirectToStatus />}
+          />
           <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
         </Route>
 
@@ -239,7 +259,7 @@ const CoreRoutes = () => {
             path="/alarms/report/"
             element={guard('/alarms/report/', <AlarmReportView />)}
           />
-          {/* Retired: device config moved to /location/:id/settings. */}
+          {/* Retired: device config moved to /project/:projectId/settings. */}
           <Route
             path="/device/:id/update/"
             element={guard('/device/:id/update/', <DeviceSettingsRedirect />)}

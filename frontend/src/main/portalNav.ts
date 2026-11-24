@@ -63,45 +63,87 @@ export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
   },
 ];
 
-export const portalNavPath = (item: PortalNavItem, id: string | number) =>
-  `/location/${id}/${item.segment}`;
+/**
+ * The portal of a location lives under its project number -
+ * /project/<project_id>/<segment> opens the project's main location
+ * (backend helper/project_portal.py). Numbers aren't unique: every other
+ * location - a duplicate, one without a number - keeps its pk URL
+ * /location/<pk>/<segment>; the portal opens both and forwards a pk URL of a
+ * main location to its number (LocationPortalLayout).
+ */
+export const projectPath = (projectId: string | number, segment = 'status', search = '') =>
+  `/project/${projectId}/${segment}${search ? `?${search.replace(/^\?/, '')}` : ''}`;
 
-/** The portal tab of a location page (`/location/<id>/<segment>/...`), else null. */
+/** A location as the links need it: pk, number and - known by its detail
+ * answer only - whether its number opens it (project_main). */
+export type PortalLocation = {
+  id?: number | null;
+  project_id?: number | null;
+  project_main?: boolean | null;
+};
+
+/** A location's page: by its project number, by pk where the number doesn't
+ * open it (project_main false) or it has none. */
+export const locationPagePath = (location: PortalLocation, segment = 'status', search = '') =>
+  location.project_id != null && location.project_main !== false
+    ? projectPath(location.project_id, segment, search)
+    : `/location/${location.id}/${segment}${search ? `?${search.replace(/^\?/, '')}` : ''}`;
+
+export const portalNavPath = (item: PortalNavItem, projectId: string | number) =>
+  projectPath(projectId, item.segment);
+
+/** /project/<nr>/<segment> or /location/<pk>/<segment>. */
+const PORTAL_PAGE = /^\/(project|location)\/(\d+)\/([^/?#]+)/;
+
+/** The portal tab of a location page (`/project/<nr>/<segment>`, `/location/<pk>/<segment>`), else null. */
 export const portalTabOf = (pathname: string): PortalNavItem | null => {
-  const segment = /^\/location\/\d+\/([^/?#]+)/.exec(pathname)?.[1];
+  const segment = PORTAL_PAGE.exec(pathname)?.[3];
   return PORTAL_NAV_ITEMS.find((item) => item.segment === segment) ?? null;
 };
 
-/** Location pages besides the portal tabs (CoreRoutes: /location/:id/<segment>). */
+/** Location pages besides the portal tabs (CoreRoutes). */
 const LOCATION_PAGE_SEGMENTS = new Set([
   ...PORTAL_NAV_ITEMS.map((item) => item.segment),
   'heatplot',
   'alarms',
 ]);
 
-/** The location the page shows: /location/<id>/... or ?location=<id>; else null. */
-export const openLocationId = (pathname: string, search = ''): number | null => {
-  const id = Number(
-    /^\/location\/(\d+)\//.exec(pathname)?.[1] ?? new URLSearchParams(search).get('location'),
-  );
-  return Number.isInteger(id) && id > 0 ? id : null;
+const positive = (value: string | null | undefined) => {
+  const number = Number(value);
+  return value && Number.isInteger(number) && number > 0 ? number : null;
+};
+
+/** The project number of the portal page open: /project/<project_id>/...; else null. */
+export const openProjectId = (pathname: string): number | null =>
+  positive(/^\/project\/(\d+)\//.exec(pathname)?.[1]);
+
+/** The location (pk) the page shows: /location/<pk>/... or ?location=<pk>; else null. */
+export const openLocationId = (pathname: string, search = ''): number | null =>
+  positive(/^\/location\/(\d+)\//.exec(pathname)?.[1] ?? new URLSearchParams(search).get('location'));
+
+/** Whether `location` is the one the page shows (/project/<nr>/ by number, else by pk). */
+export const isOpenLocation = (location: PortalLocation, pathname: string, search = '') => {
+  const projectId = openProjectId(pathname);
+  return projectId != null
+    ? location.project_id === projectId
+    : location.id != null && location.id === openLocationId(pathname, search);
 };
 
 /**
- * Where a switch to location `id` leads (favorites bar): the open page with
- * the other location - /location/12/object -> /location/7/object,
- * /checklist/location/?location=12 -> ?location=7 - so staff move between
- * locations without leaving the page. Anywhere else the status page (every
- * user may open it). Deeper paths and other parameters are dropped: they
- * belong to the open location (a plan, a sensor).
+ * Where a switch to `location` leads (favorites bar): the open page with the
+ * other location - /project/12/object -> /project/7/object,
+ * /checklist/location/?location=12 -> ?location=7 (pks) - so staff move
+ * between locations without leaving the page. Anywhere else the status page
+ * (every user may open it). Deeper paths and other parameters are dropped:
+ * they belong to the open location (a plan, a sensor).
  */
-export const switchLocationPath = (pathname: string, id: string | number, search = '') => {
-  const segment = /^\/location\/\d+\/([^/?#]+)/.exec(pathname)?.[1];
+export const switchLocationPath = (pathname: string, location: PortalLocation, search = '') => {
+  const segment = PORTAL_PAGE.exec(pathname)?.[3];
   if (segment && LOCATION_PAGE_SEGMENTS.has(segment)) {
-    return `/location/${id}/${segment}`;
+    return locationPagePath(location, segment);
   }
   if (new URLSearchParams(search).has('location')) {
-    return `${pathname}?location=${id}`;
+    return `${pathname}?location=${location.id}`;
   }
-  return `/location/${id}/status`;
+  return locationPagePath(location);
 };

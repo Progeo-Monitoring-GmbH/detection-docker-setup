@@ -62,6 +62,28 @@ export const onTokensRefreshed = (listener: TokenListener) => listeners.subscrib
 
 const notify = listeners.notify;
 
+/**
+ * Who a token logs in - the same for every renewed token of that user, so
+ * what is loaded once per login (permissions, favorites) survives a renewal
+ * (every ~55 min) and is loaded again for another user. From the token
+ * itself, not auth.user: that one is decoded a render later. '' without a
+ * token; a token that is no JWT stands for itself.
+ */
+export const tokenUserKey = (token: string | null | undefined) => {
+  if (!token) {
+    return '';
+  }
+  try {
+    const userId = jwtDecode<{ user_id?: unknown }>(token).user_id;
+    if (userId != null) {
+      return `user:${String(userId)}`;
+    }
+  } catch {
+    // Not a JWT.
+  }
+  return `token:${token}`;
+};
+
 /** Whether an access token is close enough to expiry to renew it early. */
 export const shouldRefreshAccessToken = (
   token: string,

@@ -348,13 +348,18 @@ class LocationSerializer(ProgeoBaseSerializer):
     measurement_count = serializers.IntegerField(read_only=True)
     lageplans = serializers.SerializerMethodField("get_lageplans")
     child_location_ids = serializers.SerializerMethodField("get_child_location_ids")
+    # Only the detail view knows it (LocationViewSet.retrieve): whether
+    # /project/<project_id>/ opens this location - else the portal keeps the
+    # pk URL. None in lists.
+    project_main = serializers.SerializerMethodField("get_project_main")
 
     class Meta:
         model = ProgeoLocation
         # The readiness checklist is staff-only: /v1/location/<pk>/readiness/.
         exclude = ("readiness_score", "readiness_checks", "readiness_at")
         # Staff only: /v1/notification-location/<pk>/toggle/ and /v1/location/<pk>/purgeable/.
-        read_only_fields = ("notifications_disabled", "purgeable")
+        # Staff and customer admins: /v1/location/<pk>/customer-project-nr/.
+        read_only_fields = ("notifications_disabled", "purgeable", "customer_project_nr")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -362,6 +367,18 @@ class LocationSerializer(ProgeoBaseSerializer):
         # per-location queries don't run (e.g. the locations overview table).
         if self.context.get("skip_lageplans"):
             self.fields.pop("lageplans", None)
+        # The customer's project number: staff and customer admins see it
+        # (written via /v1/location/<pk>/customer-project-nr/). Without a
+        # request in the context it is left out.
+        from progeo.helper.account_members import sees_customer_project_nr
+
+        request = self.context.get("request")
+        if not sees_customer_project_nr(getattr(request, "user", None)):
+            self.fields.pop("customer_project_nr", None)
+
+    @staticmethod
+    def get_project_main(obj):
+        return getattr(obj, "project_main", None)
 
     def update(self, instance, validated_data):
         # The project id is set when the location is created and names its

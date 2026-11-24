@@ -57,6 +57,7 @@ import {
   AccountLegend,
   accountLegend,
   AccountPicker,
+  initialNewUserAccounts,
   matchesAccountFilter,
   type UserAccount,
 } from './staffAccounts';
@@ -260,13 +261,11 @@ const UserFormModal = ({
     setIsStaff(Boolean(user?.is_staff));
     setIsActive(user ? Boolean(user.is_active) : true);
     setSendInvite(false);
-    // A customer admin's only account is preselected for a new user.
+    // A customer admin's new user: their accounts without a location (their only one).
     setSelectedAccounts(
       user
         ? (user.accounts ?? []).map((account) => account.id)
-        : customerAdmin && accountChoices.length === 1
-          ? [accountChoices[0].id]
-          : [],
+        : initialNewUserAccounts(accountChoices, customerAdmin),
     );
     setSelectedPerms(
       user

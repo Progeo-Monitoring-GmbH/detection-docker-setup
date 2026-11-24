@@ -30,7 +30,7 @@ import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { CUSTOMER_ADMIN, portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
-import { PORTAL_NAV_ITEMS, openLocationId, portalNavPath } from '../../main/portalNav';
+import { PORTAL_NAV_ITEMS, locationPagePath, openLocationId } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
 import { repeatedTestId } from '../../testIds';
 import SidebarShell from './SidebarShell';
@@ -63,7 +63,8 @@ export const selectedLocationParam = (
   if (param && /^\d+$/.test(param)) {
     return param;
   }
-  return locationId != null ? String(locationId) : null;
+  // NaN while the portal's location loads.
+  return locationId != null && Number.isFinite(locationId) ? String(locationId) : null;
 };
 
 /**
@@ -503,7 +504,8 @@ const LocationSidebar = ({
         <>
           {renderGroupLabel(location.name ?? '', false, collapsed)}
           {visibleItems.map((item) => {
-            const path = portalNavPath(item, locationId as number);
+            // /project/<project_id>/<segment> - the location is loaded here.
+            const path = locationPagePath(location, item.segment);
             return renderLink({
               key: item.key,
               to: path,

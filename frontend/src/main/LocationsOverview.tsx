@@ -23,7 +23,7 @@ import {
 import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
 import AirtableSyncButton from '../components/device/AirtableSyncButton';
 import AssignLocationsModal from './AssignLocationsModal';
-import { staffFlags } from './access';
+import { CUSTOMER_ADMIN, staffFlags, useAccess } from './access';
 import MergeProjectsModal from './MergeProjectsModal';
 import { mergeBlocker, type SelectedLocation } from './locationSelection';
 import { formatDate, formatRelativeTime } from './dateFormat';
@@ -48,6 +48,7 @@ import { overviewCacheKey, readOverviewCache, writeOverviewCache } from './overv
 import useIsMobile from '../components/ui/useIsMobile';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationsOverview.css';
+import { locationPagePath } from './portalNav';
 
 type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
 
@@ -58,6 +59,8 @@ type LocationRow = {
   address?: string | null;
   plz?: string | null;
   project_id?: number | null;
+  /** The customer's own project number - only staff and customer admins get it (searchable). */
+  customer_project_nr?: string | null;
   /** ProgeoLocation.PROJECT_TYPE_CHOICES - the product (smartex® dm, ...). */
   project_type?: number | null;
   measurement_count?: number;
@@ -510,6 +513,8 @@ const sortValueOf = (
   switch (columnId) {
     case 'project':
       return row.project_id ?? null;
+    case 'customer-project':
+      return (row.customer_project_nr || '').toLowerCase();
     case 'name':
       return (row.name || '').toLowerCase();
     case 'product':
@@ -536,10 +541,13 @@ const locationColumns = ({
   failedAlarms,
   flagsOf,
   mobile,
+  showCustomerProjectNr,
   t,
 }: {
   /** Phone width: name and the compact state column only (LocationMobileStateCell). */
   mobile: boolean;
+  /** Customer admins: the column of their own project numbers. */
+  showCustomerProjectNr: boolean;
   alarmSummary: Record<string, LocationAlarmSummary>;
   /** Rows whose details / alarm summary could not be loaded. */
   failedDetails: Set<number>;
@@ -557,6 +565,20 @@ const locationColumns = ({
     ),
     sortable: true,
     width: '90px',
+  },
+  {
+    id: 'customer-project',
+    name: t('locations_col_customer_project'),
+    selector: (row) => row.customer_project_nr || '',
+    cell: (row) =>
+      row.customer_project_nr ? (
+        <span className="location-list-num">{row.customer_project_nr}</span>
+      ) : (
+        <span className="location-list-muted">–</span>
+      ),
+    sortable: true,
+    width: '150px',
+    omit: !showCustomerProjectNr,
   },
   {
     id: 'name',
@@ -696,6 +718,8 @@ const LocationsOverview = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
+  // Customer admins get a column with the customer's own project numbers.
+  const showCustomerProjectNr = useAccess().can(CUSTOMER_ADMIN);
   // Backend: /v1/alarm/active/ requires module_measurements_enabled.
   const canListAlarms = hasPermission('module_measurements_enabled');
   // Checkboxes in the rows: "Assign to user" and "Merge projects" for the selection.
@@ -784,7 +808,7 @@ const LocationsOverview = () => {
   const forwardSingle = (list: LocationRow[]) => {
     if (!autoForwarded.current && list.length === 1 && list[0]?.id != null) {
       autoForwarded.current = true;
-      navigate(`/location/${list[0].id}/status`);
+      navigate(locationPagePath(list[0]));
     }
   };
 
@@ -927,11 +951,11 @@ const LocationsOverview = () => {
   }, [cacheKey, listLoaded, rows, alarmSummary]);
 
   const handleRowClick = (row: LocationRow) => {
-    navigate(`/location/${row.id}/status`);
+    navigate(locationPagePath(row));
   };
 
   const openAlarmRow = (row: ActiveAlarm) =>
-    navigate(`/location/${row.location.id}/alarms`);
+    navigate(locationPagePath(row.location, 'alarms'));
 
   const paginationOptions = {
     rowsPerPageText: t('locations_rows_per_page'),
@@ -1015,6 +1039,7 @@ const LocationsOverview = () => {
         failedAlarms,
         flagsOf,
         mobile,
+        showCustomerProjectNr,
         t,
       }),
     ],

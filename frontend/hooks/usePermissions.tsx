@@ -3,6 +3,7 @@ import axiosConfig from '../src/axiosConfig';
 import { AuthContextType, useAuth } from './CoreAuthProvider';
 import { isPendingUser } from '../src/main/pendingReview';
 import { onPermissionsChanged } from '../src/permissionVersion';
+import { tokenUserKey } from '../src/tokenRefresh';
 
 export type ModulePermissions = Record<string, boolean>;
 
@@ -142,11 +143,17 @@ onPermissionsChanged(() => {
 });
 
 /**
- * The token plus the view: as a normal user (viewAsUser) a superuser gets
+ * The user plus the view: as a normal user (viewAsUser) a superuser gets
  * a new user's default permissions plus the ones granted to it, not all.
+ * Not the token - a renewed access token (every ~55 min) is the same
+ * session; keying by it showed RequireAccess's spinner in place of the
+ * page, which lost everything typed into it. Changed permissions arrive
+ * via X-Permissions-Version.
  */
-const permissionCacheKey = (auth: AuthContextType, token: string) =>
-  token && auth?.viewAsUser ? `${token}|as_user` : token;
+const permissionCacheKey = (auth: AuthContextType, token: string) => {
+  const key = tokenUserKey(token);
+  return key && auth?.viewAsUser ? `${key}|as_user` : key;
+};
 
 const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
   const cacheKey = permissionCacheKey(auth, token);

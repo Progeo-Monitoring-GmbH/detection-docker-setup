@@ -92,6 +92,26 @@ def test_viewers_may_not_invite_even_with_the_notification_add_permission(api_cl
     assert not User.objects.using(f.DB).filter(email=email).exists()
 
 
+def test_a_customer_admin_invites_like_a_kundenadmin(api_client, world):
+    """module_customer_admin_enabled counts like module_locations_edit here -
+    the single permissions of the action are still needed."""
+    account, location, _admin = world
+    customer_admin = f.make_user(
+        perms=(*CUSTOMER, *NOTIF, "module_customer_admin_enabled", "module_user_invitable"), accounts=[account],
+    )
+    api_client.force_authenticate(user=customer_admin)
+
+    assert api_client.get(f"/v1/location/{location.pk}/access/").json()["can_invite"] is True
+    email = f"{f.unique('new')}@progeo.com"
+    assert _invite(api_client, location, email).json()["status"] == "invited"
+
+    without_invitable = f.make_user(perms=(*CUSTOMER, *NOTIF, "module_customer_admin_enabled"), accounts=[account])
+    api_client.force_authenticate(user=without_invitable)
+    response = _invite(api_client, location, f"{f.unique('new')}@progeo.com")
+    assert response.status_code == 403
+    assert response.json()["missing_permissions"] == ["module_user_invitable"]
+
+
 def test_inviting_needs_the_notification_add_permission(api_client, world):
     account, location, _admin = world
     editor = f.make_user(perms=(*CUSTOMER, "module_locations_edit"), accounts=[account])
@@ -205,7 +225,9 @@ def test_a_new_address_gets_an_account_and_an_invitation(api_client, world):
     assert link.purpose == LoginLink.Purpose.INVITE
     (mail,) = _mails_to(email)
     assert "Halle Nord" in mail["Subject"]
-    assert "/login/link/" in mail.get_body(preferencelist=("plain",)).get_content()
+    # The invitation sets the password first (/account/invite/, login_links.confirm_invite).
+    text = mail.get_body(preferencelist=("plain",)).get_content()
+    assert "/account/invite/" in text and "/login/link/" not in text
 
 
 def test_a_new_address_is_invited_in_the_location_language(api_client, world):

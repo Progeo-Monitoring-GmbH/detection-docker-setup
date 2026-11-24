@@ -339,7 +339,7 @@ def test_alarm_reaches_messenger_subscribers(site):
     [row] = SMS.objects.using(f.DB).filter(location=location)
     assert (row.channel, row.sent_to) == ("whatsapp", "+491602")
     assert row.message.startswith("ProGeo Alarm - Objekt 4711 Halle Nord\n")
-    assert f"/location/{location.pk}/status" in row.message
+    assert "/project/4711/status" in row.message
 
 
 def test_timeline_shows_messenger_messages():

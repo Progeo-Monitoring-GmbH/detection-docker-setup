@@ -660,6 +660,7 @@ i18n
           objekt_section_address: 'Address',
           objekt_section_contact: 'Contact',
           objekt_field_project_nr: 'Project no.',
+          objekt_field_customer_project_nr: 'Customer project no.',
           objekt_field_project_name: 'Project name',
           objekt_field_project_type: 'Product',
           objekt_field_device_count: 'Number of measuring units',
@@ -765,6 +766,14 @@ i18n
           migration_setup_invalid:
             'This link is invalid, expired or has already been used. Request a login link by email instead - or contact us.',
           migration_setup_error: 'That did not work. Please try again later.',
+          invite_setup_title: 'Accept your invitation',
+          invite_setup_intro:
+            'Welcome to the ProGeo portal, {{name}}! First choose your password - you are signed in right away.',
+          invite_setup_password: 'Your password',
+          invite_setup_submit: 'Save password and sign in',
+          invite_setup_invalid:
+            'This invitation is invalid, expired or has already been used. If you already set your password, sign in with it - or request a login link by email.',
+          invite_setup_error: 'That did not work. Please try again later.',
           access_verify_password_invalid: 'This password is not allowed.',
           access_verify_error: 'The confirmation failed. Please try again.',
           pending_title: 'Your access is being reviewed',
@@ -2504,6 +2513,7 @@ i18n
           locations_rows_per_page: 'Rows per page:',
           locations_range_separator: 'of',
           locations_col_project: 'Project no.',
+          locations_col_customer_project: 'Customer project no.',
           locations_col_name: 'Name',
           locations_col_city: 'City',
           locations_col_address: 'Address',
@@ -3996,6 +4006,7 @@ i18n
           objekt_section_address: 'Adresse',
           objekt_section_contact: 'Ansprechpartner',
           objekt_field_project_nr: 'Projekt-Nr.',
+          objekt_field_customer_project_nr: 'Kunden-Projekt-Nr.',
           objekt_field_project_name: 'Projekt-Name',
           objekt_field_project_type: 'Produkt',
           objekt_field_device_count: 'Anzahl Messeinheiten',
@@ -4105,6 +4116,15 @@ i18n
           migration_setup_invalid:
             'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet. Fordern Sie stattdessen einen Anmeldelink per E-Mail an - oder sprechen Sie uns an.',
           migration_setup_error:
+            'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
+          invite_setup_title: 'Einladung annehmen',
+          invite_setup_intro:
+            'Willkommen im ProGeo-Portal, {{name}}! Legen Sie zuerst Ihr Passwort fest - danach sind Sie direkt angemeldet.',
+          invite_setup_password: 'Ihr Passwort',
+          invite_setup_submit: 'Passwort speichern und anmelden',
+          invite_setup_invalid:
+            'Diese Einladung ist ungültig, abgelaufen oder wurde bereits verwendet. Haben Sie Ihr Passwort schon festgelegt, melden Sie sich damit an - oder fordern Sie einen Anmeldelink per E-Mail an.',
+          invite_setup_error:
             'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
           access_verify_password_invalid: 'Dieses Passwort ist nicht zulässig.',
           access_verify_error:
@@ -5905,6 +5925,7 @@ i18n
           locations_rows_per_page: 'Zeilen pro Seite:',
           locations_range_separator: 'von',
           locations_col_project: 'Projekt-Nr.',
+          locations_col_customer_project: 'Kunden-Projekt-Nr.',
           locations_col_name: 'Name',
           locations_col_city: 'Ort',
           locations_col_address: 'Adresse',
