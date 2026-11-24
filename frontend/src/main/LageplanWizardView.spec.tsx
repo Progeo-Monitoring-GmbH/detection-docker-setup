@@ -6,13 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// smartex dm (1) unless a test picks another product.
 const LOCATION = { id: 7, project_id: 7078, name: 'Halle 7', project_type: 1 };
 
 vi.mock('../axiosConfig', () => ({
   default: {
     perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void) => {
       if (url === '/v1/location/min/') {
-        ok({ data: [LOCATION] });
+        ok({ data: [{ ...LOCATION, project_type: product.type }] });
       } else if (url.startsWith('/v1/status/measure_points/')) {
         ok({ data: { points: [], devices: [], lageplans: [] } });
       }
@@ -21,6 +22,7 @@ vi.mock('../axiosConfig', () => ({
     perform_post: () => Promise.resolve(),
   },
 }));
+const product = vi.hoisted(() => ({ type: 1 }));
 // Stable objects, as the real hooks give: the wizard reloads when `auth` changes.
 const hooks = vi.hoisted(() => ({
   auth: { user: { is_staff: true } },
@@ -41,6 +43,8 @@ vi.mock('../components/form/CadUploadDropbox.tsx', () => ({
 }));
 vi.mock('../components/form/RedDropbox.tsx', () => ({ default: () => null }));
 vi.mock('./LageplanKlemmliste', () => ({ default: () => null }));
+vi.mock('./LageplanAutoRepair', () => ({ default: () => null }));
+vi.mock('./DmTransferStep', () => ({ default: () => null }));
 
 const { default: LageplanWizardView } = await import('./LageplanWizardView');
 
@@ -58,6 +62,7 @@ const UrlProbe = () => {
 };
 
 beforeEach(() => {
+  product.type = 1;
   vi.useFakeTimers();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -145,5 +150,24 @@ describe('LageplanWizardView points import', () => {
     act(() => confirmUpload([new File(['0 0'], 'plan.dxf')], send, cancel));
     act(() => byTestId('lageplan-wizard-import-dialog-confirm')!.click());
     expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LageplanWizardView step 6 by product', () => {
+  it('offers smartex dm the dm-Transfer, not the Auto-Repair', async () => {
+    await render('/site-plan/wizard/?location=7');
+
+    expect(container.querySelector('#wizard-dm-transfer')).not.toBeNull();
+    expect(container.querySelector('#wizard-auto-repair')).toBeNull();
+  });
+
+  it('offers point sensors (mx-PEEL) the Auto-Repair, not the dm-Transfer', async () => {
+    product.type = 7;
+    await render('/site-plan/wizard/?location=7');
+
+    const step = container.querySelector('#wizard-auto-repair')!;
+    expect(step).not.toBeNull();
+    expect(step.getAttribute('data-testid')).toBe('lageplan-wizard-step-6');
+    expect(container.querySelector('#wizard-dm-transfer')).toBeNull();
   });
 });

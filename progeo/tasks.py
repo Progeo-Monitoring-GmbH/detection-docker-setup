@@ -719,6 +719,17 @@ def auto_heat_limitations_task(db_name: str, lageplan_id: int):
     return {"status": result.status if result else "missing", "areas": len(result.areas) if result else 0}
 
 
+@shared_task(time_limit=10 * 60, soft_time_limit=9 * 60)
+def auto_repair_task(db_name: str, lageplan_id: int):
+    """Read an uploaded mx-PEEL plan's MPLE lines and put its measure points on
+    the sensor marks in their order - left for the wizard's review when a line
+    has no readable number (helper/auto_repair.py)."""
+    from progeo.helper.auto_repair import run_for_plan
+
+    outcome = run_for_plan(db_name, lageplan_id)
+    return {"state": outcome.get("state"), "placed": outcome.get("placed")}
+
+
 @shared_task
 def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
     """Open/extend the alarm case of a new alarm and send its first stage

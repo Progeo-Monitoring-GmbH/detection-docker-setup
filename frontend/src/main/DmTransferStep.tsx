@@ -71,7 +71,7 @@ const requestReason = (requestError: unknown) =>
   (requestError as Error).message;
 
 /** The plan image - media needs the Authorization header, so it is fetched as blob. */
-const usePlanImage = (url: string | null | undefined) => {
+export const usePlanImage = (url: string | null | undefined) => {
   const auth = useAuth();
   const authRef = useRef(auth);
   useEffect(() => {

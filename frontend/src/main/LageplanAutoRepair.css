@@ -1,0 +1,257 @@
+/* "Auto-Repair" in step 5 of the Lageplan wizard (LageplanAutoRepair.tsx):
+   the MPLE lines over the plan, their table and the actions. */
+
+.auto-repair {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.auto-repair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+/* The Auto-Repair running in the background after an mx-PEEL upload. */
+.lageplan-notice.auto-repair-background {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bs-info-bg-subtle);
+  color: var(--bs-info-text-emphasis);
+}
+
+.auto-repair-muted {
+  color: var(--bs-secondary-color);
+  font-size: 13px;
+}
+
+.auto-repair-problem {
+  color: var(--bs-danger-text-emphasis);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.auto-repair-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 14px;
+}
+
+.auto-repair-summary--warn {
+  color: var(--bs-danger-text-emphasis);
+}
+
+/* Plan overview left, the table right - stacked on narrow screens. */
+.auto-repair-body {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .auto-repair-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.auto-repair-table {
+  min-width: 0;
+}
+
+.auto-repair-number {
+  font-weight: 700;
+}
+
+.auto-repair-number--open {
+  color: var(--bs-danger-text-emphasis);
+  font-weight: 500;
+  font-style: italic;
+}
+
+/* The free numbers as badges: click a line, then its badge. */
+.auto-repair-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  font-size: 13px;
+}
+
+.auto-repair-badges-head,
+.auto-repair-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.auto-repair-badge {
+  padding: 3px 11px;
+  border: 1px solid var(--progeo-blue);
+  border-radius: 999px;
+  background: var(--progeo-white);
+  color: var(--progeo-blue);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.auto-repair-badge:hover:not(:disabled) {
+  background: var(--progeo-blue);
+  color: var(--progeo-white);
+}
+
+.auto-repair-badge:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.auto-repair-badge-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.auto-repair-badge-new .form-control {
+  width: 110px;
+}
+
+.auto-repair-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-repair-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.auto-repair-status--read {
+  color: var(--bs-success-text-emphasis);
+  background: var(--bs-success-bg-subtle);
+}
+
+.auto-repair-status--inferred {
+  color: var(--bs-warning-text-emphasis);
+  background: var(--bs-warning-bg-subtle);
+}
+
+.auto-repair-status--unreadable {
+  color: var(--bs-danger-text-emphasis);
+  background: var(--bs-danger-bg-subtle);
+}
+
+.auto-repair-warnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--bs-warning-text-emphasis);
+  font-size: 13px;
+}
+
+/* The plan with the lines drawn over it - one SVG (image and lines), zoomed
+   and moved through its viewBox (usePlanViewBox); the zoom buttons and the
+   wheel hint sit in its corner. Its aspect-ratio is the plan's (inline). */
+.auto-repair-overview {
+  position: relative;
+  width: 100%;
+  max-height: 75vh;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--bs-border-color-translucent);
+}
+
+.auto-repair-overview--loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auto-repair-overview-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.auto-repair-overview-svg--grab {
+  cursor: grab;
+}
+
+.auto-repair-overview-svg--grabbing {
+  cursor: grabbing;
+}
+
+.auto-repair-line line {
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+/* Size and outline width come with the zoom (inline). */
+.auto-repair-line text {
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #fff;
+}
+
+.auto-repair-line--read line,
+.auto-repair-line--read circle {
+  stroke: #2f9e44;
+  fill: #2f9e44;
+}
+
+.auto-repair-line--read text {
+  fill: #1b6b2d;
+}
+
+.auto-repair-line--inferred line,
+.auto-repair-line--inferred circle {
+  stroke: #e8a317;
+  fill: #e8a317;
+}
+
+.auto-repair-line--inferred text {
+  fill: #8a5a00;
+}
+
+.auto-repair-line--unreadable line,
+.auto-repair-line--unreadable circle {
+  stroke: #dc2626;
+  fill: #dc2626;
+}
+
+.auto-repair-line--unreadable text {
+  fill: #b91c1c;
+}
+
+.auto-repair-line--highlighted line {
+  stroke-width: 9;
+  opacity: 1;
+}
+
+/* The line the next badge numbers. */
+.auto-repair-line--selected line {
+  stroke: var(--progeo-blue);
+  stroke-width: 10;
+  opacity: 1;
+}
+
+.auto-repair-line--selected circle {
+  stroke: var(--progeo-blue);
+  fill: var(--progeo-blue);
+}

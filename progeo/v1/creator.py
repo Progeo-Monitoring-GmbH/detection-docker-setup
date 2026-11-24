@@ -122,12 +122,15 @@ def create_progeo_measure_point_safe(location: ProgeoLocation, sensor_order: int
 
 
 def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original_name: str,
-						 db: str = "default") -> ProgeoLageplan:
+						 db: str = "default", auto_repair: bool = True) -> ProgeoLageplan:
 	"""Store a lageplan file for a location as a new ProgeoLageplan row.
 
 	``source`` is either raw bytes or a Django uploaded file. The file lands in
 	UPLOAD_DIR/lageplan/ and ProgeoLageplan.lageplan.name is stored relative to
 	UPLOAD_DIR (see parse_lageplan_labels.py for why that convention matters).
+	An mx-PEEL location's plan is read in the background: its sensor marks
+	become the measure points (helper/auto_repair.py) - not for `auto_repair`
+	False (bulk downloads of old plans).
 	"""
 	save_check_dir(settings.UPLOAD_DIR, "lageplan")
 	suffix = os.path.splitext(original_name)[1] or ".png"
@@ -150,6 +153,9 @@ def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original
 	# at the building outlines (helper/auto_heat_limits.py).
 	from progeo.helper.auto_heat_limits import schedule_auto_heat_limitations
 	schedule_auto_heat_limitations(db, plan.pk)
+	if auto_repair:
+		from progeo.helper.auto_repair import schedule_auto_repair
+		schedule_auto_repair(location, db, plan.pk)
 	return plan
 
 

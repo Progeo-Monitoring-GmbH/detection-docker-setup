@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import { staffFlags } from './access';
@@ -21,6 +22,7 @@ import {
 } from './LageplanWizardPointSteps';
 import {
   LageplanAlignStep,
+  LageplanAutoRepairStep,
   LageplanDmTransferStep,
   LageplanHeatLimitsStep,
   LageplanKlemmlisteStep,
@@ -38,6 +40,12 @@ import {
   usePointActions,
 } from './useLageplanWizardActions';
 import { useWizardTargetStep } from './useWizardTargetStep';
+import LageplanAutoRepair from './LageplanAutoRepair';
+import type { MeasurePoint } from './lageplanWizardUtils';
+
+/** The location's highest sensor number (0 without points). */
+const highestOrder = (points: MeasurePoint[]) =>
+  points.reduce((highest, point) => Math.max(highest, Number(point.sensor_order) || 0), 0);
 
 // -- the wizard ---------------------------------------------------------------
 // Its state and loading: useLageplanWizardState.ts; what the steps store:
@@ -78,6 +86,9 @@ const LageplanWizardView = () => {
   );
   const points = usePointActions(state, derived);
   const hasPlanImage = Boolean(sourceMeta?.imageUrl);
+  const lineSensors = planVisualization(selectedLocation?.project_type) === 'lines';
+  // Auto-Repair under review: the canvas shows the points on their new marks.
+  const [autoRepairPoints, setAutoRepairPoints] = useState<MeasurePoint[] | null>(null);
 
   if (!permissionsLoading && !canEditDevices) {
     return (
@@ -179,10 +190,8 @@ const LageplanWizardView = () => {
           sourceMeta={sourceMeta}
           locationId={selectedLocationId}
           planId={selectedPlanId}
-          lineSensors={
-            planVisualization(selectedLocation?.project_type) === 'lines'
-          }
-          planPoints={planPoints}
+          lineSensors={lineSensors}
+          planPoints={autoRepairPoints ?? planPoints}
           planSensors={planSensors}
           deviceLabels={derived.deviceLabels}
           devicePairStarts={derived.devicePairStarts}
@@ -196,14 +205,32 @@ const LageplanWizardView = () => {
           onDiscardCut={onDiscardCut}
           placement={points.canvasPlacement}
         />
-        <LageplanDmTransferStep
-          locationId={selectedLocationId}
-          planId={selectedPlanId}
-          plan={selectedPlan}
-          planPoints={planPoints}
-          canEdit={canEditDevices}
-          onStored={state.reload}
-        />
+        {/* Step 6 by product: the Auto-Repair for point sensors, the
+            dm-Transfer for smartex dm (its sensors are bands, step 6 finds their ends). */}
+        {lineSensors ? (
+          <LageplanDmTransferStep
+            locationId={selectedLocationId}
+            planId={selectedPlanId}
+            plan={selectedPlan}
+            planPoints={planPoints}
+            canEdit={canEditDevices}
+            onStored={state.reload}
+          />
+        ) : (
+          <LageplanAutoRepairStep number={6} hasPlanImage={hasPlanImage}>
+            <LageplanAutoRepair
+              key={selectedPlanId ?? 'none'}
+              locationId={selectedLocationId}
+              planId={selectedPlanId}
+              planUrl={selectedPlan?.url}
+              planPoints={planPoints}
+              highestOrder={highestOrder(measurePoints)}
+              canEdit={canEditDevices}
+              onPreview={setAutoRepairPoints}
+              onStored={state.reload}
+            />
+          </LageplanAutoRepairStep>
+        )}
         {staff && (
           <LageplanHeatLimitsStep
             plan={selectedPlan}

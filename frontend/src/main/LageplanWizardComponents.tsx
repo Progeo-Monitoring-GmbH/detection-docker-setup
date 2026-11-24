@@ -94,6 +94,7 @@ const STEP_HINTS: Record<WizardStep, string> = {
   plans: 'lageplan_wizard_hint_plans',
   points: 'lageplan_wizard_hint_points',
   align: 'lageplan_wizard_hint_align',
+  autoRepair: 'lageplan_wizard_hint_auto_repair',
   dmTransfer: 'lageplan_wizard_hint_dm_transfer',
   heatLimits: 'lageplan_wizard_hint_heat_limits',
   klemmliste: 'lageplan_wizard_hint_klemmliste',

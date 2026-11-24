@@ -1887,6 +1887,8 @@ i18n
             'Where the sensors lie: import their positions from CAD (DWG/DXF), JSON or TXT - or select a sensor and place it by hand on the plan in step 5.',
           lageplan_wizard_hint_align:
             'Move, scale and rotate the imported points until they lie right on the plan, and set the plan scale (metres per pixel).',
+          lageplan_wizard_hint_auto_repair:
+            'Reads the MPLE lines of the plan (orange, "MPLE n" at their start) and their sensor marks: the marks become the measure points, numbered line by line. Runs on its own after an mx-PEEL plan upload.',
           lageplan_wizard_hint_dm_transfer:
             'Only for smartex dm bands: finds the start and end of each band on the plan, so the sensors are drawn as lines instead of points.',
           lageplan_wizard_hint_heat_limits:
@@ -5275,6 +5277,8 @@ i18n
             'Wo die Sensoren liegen: Positionen aus CAD (DWG/DXF), JSON oder TXT importieren - oder einen Sensor wählen und in Schritt 5 von Hand auf den Plan setzen.',
           lageplan_wizard_hint_align:
             'Die importierten Punkte verschieben, skalieren und drehen, bis sie richtig auf dem Plan liegen, und den Maßstab (Meter pro Pixel) festlegen.',
+          lageplan_wizard_hint_auto_repair:
+            'Liest die MPLE-Leitungen des Plans (orange, „MPLE n" an ihrem Anfang) und ihre Sensormarken: Die Marken werden zu den Messpunkten, Leitung für Leitung nummeriert. Läuft nach dem Upload eines mx-PEEL-Plans von selbst.',
           lageplan_wizard_hint_dm_transfer:
             'Nur für smartex-dm-Bänder: sucht Anfang und Ende jedes Bandes auf dem Plan, damit die Sensoren als Linien statt als Punkte erscheinen.',
           lageplan_wizard_hint_heat_limits:

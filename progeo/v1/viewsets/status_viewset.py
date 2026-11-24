@@ -1130,12 +1130,14 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     def _dm_transfer_plan(self, request):
-        """(location, db_name, lageplan, image path, error) of a dm-Transfer request."""
-        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        """(location, db_name, lageplan, image path, error) of a dm-Transfer
+        request - its parameters in the body, for a GET in the query."""
+        params = request.query_params if request.method == "GET" else request.data
+        location, db_name, error = _measure_point_location(request, {"location_id": params.get("location_id")})
         if error:
             return None, None, None, None, error
         try:
-            lageplan_id = int(request.data.get("lageplan_id"))
+            lageplan_id = int(params.get("lageplan_id"))
         except (TypeError, ValueError):
             return None, None, None, None, RequestFailed({"reason": "lageplan_id required"})
         lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).first()
@@ -1178,6 +1180,96 @@ class StatusViewSet(ProgeoModalViewSet):
             counts[proposal["status"]] = counts.get(proposal["status"], 0) + 1
         ilog(f"dm-Transfer of Lageplan {lageplan.pk} (location {location.id}): {counts}")
         return RequestSuccess({"lageplan_id": lageplan.pk, "proposals": proposals, "counts": counts})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/auto_order", methods=["POST"])
+    def auto_order(self, request, *args, **kwargs):
+        """Auto-Repair of the sensor order (step 5 of the Lageplan wizard,
+        helper/plan_cables.py): POST {location_id (project id), lageplan_id}
+        reads the plan's cables - the orange lines, their "MPLE <n>" labels
+        (the label's end is the head) and the sensor marks on them - and
+        answers them in measure point coordinates under the plan's stored
+        alignment: {lageplan_id, cables: [{number, label, inferred,
+        confidence, head_known, line (head and end, shares of the image),
+        marks: [[nx, ny], ...] from the head}], marks, marks_off_cable,
+        labels, inferred, unlabelled,
+        missing_numbers, points (the plan's measure points)}. Nothing is
+        stored - measure_points/auto_order/apply puts the points on the marks
+        in the reviewed order."""
+        location, db_name, lageplan, _path, error = self._dm_transfer_plan(request)
+        if error:
+            return error
+        from progeo.helper import auto_repair, plan_cables, plan_ocr
+
+        lang = plan_ocr.ocr_languages()
+        try:
+            result = auto_repair.analyse(lageplan, lang)
+        except plan_cables.CableReadError as exc:
+            return RequestFailed({"reason": str(exc)})
+        result["points"] = cad_import.points_on_plan(location, db_name, lageplan).count()
+        result["ocr"] = bool(lang)
+        ilog(f"Auto-Repair of Lageplan {lageplan.pk} (location {location.id}): {len(result['cables'])} cables, "
+             f"{result['labels']} labels read, {result['inferred']} inferred, {result['marks']} marks, "
+             f"{result['points']} points")
+        return RequestSuccess({"lageplan_id": lageplan.pk, **result})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/auto_order/status", methods=["GET"])
+    def auto_order_status(self, request, *args, **kwargs):
+        """The Auto-Repair running in the background for an uploaded plan of an
+        mx-PEEL location (helper/auto_repair.py): GET ?location_id (project
+        id)&lageplan_id - {lageplan_id, state: null | queued | running | applied
+        | review | failed, message, at, placed ({moved, created, kept}), result
+        (the analysis, as measure_points/auto_order answers it)}."""
+        _location, db_name, lageplan, _path, error = self._dm_transfer_plan(request)
+        if error:
+            return error
+        from progeo.helper import auto_repair, plan_ocr
+
+        entry = auto_repair.status(db_name, lageplan.pk) or {"state": None}
+        result = entry.get("result")
+        if result is not None:
+            result = {**result, "ocr": bool(plan_ocr.ocr_languages())}
+        return RequestSuccess({"lageplan_id": lageplan.pk, **entry, "result": result})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/auto_order/apply", methods=["POST"])
+    def auto_order_apply(self, request, *args, **kwargs):
+        """Stores the Auto-Repair: POST {location_id (project id), lageplan_id,
+        marks: [[nx, ny], ...] in sensor order} - the plan's points, by their
+        number, onto the marks (the numbers with their readings, names and
+        devices stay, the dots move); marks beyond them get new points,
+        numbered after the location's highest. {moved, created, kept, points}."""
+        location, db_name, lageplan, _path, error = self._dm_transfer_plan(request)
+        if error:
+            return error
+        raw = request.data.get("marks")
+        if not isinstance(raw, list) or not raw:
+            return RequestFailed({"reason": "marks must be a non-empty list of [nx, ny]"})
+        marks = []
+        for index, mark in enumerate(raw):
+            try:
+                if not isinstance(mark, (list, tuple)) or len(mark) != 2 or any(isinstance(v, bool) for v in mark):
+                    raise TypeError
+                nx, ny = float(mark[0]), float(mark[1])
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": f"marks[{index}] must be [nx, ny]"})
+            if not all(math.isfinite(value) and abs(value) <= self.PLACE_LIMIT for value in (nx, ny)):
+                return RequestFailed({"reason": f"marks[{index}] lies far off the plan"})
+            marks.append((nx, ny))
+        from progeo.helper import auto_repair
+
+        placed = auto_repair.place_on_marks(location, db_name, lageplan, marks)
+        points = sorted(placed.pop("points"), key=lambda point: (point.sensor_order, point.pk))
+        return RequestSuccess({
+            "location_id": location.id,
+            "lageplan_id": lageplan.pk,
+            **placed,
+            "points": ProgeoMeasurePointSerializer(points, many=True).data,
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

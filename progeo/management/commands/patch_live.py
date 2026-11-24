@@ -1015,7 +1015,8 @@ class Command(BaseCommand):
                     dlog(f"Empty lageplan response for project {location.project_id}")
                     continue
 
-                save_lageplan_upload(location, content, f"{location.project_id}.png")
+                # A bulk download: no Auto-Repair moving the points of existing locations.
+                save_lageplan_upload(location, content, f"{location.project_id}.png", auto_repair=False)
                 dlog(f"Fetched lageplan for project {location.project_id}")
 
         if patch == "fix_unknown_location":

@@ -286,6 +286,7 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
 
 def lageplan_answer(lageplan) -> dict:
     """upload_png's answer for a stored Lageplan - also the result of a "lageplan" job."""
+    from progeo.helper.auto_repair import status as auto_repair_status
     from progeo.v1.serializers import ProgeoLageplanSerializer
 
     return {
@@ -295,6 +296,9 @@ def lageplan_answer(lageplan) -> dict:
         "lageplan_url": posixpath.join("media", "uploads", lageplan.lageplan.name),
         # The new plan as listed by measure_points ?with_lageplan=1.
         "lageplan": ProgeoLageplanSerializer(lageplan).data,
+        # An mx-PEEL plan's Auto-Repair runs in the background (helper/auto_repair.py):
+        # its state - measure_points/auto_order/status follows it.
+        "auto_repair": (auto_repair_status(lageplan._state.db or "default", lageplan.pk) or {}).get("state"),
     }
 
 

@@ -1,9 +1,9 @@
 /**
  * Steps 5-8 of the Lageplan wizard (LageplanWizardView.tsx): aligning the
- * points on the picked plan, the dm-Transfer, the heat limitations and the
- * Klemmliste.
+ * points on the picked plan, the Auto-Repair (point sensors) or the
+ * dm-Transfer (smartex dm), the heat limitations and the Klemmliste.
  */
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import type { AuthContextType } from '../../hooks/CoreAuthProvider';
 import ImageCanvasStage from '../components/ui/ImageCanvasStage.tsx';
 import HeatLimitationStage from '../components/device/HeatLimitationStage';
@@ -104,6 +104,29 @@ export const LageplanAlignStep = ({
         onDiscardCut={onDiscardCut}
         placement={placement}
       />
+    )}
+  </StepCard>
+);
+
+/** Step 6 (optional, point sensors): the Auto-Repair - the plan's sensor
+ * marks become its measure points, numbered along the MPLE lines. */
+export const LageplanAutoRepairStep = ({
+  number,
+  hasPlanImage,
+  children,
+}: {
+  number: number;
+  hasPlanImage: boolean;
+  /** LageplanAutoRepair. */
+  children: ReactNode;
+}) => (
+  <StepCard number={number} step="autoRepair" title="Auto-Repair (optional)">
+    {hasPlanImage ? (
+      children
+    ) : (
+      <Notice tone="warning" testId="lageplan-wizard-auto-repair-needs-plan">
+        Select or add a Lageplan in step 3 first.
+      </Notice>
     )}
   </StepCard>
 );

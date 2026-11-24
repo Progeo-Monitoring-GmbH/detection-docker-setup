@@ -9,6 +9,7 @@ export const WIZARD_ANCHORS = {
   plans: 'wizard-plans',
   points: 'wizard-points',
   align: 'wizard-align',
+  autoRepair: 'wizard-auto-repair',
   dmTransfer: 'wizard-dm-transfer',
   heatLimits: 'wizard-heat-limits',
   klemmliste: 'wizard-klemmliste',
