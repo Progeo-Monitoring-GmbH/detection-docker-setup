@@ -848,6 +848,15 @@ def send_password_reset_task(user_id: int, language: str | None = None):
 
 
 @shared_task
+def send_password_change_task(user_id: int, language: str | None = None):
+    """Mail the password change link a user asked for in Mein Konto (token
+    made inside the worker, helper/password_reset.py)."""
+    from progeo.helper.password_reset import send_change
+
+    return send_change(user_id, language=language)
+
+
+@shared_task
 def send_access_verification_task(access_request_id: int):
     """Double opt-in mail of an access request (token made inside the worker)."""
     from progeo.helper.access_requests import send_verification

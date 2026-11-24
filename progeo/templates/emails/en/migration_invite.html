@@ -6,7 +6,7 @@
 <h1 style="margin:0 0 12px; font-size:20px;">The ProGeo portal has moved</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
 <p style="margin:0 0 12px;">the ProGeo monitoring portal now runs on a new, modern platform. We have already transferred your objects - you will find the same projects there as before, with new views for status, analysis and notifications.</p>
-<p style="margin:0 0 4px;">Your account is set up (sign in with: <strong>{{ username }}</strong>). Your previous password is not valid on the new platform: choose a new password once with the following link - you are then signed in right away. The link is valid for {{ valid_days }} days.</p>
+<p style="margin:0 0 4px;">Your account is set up (sign in with your e-mail address: <strong>{{ login_email }}</strong>). Your previous password is not valid on the new platform: choose a new password once with the following link - you are then signed in right away. The link is valid for {{ valid_days }} days.</p>
 {% include "emails/_button.html" with url=action_url label="Choose password" %}
 <p style="margin:0 0 12px;">Our tip: after signing in, set up the ProGeo chat in your profile - then alarms and fault notifications reach your phone instantly.</p>
 <p style="margin:0; font-size:12px; color:#6E6868;">The link has expired? On the sign-in page you can always request a new link with "Get a login link by email". We are happy to answer questions about the move on {{ company.phone }}.</p>

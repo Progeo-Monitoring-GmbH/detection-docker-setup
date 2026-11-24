@@ -97,6 +97,7 @@ def test_refused_targets(api_client, superuser, make_target, reason):
     [
         "/v1/user/password/change/",
         "/v1/user/password/set/",
+        "/v1/user/password/link/",
         "/v1/user/2fa/setup/",
         "/v1/user/2fa/disable/",
         "/v1/user/settings/",

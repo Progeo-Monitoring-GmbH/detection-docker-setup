@@ -457,3 +457,25 @@ def test_failing_sms_log_does_not_break_the_send(esendex_api, monkeypatch):
     result = esendex.send_sms("+491", "x", cfg=ESENDEX)
 
     assert result["success"] is True
+
+
+# -- the sign-in address in the account mails ------------------------------------
+
+SIGN_IN_TEMPLATES = ("invite", "location_invite", "migration_invite", "password_change", "password_changed",
+                     "password_reset", "password_reset_unavailable")
+
+
+@pytest.mark.parametrize("language, wording", [("de", "Anmeldung mit Ihrer E-Mail-Adresse: erika@progeo.com"),
+                                               ("en", "sign in with your e-mail address: erika@progeo.com")])
+@pytest.mark.parametrize("template", SIGN_IN_TEMPLATES)
+def test_account_mails_name_the_email_address_to_sign_in_with(template, language, wording):
+    # Customers sign in with their e-mail address - never with the internal username.
+    context = {"first_name": "Erika", "login_email": "erika@progeo.com", "username": "erika.mustermann",
+               "inviter_name": "Max", "location_name": "Objekt 4711", "valid_minutes": 15, "valid_hours": 72,
+               "valid_days": 21}
+
+    rendered = emailhelper.render_mail(template, context, {"action_url": "https://dashboard.progeo.com/x"},
+                                       language=language)
+
+    assert wording in " ".join(rendered["text"].split())
+    assert "erika.mustermann" not in rendered["text"] and "erika.mustermann" not in rendered["html"]

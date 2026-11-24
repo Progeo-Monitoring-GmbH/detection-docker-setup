@@ -141,6 +141,13 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const canShowQrCode = hasPermission('module_profile_qr_code');
   // The demo user keeps nothing - no 2FA, password, request or deletion of its own.
   const isDemo = isDemoUser(auth.user);
+  // Normal users change the password with a link mailed to them
+  // (/v1/user/password/link/) instead of the current one - staff and
+  // superusers (also while viewing as a normal user) keep the form.
+  const passwordByMail = !isDemo && !auth.canViewAsUser;
+  const [linkSending, setLinkSending] = React.useState(false);
+  // The address the change link went to (shown until the drawer closes).
+  const [linkSentTo, setLinkSentTo] = React.useState<string | null>(null);
   const isEmailInputValid = isValidEmail(email);
   // Without a password the deletion is confirmed with a 2FA code (if there is 2FA).
   const deleteNeedsCode = !hasUsablePassword && twoFactorEnabled;
@@ -310,6 +317,32 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
           `${t('profile_settings_error')}: ${reason}`,
         );
         setSaving(false);
+      },
+    );
+  };
+
+  // The password change link to the own address (normal users).
+  const sendPasswordLink = () => {
+    setLinkSending(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/user/password/link/',
+      { language: i18n.language },
+      (response) => {
+        const address = String(response?.data?.email || email);
+        setLinkSentTo(address);
+        showSuccessBar(enqueueSnackbar, t('profile_password_link_sent', { email: address }));
+        setLinkSending(false);
+      },
+      (error) => {
+        const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+        showErrorBar(
+          enqueueSnackbar,
+          code === 'no_email'
+            ? t('profile_password_link_no_email')
+            : `${t('profile_password_link_error')}: ${serverErrorText(t, error, String(errorReason(error) || ''))}`,
+        );
+        setLinkSending(false);
       },
     );
   };
@@ -552,7 +585,20 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     label={t('profile_request_access')}
                   />
                 )}
-                {hasUsablePassword ? (
+                {passwordByMail ? (
+                  <PillButton
+                    variant="surface"
+                    onClick={sendPasswordLink}
+                    disabled={linkSending || !email}
+                    testId="user-profile-password-link"
+                    icon={<Key size={15} aria-hidden="true" />}
+                    label={
+                      linkSending
+                        ? t('profile_password_link_sending')
+                        : t(hasUsablePassword ? 'profile_change_password' : 'profile_set_password')
+                    }
+                  />
+                ) : hasUsablePassword ? (
                   <PillButton
                     variant="surface"
                     className={
@@ -583,7 +629,18 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                   />
                 )}
               </div>
-              {!hasUsablePassword && (
+              {passwordByMail && (
+                <div className="profile-hint" data-testid="user-profile-password-link-hint">
+                  {linkSentTo ? (
+                    <span data-testid="user-profile-password-link-sent">
+                      {t('profile_password_link_sent_hint', { email: linkSentTo })}
+                    </span>
+                  ) : (
+                    t('profile_password_link_hint')
+                  )}
+                </div>
+              )}
+              {!passwordByMail && !hasUsablePassword && (
                 <div
                   className="profile-hint"
                   data-testid="user-profile-set-password-hint"

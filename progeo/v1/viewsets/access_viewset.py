@@ -10,7 +10,7 @@ Public (no login, throttled per IP):
   POST invite/check/                    is the invitation token valid?
   POST invite/confirm/                  token + password (+ otp) -> password + JWT (single use)
   POST password-reset/                  mail a reset link (2FA users; answer never tells)
-  POST password-reset/check/            is the reset token valid?
+  POST password-reset/check/            is the reset (or change) token valid? needs it the 2FA code?
   POST password-reset/confirm/          token + otp + password -> new password + JWT
   POST migration/check/                 is the migration (set-password) token valid?
   POST migration/confirm/               token + password (+ otp) -> first password + JWT
@@ -195,7 +195,9 @@ class PasswordResetCheckView(APIView):
         link = password_reset.find_link(str(_data(request).get("token") or ""))
         if link is None:
             return RequestFailed({"reason": "invalid_token"})
-        return RequestSuccess({"username": login_name(link.user), "first_name": link.user.first_name})
+        # A change link from Mein Konto needs no 2FA code - unless the user has 2FA.
+        return RequestSuccess({"username": login_name(link.user), "first_name": link.user.first_name,
+                               "otp_required": password_reset.otp_required(link)})
 
 
 class PasswordResetConfirmView(APIView):

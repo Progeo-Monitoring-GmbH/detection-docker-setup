@@ -63,7 +63,7 @@ def create_link(user, purpose: str) -> str | None:
     now = timezone.now()
     if purpose == LoginLink.Purpose.INVITE:
         validity = timedelta(hours=settings.MAGIC_LINK_INVITE_HOURS)
-    elif purpose == LoginLink.Purpose.RESET:
+    elif purpose in (LoginLink.Purpose.RESET, LoginLink.Purpose.CHANGE):
         validity = timedelta(minutes=settings.PASSWORD_RESET_MINUTES)
     else:
         validity = timedelta(minutes=settings.MAGIC_LINK_LOGIN_MINUTES)
@@ -111,7 +111,7 @@ def send_login_link(user_id: int, purpose: str = "login", template: str | None =
     context = {
         **(context or {}),
         "first_name": user.first_name,
-        "username": login_name(user),
+        "login_email": login_name(user),
         "valid_minutes": settings.MAGIC_LINK_LOGIN_MINUTES,
         "valid_hours": settings.MAGIC_LINK_INVITE_HOURS,
     }

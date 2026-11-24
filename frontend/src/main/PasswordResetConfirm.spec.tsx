@@ -108,6 +108,18 @@ describe('PasswordResetConfirm', () => {
     expect(byTestId('password-reset-otp')).not.toBeNull();
   });
 
+  it('asks no code for a change link from Mein Konto of a user without 2FA', () => {
+    api.answers[RESET_CHECK] = { username: 'erika@progeo.com', first_name: 'Erika', otp_required: false };
+    render('/password/reset/tok2');
+
+    expect(byTestId('password-reset-otp')).toBeNull();
+    fill('password-reset', 'Secret-123');
+    submit('password-reset');
+
+    expect(api.post).toHaveBeenCalledWith(RESET_CONFIRM, { token: 'tok2', otp: '', password: 'Secret-123' });
+    expect(auth.loginWithTokens).toHaveBeenCalledWith('A', 'R');
+  });
+
   it('refuses two different passwords without asking the server', () => {
     render('/password/reset/tok1');
     fill('password-reset', 'Secret-123', 'Secret-124');

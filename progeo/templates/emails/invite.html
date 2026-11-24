@@ -5,7 +5,7 @@
 {% block content %}
 <h1 style="margin:0 0 12px; font-size:20px;">Willkommen im ProGeo-Portal</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
-<p style="margin:0 0 4px;">für Sie wurde ein Zugang zum ProGeo-Monitoring-Portal eingerichtet (Anmeldung mit: <strong>{{ username }}</strong>). Mit dem folgenden Link legen Sie zuerst Ihr Passwort fest und sind danach angemeldet; der Link ist {{ valid_hours }} Stunden gültig.</p>
+<p style="margin:0 0 4px;">für Sie wurde ein Zugang zum ProGeo-Monitoring-Portal eingerichtet (Anmeldung mit Ihrer E-Mail-Adresse: <strong>{{ login_email }}</strong>). Mit dem folgenden Link legen Sie zuerst Ihr Passwort fest und sind danach angemeldet; der Link ist {{ valid_hours }} Stunden gültig.</p>
 {% include "emails/_button.html" with url=action_url label="Passwort festlegen" %}
 <p style="margin:0; font-size:12px; color:#6E6868;">Danach melden Sie sich mit Ihrem Passwort an - oder lassen sich über „Anmeldelink per E-Mail erhalten" auf der Anmeldeseite einen Link schicken.</p>
 {% endblock %}

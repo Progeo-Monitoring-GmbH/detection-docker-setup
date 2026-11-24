@@ -14,19 +14,21 @@ import {
 } from '../components/auth/TokenPasswordPage';
 
 /**
- * Reset link from the "Passwort vergessen" mail (/password/reset/<token>).
- * Like VerifyAccess, the token is only checked on load (no side effect -
- * mail scanners open the link too); the new password is only set on the
- * button press, together with the code from the authenticator app (a
- * mailbox alone is not enough). Then the user is logged in like with a
- * login link - all other logins of the user ended.
+ * Reset link from the "Passwort vergessen" mail (/password/reset/<token>) -
+ * or the change link a normal user asked for in Mein Konto. Like
+ * VerifyAccess, the token is only checked on load (no side effect - mail
+ * scanners open the link too); the new password is only set on the button
+ * press, together with the code from the authenticator app (a mailbox alone
+ * is not enough) - not for a change link of a user without 2FA (the check
+ * says otp_required: asking for it took the login). Then the user is logged
+ * in like with a login link - all other logins of the user ended.
  */
 const PasswordResetConfirm = () => {
   const { token } = useParams();
   const auth = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { state, setState, identity, firstName } = useTokenCheck(
+  const { state, setState, identity, firstName, otpRequired } = useTokenCheck(
     token,
     '/api/auth-support/password-reset/check/',
     'username',
@@ -99,7 +101,8 @@ const PasswordResetConfirm = () => {
         submitLabel={t('password_new_submit')}
         onSubmit={onSubmit}
       >
-        <OtpField value={otp} onChange={setOtp} testId="password-reset-otp" />
+        {/* A change link from Mein Konto of a user without 2FA needs no code. */}
+        {otpRequired && <OtpField value={otp} onChange={setOtp} testId="password-reset-otp" />}
       </NewPasswordForm>
     </AuthPage>
   );

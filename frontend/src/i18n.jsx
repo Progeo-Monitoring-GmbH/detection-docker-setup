@@ -107,6 +107,14 @@ i18n
           profile_saving: 'Saving...',
           profile_save_settings: 'Save Settings',
           profile_change_password: 'Change Password',
+          profile_password_link_hint:
+            'We send you a link by e-mail - you choose the new password there. No need to enter the current one.',
+          profile_password_link_sending: 'Sending link…',
+          profile_password_link_sent: 'Link sent to {{email}}.',
+          profile_password_link_sent_hint:
+            'We sent the link to {{email}} - open it to choose your new password. It is valid for a limited time; you can ask for a new one any time.',
+          profile_password_link_no_email: 'Your account has no e-mail address - enter one above first.',
+          profile_password_link_error: 'Could not send the link',
           profile_current_password: 'Current Password',
           profile_new_password: 'New Password',
           profile_confirm_password: 'Confirm Password',
@@ -3440,6 +3448,14 @@ i18n
           profile_saving: 'Speichern...',
           profile_save_settings: 'Einstellungen speichern',
           profile_change_password: 'Passwort ändern',
+          profile_password_link_hint:
+            'Wir schicken Ihnen einen Link per E-Mail - dort legen Sie das neue Passwort fest. Das aktuelle Passwort brauchen Sie dafür nicht.',
+          profile_password_link_sending: 'Link wird gesendet…',
+          profile_password_link_sent: 'Link an {{email}} gesendet.',
+          profile_password_link_sent_hint:
+            'Wir haben den Link an {{email}} geschickt - öffnen Sie ihn, um Ihr neues Passwort festzulegen. Er ist begrenzt gültig; Sie können jederzeit einen neuen anfordern.',
+          profile_password_link_no_email: 'Ihr Konto hat keine E-Mail-Adresse - tragen Sie zuerst oben eine ein.',
+          profile_password_link_error: 'Der Link konnte nicht gesendet werden',
           profile_current_password: 'Aktuelles Passwort',
           profile_new_password: 'Neues Passwort',
           profile_confirm_password: 'Passwort bestätigen',

@@ -32,6 +32,9 @@ vi.mock('../axiosConfig', () => ({
       failed: (error: unknown) => void,
     ) => {
       api.posts.push(url);
+      if (url === '/v1/user/password/link/') {
+        ok({ data: { success: true, email: api.profile.email } });
+      }
       if (url === '/v1/user/qr-code/revoke/') {
         if (api.qrFails) {
           failed({ response: { status: 403, data: { reason: 'Missing required permissions' } } });
@@ -52,7 +55,7 @@ vi.mock('../axiosConfig', () => ({
 }));
 // Stable objects, as the real hooks give: the profile reloads when `auth` changes.
 const hooks = vi.hoisted(() => ({
-  auth: { user: { username: 'erika' } },
+  auth: { user: { username: 'erika' } } as Record<string, unknown>,
   held: new Set<string>(),
   snackbar: { enqueueSnackbar: () => undefined },
   translation: { t: (key: string) => key, i18n: { changeLanguage: () => Promise.resolve() } },
@@ -216,5 +219,30 @@ describe('login QR code in the user profile', () => {
 
     expect(byTestId('user-profile-contact')).not.toBeNull();
     expect(byTestId('user-profile-qr-code')).toBeNull();
+  });
+});
+
+describe('changing the password in the user profile', () => {
+  it('mails a normal user a link instead of asking for the current password', () => {
+    open({}, []);
+
+    expect(byTestId('user-profile-change-password')).toBeNull();
+    expect(byTestId('user-profile-current-password')).toBeNull();
+    expect(byTestId('user-profile-password-link-hint')!.textContent).toBe('profile_password_link_hint');
+
+    click(byTestId('user-profile-password-link'));
+
+    expect(api.posts).toContain('/v1/user/password/link/');
+    expect(successes).toEqual(['profile_password_link_sent']);
+    expect(byTestId('user-profile-password-link-sent')).not.toBeNull();
+  });
+
+  it('lets staff change it with the current password - also while viewing as a normal user', () => {
+    hooks.auth = { user: { username: 'staff' }, canViewAsUser: true };
+    open({}, []);
+
+    expect(byTestId('user-profile-password-link')).toBeNull();
+    click(byTestId('user-profile-change-password'));
+    expect(byTestId('user-profile-current-password')).not.toBeNull();
   });
 });

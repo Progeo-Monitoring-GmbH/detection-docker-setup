@@ -36,7 +36,9 @@ SAMPLE_CONTEXT = {
     "include_objektleitung": False,
     "kind_label": "Alarm",
     "first_name": "Erika",
+    # The internal username (staff mails) - customers sign in with login_email.
     "username": "erika.mustermann",
+    "login_email": "erika@progeo.com",
     "valid_minutes": 15,
     "valid_hours": 72,
     "valid_days": 21,

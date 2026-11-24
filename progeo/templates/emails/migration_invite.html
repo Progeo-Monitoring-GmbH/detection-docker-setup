@@ -6,7 +6,7 @@
 <h1 style="margin:0 0 12px; font-size:20px;">Das ProGeo-Portal ist umgezogen</h1>
 <p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
 <p style="margin:0 0 12px;">das ProGeo-Monitoring-Portal läuft ab sofort auf einer neuen, modernen Plattform. Ihre Objekte haben wir bereits für Sie übernommen - Sie sehen dort dieselben Projekte wie bisher, mit neuen Ansichten für Status, Analyse und Benachrichtigungen.</p>
-<p style="margin:0 0 4px;">Ihr Zugang ist eingerichtet (Anmeldung mit: <strong>{{ username }}</strong>). Ihr bisheriges Passwort gilt auf der neuen Plattform nicht mehr: Legen Sie über den folgenden Link einmalig ein neues Passwort fest - danach sind Sie direkt angemeldet. Der Link ist {{ valid_days }} Tage gültig.</p>
+<p style="margin:0 0 4px;">Ihr Zugang ist eingerichtet (Anmeldung mit Ihrer E-Mail-Adresse: <strong>{{ login_email }}</strong>). Ihr bisheriges Passwort gilt auf der neuen Plattform nicht mehr: Legen Sie über den folgenden Link einmalig ein neues Passwort fest - danach sind Sie direkt angemeldet. Der Link ist {{ valid_days }} Tage gültig.</p>
 {% include "emails/_button.html" with url=action_url label="Passwort festlegen" %}
 <p style="margin:0 0 12px;">Unser Tipp: Richten Sie nach der Anmeldung in Ihrem Profil den ProGeo Chat ein - dann erhalten Sie Alarme und Störungsmeldungen sofort aufs Handy.</p>
 <p style="margin:0; font-size:12px; color:#6E6868;">Der Link ist abgelaufen? Auf der Anmeldeseite können Sie sich jederzeit über „Anmeldelink per E-Mail erhalten" einen neuen Link schicken lassen. Fragen zum Umzug beantworten wir gern unter {{ company.phone }}.</p>

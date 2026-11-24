@@ -439,6 +439,33 @@ class UserProfileViewSet(viewsets.ViewSet):
         user.save(update_fields=["password"])
         return RequestSuccess({"message": "Password updated", **_logout_elsewhere(request, user)})
 
+    @action(detail=False, url_path="password/link", methods=["POST"])
+    def password_link(self, request, *args, **kwargs):
+        """Mein Konto, normal users: the password is changed with a link mailed
+        to the own address instead of the current password
+        (helper/password_reset.request_change) - the link needs no 2FA code
+        unless the user has 2FA. Staff and superusers keep the current
+        password (403), the demo and accounts waiting for review have none.
+        -> {email} (where the link goes). Blocked while logged in as another
+        user (ImpersonationMiddleware, /v1/user/password/)."""
+        from rest_framework.response import Response
+
+        from progeo.helper import password_reset
+
+        user = request.user
+        refusal = password_reset.change_refusal(user)
+        if refusal == "no_email":
+            return _failed("no_email", "Your account has no e-mail address for the link")
+        if refusal is not None:
+            return Response({"success": False, "code": refusal,
+                             "reason": "Change the password with the current one"}, status=403)
+        data = request.data if isinstance(request.data, dict) else {}
+        language = (self._normalize_language(data.get("language"))
+                    or self._normalize_language(_stored_language(user)))
+        password_reset.request_change(user, language)
+        ilog(f"[password_reset] Change link requested by user {user.pk}")
+        return RequestSuccess({"email": user.email})
+
     @action(detail=False, url_path="notification-channel", methods=["POST"])
     def notification_channel(self, request, *args, **kwargs):
         """The notifications tab's channel choice: POST {mobile, channel}

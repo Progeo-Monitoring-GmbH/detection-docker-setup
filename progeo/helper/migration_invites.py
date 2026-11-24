@@ -146,7 +146,7 @@ def send_invite(invite, now=None) -> bool:
     invite.attempts += 1
     sent = send_template_mail(
         [user.email], "migration_invite",
-        {"first_name": user.first_name, "username": login_name(user), "valid_days": settings.MIGRATION_INVITE_DAYS},
+        {"first_name": user.first_name, "login_email": login_name(user), "valid_days": settings.MIGRATION_INVITE_DAYS},
         category=CATEGORY,
         secret_context={"action_url": portal_url(f"/account/setup/{token}")},
     )

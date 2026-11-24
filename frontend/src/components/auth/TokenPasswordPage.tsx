@@ -25,6 +25,8 @@ export const useTokenCheck = (
   const [state, setState] = useState<TokenState>(token ? 'checking' : 'invalid');
   const [identity, setIdentity] = useState('');
   const [firstName, setFirstName] = useState('');
+  // The answer says whether the 2FA code is needed - without the field: yes.
+  const [otpRequired, setOtpRequired] = useState(true);
 
   useEffect(() => {
     if (!token) {
@@ -37,13 +39,14 @@ export const useTokenCheck = (
       (response) => {
         setIdentity(response.data[identityField] || '');
         setFirstName(response.data.first_name || '');
+        setOtpRequired(response.data.otp_required !== false);
         setState('ready');
       },
       () => setState('invalid'),
     );
   }, [token, checkUrl, identityField]);
 
-  return { state, setState, identity, firstName };
+  return { state, setState, identity, firstName, otpRequired };
 };
 
 type RequestError = {

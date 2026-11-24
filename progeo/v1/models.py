@@ -1687,6 +1687,10 @@ class LoginLink(models.Model):
         LOGIN = "login", "Anmeldelink"
         INVITE = "invite", "Einladung"
         RESET = "reset", "Passwort zurücksetzen"
+        # "Passwort ändern" in Mein Konto (helper/password_reset.request_change):
+        # asked for while logged in, so the link needs no 2FA code (with 2FA it
+        # still does) - a mailbox alone never gets one.
+        CHANGE = "change", "Passwort ändern (aus dem Konto)"
         # Chat login by QR code (helper/matrix_accounts.create_qr_login): the
         # token rides in the login_hint of the Element X link, MAS forwards it
         # to /auth/oidc/authorize/ - it signs in to the chat, never the portal.
