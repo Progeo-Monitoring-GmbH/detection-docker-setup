@@ -13,7 +13,9 @@ import {
   fractionToCanvas,
   grabbedPoint,
   imageToCanvas,
+  itemsImageArea,
   itemsInSelection,
+  keptInView,
   markerItems,
   MAX_ZOOM,
   MIN_CANVAS_WIDTH,
@@ -34,6 +36,7 @@ import {
   selectionRect,
   sensorAtPoint,
   storedAlignment,
+  viewForImageArea,
   wheelZoomFactor,
   zoomedView,
   type AlignmentValues,
@@ -126,6 +129,46 @@ describe('zoom', () => {
     const after = canvasToImage([650, 300], canvasLayout(canvas, image, view), image)!;
     expect(after[0]).toBeCloseTo(before[0]);
     expect(after[1]).toBeCloseTo(before[1]);
+  });
+
+  it('fits an image area into the canvas, in its middle (F)', () => {
+    const area: [[number, number], [number, number]] = [
+      [600, 100],
+      [400, 300],
+    ];
+    const view = viewForImageArea(area, canvas, image, 0);
+    // 200 x 200 image pixels in 900 x 600: the height decides.
+    expect(view.zoom * alignmentBaseScale(1000, 500) * 200).toBeCloseTo(600);
+    const fitted = canvasLayout(canvas, image, view);
+    const [left, top] = imageToCanvas([400, 100], fitted);
+    const [right, bottom] = imageToCanvas([600, 300], fitted);
+    expect((left + right) / 2).toBeCloseTo(450);
+    expect(top).toBeCloseTo(0);
+    expect(bottom).toBeCloseTo(600);
+    expect(viewForImageArea([[0, 0], [0, 0]], canvas, image).zoom).toBe(MAX_ZOOM);
+  });
+
+  it('keeps some of the plan in the canvas', () => {
+    expect(keptInView(home, canvas, image)).toBe(home);
+    expect(keptInView({ ...home, offsetX: 5000 }, canvas, null).offsetX).toBe(5000);
+    const kept = keptInView({ zoom: 1, offsetX: 5000, offsetY: -5000 }, canvas, image);
+    const shown = canvasLayout(canvas, image, kept);
+    // 120 canvas units of the plan are left in the canvas - a quarter of its
+    // height where that is less (434 high: 108.5).
+    expect(canvas.width - shown.drawX).toBeCloseTo(120);
+    expect(shown.drawY + shown.drawHeight).toBeCloseTo(108.5);
+  });
+
+  it('frames measure points in image pixels, one point with the plan around it', () => {
+    const transform = pointTransform(layout, plain, 1);
+    const area = itemsImageArea([item([0.2, 0.2], [0.4, 0.2]), item([0.3, 0.6])], transform, image)!;
+    expect(area[0][0]).toBeCloseTo(200);
+    expect(area[1][0]).toBeCloseTo(400);
+    expect(area[0][1]).toBeCloseTo(100);
+    expect(area[1][1]).toBeCloseTo(300);
+    const single = itemsImageArea([item([0.5, 0.5])], transform, image)!;
+    expect(single[1][0] - single[0][0]).toBeCloseTo(80);
+    expect(itemsImageArea([], transform, image)).toBeNull();
   });
 
   it('stops at the zoom limits', () => {

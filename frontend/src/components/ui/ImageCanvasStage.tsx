@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { childTestId } from '../../testIds';
 import ZoomControls from '../device/ZoomControls';
@@ -10,8 +10,10 @@ import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
   compactCanvasWidth,
+  itemsImageArea,
   MIN_ZOOM,
   stageGeometry,
+  viewForImageArea,
   ZOOM_STEP,
   type AlignmentValues,
   type ImagePoint,
@@ -30,6 +32,7 @@ import {
   editingOf,
   groupSummary,
   insertingOf,
+  VIEW_KEYS,
   type CanvasModes,
   type SensorPlacement,
 } from './imageCanvasModes';
@@ -112,7 +115,8 @@ type ImageCanvasStageProps = {
 
 /**
  * The Lageplan canvas: the plan with its measure points (or sensors placed by
- * hand), pan and zoom, and - with the sliders - aligning the points (sliders,
+ * hand), pan and zoom (F fits the selection, the plan or an area; the frame
+ * glows in the colour of the key in use), and - with the sliders - aligning the points (sliders,
  * A, auto), the scale (R, M), image edits (C, X, rotate) and editing the
  * measure points (D, O, I, L).
  *
@@ -172,8 +176,13 @@ const ImageCanvasStage = ({
   const canvasWidth = compactCanvasWidth(image);
   const logical = useMemo(() => ({ width: canvasWidth, height: CANVAS_HEIGHT }), [canvasWidth]);
   const { cssWidth, cssHeight, screenScale, px, pixelRatio } = useScreenScale(canvasRef, canvasWidth);
-  const { view, zoomAround, resetView, panTo } = usePlanView(canvasWidth);
+  const { view, zoomAround, resetView, panTo, endPan, glideTo } = usePlanView(logical, image);
   const wheelHint = useCanvasWheelZoom(canvasRef, zoomAround);
+  // The keys count while the mouse is over the canvas (and what floats on it).
+  const overRef = useRef(false);
+  // F + drag: the area being dragged; fitDragged: F was used with a drag (no fit on its release).
+  const [fitBox, setFitBox] = useState<[ImagePoint, ImagePoint] | null>(null);
+  const fitDragged = useRef(false);
 
   const { items, lineCount, lineMode, cutItems, shownItems, pointSelect, selectedItems, selectedIds, rect, insertPlan } =
     useCanvasPoints({
@@ -222,6 +231,36 @@ const ImageCanvasStage = ({
   });
   const repairing = canRepair && repair.active;
 
+  /** F: the selected points (D / O / L), the selected area (C / X), the
+   * group being aligned - else the whole plan - as large as it fits. */
+  const fitSelection = () => {
+    const { transform } = geometry;
+    if (!image || !transform) {
+      return;
+    }
+    const groupItems = group ? shownItems.filter((item) => group.ids.has(Number(item.point.id))) : [];
+    const target =
+      itemsImageArea(selectedItems, transform, image) ??
+      (area.selection && area.editMode ? area.selection : null) ??
+      itemsImageArea(groupItems, transform, image);
+    glideTo(target ? viewForImageArea(target, logical, image) : { zoom: 1, offsetX: 0, offsetY: 0 });
+  };
+  /** F + drag let go: zoom to the area - a mere click fits the selection. */
+  const fitBoxDone = ([from, to]: [ImagePoint, ImagePoint]) => {
+    fitDragged.current = true;
+    const { layout } = geometry;
+    if (!image || !layout) {
+      return;
+    }
+    const minSize = 8 * px;
+    if (Math.abs(to[0] - from[0]) < minSize || Math.abs(to[1] - from[1]) < minSize) {
+      fitSelection();
+      return;
+    }
+    const toImage = ([x, y]: ImagePoint): ImagePoint => [(x - layout.drawX) / layout.scale, (y - layout.drawY) / layout.scale];
+    glideTo(viewForImageArea([toImage(from), toImage(to)], logical, image, 8));
+  };
+
   const heldKey = useHeldKey({
     onEscape: () => {
       area.leaveEdit();
@@ -233,6 +272,14 @@ const ImageCanvasStage = ({
         area.toggleEdit(edit);
       }
     },
+    // F tapped (no drag while held): fit the selection or the plan.
+    onRelease: (key) => {
+      if (key === 'f' && !fitDragged.current) {
+        fitSelection();
+      }
+      fitDragged.current = false;
+    },
+    isOver: () => overRef.current,
     disabled: repairing,
   });
   const modes: CanvasModes = {
@@ -298,6 +345,7 @@ const ImageCanvasStage = ({
     alignDrag: calibration.alignDrag,
     calibrationPoints: scale.calibrationPoints,
     referencePoint: scale.referencePoint,
+    fitBox,
   });
 
   const actions = useImageCanvasActions({
@@ -337,6 +385,8 @@ const ImageCanvasStage = ({
     px,
     screenScale,
     panTo,
+    endPan,
+    fit: { setBox: setFitBox, onDone: fitBoxDone },
     items,
     shownItems,
     area,
@@ -358,7 +408,8 @@ const ImageCanvasStage = ({
   // The reference point or the ratio differ from the plan's stored ones -
   // "Store scale" floats until they are stored.
   const scaleDirty = withSliders && onSaveScale != null && scale.differsFrom(sourceMeta);
-  const cursor = repairing
+  const viewKeyHeld = heldKey != null && VIEW_KEYS.includes(heldKey);
+  const cursor = repairing && !viewKeyHeld
     ? repair.tool === 'area' || repair.tool === 'line'
       ? 'crosshair'
       : hoveredItem
@@ -371,18 +422,35 @@ const ImageCanvasStage = ({
         groupIds: group?.ids ?? null,
       });
 
+  // What is going on - the badge on the plan, the frame glows in its colour.
+  // F and Space are shown in "Repair order" too.
+  const badge = repairing && !viewKeyHeld ? { text: repairHint(repair), color: REPAIR_COLOR } : canvasBadge(modes);
+
   return (
     <div className="d-flex flex-column gap-3" data-testid={testId}>
       <StageHeader title={title} fileName={fileName} testId={testId} />
 
       <CanvasKeyLegend
         testId={childTestId(testId, 'legend')}
-        groups={repairing ? repairLegendGroups(repair.tool) : canvasLegendGroups(modes, placement)}
+        groups={repairing ? repairLegendGroups(repair.tool, heldKey) : canvasLegendGroups(modes, placement)}
       />
 
       <div className="d-flex flex-column gap-2">
         {/* As wide as the compact canvas (its share of the full width), left-aligned. */}
-        <div className="image-canvas-wrap" style={{ width: `${(canvasWidth / CANVAS_WIDTH) * 100}%` }}>
+        <div
+          className={`image-canvas-wrap${badge ? ' image-canvas-wrap--keyed' : ''}`}
+          style={{
+            width: `${(canvasWidth / CANVAS_WIDTH) * 100}%`,
+            ...(badge ? { '--image-canvas-key-color': badge.color } : {}),
+          } as CSSProperties}
+          onMouseEnter={() => {
+            overRef.current = true;
+          }}
+          onMouseLeave={() => {
+            overRef.current = false;
+          }}
+          data-key-color={badge?.color}
+        >
           <canvas
             ref={canvasRef}
             width={Math.round(canvasWidth * pixelRatio)}
@@ -411,10 +479,7 @@ const ImageCanvasStage = ({
             onRotate={actions.rotateImage}
             testId={testId}
           />
-          <CanvasBadge
-            badge={repairing ? { text: repairHint(repair), color: REPAIR_COLOR } : canvasBadge(modes)}
-            testId={testId}
-          />
+          <CanvasBadge badge={badge} testId={testId} />
           <CanvasTooltip
             hover={hover}
             item={hoveredItem}

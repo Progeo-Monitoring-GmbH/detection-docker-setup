@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosConfig from '../../axiosConfig';
 import ImageCanvasStage from './ImageCanvasStage';
+import { KEY_COLORS } from './imageCanvasModes';
 
 // One auth object - a new one each render would reload the image each time.
 const auth = vi.hoisted(() => ({}));
@@ -57,6 +58,18 @@ describe('ImageCanvasStage zoom', () => {
     expect(container.textContent).toContain('Zoom 1.16×');
   });
 
+  it('counts every wheel event of a frame - each zooms from the last', () => {
+    act(() => {
+      const canvas = container.querySelector('canvas')!;
+      for (let index = 0; index < 2; index += 1) {
+        canvas.dispatchEvent(
+          new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: 450, clientY: 300, deltaY: -100, ctrlKey: true }),
+        );
+      }
+    });
+    expect(container.textContent).toContain('Zoom 1.35×');
+  });
+
   it('zooms with the buttons in the corner and resets', () => {
     // ZoomControls: in, out, reset - top to bottom.
     const [zoomIn, , reset] = container.querySelectorAll<HTMLButtonElement>('.btn-group-vertical button');
@@ -94,7 +107,15 @@ describe('ImageCanvasStage alignment and scale', () => {
       width: 900,
       height: 600,
     } as DOMRect);
+    // The keys count while the mouse is over the canvas.
+    hover(true);
   };
+  const hover = (over: boolean) =>
+    act(() => {
+      container
+        .querySelector('canvas')!
+        .dispatchEvent(new MouseEvent(over ? 'mouseover' : 'mouseout', { bubbles: true, relatedTarget: null }));
+    });
   const press = (clientX = 450, clientY = 300) =>
     act(() => {
       container
@@ -176,6 +197,100 @@ describe('ImageCanvasStage alignment and scale', () => {
     act(() => button('Vertical flip').click());
     act(() => root.render(<ImageCanvasStage />));
     expect(onSaveSliders).toHaveBeenCalledWith(expect.objectContaining({ flipY: false }));
+  });
+
+  describe('view keys and the frame', () => {
+    const wrap = () => container.querySelector<HTMLElement>('.image-canvas-wrap')!;
+    const drag = (from: [number, number], to: [number, number], button = 0) =>
+      act(() => {
+        container
+          .querySelector('canvas')!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button, clientX: from[0], clientY: from[1] }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: to[0], clientY: to[1] }));
+        window.dispatchEvent(new MouseEvent('mouseup'));
+      });
+    const tap = (value: string) => {
+      key('keydown', value);
+      key('keyup', value);
+    };
+
+    beforeEach(() => {
+      // Reduced motion: F's glide lands at once.
+      vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    });
+
+    it('takes the keys only while the mouse is over the canvas', () => {
+      mount({ onSaveScale: vi.fn() });
+      hover(false);
+      key('keydown', 'r');
+      press();
+      key('keyup', 'r');
+      expect(container.textContent).toContain('not set');
+      hover(true);
+      key('keydown', 'r');
+      press();
+      key('keyup', 'r');
+      expect(container.textContent).toMatch(/at pixel \(\d+, \d+\)/);
+    });
+
+    it('glows in the colour of the key in use', () => {
+      mount({ locationId: 5, lageplanId: 7, onImageEdited: vi.fn(), onSaveScale: vi.fn() });
+      expect(wrap().classList.contains('image-canvas-wrap--keyed')).toBe(false);
+      key('keydown', 'r');
+      expect(wrap().classList.contains('image-canvas-wrap--keyed')).toBe(true);
+      expect(wrap().dataset.keyColor).toBe(KEY_COLORS.r);
+      key('keyup', 'r');
+      expect(wrap().classList.contains('image-canvas-wrap--keyed')).toBe(false);
+      // C stays on until Esc - so does the glow.
+      key('keydown', 'c');
+      key('keyup', 'c');
+      expect(wrap().dataset.keyColor).toBe(KEY_COLORS.c);
+      key('keydown', 'Escape');
+      expect(wrap().dataset.keyColor).toBeUndefined();
+    });
+
+    it('zooms to the area dragged over with F, fits the plan again with F tapped', () => {
+      mount({});
+      key('keydown', 'f');
+      expect(wrap().dataset.keyColor).toBe(KEY_COLORS.f);
+      // 200 x 200 canvas units: the height (600, 8 around) decides.
+      drag([300, 200], [500, 400]);
+      key('keyup', 'f');
+      expect(container.textContent).toContain('Zoom 2.92×');
+      tap('f');
+      expect(container.textContent).toContain('Zoom 1.00×');
+    });
+
+    it('fits the selected points with F', () => {
+      const points = [
+        { id: 11, sensor_order: 1, nx: 0.3, ny: 0.6 },
+        { id: 12, sensor_order: 2, nx: 0.8, ny: 0.2 },
+        { id: 13, sensor_order: 3, nx: 0.35, ny: 0.55 },
+      ];
+      mount({ locationId: 5, measurePoints: points, onPointsRemoved: vi.fn() });
+      key('keydown', 'd');
+      drag([250, 230], [350, 300]);
+      key('keyup', 'd');
+      tap('f');
+      // The two points lie within 80 x 80 image pixels (8 % of the plan) - shown that large.
+      expect(container.textContent).toContain('Zoom 7.95×');
+    });
+
+    it('pans with the middle button and Space + drag in a tool - only a plain drag selects', () => {
+      mount({ locationId: 5, lageplanId: 7, onImageEdited: vi.fn(), onSaveScale: vi.fn() });
+      key('keydown', 'c');
+      drag([300, 200], [500, 400], 1);
+      expect(button('Apply')).toBeUndefined();
+      key('keydown', ' ');
+      expect(wrap().dataset.keyColor).toBe(KEY_COLORS.space);
+      // Back again: the plan where it was.
+      drag([500, 400], [300, 200]);
+      key('keyup', ' ');
+      expect(button('Apply')).toBeUndefined();
+      expect(wrap().dataset.keyColor).toBe(KEY_COLORS.c);
+      drag([300, 200], [500, 400]);
+      expect(button('Apply')).toBeDefined();
+    });
   });
 
   describe('image edits', () => {

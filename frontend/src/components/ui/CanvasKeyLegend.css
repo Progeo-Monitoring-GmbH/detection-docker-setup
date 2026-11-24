@@ -121,6 +121,12 @@
   margin-top: 2px;
 }
 
+/* The action in use, in its key's colour (--canvas-key-color, inline). */
+.canvas-key-legend-entry--colored.canvas-key-legend-entry--active {
+  background: color-mix(in srgb, var(--canvas-key-color) 12%, #ffffff);
+  box-shadow: inset 3px 0 0 var(--canvas-key-color);
+}
+
 /* A keyboard key in a hint - also the <kbd> chips of ImageCanvasStage. */
 .canvas-key-badge {
   display: inline-flex;
@@ -147,4 +153,12 @@
   box-shadow: none;
   padding: 0 9px;
   font-weight: 600;
+}
+
+/* A key with its colour (KEY_COLORS, --canvas-key-color inline) - the
+   colour the canvas' frame glows in while it is held. */
+.canvas-key-badge.canvas-key-badge--colored {
+  color: var(--canvas-key-color);
+  border-color: color-mix(in srgb, var(--canvas-key-color) 45%, #cfd4da);
+  box-shadow: inset 0 -2px 0 var(--canvas-key-color);
 }

@@ -249,6 +249,83 @@ export const zoomedView = (view: PlanView, factor: number, canvasWidth: number, 
   };
 };
 
+/** Canvas units of the plan that stay in the canvas at least (each axis) -
+ * less if the plan is drawn smaller than 4 times that. */
+const KEEP_IN_VIEW = 120;
+
+/** The view moved so that some of the plan stays in the canvas - it can't
+ * be panned or zoomed out of sight. */
+export const keptInView = (view: PlanView, logical: { width: number; height: number }, image: PlanImage | null): PlanView => {
+  if (!image) {
+    return view;
+  }
+  const scale = alignmentBaseScale(image.naturalWidth, image.naturalHeight) * view.zoom;
+  const limit = (canvasSize: number, drawSize: number) =>
+    canvasSize / 2 + drawSize / 2 - Math.min(drawSize / 4, KEEP_IN_VIEW);
+  const limitX = limit(logical.width, image.naturalWidth * scale);
+  const limitY = limit(logical.height, image.naturalHeight * scale);
+  const offsetX = clamp(view.offsetX, -limitX, limitX);
+  const offsetY = clamp(view.offsetY, -limitY, limitY);
+  return offsetX === view.offsetX && offsetY === view.offsetY ? view : { ...view, offsetX, offsetY };
+};
+
+/** The view showing an area of the image (image pixels, any two corners) as
+ * large as it fits, `margin` canvas units around it - F. */
+export const viewForImageArea = (
+  [[x0, y0], [x1, y1]]: [ImagePoint, ImagePoint],
+  logical: { width: number; height: number },
+  image: PlanImage,
+  margin = 24,
+): PlanView => {
+  const base = alignmentBaseScale(image.naturalWidth, image.naturalHeight);
+  const width = Math.max(Math.abs(x1 - x0), 1);
+  const height = Math.max(Math.abs(y1 - y0), 1);
+  const zoom = clamp(
+    Math.min((logical.width - 2 * margin) / (width * base), (logical.height - 2 * margin) / (height * base)),
+    MIN_ZOOM,
+    MAX_ZOOM,
+  );
+  const scale = base * zoom;
+  return {
+    zoom,
+    offsetX: scale * (image.naturalWidth / 2 - (x0 + x1) / 2),
+    offsetY: scale * (image.naturalHeight / 2 - (y0 + y1) / 2),
+  };
+};
+
+/** The image area (image pixels) around measure points / dm lines - at
+ * least `minSize` of the plan's larger side, so one point is shown with the
+ * plan around it - or null without any. */
+export const itemsImageArea = (
+  items: Iterable<MarkerItem>,
+  transform: PointTransform,
+  image: PlanImage,
+  minSize = 0.08,
+): [ImagePoint, ImagePoint] | null => {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const item of items) {
+    for (const point of item.end ? [item.start, item.end] : [item.start]) {
+      const [cx, cy] = normalizedToCanvas(point, transform);
+      xs.push((cx - transform.drawX) / transform.scale);
+      ys.push((cy - transform.drawY) / transform.scale);
+    }
+  }
+  if (!xs.length) {
+    return null;
+  }
+  const pad = (low: number, high: number) => {
+    const grow = Math.max(0, minSize * Math.max(image.naturalWidth, image.naturalHeight) - (high - low)) / 2;
+    return [low - grow, high + grow];
+  };
+  const [left, right] = pad(Math.min(...xs), Math.max(...xs));
+  const [top, bottom] = pad(Math.min(...ys), Math.max(...ys));
+  return [
+    [left, top],
+    [right, bottom],
+  ];
+};
+
 /** Zoom factor of a Ctrl + wheel step. */
 export const wheelZoomFactor = (event: { deltaMode: number; deltaY: number }) => {
   const delta = clamp(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY, -120, 120);

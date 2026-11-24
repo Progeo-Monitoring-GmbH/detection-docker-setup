@@ -1,10 +1,10 @@
 /**
  * Hooks of the plan canvas (ImageCanvasStage) for what is shown and the
  * input around it: loading the plan image, the canvas' shown width, pan and
- * zoom (Ctrl + wheel only), the window's mouse and the held keys, and
+ * zoom (Ctrl + wheel only, F fits), the window's mouse and the held keys, and
  * drawing the canvas.
  */
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import axiosConfig from '../../axiosConfig';
 import type { AuthContextType } from '../../../hooks/CoreAuthProvider';
 import { drawStage, type StageScene } from './drawImageCanvas';
@@ -12,13 +12,15 @@ import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
   clientToCanvas,
+  keptInView,
   pixelRatioFor,
   wheelZoomFactor,
   zoomedView,
   type ImagePoint,
+  type PlanImage,
   type PlanView,
 } from './imageCanvasGeometry';
-import { EDIT_KEYS, HELD_KEYS, type HeldKey, type ImageEdit } from './imageCanvasModes';
+import { EDIT_KEYS, HELD_KEYS, VIEW_KEYS, type HeldKey, type ImageEdit } from './imageCanvasModes';
 import { isZoomWheel, useWheelHint } from './wheelZoom';
 
 /** The plan image: local previews (blob:/data:) load directly; backend media
@@ -117,25 +119,115 @@ export const useScreenScale = (canvasRef: RefObject<HTMLCanvasElement | null>, c
   };
 };
 
-/** Pan and zoom of the plan. */
-export const usePlanView = (canvasWidth: number) => {
-  const [zoom, setZoom] = useState(1);
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  const view = useMemo<PlanView>(() => ({ zoom, offsetX, offsetY }), [zoom, offsetX, offsetY]);
-  const setView = (next: PlanView) => {
-    setZoom(next.zoom);
-    setOffsetX(next.offsetX);
-    setOffsetY(next.offsetY);
+const HOME_VIEW: PlanView = { zoom: 1, offsetX: 0, offsetY: 0 };
+const FIT_MS = 260;
+
+const reducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
+/** The view between `from` (t = 0) and `to` (t = 1): the zoom changes evenly
+ * (log scale), the plan point in the middle of the canvas moves straight. */
+const viewBetween = (from: PlanView, to: PlanView, t: number): PlanView => {
+  const zoom = Math.exp(Math.log(from.zoom) + (Math.log(to.zoom) - Math.log(from.zoom)) * t);
+  // The offset over the zoom is the plan point in the middle (up to the scale).
+  const centerX = from.offsetX / from.zoom + (to.offsetX / to.zoom - from.offsetX / from.zoom) * t;
+  const centerY = from.offsetY / from.zoom + (to.offsetY / to.zoom - from.offsetY / from.zoom) * t;
+  return { zoom, offsetX: centerX * zoom, offsetY: centerY * zoom };
+};
+
+/**
+ * Pan and zoom of the plan. Every change starts from the latest view (a ref),
+ * not the one of the last render - wheel and touchpad send several events a
+ * frame, each counts. Panning is shown once a frame (panTo, flushed by
+ * endPan); some of the plan always stays in the canvas (keptInView).
+ */
+export const usePlanView = (logical: { width: number; height: number }, image: PlanImage | null) => {
+  const [view, setViewState] = useState<PlanView>(HOME_VIEW);
+  const viewRef = useRef(view);
+  const frame = useRef<number | null>(null);
+  const animation = useRef<number | null>(null);
+  const bounds = useRef({ logical, image });
+  bounds.current = { logical, image };
+
+  const cancelFrame = () => {
+    if (frame.current != null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
   };
+  const stopAnimation = () => {
+    if (animation.current != null) {
+      cancelAnimationFrame(animation.current);
+      animation.current = null;
+    }
+  };
+  useEffect(
+    () => () => {
+      cancelFrame();
+      stopAnimation();
+    },
+    [],
+  );
+
+  const kept = (next: PlanView) => keptInView(next, bounds.current.logical, bounds.current.image);
+  /** Shown at once. */
+  const commit = (next: PlanView) => {
+    cancelFrame();
+    viewRef.current = kept(next);
+    setViewState(viewRef.current);
+  };
+  /** Shown with the next frame - several moves of one frame render once. */
+  const commitNextFrame = (next: PlanView) => {
+    viewRef.current = kept(next);
+    if (typeof requestAnimationFrame !== 'function') {
+      setViewState(viewRef.current);
+    } else if (frame.current == null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        setViewState(viewRef.current);
+      });
+    }
+  };
+
   return {
     view,
     /** Zoom by `factor` around a canvas point (default: the middle). */
-    zoomAround: (factor: number, at?: ImagePoint) => setView(zoomedView(view, factor, canvasWidth, at)),
-    resetView: () => setView({ zoom: 1, offsetX: 0, offsetY: 0 }),
+    zoomAround: (factor: number, at?: ImagePoint) => {
+      stopAnimation();
+      commit(zoomedView(viewRef.current, factor, bounds.current.logical.width, at));
+    },
+    resetView: () => {
+      stopAnimation();
+      commit(HOME_VIEW);
+    },
+    /** The pan (canvas units) - shown with the next frame. */
     panTo: (x: number, y: number) => {
-      setOffsetX(x);
-      setOffsetY(y);
+      stopAnimation();
+      commitNextFrame({ ...viewRef.current, offsetX: x, offsetY: y });
+    },
+    /** A pan ends: its last move is shown now. */
+    endPan: () => {
+      if (frame.current != null) {
+        commit(viewRef.current);
+      }
+    },
+    /** Glides to `target` (F) - at once without animation frames or with reduced motion. */
+    glideTo: (target: PlanView) => {
+      stopAnimation();
+      const to = kept(target);
+      if (typeof requestAnimationFrame !== 'function' || reducedMotion()) {
+        commit(to);
+        return;
+      }
+      const from = viewRef.current;
+      const started = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - started) / FIT_MS);
+        // Ease out: fast at first, settling on the target.
+        commit(t >= 1 ? to : viewBetween(from, to, 1 - (1 - t) ** 3));
+        animation.current = t >= 1 ? null : requestAnimationFrame(step);
+      };
+      animation.current = requestAnimationFrame(step);
     },
   };
 };
@@ -194,56 +286,78 @@ const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
-/** The key a keydown means for the canvas (lower case) - null with a modifier or while typing. */
+/** A key's name for the canvas (lower case, ' ' is 'space'). */
+const keyName = (event: KeyboardEvent) => (event.key === ' ' ? 'space' : event.key.toLowerCase());
+
+/** The key a keydown means for the canvas - null with a modifier or while typing. */
 const canvasKeyOf = (event: KeyboardEvent) =>
-  event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) ? null : event.key.toLowerCase();
+  event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) ? null : keyName(event);
 
 const isHeldKey = (key: string | null): key is HeldKey => HELD_KEYS.includes(key as HeldKey);
 
-/** A/R/M/D/O/L/I (no modifier, not typing) held: what a press on the plan
- * does - released on keyup or leaving the window. C/X switch an image edit
- * (onEditKey, not repeated), Escape leaves what is going on (onEscape). The
- * handlers of the last render are called. `disabled`: no key does anything
- * (another mode has the keys - "Repair order"). */
+/** A/R/M/D/O/L/I/F/Space (no modifier, not typing) held: what a press on the
+ * plan does - released on keyup or leaving the window (F released: onRelease).
+ * C/X switch an image edit (onEditKey, not repeated), Escape leaves what is
+ * going on (onEscape). The keys count only while the mouse is over the
+ * canvas (`isOver`) - Escape and a release anywhere. The handlers of the last
+ * render are called. `disabled`: only the view keys (F, Space) do anything -
+ * another mode has the others ("Repair order"). */
 export const useHeldKey = (handlers: {
   onEscape: () => void;
   onEditKey: (edit: ImageEdit) => void;
+  onRelease?: (key: HeldKey) => void;
+  isOver: () => boolean;
   disabled?: boolean;
 }) => {
   const [heldKey, setHeldKey] = useState<HeldKey | null>(null);
+  const heldRef = useRef<HeldKey | null>(null);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const setHeld = (key: HeldKey | null) => {
+    heldRef.current = key;
+    setHeldKey(key);
+  };
   useEffect(() => {
-    if (handlers.disabled) {
-      setHeldKey(null);
+    if (handlers.disabled && heldRef.current && !VIEW_KEYS.includes(heldRef.current)) {
+      setHeld(null);
     }
   }, [handlers.disabled]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (handlersRef.current.disabled) {
-        return;
-      }
       const key = canvasKeyOf(event);
+      const { disabled, isOver } = handlersRef.current;
       if (key === 'escape') {
-        handlersRef.current.onEscape();
+        if (!disabled) {
+          handlersRef.current.onEscape();
+        }
         return;
       }
-      const edit = key ? EDIT_KEYS[key] : undefined;
+      if (!key || !isOver() || (disabled && !VIEW_KEYS.includes(key as HeldKey))) {
+        return;
+      }
+      if (key === 'space') {
+        // Not the page scrolling.
+        event.preventDefault();
+      }
+      const edit = EDIT_KEYS[key];
       if (edit) {
         if (!event.repeat) {
           handlersRef.current.onEditKey(edit);
         }
         return;
       }
-      if (isHeldKey(key)) {
-        setHeldKey(key);
+      if (isHeldKey(key) && heldRef.current !== key) {
+        setHeld(key);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      setHeldKey((current) => (current === key ? null : current));
+      const key = keyName(event);
+      if (heldRef.current === key) {
+        setHeld(null);
+        handlersRef.current.onRelease?.(key);
+      }
     };
-    const release = () => setHeldKey(null);
+    const release = () => setHeld(null);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', release);
@@ -296,6 +410,7 @@ export const useStageDrawing = (
       scene.calibrationPoints,
       scene.referencePoint,
       scene.repair,
+      scene.fitBox,
     ],
   );
 };

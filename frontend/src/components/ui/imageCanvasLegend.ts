@@ -2,9 +2,10 @@
  * The key legend over the plan canvas (ImageCanvasStage): which keys and
  * mouse actions there are with the props given, the one in use highlighted.
  */
-import type { LegendGroup } from './CanvasKeyLegend';
+import type { LegendEntry, LegendGroup } from './CanvasKeyLegend';
 import {
   editingOf,
+  KEY_COLORS,
   pointNounOf,
   pointSelectOf,
   type CanvasModes,
@@ -14,11 +15,24 @@ import {
 
 type Placement = { activeDeviceId: number | null; activeLabel?: string };
 
+/** Space, F: the view keys - in every mode, "Repair order" too. */
+const viewKeyEntries = (heldKey: HeldKey | null): LegendEntry[] => [
+  {
+    keys: ['Space', 'Drag'],
+    label: 'Move the plan in any mode - or drag with the middle mouse button',
+    active: heldKey === 'space',
+    color: KEY_COLORS.space,
+  },
+  { keys: ['F'], label: 'Fit the selection - or the whole plan', active: heldKey === 'f', color: KEY_COLORS.f },
+  { keys: ['F', 'Drag'], label: 'Zoom to the area dragged over', color: KEY_COLORS.f },
+];
+
 const viewGroup = (modes: CanvasModes, placement: Placement | undefined): LegendGroup => ({
   title: 'View',
   entries: [
     { keys: editingOf(modes) ? ['Shift', 'Drag'] : ['Drag'], label: 'Move the plan' },
     { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+    ...viewKeyEntries(modes.heldKey),
     !placement && { keys: ['Hover'], label: 'Details of a sensor' },
   ],
 });
@@ -47,16 +61,19 @@ const alignGroup = ({ caps, heldKey, tool, aligning, lineMode }: CanvasModes): L
             keys: ['A', 'Drag'],
             label: `Hold A, drag a ${lineMode ? 'dm line' : 'sensor'} onto its place`,
             active: heldKey === 'a' || aligning,
+            color: KEY_COLORS.a,
           },
           caps.canScale && {
             keys: ['R', 'Click'],
             label: 'Hold R, click the reference point',
             active: heldKey === 'r' || tool === 'reference',
+            color: KEY_COLORS.r,
           },
           caps.canScale && {
             keys: ['M', 'Click'],
             label: 'Hold M, click two points of a known distance',
             active: heldKey === 'm',
+            color: KEY_COLORS.m,
           },
         ],
       }
@@ -70,8 +87,8 @@ const imageGroup = (modes: CanvasModes): LegendGroup | null => {
   return {
     title: 'Edit the image',
     entries: [
-      { keys: ['C'], label: 'Clear an area - fill it white', active: modes.editMode === 'clear' },
-      { keys: ['X'], label: 'Crop the plan to an area', active: modes.editMode === 'crop' },
+      { keys: ['C'], label: 'Clear an area - fill it white', active: modes.editMode === 'clear', color: KEY_COLORS.c },
+      { keys: ['X'], label: 'Crop the plan to an area', active: modes.editMode === 'crop', color: KEY_COLORS.x },
       { keys: ['↺ / ↻'], label: 'Rotate the plan by 90° (buttons on the plan) - the sensors turn with it' },
       selectingArea && {
         keys: ['Drag'],
@@ -127,6 +144,7 @@ const pointsGroup = (modes: CanvasModes): LegendGroup | null => {
           modes.heldKey === entry.key ||
           (entry.mode != null && modes.editMode === entry.mode) ||
           (entry.key === 'l' && modes.group != null),
+        color: KEY_COLORS[entry.key],
       })),
       { keys: ['Esc'], label: 'Cancel' },
     ],
@@ -135,12 +153,13 @@ const pointsGroup = (modes: CanvasModes): LegendGroup | null => {
 };
 
 /** "Repair order" on: its keys are the only ones (sensorOrderRepair.ts). */
-export const repairLegendGroups = (tool: string): LegendGroup[] => [
+export const repairLegendGroups = (tool: string, heldKey: HeldKey | null = null): LegendGroup[] => [
   {
     title: 'View',
     entries: [
       { keys: ['Drag'], label: 'Move the plan (not with Area)' },
       { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+      ...viewKeyEntries(heldKey),
     ],
   },
   {

@@ -13,7 +13,7 @@ import {
   CUT_COLOR,
   GROUP_COLOR,
   groupHint,
-  PRIMARY_COLOR,
+  KEY_COLORS,
   pressSelectMode,
   REMOVE_COLOR,
   selectColorOf,
@@ -122,7 +122,13 @@ describe('selecting', () => {
   it('colours a selection by what it is for', () => {
     expect(selectColorOf('cut')).toBe(CUT_COLOR);
     expect(selectColorOf('group')).toBe(GROUP_COLOR);
-    expect(selectColorOf('clear')).toBe(REMOVE_COLOR);
+    expect(selectColorOf('clear')).toBe(KEY_COLORS.c);
+    expect(selectColorOf('crop')).toBe(KEY_COLORS.x);
+  });
+
+  it('gives every key its own colour', () => {
+    const colors = Object.values(KEY_COLORS).map((color) => color.toLowerCase());
+    expect(new Set(colors).size).toBe(colors.length);
   });
 });
 
@@ -130,7 +136,7 @@ describe('canvasBadge', () => {
   it('tells the edit mode first', () => {
     expect(canvasBadge(modesOf({ editMode: 'crop', heldKey: 'i', cutCount: 2 }))).toEqual({
       text: 'Crop: drag the area to keep · Esc cancels',
-      color: PRIMARY_COLOR,
+      color: KEY_COLORS.x,
     });
     expect(canvasBadge(modesOf({ editMode: 'remove', hasSelection: true, selectedCount: 2 }))).toEqual({
       text: 'Remove: 2 measure point(s) selected · Esc cancels',
@@ -144,7 +150,7 @@ describe('canvasBadge', () => {
   it('tells inserting, a group, a held selection key', () => {
     expect(canvasBadge(modesOf({ heldKey: 'i', cutCount: 3 }))).toEqual({
       text: 'Insert 3 cut measure point(s): click where their middle goes',
-      color: CUT_COLOR,
+      color: KEY_COLORS.i,
     });
     expect(canvasBadge(modesOf({ group: { size: 4, pins: 1 } }))?.color).toBe(GROUP_COLOR);
     expect(canvasBadge(modesOf({ heldKey: 'l' }))).toEqual({
@@ -159,9 +165,23 @@ describe('canvasBadge', () => {
     expect(canvasBadge(modesOf({ heldKey: 'm', calibrationCount: 1 }))?.text).toBe(
       'Calibrate: click the second point of a known distance',
     );
+    expect(canvasBadge(modesOf({ heldKey: 'r' }))?.color).toBe(KEY_COLORS.r);
+    expect(canvasBadge(modesOf({ heldKey: 'm' }))?.color).toBe(KEY_COLORS.m);
+    expect(canvasBadge(modesOf({ heldKey: 'a' }))?.color).toBe(KEY_COLORS.a);
     expect(canvasBadge(modesOf({ heldKey: 'd', aligning: true }))).toBeNull();
     expect(canvasBadge(modesOf({ heldKey: 'r', caps: noCaps }))).toBeNull();
     expect(canvasBadge(modesOf())).toBeNull();
+  });
+
+  it('tells F and Space first - they work in every mode', () => {
+    expect(canvasBadge(modesOf({ heldKey: 'f', editMode: 'crop', caps: noCaps }))).toEqual({
+      text: 'Fit: drag over an area to zoom to it - or let go to fit the selection',
+      color: KEY_COLORS.f,
+    });
+    expect(canvasBadge(modesOf({ heldKey: 'space', group: { size: 2, pins: 0 } }))).toEqual({
+      text: 'Pan: drag to move the plan',
+      color: KEY_COLORS.space,
+    });
   });
 });
 
@@ -171,6 +191,12 @@ describe('canvasCursor', () => {
     expect(canvasCursor(modesOf({ heldKey: 'm' }), pointer)).toBe('crosshair');
     expect(canvasCursor(modesOf(), { ...pointer, placing: true })).toBe('crosshair');
     expect(canvasCursor(modesOf(), { ...pointer, dragging: true })).toBe('grabbing');
+  });
+
+  it('grabs with Space, picks an area with F - in any mode', () => {
+    expect(canvasCursor(modesOf({ heldKey: 'space', editMode: 'clear' }), pointer)).toBe('grab');
+    expect(canvasCursor(modesOf({ heldKey: 'space' }), { ...pointer, dragging: true })).toBe('grabbing');
+    expect(canvasCursor(modesOf({ heldKey: 'f' }), { ...pointer, hovered: hoveredItem })).toBe('crosshair');
   });
 
   it('grabs group points and, with A, sensors; points at sensors otherwise', () => {

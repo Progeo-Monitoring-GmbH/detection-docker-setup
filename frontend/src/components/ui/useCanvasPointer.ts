@@ -2,7 +2,9 @@
  * The mouse on the plan canvas (ImageCanvasStage): what a press does in the
  * mode in use (insert, drag a group point, select an area, drag a sensor to
  * align, set the reference / a calibration point, drag or place a sensor -
- * else pan), what moving and releasing do, and the hovered sensor.
+ * else pan), what moving and releasing do, and the hovered sensor. The
+ * middle button and Space + drag pan in every mode, F + drag picks an area
+ * to zoom to; the right button is the browser's.
  */
 import { useRef, type RefObject } from 'react';
 import type { PinDrag } from './drawImageCanvas';
@@ -57,6 +59,13 @@ type CanvasPointerInput = {
   px: number;
   screenScale: number;
   panTo: (x: number, y: number) => void;
+  /** A pan ends (its last move shown now). */
+  endPan: () => void;
+  /** F + drag: the area shown while dragging, and the one let go (canvas units). */
+  fit: {
+    setBox: (box: [ImagePoint, ImagePoint] | null) => void;
+    onDone: (box: [ImagePoint, ImagePoint]) => void;
+  };
   /** The measure points as stored / as shown (a group being aligned moved). */
   items: MarkerItem[];
   shownItems: MarkerItem[];
@@ -80,6 +89,8 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
   // started (a click places, a drag pans).
   const sensorDragRef = useRef<number | null>(null);
   const pressRef = useRef<{ x: number; y: number } | null>(null);
+  // F + drag: the area being dragged (canvas units).
+  const fitRef = useRef<[ImagePoint, ImagePoint] | null>(null);
 
   // -- where the mouse is ----------------------------------------------------
 
@@ -255,6 +266,14 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
   // canvas the "Align" drag is dropped - on it, it is pinned first).
   useWindowPointer(
     (event) => {
+      if (fitRef.current) {
+        const at = canvasPointAt(event);
+        if (at) {
+          fitRef.current = [fitRef.current[0], at];
+          input.fit.setBox(fitRef.current);
+        }
+        return;
+      }
       if (input.repair?.draggingArea()) {
         const at = imagePointAt(event, true);
         if (at) {
@@ -279,7 +298,16 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
       }
     },
     () => {
-      dragRef.current = null;
+      if (dragRef.current) {
+        dragRef.current = null;
+        input.endPan();
+      }
+      if (fitRef.current) {
+        const box = fitRef.current;
+        fitRef.current = null;
+        input.fit.setBox(null);
+        input.fit.onDone(box);
+      }
       if (input.repair?.draggingArea()) {
         input.repair.finishArea();
       }
@@ -290,11 +318,41 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     },
   );
 
+  const startPan = (event: CanvasMouseEvent) => {
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffsetX: input.view.offsetX,
+      startOffsetY: input.view.offsetY,
+    };
+  };
+
   return {
     /** Panning, or dragging a point onto its place. */
     dragging: Boolean(dragRef.current || calibration.alignDrag || groupDrag),
     onMouseDown: (event: CanvasMouseEvent) => {
       pressRef.current = null;
+      if (event.button > 1) {
+        // The right button: the browser's context menu.
+        return;
+      }
+      // The middle button (not the browser's auto-scroll) or Space: pan, in every mode.
+      if (event.button === 1 || modes.heldKey === 'space') {
+        event.preventDefault();
+        startPan(event);
+        setHover(null);
+        return;
+      }
+      // F + drag: the area to zoom to.
+      if (modes.heldKey === 'f') {
+        const at = canvasPointAt(event);
+        if (at) {
+          fitRef.current = [at, at];
+          input.fit.setBox(fitRef.current);
+          setHover(null);
+        }
+        return;
+      }
       const { repair } = input;
       if (repair?.active && repair.tool === 'area') {
         // Repair order, Area: a drag selects (Shift adds, Alt / Ctrl takes out).
@@ -313,16 +371,11 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
         ? []
         : [pressInsert, pressGroupPoint, pressSelect, pressAlign, pressScale, pressPlacement];
       if (!presses.some((press) => press(event))) {
-        dragRef.current = {
-          startX: event.clientX,
-          startY: event.clientY,
-          startOffsetX: input.view.offsetX,
-          startOffsetY: input.view.offsetY,
-        };
+        startPan(event);
       }
     },
     onMouseMove: (event: CanvasMouseEvent) => {
-      if (area.selectingRef.current) {
+      if (area.selectingRef.current || fitRef.current) {
         return;
       }
       if (insertingOf(modes)) {

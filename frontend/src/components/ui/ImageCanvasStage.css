@@ -32,6 +32,15 @@
   border-radius: 13px;
   background: var(--progeo-surface);
   box-shadow: inset 0 0 0 1px rgba(11, 54, 89, 0.08);
+  transition: box-shadow 0.08s;
+}
+
+/* A key held / a mode on: the frame glows in its colour (KEY_COLORS, the
+   badge's - --image-canvas-key-color inline). */
+.image-canvas-wrap--keyed .image-canvas-stage-canvas {
+  box-shadow:
+    0 0 0 4px var(--image-canvas-key-color),
+    0 0 18px 2px var(--image-canvas-key-color);
 }
 
 /* The cursor: picking a point / an area, dragging, over a sensor, panning. */

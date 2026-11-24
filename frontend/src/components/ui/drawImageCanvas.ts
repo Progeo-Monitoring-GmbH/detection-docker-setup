@@ -23,7 +23,15 @@ import {
   type PlanView,
   type PointTransform,
 } from './imageCanvasGeometry';
-import { CUT_COLOR, GROUP_COLOR, PRIMARY_COLOR, pointSelectOf, selectColorOf, type SelectMode } from './imageCanvasModes';
+import {
+  CUT_COLOR,
+  GROUP_COLOR,
+  KEY_COLORS,
+  PRIMARY_COLOR,
+  pointSelectOf,
+  selectColorOf,
+  type SelectMode,
+} from './imageCanvasModes';
 import { drawRepairOver, drawRepairUnder, type RepairOverlay } from './drawSensorRepair';
 
 /** A point being dragged onto its place: the grabbed point and the mouse (canvas units). */
@@ -54,6 +62,8 @@ export type StageScene = {
   referencePoint: ImagePoint | null;
   /** "Repair order" going on: its areas, lines and marks (drawSensorRepair). */
   repair?: RepairOverlay | null;
+  /** F + drag: the area to zoom to (canvas units). */
+  fitBox?: [ImagePoint, ImagePoint] | null;
 };
 
 type Positioned = { item: MarkerItem; start: ImagePoint; end: ImagePoint | null };
@@ -140,8 +150,26 @@ const drawSelectionArea = ({ ctx, px }: Pen, scene: StageScene, layout: CanvasLa
   }
   ctx.setLineDash([6 * px, 4 * px]);
   ctx.lineWidth = 1.5 * px;
-  ctx.strokeStyle = editMode === 'crop' ? PRIMARY_COLOR : selectColor;
+  ctx.strokeStyle = selectColor;
   ctx.strokeRect(left, top, right - left, bottom - top);
+  ctx.setLineDash([]);
+};
+
+/** F + drag: the area the view will zoom to, in F's colour. */
+const drawFitBox = ({ ctx, px }: Pen, box: [ImagePoint, ImagePoint] | null | undefined) => {
+  if (!box) {
+    return;
+  }
+  const [[ax, ay], [bx, by]] = box;
+  ctx.save();
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = KEY_COLORS.f;
+  ctx.fillRect(ax, ay, bx - ax, by - ay);
+  ctx.restore();
+  ctx.setLineDash([6 * px, 4 * px]);
+  ctx.lineWidth = 2 * px;
+  ctx.strokeStyle = KEY_COLORS.f;
+  ctx.strokeRect(ax, ay, bx - ax, by - ay);
   ctx.setLineDash([]);
 };
 
@@ -336,8 +364,8 @@ const drawCalibration = (p: Pen, points: ImagePoint[], layout: CanvasLayout) => 
     return;
   }
   const [first, second] = points.map((point) => imageToCanvas(point, layout));
-  ctx.strokeStyle = '#fd7e14';
-  ctx.fillStyle = '#fd7e14';
+  ctx.strokeStyle = KEY_COLORS.m;
+  ctx.fillStyle = KEY_COLORS.m;
   ctx.lineWidth = 2 * px;
   if (second) {
     p.line(first, second);
@@ -356,7 +384,7 @@ const drawReference = (p: Pen, point: ImagePoint | null, layout: CanvasLayout) =
     return;
   }
   const at = imageToCanvas(point, layout);
-  ctx.strokeStyle = PRIMARY_COLOR;
+  ctx.strokeStyle = KEY_COLORS.r;
   ctx.lineWidth = 2 * px;
   p.cross(at, 12);
   ctx.stroke();
@@ -412,4 +440,5 @@ export const drawStage = (ctx: CanvasRenderingContext2D, scene: StageScene) => {
   drawAlignPins(p, scene, transform, layout);
   drawCalibration(p, scene.calibrationPoints, layout);
   drawReference(p, scene.referencePoint, layout);
+  drawFitBox(p, scene.fitBox);
 };

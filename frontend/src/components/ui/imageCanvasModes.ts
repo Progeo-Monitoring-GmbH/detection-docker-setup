@@ -12,9 +12,12 @@ export type CanvasTool = 'pan' | 'reference' | 'calibrate';
 /** Held keys that change what a press on the plan does: A drags sensors to
  * align, R sets the reference point, M picks a calibration point; D / O / L
  * + drag select measure points to remove / cut out / align as a group, and
- * I + click inserts the cut ones. */
-export type HeldKey = 'a' | 'r' | 'm' | 'd' | 'o' | 'l' | 'i';
-export const HELD_KEYS: HeldKey[] = ['a', 'r', 'm', 'd', 'o', 'l', 'i'];
+ * I + click inserts the cut ones. F fits (tapped: the selection or the plan,
+ * + drag: that area), Space + drag pans. */
+export type HeldKey = 'a' | 'r' | 'm' | 'd' | 'o' | 'l' | 'i' | 'f' | 'space';
+export const HELD_KEYS: HeldKey[] = ['a', 'r', 'm', 'd', 'o', 'l', 'i', 'f', 'space'];
+/** The keys of the view (fit, pan) - they work in every mode, "Repair order" too. */
+export const VIEW_KEYS: HeldKey[] = ['f', 'space'];
 /** Edits of the plan image, switched on by a key press: C fills the selected
  * area white, X crops the plan to it - each only once "Apply" is pressed. */
 export type ImageEdit = 'clear' | 'crop';
@@ -44,12 +47,33 @@ export type SensorPlacement = {
   onSelect: (deviceId: number) => void;
 };
 
+/** Every key of the canvas has its colour: its badge, its selection and the
+ * glow of the canvas' frame while it is held / its mode is on. */
+export const KEY_COLORS: Record<HeldKey | 'c' | 'x', string> = {
+  a: '#0d6efd',
+  r: '#0aa2c0',
+  m: '#198754',
+  d: '#C44D26',
+  o: '#B7791F',
+  l: '#6f42c1',
+  i: '#d63384',
+  f: '#e0a100',
+  c: '#5c6b7a',
+  x: '#212529',
+  space: '#8e9aa6',
+};
 /** Colours of the point actions: remove, cut out / insert, group alignment. */
-export const REMOVE_COLOR = '#C44D26';
-export const CUT_COLOR = '#B7791F';
-export const GROUP_COLOR = '#6f42c1';
-export const PRIMARY_COLOR = '#0d6efd';
-const POINT_COLORS: Record<PointSelect, string> = { remove: REMOVE_COLOR, cut: CUT_COLOR, group: GROUP_COLOR };
+export const REMOVE_COLOR = KEY_COLORS.d;
+export const CUT_COLOR = KEY_COLORS.o;
+export const GROUP_COLOR = KEY_COLORS.l;
+export const PRIMARY_COLOR = KEY_COLORS.a;
+const SELECT_COLORS: Record<SelectMode, string> = {
+  remove: REMOVE_COLOR,
+  cut: CUT_COLOR,
+  group: GROUP_COLOR,
+  clear: KEY_COLORS.c,
+  crop: KEY_COLORS.x,
+};
 
 /** What D / O / L + drag do, for the badge and the button under the selection. */
 const POINT_ACTIONS: Record<PointSelect, { name: string; doing: string; button: string }> = {
@@ -62,11 +86,8 @@ const POINT_ACTIONS: Record<PointSelect, { name: string; doing: string; button: 
 export const pointSelectOf = (mode: SelectMode | null): PointSelect | null =>
   mode === 'remove' || mode === 'cut' || mode === 'group' ? mode : null;
 
-/** The colour of a selection (outline, marks): clear and remove red. */
-export const selectColorOf = (mode: SelectMode | null) => {
-  const pointSelect = pointSelectOf(mode);
-  return pointSelect ? POINT_COLORS[pointSelect] : REMOVE_COLOR;
-};
+/** The colour of a selection (outline, marks): its key's (D / O / L / C / X). */
+export const selectColorOf = (mode: SelectMode | null) => (mode ? SELECT_COLORS[mode] : REMOVE_COLOR);
 
 /** What the canvas offers with the props given. */
 export type CanvasCaps = {
@@ -191,7 +212,7 @@ export type Badge = { text: string; color: string };
 
 const editBadge = (modes: CanvasModes, mode: SelectMode): Badge => {
   if (mode === 'crop') {
-    return { text: 'Crop: drag the area to keep · Esc cancels', color: PRIMARY_COLOR };
+    return { text: 'Crop: drag the area to keep · Esc cancels', color: KEY_COLORS.x };
   }
   const pointSelect = pointSelectOf(mode);
   return {
@@ -202,8 +223,14 @@ const editBadge = (modes: CanvasModes, mode: SelectMode): Badge => {
   };
 };
 
-/** The key hints a held key gives (A / R / M). */
+/** The key hints a held key gives (A / R / M, F, Space). */
 const heldKeyText = (modes: CanvasModes) => {
+  if (modes.heldKey === 'f') {
+    return 'Fit: drag over an area to zoom to it - or let go to fit the selection';
+  }
+  if (modes.heldKey === 'space') {
+    return 'Pan: drag to move the plan';
+  }
   if (alignKeyOf(modes)) {
     return `Align: drag a ${modes.lineMode ? 'dm line' : 'sensor'} onto its right place`;
   }
@@ -219,25 +246,30 @@ const heldKeyText = (modes: CanvasModes) => {
   return null;
 };
 
-/** What a held key / the edit mode does - the badge on the plan, or null. */
+/** What a held key / the edit mode does - the badge on the plan, or null.
+ * The canvas' frame glows in its colour. */
 export const canvasBadge = (modes: CanvasModes): Badge | null => {
   const noun = pointNounOf(modes.lineMode);
+  // The view keys first: they work in every mode.
+  if (modes.heldKey === 'f' || modes.heldKey === 'space') {
+    return { text: heldKeyText(modes)!, color: KEY_COLORS[modes.heldKey] };
+  }
   if (editingOf(modes) && modes.editMode) {
     return editBadge(modes, modes.editMode);
   }
   if (insertingOf(modes)) {
-    return { text: `Insert ${modes.cutCount} cut ${noun}(s): click where their middle goes`, color: CUT_COLOR };
+    return { text: `Insert ${modes.cutCount} cut ${noun}(s): click where their middle goes`, color: KEY_COLORS.i };
   }
   if (modes.group) {
     return { text: `Align ${modes.group.size} ${noun}(s): drag them onto their place · Esc cancels`, color: GROUP_COLOR };
   }
   const heldSelect = heldSelectOf(modes);
   if (heldSelect && !modes.aligning) {
-    return { text: pointBadge(modes, heldSelect, false), color: POINT_COLORS[heldSelect] };
+    return { text: pointBadge(modes, heldSelect, false), color: SELECT_COLORS[heldSelect] };
   }
   const text = heldKeyText(modes);
   // A held D / O / L while aligning shows no badge (heldKeyText is null for it).
-  return text ? { text, color: heldSelect ? POINT_COLORS[heldSelect] : PRIMARY_COLOR } : null;
+  return text && modes.heldKey ? { text, color: KEY_COLORS[modes.heldKey] } : null;
 };
 
 /** The edit mode whose selection can be applied now ("Apply" floats): big
@@ -259,7 +291,10 @@ export const canvasCursor = (
   pointer: { placing: boolean; dragging: boolean; hovered: MarkerItem | null; groupIds: Set<number> | null },
 ) => {
   const { hovered } = pointer;
-  if (picking(modes, pointer.placing)) {
+  if (modes.heldKey === 'space') {
+    return pointer.dragging ? 'grabbing' : 'grab';
+  }
+  if (modes.heldKey === 'f' || picking(modes, pointer.placing)) {
     return 'crosshair';
   }
   if (pointer.dragging) {

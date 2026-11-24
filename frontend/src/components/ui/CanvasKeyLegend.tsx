@@ -6,7 +6,7 @@
  * still names the action in use); collapsed or not is shared by every
  * legend and remembered in this browser.
  */
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type CSSProperties } from 'react';
 import { ChevronDown, ChevronUp, Keyboard } from 'react-bootstrap-icons';
 import { createListeners } from '../../listeners';
 import { childTestId } from '../../testIds';
@@ -20,7 +20,13 @@ export type LegendEntry = {
   keys: string[];
   label: string;
   active?: boolean;
+  /** The key's colour (KEY_COLORS) - its keys and, in use, the entry show it. */
+  color?: string;
 };
+
+/** The entry's colour as the CSS variable its keys and highlight read. */
+const colorStyle = (color: string | undefined) =>
+  color ? ({ '--canvas-key-color': color } as CSSProperties) : undefined;
 
 export type LegendGroup = {
   title: string;
@@ -50,14 +56,19 @@ const setCollapsed = (next: boolean) => {
   notify();
 };
 
-const Keys = ({ keys }: { keys: string[] }) => (
-  <span className="d-inline-flex align-items-center gap-1 flex-shrink-0 canvas-key-legend-keys">
+const badgeClass = (key: string, colored: boolean) => {
+  if (MOUSE_ACTIONS.has(key)) {
+    return 'canvas-key-badge canvas-key-badge--mouse';
+  }
+  return colored ? 'canvas-key-badge canvas-key-badge--colored' : 'canvas-key-badge';
+};
+
+const Keys = ({ keys, color }: { keys: string[]; color?: string }) => (
+  <span className="d-inline-flex align-items-center gap-1 flex-shrink-0 canvas-key-legend-keys" style={colorStyle(color)}>
     {keys.map((key, index) => (
       <span key={key} className="d-inline-flex align-items-center gap-1">
         {index > 0 && <span className="canvas-key-legend-plus">+</span>}
-        <kbd className={MOUSE_ACTIONS.has(key) ? 'canvas-key-badge canvas-key-badge--mouse' : 'canvas-key-badge'}>
-          {key}
-        </kbd>
+        <kbd className={badgeClass(key, color != null)}>{key}</kbd>
       </span>
     ))}
   </span>
@@ -97,7 +108,7 @@ const CanvasKeyLegend = ({
         <span className="canvas-key-legend-head-title">Mouse &amp; keys</span>
         {isCollapsed && active && (
           <span className="canvas-key-legend-head-active d-inline-flex align-items-center gap-2" data-testid={childTestId(testId, 'active')}>
-            <Keys keys={active.keys} />
+            <Keys keys={active.keys} color={active.color} />
             <span>{active.label}</span>
           </span>
         )}
@@ -128,9 +139,10 @@ const CanvasKeyLegend = ({
                   key={`${entry.keys.join('+')} ${entry.label}`}
                   className={`d-flex align-items-center gap-3 canvas-key-legend-entry${
                     entry.active ? ' canvas-key-legend-entry--active' : ''
-                  }`}
+                  }${entry.color ? ' canvas-key-legend-entry--colored' : ''}`}
+                  style={colorStyle(entry.color)}
                 >
-                  <Keys keys={entry.keys} />
+                  <Keys keys={entry.keys} color={entry.color} />
                   <span>{entry.label}</span>
                 </div>
               ))}
