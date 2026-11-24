@@ -54,15 +54,17 @@ def test_project_rows_filters_status_and_maps_fields():
     }]
 
 
-def test_the_planning_and_sensorik_projects_are_caught_too():
-    planning, sensorik, measuring, done = (next(_project_ids) for _ in range(4))
+def test_the_projects_from_planning_to_billed_are_caught():
+    planning, sensorik, measuring, closing, billed, offer = (next(_project_ids) for _ in range(6))
     rows = airtable_locations.project_rows([
         _record(planning, status="Technischer Planung"), _record(sensorik, status="Sensorik"),
-        _record(measuring), _record(done, status="Abgerechnet / In Betreuung"),
+        _record(measuring), _record(closing, status="Projektabschluss"),
+        _record(billed, status="Abgerechnet / In Betreuung"), _record(offer, status="Angebot"),
     ])
 
     assert [(row["project_id"], row["status"]) for row in rows] == [
         (planning, "Technischer Planung"), (sensorik, "Sensorik"), (measuring, "Messeinheit und Inbetriebnahme"),
+        (closing, "Projektabschluss"), (billed, "Abgerechnet / In Betreuung"),
     ]
 
 

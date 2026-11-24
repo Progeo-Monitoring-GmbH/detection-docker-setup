@@ -272,13 +272,6 @@ export const ROUTES = [
     roles: ['user', 'staff'],
     modals: [
       {
-        testId: 'matrix-setup',
-        open: [
-          { click: 'notification-channel-choice-option', key: 'matrix' },
-          'notification-channel-save',
-        ],
-      },
-      {
         testId: 'benach-test-dialog',
         roles: ['staff'],
         open: ['benach-test-button'],

@@ -14,7 +14,6 @@ import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
-import NotificationChannelCard from './NotificationChannelCard';
 import './LocationNotificationsTab.css';
 import { projectPath } from './portalNav';
 
@@ -201,7 +200,6 @@ const LocationNotificationsTab = () => {
 
   return (
     <div className="benach-page">
-    <NotificationChannelCard />
     <PanelCard
       testId="page-location-benachrichtigungen"
       title={t('benach_title')}

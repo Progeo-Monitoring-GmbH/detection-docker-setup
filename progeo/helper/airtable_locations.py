@@ -1,8 +1,9 @@
 """Locations from the Airtable projects (DeviceViewSet provision/airtable/*).
 
-"sync" fetches the projects in STATUSES - from the technical planning to
-"Messeinheit und Inbetriebnahme", where a controller is provisioned for
-them; each row carries its status. Projects that already have a
+"sync" fetches the projects in STATUSES - from the technical planning
+through "Messeinheit und Inbetriebnahme", where a controller is provisioned
+for them, to the finished ones ("Projektabschluss", "Abgerechnet / In
+Betreuung"); each row carries its status. Projects that already have a
 location (same project_id, in any account's database) are merge-updated;
 the rest come back as "available", signed, so "import" creates exactly
 those rows under the chosen account without asking Airtable again.
@@ -35,7 +36,10 @@ from progeo.v1.models import ProgeoLocation
 # The Airtable statuses (field "Status") whose projects get a location, in
 # the order a project passes them - spelled exactly as in Airtable
 # ("Technischer Planung" is its spelling).
-STATUSES = ("Technischer Planung", "Sensorik", "Messeinheit und Inbetriebnahme")
+STATUSES = (
+    "Technischer Planung", "Sensorik", "Messeinheit und Inbetriebnahme",
+    "Projektabschluss", "Abgerechnet / In Betreuung",
+)
 SHEETS_FIELD = "Produktblätter"
 FIELDS = ["Projektnummer", "Objektname", "Projekttyp", "Status", "Baustellenadresse", "Link zum Projekt",
           SHEETS_FIELD]

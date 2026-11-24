@@ -48,7 +48,13 @@ const typeText = (project: AirtableProject) => [project.project_type_label, ...p
 
 /** The statuses the sync fetches, in the order a project passes them
  * (helper/airtable_locations.py STATUSES) - the column sorts by it. */
-const STATUS_ORDER = ['Technischer Planung', 'Sensorik', 'Messeinheit und Inbetriebnahme'];
+const STATUS_ORDER = [
+  'Technischer Planung',
+  'Sensorik',
+  'Messeinheit und Inbetriebnahme',
+  'Projektabschluss',
+  'Abgerechnet / In Betreuung',
+];
 
 const statusRank = (project: AirtableProject) => {
   const rank = STATUS_ORDER.indexOf(project.status ?? '');
@@ -59,6 +65,8 @@ const STATUS_CLASS: Record<string, string> = {
   'Technischer Planung': 'airtable-sync-status--planning',
   Sensorik: 'airtable-sync-status--sensorik',
   'Messeinheit und Inbetriebnahme': 'airtable-sync-status--measuring',
+  Projektabschluss: 'airtable-sync-status--closing',
+  'Abgerechnet / In Betreuung': 'airtable-sync-status--billed',
 };
 
 const projectKey = (project: AirtableProject) => project.project_id;
@@ -160,9 +168,9 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
 ];
 
 /**
- * Result of "Sync with Airtable" (staff, AirtableSyncButton): the projects in
- * "Technischer Planung", "Sensorik" or "Messeinheit und Inbetriebnahme"
- * (shown per row) without a location can be created under
+ * Result of "Sync with Airtable" (staff, AirtableSyncButton): the projects
+ * from "Technischer Planung" to "Abgerechnet / In Betreuung" (STATUS_ORDER,
+ * shown per row) without a location can be created under
  * an account; the existing locations were merge-updated by the sync
  * (helper/airtable_locations.py). `onLocationsChanged`: names changed or
  * locations were created - the page reloads its location list. `flat`: inside
@@ -228,7 +236,7 @@ const AirtableSyncPanel = ({
 
   return (
     <PanelCard
-      title="Airtable projects (Technischer Planung, Sensorik, Messeinheit und Inbetriebnahme)"
+      title="Airtable projects (Technischer Planung to Abgerechnet / In Betreuung)"
       testId="airtable-sync"
       flat={flat}
       actions={

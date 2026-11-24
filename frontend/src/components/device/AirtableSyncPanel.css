@@ -26,6 +26,17 @@
   background-color: var(--bs-success-bg-subtle);
 }
 
+/* Finished projects: done with the installation. */
+.airtable-sync-status--closing {
+  color: var(--bs-primary-text-emphasis);
+  background-color: var(--bs-primary-bg-subtle);
+}
+
+.airtable-sync-status--billed {
+  color: var(--bs-dark-text-emphasis);
+  background-color: var(--bs-dark-bg-subtle);
+}
+
 /* The address keeps its line breaks. */
 .airtable-sync-address {
   white-space: pre-line;

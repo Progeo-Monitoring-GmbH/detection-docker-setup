@@ -86,9 +86,7 @@ type UserProfileModalProps = {
  * - The head shows the user's name (first + last, else the login name).
  * - Contact data: name, e-mail, mobile (PhoneInput, stored as E.164) and the
  *   language of the portal, the mails and the messenger messages.
- *   Messenger / ProGeo chat are not set up here: the notification channel
- *   (SMS or ProGeo chat) is chosen on an object's notifications tab
- *   (NotificationChannelCard).
+ *   Messenger / ProGeo chat are not set up here.
  * - Access: "request access to another project" (a form mailed to the
  *   ProGeo staff, /v1/user/request-access/) and the password - buttons.
  * - Two-factor authentication: one button opens the setup dialog
