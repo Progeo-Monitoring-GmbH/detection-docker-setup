@@ -54,6 +54,24 @@ describe('defaultDeviceRanges', () => {
     ]);
   });
 
+  it('ends a range at its saved sensor count, also beyond its points', () => {
+    // Step 2 saved 296-618 (sensor_count 323) - the points only reach 597 yet.
+    const ranges = defaultDeviceRanges(
+      [...points(1, 1, 295), ...points(2, 296, 597)],
+      [
+        device(1, { sensor_count: 295 }),
+        device(2, { first_sensor_order: 296, sensor_count: 323 }),
+        device(3, { first_sensor_order: 619, sensor_count: 279 }),
+      ],
+    );
+
+    expect(ranges).toEqual([
+      { deviceId: 1, from: '1', to: '295' },
+      { deviceId: 2, from: '296', to: '618' },
+      { deviceId: 3, from: '619', to: '897' },
+    ]);
+  });
+
   it('keeps a saved range that covers a single point', () => {
     const ranges = defaultDeviceRanges(
       [...points(1, 1, 200), ...points(3, 201, 201)],

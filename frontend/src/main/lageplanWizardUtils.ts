@@ -113,10 +113,11 @@ export const placedFromPoints = (
 };
 
 /** The device ranges step 2 shows: each device with imported points (more
- * than one - a single one is a hand-placed sensor) from its first sensor to
- * its last point, and each device whose saved range starts behind sensor 1
- * (measure_points/device_ranges) - also without points yet, ending at its
- * saved sensor count. The last range is open-ended unless its end was saved. */
+ * than one - a single one is a hand-placed sensor) and each device whose
+ * saved range starts behind sensor 1 (measure_points/device_ranges) - also
+ * without points yet. A range ends at its saved sensor count (also beyond
+ * its points: "to" saved as 618 stays 618 while the points reach 597), else
+ * at its last point; the last range without a saved count is open-ended. */
 export const defaultDeviceRanges = (
   points: MeasurePoint[],
   devices: WizardDevice[],
@@ -132,11 +133,14 @@ export const defaultDeviceRanges = (
         return [];
       }
       const from = device.first_sensor_order ?? Math.min(...orders);
-      // A saved range without points ends where its sensor count says (or nowhere).
-      const savedEnd = orders.length === 0;
-      const to = savedEnd
-        ? device.sensor_count != null ? String(from + device.sensor_count - 1) : ''
-        : String(Math.max(...orders));
+      // The saved end wins over the points; without one, a range without points stays open.
+      const savedEnd = device.sensor_count != null || orders.length === 0;
+      let to = '';
+      if (device.sensor_count != null) {
+        to = String(from + device.sensor_count - 1);
+      } else if (orders.length) {
+        to = String(Math.max(...orders));
+      }
       return [{ range: { deviceId: device.id, from: String(from), to }, savedEnd }];
     })
     .sort((a, b) => Number(a.range.from) - Number(b.range.from));
