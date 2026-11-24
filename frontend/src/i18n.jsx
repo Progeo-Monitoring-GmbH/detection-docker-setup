@@ -965,6 +965,10 @@ i18n
           notification_link_failed:
             'That did not work. Please try again later.',
           matrix_setup_open: 'Set up ProGeo chat',
+          matrix_pitch: 'Alarms and faults straight to your phone - instantly, free of charge and on our own server. Set up in two minutes, no password needed.',
+          matrix_make_primary: 'Use for notifications',
+          matrix_promo_title: 'Get notifications instantly on your phone',
+          matrix_promo_dismiss: 'Hide recommendation',
           matrix_not_primary_hint:
             'Your notifications do not use the chat yet.',
           matrix_other_app: 'Use another app (FluffyChat)',
@@ -4329,6 +4333,10 @@ i18n
           notification_link_failed:
             'Das hat nicht geklappt. Bitte versuchen Sie es später erneut.',
           matrix_setup_open: 'ProGeo Chat einrichten',
+          matrix_pitch: 'Alarme und Störungen direkt aufs Handy - sofort, kostenlos und auf unserem eigenen Server. In zwei Minuten eingerichtet, ganz ohne Passwort.',
+          matrix_make_primary: 'Für Benachrichtigungen nutzen',
+          matrix_promo_title: 'Benachrichtigungen sofort aufs Handy',
+          matrix_promo_dismiss: 'Empfehlung ausblenden',
           matrix_not_primary_hint:
             'Ihre Benachrichtigungen nutzen den Chat noch nicht.',
           matrix_other_app: 'Andere App verwenden (FluffyChat)',

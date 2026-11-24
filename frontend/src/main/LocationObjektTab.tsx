@@ -8,6 +8,7 @@ import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snac
 import PanelCard from '../components/ui/kit/PanelCard';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import PhoneInput from '../components/ui/PhoneInput';
+import { dialForLanguage } from '../components/ui/phone';
 import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
@@ -387,6 +388,7 @@ const LocationObjektTab = () => {
               value={form.telefon}
               onChange={set('telefon')}
               readOnly={!canEditContact}
+              defaultDial={dialForLanguage(location?.language)}
             />
             <LabeledInput
               testId="objekt-email"

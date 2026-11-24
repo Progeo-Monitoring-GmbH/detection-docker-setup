@@ -11,6 +11,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }));
 
 const { default: PhoneInput } = await import('./PhoneInput');
+const { dialForLanguage } = await import('./phone');
 
 let container: HTMLDivElement;
 let root: Root;
@@ -23,7 +24,7 @@ const type = (element: HTMLInputElement | HTMLSelectElement, value: string) => {
   element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 };
 
-const Harness = ({ initial }: { initial: string }) => {
+const Harness = ({ initial, defaultDial }: { initial: string; defaultDial?: string }) => {
   const [value, setValue] = useState(initial);
   return (
     <PhoneInput
@@ -33,6 +34,7 @@ const Harness = ({ initial }: { initial: string }) => {
         changes.push(next);
         setValue(next);
       }}
+      defaultDial={defaultDial}
       testId="phone"
     />
   );
@@ -66,6 +68,16 @@ describe('PhoneInput', () => {
     act(() => type(number(), '0171 1234567'));
     expect(changes[changes.length - 1]).toBe('+491711234567');
     expect(number().value).toBe('0171 1234567');
+  });
+
+  it('starts with the location language\'s calling code - US +1 for English - a stored number keeps its own', () => {
+    act(() => root.render(<Harness initial="" defaultDial={dialForLanguage('en')} />));
+    expect(country().value).toBe('1');
+    act(() => type(number(), '212 555 0123'));
+    expect(changes[changes.length - 1]).toBe('+12125550123');
+
+    act(() => root.render(<Harness key="stored" initial="+491711234567" defaultDial={dialForLanguage('en')} />));
+    expect(country().value).toBe('49');
   });
 
   it('re-emits with a new calling code', () => {

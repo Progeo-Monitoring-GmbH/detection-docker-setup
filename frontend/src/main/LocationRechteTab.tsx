@@ -14,6 +14,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import PhoneInput from '../components/ui/PhoneInput';
+import { dialForLanguage } from '../components/ui/phone';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
@@ -202,7 +203,7 @@ export const mayAddPeople = ({ role, isCustomerAdmin }: { role: string; isCustom
   role !== 'nutzer' || isCustomerAdmin;
 
 const LocationRechteTab = () => {
-  const { locationId } = useOutletContext<PortalOutletContext>();
+  const { locationId, location } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
@@ -483,6 +484,7 @@ const LocationRechteTab = () => {
                   label={t(label)}
                   value={editing.value}
                   onChange={(value) => setContactEdit({ ...editing, value })}
+                  defaultDial={dialForLanguage(location?.language)}
                 />
               ) : (
                 <LabeledInput

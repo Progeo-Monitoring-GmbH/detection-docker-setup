@@ -45,6 +45,12 @@ export const CALLING_CODES: CallingCode[] = [
 ];
 
 export const DEFAULT_DIAL = '49';
+export const ENGLISH_DIAL = '1';
+
+/** The calling code a location's phone fields start with: US +1 for an
+ * English location (ProgeoLocation.language "en"), else Germany +49. */
+export const dialForLanguage = (language: string | null | undefined) =>
+  (language || '').trim().toLowerCase().startsWith('en') ? ENGLISH_DIAL : DEFAULT_DIAL;
 
 /** Italy keeps the leading 0 of its national numbers; everywhere else it is the trunk prefix. */
 const KEEPS_LEADING_ZERO = new Set(['39']);

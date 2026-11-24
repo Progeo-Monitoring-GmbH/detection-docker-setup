@@ -14,6 +14,7 @@ import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import MatrixPromoBanner from './MatrixPromoBanner';
 import './LocationNotificationsTab.css';
 import { projectPath } from './portalNav';
 
@@ -200,6 +201,7 @@ const LocationNotificationsTab = () => {
 
   return (
     <div className="benach-page">
+    <MatrixPromoBanner />
     <PanelCard
       testId="page-location-benachrichtigungen"
       title={t('benach_title')}

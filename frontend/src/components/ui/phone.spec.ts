@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { formatPhone, isPhoneSavable, isValidE164, parsePhone, toE164 } from './phone';
+import { dialForLanguage, formatPhone, isPhoneSavable, isValidE164, parsePhone, toE164 } from './phone';
+
+describe('dialForLanguage', () => {
+  it('starts the phone fields of an English location with US +1, the others with +49', () => {
+    expect(dialForLanguage('en')).toBe('1');
+    expect(dialForLanguage('en-GB')).toBe('1');
+    expect(dialForLanguage('de')).toBe('49');
+    // Unset: German.
+    expect(dialForLanguage('')).toBe('49');
+    expect(dialForLanguage(null)).toBe('49');
+    expect(parsePhone('', dialForLanguage('en'))).toEqual({ dial: '1', national: '' });
+  });
+});
 
 describe('parsePhone', () => {
   it('splits E.164 into calling code and national number', () => {
