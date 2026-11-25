@@ -140,6 +140,14 @@ server {
     # Before the backend regex location below (first matching regex wins).
     include /etc/nginx/snippets/login_rate_limit.conf;
 
+    # "/aadmin" without the slash: the regex below only matches "/aadmin/...",
+    # so it went to "location /" and the frontend answered with its 404 route.
+    # Relative Location: stays on the host (and port) the browser used.
+    location = /aadmin {
+        absolute_redirect off;
+        return 301 /aadmin/$is_args$args;
+    }
+
     # Backend on the dashboard's own origin: the frontend is built without a
     # backend URL and calls these paths same-origin (no CORS, no extra DNS
     # name). The api server block above keeps working for other clients.

@@ -69,6 +69,25 @@ if (!OUT) {
   process.exit(2);
 }
 
+/**
+ * The app's CONSENT_VERSION (src/components/privacy/consent.ts), read from
+ * the source: a stored decision of another version is discarded and the
+ * consent banner covers the page - every dialog step then timed out on a
+ * covered button (the version went 3 -> 4 and this file still wrote 3).
+ */
+const CONSENT_VERSION = (() => {
+  const source = fs.readFileSync(
+    new URL('../../src/components/privacy/consent.ts', import.meta.url),
+    'utf8',
+  );
+  const match = source.match(/export const CONSENT_VERSION\s*=\s*(\d+)/);
+  if (!match) {
+    console.error('CONSENT_VERSION not found in src/components/privacy/consent.ts');
+    process.exit(2);
+  }
+  return Number(match[1]);
+})();
+
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const tokenOf = (persona) =>
   `${b64({ alg: 'none', typ: 'JWT' })}.${b64({
@@ -473,7 +492,7 @@ try {
             timezoneId: 'Europe/Berlin',
           });
           await context.addInitScript(
-            ({ token, language: lng, consent }) => {
+            ({ token, language: lng, consent, consentVersion }) => {
               if (token) {
                 localStorage.setItem('authToken', token);
                 localStorage.setItem('refreshToken', token);
@@ -483,7 +502,7 @@ try {
               localStorage.setItem(
                 'progeo_consent',
                 JSON.stringify({
-                  version: 3,
+                  version: consentVersion,
                   decidedAt: new Date().toISOString(),
                   categories: {
                     necessary: true,
@@ -499,6 +518,7 @@ try {
               token: route.public ? null : tokenOf(persona),
               language,
               consent: route.consent ?? {},
+              consentVersion: CONSENT_VERSION,
             },
           );
           for (const server of TILE_SERVERS) {
