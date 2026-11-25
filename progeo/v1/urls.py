@@ -25,6 +25,7 @@ from progeo.v1.viewsets.manusensor_views import (
     FactorySensorMeasurementsView,
     FactorySensorsView,
     ManuSensorMeasurementsView,
+    ManuSensorProjectsView,
     ManuSensorSensorView,
 )
 from progeo.v1.viewsets.notification_viewset import (
@@ -109,6 +110,8 @@ urlpatterns = [
     re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/sensor/(?:(?P<sensor>[0-9]{1,6})/?)?$',
             ManuSensorSensorView.as_view()),
     re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/messungen/?$', ManuSensorMeasurementsView.as_view()),
+    # The app's project picker: the projects with factory sensors.
+    re_path(r'^werk/projekte/?$', ManuSensorProjectsView.as_view()),
     re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
     # The staff page (/staff/sensors/): the site measurements of a factory sensor.
     re_path(r'^werk/sensoren/(?P<pk>\d+)/messungen/?$', FactorySensorMeasurementsView.as_view()),

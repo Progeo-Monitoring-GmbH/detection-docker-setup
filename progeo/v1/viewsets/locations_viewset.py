@@ -556,6 +556,37 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     return location, account
         return None, None
 
+    @classmethod
+    def _find_project_locations(cls, request, project_ids):
+        """_find_location(project_id=...) for many numbers at once:
+        {project_id: location} of the numbers whose main location the user may
+        open - the same accounts, order and staff fallback, but one query per
+        account instead of one per number (the manuSensor project list)."""
+        from progeo.helper.project_portal import MAIN_ORDER
+
+        user = getattr(request, "user", None)
+        wanted = set(project_ids)
+        found = {}
+
+        def scan(account, scope):
+            missing = wanted - found.keys()
+            if not missing:
+                return
+            rows = (
+                ProgeoLocation.objects.using(account.db_name)
+                .filter(scope, project_id__in=missing).order_by("project_id", *MAIN_ORDER)
+            )
+            for location in rows:
+                # Ordered like main_location(): a number's first row is its main location.
+                found.setdefault(location.project_id, location)
+
+        for account in cls._resolve_request_accounts(request):
+            scan(account, location_q(user, account))
+        if user and _is_staff_admin(user):
+            for account in configured_accounts():
+                scan(account, Q(account=account))
+        return found
+
     def get_object(self):
         """The location of a detail route (retrieve/update/destroy) in any of
         the user's accounts - get_queryset() covers the first account only,
