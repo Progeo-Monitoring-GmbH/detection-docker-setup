@@ -351,7 +351,7 @@ services:
   # of the Matrix server. Its only login is the ProGeo portal (OpenID Connect,
   # progeo/oidc.py) - every portal user gets an account on the first login.
   progeo-mas:
-    image: ghcr.io/element-hq/matrix-authentication-service:1.29.0
+    image: ghcr.io/element-hq/matrix-authentication-service:1.30.0
     container_name: progeo-mas
     restart: unless-stopped
     profiles: ['messenger']
@@ -591,7 +591,7 @@ services:
   # server's state and answers with a zip - report.json and PROMPT.md, the
   # instructions for a coding agent. docker/monitoring/agent-report/server.py
   progeo-agent-report:
-    image: python:3.13-alpine
+    image: python:3.15-alpine
     container_name: progeo-agent-report
     restart: unless-stopped
     profiles: ['monitoring']
@@ -657,7 +657,7 @@ services:
 
   # Logs in as the read-only role of progeo-monitoring-db-init.
   progeo-postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.20.1
+    image: prometheuscommunity/postgres-exporter:v0.21.1
     container_name: progeo-postgres-exporter
     restart: unless-stopped
     profiles: ['monitoring']
@@ -683,7 +683,7 @@ services:
   # Only the database sizes, scraped every 15 minutes (prometheus.yml, job
   # "postgres-sizes") - same read-only role as progeo-postgres-exporter.
   progeo-postgres-sizes-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.20.1
+    image: prometheuscommunity/postgres-exporter:v0.21.1
     container_name: progeo-postgres-sizes-exporter
     restart: unless-stopped
     profiles: ['monitoring']
@@ -714,7 +714,7 @@ services:
       database_net:
 
   progeo-redis-exporter:
-    image: oliver006/redis_exporter:v1.97.0
+    image: oliver006/redis_exporter:v1.98.0
     container_name: progeo-redis-exporter
     restart: unless-stopped
     profiles: ['monitoring']
@@ -731,7 +731,7 @@ services:
 
   # CPU, memory and restarts per container.
   progeo-cadvisor:
-    image: ghcr.io/google/cadvisor:v0.61.0
+    image: ghcr.io/google/cadvisor:v0.61.1
     container_name: progeo-cadvisor
     restart: unless-stopped
     profiles: ['monitoring']
@@ -783,7 +783,7 @@ services:
   # the real network interfaces) and listens on the monitoring_net gateway only,
   # so it is reachable from the host and progeo-prometheus but not from outside.
   progeo-node-exporter:
-    image: prom/node-exporter:v1.12.1
+    image: prom/node-exporter:v1.13.1
     container_name: progeo-node-exporter
     restart: unless-stopped
     profiles: ['monitoring']
