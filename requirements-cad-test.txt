@@ -1,5 +1,5 @@
 # Optional host-side dependencies for docker/cad_factory reader tests.
 # Keep versions aligned with docker/cad_factory/Dockerfile.
 ezdxf==1.4.5
-ezdwg==0.20.0
+ezdwg==0.21.3
 pymupdf==2.1

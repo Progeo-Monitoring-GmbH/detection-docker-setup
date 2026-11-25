@@ -27,7 +27,7 @@ hiredis~=3.5.0         # C parser redis-py picks up automatically (no import)
 jsonfield~=3.2.0
 kombu~=5.7.0
 matplotlib~=3.11.2
-numpy==2.5.4
+numpy==2.5.5
 odfpy~=1.4.1            # tablib Dataset.export("ods") (progeo_model_viewset.py)
 opencv-python-headless~=5.0.0.93   # pre-built wheel (no musl wheel on PyPI): docker/backend-base --target wheels - same version as OPENCV_VERSION there
 paramiko~=5.1.0        # SFTP of the daily backup transfer (progeo/helper/backup_transfer.py)
