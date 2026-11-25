@@ -6,7 +6,7 @@
 # Started per run by the Docker agent (progeo/docker_agent/ops.py
 # run_e2e_screens) as DOCKER_UID:DOCKER_GID, with the run's folder
 # media/uploads/e2e/<run>/ mounted at /workspace/out.
-FROM node:24.22.1-bookworm-slim
+FROM node:26.13.0-bookworm-slim
 
 # The browser in a fixed place, readable for the run's user; HOME for npm,
 # Chromium's crash files and Vite (the run's user has no home).
