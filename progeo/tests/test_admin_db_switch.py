@@ -16,7 +16,7 @@ from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is the s
     WITH_PROJECT_DBS,
     project_dbs,
 )
-from progeo.v1.models import ProgeoDevice
+from progeo.v1.models import ProgeoDevice, ProgeoMeasurement, ProgeoSensorMapping
 
 # The django_db marker checks its databases against DATABASES before any fixture runs.
 register_project_db(ALIAS)
@@ -112,3 +112,25 @@ def test_project_entries_carry_name_street_plz_and_town_for_the_typeahead(admin_
     assert f'data-detail="{detail}"' in page
     assert f'data-search="Projekt {PROJECT} Halle Nord, Hafenstraße 5, 20457 Hamburg Halle Süd"' in page
     assert 'id="progeo-db-input"' not in page  # built by the script - the <select> stays the fallback
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_the_delete_confirmation_lists_the_related_rows_of_the_picked_database(admin_client, project_device):
+    # Django's confirmation asks the routers for the database - it listed
+    # the rows of "default" that happen to carry the same device id.
+    measurement = ProgeoMeasurement.objects.using(ALIAS).create(device=project_device, raw_data={})
+
+    page = _get(admin_client, f"{DEVICES}{project_device.pk}/delete/", db=ALIAS).content.decode()
+
+    assert f"/progeomeasurement/{measurement.pk}/change/" in page
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_the_device_page_shows_its_project_database_rows(admin_client, project_device):
+    ProgeoSensorMapping.objects.using(ALIAS).create(device=project_device, origin="manual", source_name="Klemmliste-7")
+
+    page = _get(admin_client, f"{DEVICES}{project_device.pk}/change/", db=ALIAS).content.decode()
+
+    assert "Klemmliste-7" in page  # the read-only inline reads the picked database
