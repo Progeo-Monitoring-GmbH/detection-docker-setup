@@ -20,6 +20,8 @@ from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.location_selection_viewset import LocationSelectionViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.manusensor_views import (
+    DmSensorImportView,
+    DmSensorProjectsView,
     FactorySensorMeasurementsView,
     FactorySensorsView,
     ManuSensorMeasurementsView,
@@ -110,6 +112,9 @@ urlpatterns = [
     re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
     # The staff page (/staff/sensors/): the site measurements of a factory sensor.
     re_path(r'^werk/sensoren/(?P<pk>\d+)/messungen/?$', FactorySensorMeasurementsView.as_view()),
+    # ... and the import of the Airtable table "dm Sensoren" (per project).
+    re_path(r'^werk/sensoren/airtable/?$', DmSensorProjectsView.as_view()),
+    re_path(r'^werk/sensoren/airtable/(?P<projekt>[0-9]{1,9})/?$', DmSensorImportView.as_view()),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),

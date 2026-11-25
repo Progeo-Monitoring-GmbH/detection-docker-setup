@@ -6,6 +6,9 @@ app reads it - not the {"success", "reason"} of the other views.
 - POST /v1/location/<projekt>/messungen
   module_manusensor_enabled and access to the location of the project number.
 - POST /v1/werk/sensoren/   the factory values (factory app) - staff only.
+- GET  /v1/werk/sensoren/airtable/             projects to import (staff)
+- GET  /v1/werk/sensoren/airtable/<projekt>/   preview of the import (staff)
+- POST /v1/werk/sensoren/airtable/<projekt>/   import "dm Sensoren" (staff)
 """
 
 from rest_framework.authentication import SessionAuthentication
@@ -15,7 +18,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import has_module_permissions
-from progeo.helper import manusensor
+from progeo.helper import airtable_dm_sensors, manusensor
 from progeo.helper.manusensor import ManuSensorError
 
 PERMISSION = "module_manusensor_enabled"
@@ -119,6 +122,43 @@ class FactorySensorsView(_ManuSensorView):
         except ManuSensorError as error:
             return _error(error)
         return Response(result)
+
+
+class DmSensorProjectsView(_ManuSensorView):
+    """The staff page's Airtable import: the projects with production orders
+    in Airtable (helper/airtable_dm_sensors.py)."""
+
+    def get(self, request):
+        try:
+            self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.projects())
+        except ManuSensorError as error:
+            return _error(error)
+
+
+class DmSensorImportView(_ManuSensorView):
+    """GET - what importing the "dm Sensoren" rows of the project would do;
+    POST - import them (reads Airtable again, all or none)."""
+
+    def _project(self, projekt):
+        project_id = manusensor.parse_project(projekt)
+        if not project_id:
+            raise manusensor.invalid("projekt", "Projektnummer ist keine Zahl.")
+        return project_id
+
+    def get(self, request, projekt):
+        try:
+            self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.preview(self._project(projekt)))
+        except ManuSensorError as error:
+            return _error(error)
+
+    def post(self, request, projekt):
+        try:
+            user = self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.import_project(self._project(projekt), user=user))
+        except ManuSensorError as error:
+            return _error(error)
 
 
 class FactorySensorMeasurementsView(_ManuSensorView):

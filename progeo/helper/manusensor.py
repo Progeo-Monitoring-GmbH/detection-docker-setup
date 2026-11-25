@@ -207,7 +207,8 @@ def measurement_row(measurement):
 def staff_overview(project_id=None):
     """GET /v1/werk/sensoren/ (staff): every factory sensor (of `project_id`)
     with its newest site measurement, the site measurements without factory
-    values, the counts and the project numbers there are."""
+    values (no sensor, or one without R_Werk), the counts and the project
+    numbers there are."""
     from django.db.models import Count, OuterRef, Subquery
 
     from progeo.v1.models import ProgeoFactorySensor, ProgeoSiteMeasurement
@@ -216,7 +217,8 @@ def staff_overview(project_id=None):
     sensors = ProgeoFactorySensor.objects.using(DB).annotate(
         last_pk=Subquery(newest.values("pk")[:1]), measurements=Count("site_measurements"),
     ).order_by("project_id", "sensor")
-    unmatched = ProgeoSiteMeasurement.objects.using(DB).filter(factory_sensor__isnull=True).select_related("user")
+    # Answered without R_Werk: an unknown sensor or one imported without it.
+    unmatched = ProgeoSiteMeasurement.objects.using(DB).filter(r_werk_ohm__isnull=True).select_related("user")
     if project_id is not None:
         sensors = sensors.filter(project_id=project_id)
         unmatched = unmatched.filter(project_id=project_id)
@@ -226,11 +228,12 @@ def staff_overview(project_id=None):
         [sensor.last_pk for sensor in sensors if sensor.last_pk]
     )
     counts = {"sensoren": len(sensors), "ok": 0, "pruefen": 0, "defekt": 0, "unbekannt": 0, "ungemessen": 0,
-              "ohne_werkswert": len(unmatched)}
+              "ohne_werkswert": len(unmatched), "ohne_r_werk": 0}
     rows = []
     for sensor in sensors:
         measurement = last.get(sensor.last_pk)
         counts[measurement.status if measurement else "ungemessen"] += 1
+        counts["ohne_r_werk"] += sensor.r_werk_ohm is None
         rows.append({
             "id": sensor.pk,
             "projekt": str(sensor.project_id),
@@ -239,13 +242,18 @@ def staff_overview(project_id=None):
             "tag_uid": sensor.tag_uid,
             "r_werk_ohm": sensor.r_werk_ohm,
             "gemessen_am": _iso(sensor.measured_at),
+            "airtable_id": sensor.airtable_record_id,
+            "airtable_nr": sensor.airtable_nr,
+            "produktionsauftrag": sensor.production_order,
+            "laenge_m": sensor.length_m,
             "messungen": sensor.measurements,
             "letzte_messung": measurement_row(measurement) if measurement else None,
         })
-    # A sensor created after its measurement: the measurement stays unmatched
-    # (it was answered without R_Werk) - the page says the values exist now.
+    # R_Werk known after the measurement: it stays unmatched (it was answered
+    # without R_Werk) - the page says the values exist now.
     known = set(ProgeoFactorySensor.objects.using(DB).filter(
-        project_id__in={m.project_id for m in unmatched}).values_list("project_id", "sensor"))
+        project_id__in={m.project_id for m in unmatched}, r_werk_ohm__isnull=False,
+    ).values_list("project_id", "sensor"))
     projects = sorted(
         set(ProgeoFactorySensor.objects.using(DB).values_list("project_id", flat=True))
         | set(ProgeoSiteMeasurement.objects.using(DB).values_list("project_id", flat=True))
@@ -376,6 +384,8 @@ def evaluate(factory, r_status, r_ohm, tag_uid):
     - the tag on the band isn't the factory's tag of that sensor (swapped or
       copied) -> "unbekannt" too: clarify by hand, the comparison may be
       against the wrong sensor (the deviation is still given)
+    - a sensor without R_Werk (imported from Airtable, not measured in the
+      factory yet) -> "unbekannt", nothing to compare with
     - open / short circuit -> "defekt"
     - else ΔR = (R - R_Werk) / R_Werk · 100, one decimal: within the
       tolerance "ok", beyond it "pruefen"."""
@@ -384,6 +394,9 @@ def evaluate(factory, r_status, r_ohm, tag_uid):
         return {"r_werk_ohm": None, "delta_percent": None, "tolerance_percent": tolerance,
                 "status": "unbekannt", "tag_mismatch": False}
     mismatch = bool(tag_uid and factory.tag_uid and tag_uid != factory.tag_uid)
+    if factory.r_werk_ohm is None:
+        return {"r_werk_ohm": None, "delta_percent": None, "tolerance_percent": tolerance,
+                "status": "unbekannt", "tag_mismatch": mismatch}
     delta = None
     if r_status == "ok" and r_ohm is not None:
         delta = round((r_ohm - factory.r_werk_ohm) * 100.0 / factory.r_werk_ohm, 1)
@@ -532,13 +545,19 @@ def push_to_airtable(measurement_pk):
     from progeo.helper.airtable import AirtableHelper
     from progeo.v1.models import ProgeoSiteMeasurement
 
-    measurement = ProgeoSiteMeasurement.objects.using(DB).select_related("user").filter(pk=measurement_pk).first()
+    measurement = (
+        ProgeoSiteMeasurement.objects.using(DB).select_related("user", "factory_sensor")
+        .filter(pk=measurement_pk).first()
+    )
     helper = AirtableHelper()
     if measurement is None or not helper.configured:
         return False
     try:
         table = helper.table(getattr(settings, "AIRTABLE_SITE_MEASUREMENTS_TABLE", "Baustellenmessungen"))
-        fields = airtable_fields(measurement, _dm_sensor_record_id(helper, measurement.project_id, measurement.sensor))
+        # Imported from "dm Sensoren": its row is known (its Nr. may be "51 H4").
+        dm_sensor_id = getattr(measurement.factory_sensor, "airtable_record_id", None) \
+            or _dm_sensor_record_id(helper, measurement.project_id, measurement.sensor)
+        fields = airtable_fields(measurement, dm_sensor_id)
         if measurement.airtable_record_id:
             record = table.update(measurement.airtable_record_id, fields, typecast=True)
         else:

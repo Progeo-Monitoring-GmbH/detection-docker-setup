@@ -254,7 +254,7 @@ def test_staff_list_shows_sensors_with_their_last_measurement_and_the_counts(api
     assert rows[("24017", "000124")]["letzte_messung"]["status"] == "defekt"
     assert rows[("7099", "000001")]["letzte_messung"] is None
     assert data["kennzahlen"] == {"sensoren": 3, "ok": 1, "pruefen": 0, "defekt": 1, "unbekannt": 0,
-                                  "ungemessen": 1, "ohne_werkswert": 0}
+                                  "ungemessen": 1, "ohne_werkswert": 0, "ohne_r_werk": 0}
     assert data["projekte"] == ["7099", "24017"]
     assert data["toleranz_prozent"] == 5.0
 
