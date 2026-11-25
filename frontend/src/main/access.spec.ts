@@ -76,6 +76,8 @@ describe('APP_ROUTE_ACCESS', () => {
         '/device/overview',
         '/site-plan/wizard/',
         '/map/',
+        // Any staff, as its endpoints (/v1/werk/sensoren/).
+        '/staff/sensors/',
       ].sort(),
     );
 

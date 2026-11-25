@@ -10,6 +10,8 @@
 #     backend-tests       test database from scratch (recreate_test_db: create,
 #                         migrate from zero, seed - so every run also proves the
 #                         migrations apply to an empty database), then pytest
+#     cad-reader-tests    the CAD reader tests (docker/cad_factory) on its own
+#                         Python, with ezdxf/ezdwg/pymupdf (requirements-cad-test.txt)
 #     backend-migrations  model changes without a migration (makemigrations --check)
 #     frontend-typecheck  tsc --noEmit
 #     frontend-tests      vitest
@@ -50,8 +52,11 @@ env:
   REDIS_PASSWORD: ''
   SENTRY_DSN: ''
   # The versions of the images (docker/backend-base/Dockerfile:
-  # python:3.13-alpine3.24, docker/frontend/Dockerfile).
-  PYTHON_VERSION: '3.13'
+  # python:3.15-alpine3.24, docker/frontend/Dockerfile).
+  PYTHON_VERSION: '3.15'
+  # docker/cad_factory/Dockerfile (python:3.13.7-slim-bookworm): its
+  # pymupdf needs onnxruntime, which has no 3.15 wheel yet.
+  CAD_PYTHON_VERSION: '3.13'
   NODE_VERSION: '24.22.1'
 
 jobs:
@@ -114,14 +119,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-cad-test.txt
+          cache-dependency-path: requirements.txt
 
       - name: Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-cad-test.txt
+          pip install -r requirements.txt
 
       - name: Models without a migration
         run: python manage.py makemigrations --check --dry-run --settings=progeo.tests.settings
@@ -154,9 +157,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-cad-test.txt
+          cache-dependency-path: requirements.txt
 
       # Retries: a flaky Ubuntu mirror should not fail the tests.
       - name: System packages (ffmpeg for the video export, gpg for the backup bundles, tesseract for the plan OCR)
@@ -164,10 +165,12 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg gnupg tesseract-ocr tesseract-ocr-deu
 
+      # Without requirements-cad-test.txt (no 3.15 wheels): the CAD reader
+      # tests skip here and run in cad-reader-tests.
       - name: Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-cad-test.txt
+          pip install -r requirements.txt
 
       - name: Test database (create, migrate from zero, seed)
         run: python manage.py recreate_test_db --settings=progeo.tests.settings --noinput
@@ -186,6 +189,52 @@ jobs:
             coverage.xml
             progeo/tests/_pytest.log
           if-no-files-found: ignore
+
+  # The CAD reader (docker/cad_factory/cad_reader.py, klemmliste.py) runs in
+  # its own container on Python 3.13 - its tests on that Python, with its
+  # packages.
+  cad-reader-tests:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:8.10.1
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.CAD_PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-cad-test.txt
+
+      - name: Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-cad-test.txt
+
+      - name: Test database (create, migrate from zero, seed)
+        run: python manage.py recreate_test_db --settings=progeo.tests.settings --noinput
+
+      - name: Tests
+        run: pytest -q -p no:cacheprovider --tb=short progeo/tests/test_cad_import.py progeo/tests/test_klemmliste.py
 
   # --------------------------------------------------------------- frontend
   # Separate jobs: npm ci is cached, so the duplicate install costs little,

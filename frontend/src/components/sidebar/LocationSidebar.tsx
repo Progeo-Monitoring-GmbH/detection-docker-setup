@@ -22,6 +22,7 @@ import {
   Layers,
   ListCheck,
   People,
+  Rulers,
   Plug,
   Sliders,
   Terminal,
@@ -289,6 +290,14 @@ const LocationSidebar = ({
       icon: Sliders,
       to: '/staff/thresholds/',
       visible: can(routeRule('/staff/thresholds/')),
+    },
+    {
+      // dm sensors: factory values (R_Werk) and the manuSensor site measurements.
+      key: 'factory-sensors',
+      label: t('sidebar_factory_sensors'),
+      icon: Rulers,
+      to: '/staff/sensors/',
+      visible: can(routeRule('/staff/sensors/')),
     },
     {
       // How the project databases are used - which are dead.

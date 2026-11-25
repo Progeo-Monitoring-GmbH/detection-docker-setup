@@ -6,7 +6,7 @@
 # 1. The base (default target) - what the backend image runs on:
 #   docker buildx build --pull --platform linux/amd64 --sbom=true --provenance=mode=max \
 #     -f docker/backend-base/Dockerfile \
-#     -t progeomonitoring/detection-docker-setup:backend-base-py3.13-alpine3.24-v2.0.0 --push docker/backend-base
+#     -t progeomonitoring/detection-docker-setup:backend-base-py3.15-alpine3.24-v3.0.0 --push docker/backend-base
 #
 # 2. The wheels (--target wheels) - only when OPENCV_VERSION or the Python /
 #    Alpine version changes: opencv-python-headless has no wheel for musl
@@ -14,7 +14,7 @@
 #    in every backend build:
 #   docker buildx build --platform linux/amd64 --target wheels \
 #     -f docker/backend-base/Dockerfile \
-#     -t progeomonitoring/detection-docker-setup:backend-wheels-py3.13-alpine3.24-opencv5.0.0.93 --push docker/backend-base
+#     -t progeomonitoring/detection-docker-setup:backend-wheels-py3.15-alpine3.24-opencv5.1.0.95 --push docker/backend-base
 #
 # Host-specific users/groups (DOCKER_UID etc.) must NOT go here, they are created in docker/backend/Dockerfile.
 #
@@ -24,7 +24,9 @@
 # docker/backend/Dockerfile compiles the Python packages in a build stage
 # and copies only the finished venv. Rebuild regularly (--pull): the apk
 # upgrade below takes the fixes Alpine publishes in the meantime.
-FROM python:3.13-alpine3.24 AS runtime
+# Python 3.15 here only - docker/cad_factory stays on 3.13 (pymupdf needs
+# onnxruntime, which has no 3.15 wheel yet).
+FROM python:3.15-alpine3.24 AS runtime
 
 # bash: the start/cron scripts; dcron: the cron daemon supervisord runs;
 # postgresql17-client: pg_dump/psql of dbbackup (same major as the server);
@@ -55,10 +57,17 @@ COPY wait-for-it.sh ./wait-for-it.sh
 
 # --- The wheels: compiled once, on the same Python/Alpine as the base ------
 FROM runtime AS wheel-build
-ARG OPENCV_VERSION=5.0.0.93
+ARG OPENCV_VERSION=5.1.0.95
+# The numpy of requirements.txt. opencv's pyproject.toml names a build numpy
+# only up to Python 3.14: in pip's isolated build environment there was none
+# on 3.15, CMake left out the Python module (cv2) and the build failed after
+# ~1 h at "Not found: .../python/cv2/python-3*/cv2*". So the build tools are
+# installed here and the wheel built without isolation.
+ARG NUMPY_VERSION=2.5.5
 RUN apk add --no-cache build-base linux-headers
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel --no-deps --wheel-dir /wheels "opencv-python-headless==${OPENCV_VERSION}"
+    pip install "numpy==${NUMPY_VERSION}" "scikit-build>=0.14.0" setuptools packaging cmake \
+ && pip wheel --no-deps --no-build-isolation --wheel-dir /wheels "opencv-python-headless==${OPENCV_VERSION}"
 
 # Nothing but the wheel files - the backend build stage copies /wheels.
 FROM scratch AS wheels

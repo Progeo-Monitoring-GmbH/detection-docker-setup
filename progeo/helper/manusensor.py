@@ -172,6 +172,107 @@ def store_factory_sensors(rows, user=None):
     return {"angelegt": created, "aktualisiert": updated}
 
 
+# ---------------------------------------------------------------------------- staff page
+
+def _iso(value):
+    """An aware datetime as "2026-11-24T09:41:12Z" (UTC), None stays None."""
+    if value is None:
+        return None
+    return value.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def measurement_row(measurement):
+    """A site measurement as the staff page shows it."""
+    payload = measurement.payload if isinstance(measurement.payload, dict) else {}
+    user = measurement.user
+    return {
+        "id": measurement.pk,
+        "projekt": str(measurement.project_id),
+        "sensor": measurement.sensor,
+        "zeit": _iso(measurement.measured_at),
+        "r_ohm": measurement.r_ohm,
+        "r_status": measurement.r_status,
+        "r_werk_ohm": measurement.r_werk_ohm,
+        "delta_prozent": measurement.delta_percent,
+        "status": measurement.status,
+        "tag_uid": measurement.tag_uid,
+        "tag_passt_nicht": measurement.tag_mismatch,
+        "identifizierung": measurement.identification,
+        "geraet": measurement.device_id,
+        # The name typed in the app, else the account that sent it.
+        "benutzer": payload.get("benutzer") or (user.username if user else None),
+    }
+
+
+def staff_overview(project_id=None):
+    """GET /v1/werk/sensoren/ (staff): every factory sensor (of `project_id`)
+    with its newest site measurement, the site measurements without factory
+    values, the counts and the project numbers there are."""
+    from django.db.models import Count, OuterRef, Subquery
+
+    from progeo.v1.models import ProgeoFactorySensor, ProgeoSiteMeasurement
+
+    newest = ProgeoSiteMeasurement.objects.using(DB).filter(factory_sensor=OuterRef("pk")).order_by("-pk")
+    sensors = ProgeoFactorySensor.objects.using(DB).annotate(
+        last_pk=Subquery(newest.values("pk")[:1]), measurements=Count("site_measurements"),
+    ).order_by("project_id", "sensor")
+    unmatched = ProgeoSiteMeasurement.objects.using(DB).filter(factory_sensor__isnull=True).select_related("user")
+    if project_id is not None:
+        sensors = sensors.filter(project_id=project_id)
+        unmatched = unmatched.filter(project_id=project_id)
+    sensors = list(sensors)
+    unmatched = list(unmatched.order_by("-pk"))
+    last = ProgeoSiteMeasurement.objects.using(DB).select_related("user").in_bulk(
+        [sensor.last_pk for sensor in sensors if sensor.last_pk]
+    )
+    counts = {"sensoren": len(sensors), "ok": 0, "pruefen": 0, "defekt": 0, "unbekannt": 0, "ungemessen": 0,
+              "ohne_werkswert": len(unmatched)}
+    rows = []
+    for sensor in sensors:
+        measurement = last.get(sensor.last_pk)
+        counts[measurement.status if measurement else "ungemessen"] += 1
+        rows.append({
+            "id": sensor.pk,
+            "projekt": str(sensor.project_id),
+            "sensor": sensor.sensor,
+            "band": sensor.band,
+            "tag_uid": sensor.tag_uid,
+            "r_werk_ohm": sensor.r_werk_ohm,
+            "gemessen_am": _iso(sensor.measured_at),
+            "messungen": sensor.measurements,
+            "letzte_messung": measurement_row(measurement) if measurement else None,
+        })
+    # A sensor created after its measurement: the measurement stays unmatched
+    # (it was answered without R_Werk) - the page says the values exist now.
+    known = set(ProgeoFactorySensor.objects.using(DB).filter(
+        project_id__in={m.project_id for m in unmatched}).values_list("project_id", "sensor"))
+    projects = sorted(
+        set(ProgeoFactorySensor.objects.using(DB).values_list("project_id", flat=True))
+        | set(ProgeoSiteMeasurement.objects.using(DB).values_list("project_id", flat=True))
+    )
+    return {
+        "sensoren": rows,
+        "ohne_werkswert": [
+            {**measurement_row(m), "werkswert_vorhanden": (m.project_id, m.sensor) in known} for m in unmatched
+        ],
+        "kennzahlen": counts,
+        "projekte": [str(project) for project in projects],
+        "toleranz_prozent": tolerance_percent(),
+    }
+
+
+def sensor_history(factory_pk):
+    """GET /v1/werk/sensoren/<pk>/messungen/ (staff): the site measurements of
+    a factory sensor, newest first - 404 for an unknown one."""
+    from progeo.v1.models import ProgeoFactorySensor
+
+    factory = ProgeoFactorySensor.objects.using(DB).filter(pk=factory_pk).first()
+    if factory is None:
+        raise ManuSensorError(404, "sensor_unbekannt", "Sensor nicht gefunden")
+    measurements = factory.site_measurements.using(DB).select_related("user").order_by("-pk")
+    return {"messungen": [measurement_row(m) for m in measurements]}
+
+
 # ---------------------------------------------------------------------------- site measurements
 
 def _aware(value):

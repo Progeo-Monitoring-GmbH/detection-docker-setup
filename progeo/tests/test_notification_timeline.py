@@ -13,6 +13,7 @@ from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, fake_smtp  # noqa: F401
 from progeo.v1.models import (
     NotificationCase,
+    NotificationCaseEvent,
     OutboundMessage,
     ProgeoAccess,
     ProgeoLocation,
@@ -33,11 +34,15 @@ def at(hour, minute=0, days=0):
 @pytest.fixture(autouse=True)
 def live(monkeypatch):
     """Past the first run (no baseline mute) and a fixed clock - also for the
-    mails' OutboundMessage.created (see test_notification_cases.live)."""
+    mails' OutboundMessage.created (see test_notification_cases.live) and the
+    protocol's NotificationCaseEvent.created: the timeline assigns mails to
+    their stage event by these two times, so both must run on the same clock
+    (on the real one before 10:00 every mail fell before its stage)."""
     nc.mark_baseline_done()
     clock = {"now": at(10)}
     monkeypatch.setattr(nc, "_now", lambda: clock["now"])
     monkeypatch.setattr(OutboundMessage._meta.get_field("created"), "_get_default", lambda: clock["now"])
+    monkeypatch.setattr(NotificationCaseEvent._meta.get_field("created"), "_get_default", lambda: clock["now"])
     return clock
 
 

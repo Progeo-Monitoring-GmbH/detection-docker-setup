@@ -89,15 +89,44 @@ class ManuSensorMeasurementsView(_ManuSensorView):
         return Response(manusensor.answer(measurement), status=201 if created else 200)
 
 
+def _staff(user):
+    return user.is_staff or user.is_superuser
+
+
 class FactorySensorsView(_ManuSensorView):
-    """The factory app: {"sensoren": [{projekt, sensor, band, tag_uid,
-    r_werk_ohm, gemessen_am}]} - created or updated, all or none."""
+    """POST - the factory app: {"sensoren": [{projekt, sensor, band, tag_uid,
+    r_werk_ohm, gemessen_am}]} - created or updated, all or none.
+    GET - the staff page (/staff/sensors/): the sensors with their newest site
+    measurement, the measurements without factory values, the counts
+    (?projekt= only that project)."""
+
+    def get(self, request):
+        try:
+            self.check_user(request, _staff)
+            project = request.query_params.get("projekt")
+            project_id = manusensor.parse_project(project) if project else None
+            if project and project_id is None:
+                raise manusensor.invalid("projekt", "Projektnummer ist keine Zahl.")
+            return Response(manusensor.staff_overview(project_id))
+        except ManuSensorError as error:
+            return _error(error)
 
     def post(self, request):
         try:
-            user = self.check_user(request, lambda user: user.is_staff or user.is_superuser)
+            user = self.check_user(request, _staff)
             data = request.data if isinstance(request.data, dict) else {}
             result = manusensor.store_factory_sensors(data.get("sensoren"), user=user)
         except ManuSensorError as error:
             return _error(error)
         return Response(result)
+
+
+class FactorySensorMeasurementsView(_ManuSensorView):
+    """The staff page: the site measurements of one factory sensor."""
+
+    def get(self, request, pk):
+        try:
+            self.check_user(request, _staff)
+            return Response(manusensor.sensor_history(pk))
+        except ManuSensorError as error:
+            return _error(error)

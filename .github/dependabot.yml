@@ -29,9 +29,16 @@ updates:
         update-types: ["minor", "patch"]
 
   # Base images in the Dockerfiles (python, node, nginx, postgres).
+  # docker/cad_factory has its own entry below. A new directory with a
+  # Dockerfile goes in this list.
   - package-ecosystem: "docker"
     directories:
-      - "/docker/*"
+      - "/docker/backend"
+      - "/docker/backend-base"
+      - "/docker/database"
+      - "/docker/e2e_screens"
+      - "/docker/frontend"
+      - "/docker/nginx"
     schedule:
       interval: "weekly"
     ignore:
@@ -43,6 +50,20 @@ updates:
     groups:
       docker-minor-patch:
         update-types: ["minor", "patch"]
+
+  # cad_factory: Python patch releases only. A new minor (3.13 -> 3.15) waits
+  # until pymupdf's onnxruntime has wheels for it - then raise it by hand,
+  # with CAD_PYTHON_VERSION in .github/workflows/ci.yml.
+  - package-ecosystem: "docker"
+    directory: "/docker/cad_factory"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      cad-factory-patch:
+        update-types: ["patch"]
 
   # Third-party images in docker-compose.yml / docker-compose.prod.yml
   # (redis, synapse, grafana, prometheus, ...).

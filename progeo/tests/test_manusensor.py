@@ -232,6 +232,89 @@ def test_factory_app_is_all_or_nothing_and_staff_only(api_client, site):
     assert response.status_code == 422
 
 
+# -- staff page: list and history -----------------------------------------------------
+
+def test_staff_list_shows_sensors_with_their_last_measurement_and_the_counts(api_client, site):
+    second = ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000124", r_werk_ohm=90000)
+    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    post(api_client, body(mess_id=str(uuid.uuid4()), r_ohm=70_000))
+    post(api_client, body(mess_id=str(uuid.uuid4())))  # the newer one counts
+    post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000124", r_ohm=None, r_status="offen"))
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    data = api_client.get("/v1/werk/sensoren/").json()
+
+    rows = {(row["projekt"], row["sensor"]): row for row in data["sensoren"]}
+    assert set(rows) == {("24017", "000123"), ("24017", "000124"), ("7099", "000001")}
+    first = rows[("24017", "000123")]
+    assert (first["band"], first["tag_uid"], first["r_werk_ohm"], first["messungen"]) == \
+        ("4711", "04A1B2C3D4E5F6", 88120, 2)
+    assert (first["letzte_messung"]["status"], first["letzte_messung"]["delta_prozent"]) == ("ok", -0.8)
+    assert rows[("24017", "000124")]["id"] == second.pk
+    assert rows[("24017", "000124")]["letzte_messung"]["status"] == "defekt"
+    assert rows[("7099", "000001")]["letzte_messung"] is None
+    assert data["kennzahlen"] == {"sensoren": 3, "ok": 1, "pruefen": 0, "defekt": 1, "unbekannt": 0,
+                                  "ungemessen": 1, "ohne_werkswert": 0}
+    assert data["projekte"] == ["7099", "24017"]
+    assert data["toleranz_prozent"] == 5.0
+
+
+def test_staff_list_filters_by_project(api_client, site):
+    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    data = api_client.get("/v1/werk/sensoren/", {"projekt": "7099"}).json()
+
+    assert [row["sensor"] for row in data["sensoren"]] == ["000001"]
+    assert data["kennzahlen"]["sensoren"] == 1
+    # The filter offers every project, not only the shown one.
+    assert data["projekte"] == ["7099", "24017"]
+
+
+def test_staff_list_shows_measurements_without_factory_values(api_client, site):
+    post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000999"))
+    post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000777"))
+    # Created afterwards: the measurement stays unmatched, but the page says so.
+    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000777", r_werk_ohm=88000)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    data = api_client.get("/v1/werk/sensoren/").json()
+
+    unmatched = {row["sensor"]: row for row in data["ohne_werkswert"]}
+    assert set(unmatched) == {"000999", "000777"}
+    assert (unmatched["000999"]["projekt"], unmatched["000999"]["status"], unmatched["000999"]["r_ohm"]) == \
+        ("24017", "unbekannt", 87450)
+    assert unmatched["000999"]["werkswert_vorhanden"] is False
+    assert unmatched["000777"]["werkswert_vorhanden"] is True
+    assert data["kennzahlen"]["ohne_werkswert"] == 2
+
+
+def test_staff_history_of_a_sensor(api_client, site):
+    post(api_client, body(mess_id=str(uuid.uuid4()), r_ohm=70_000, tag_uid="04FFFFFFFFFFFF"))
+    post(api_client, body(mess_id=str(uuid.uuid4())))
+    factory = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000123")
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    data = api_client.get(f"/v1/werk/sensoren/{factory.pk}/messungen/").json()
+
+    newest, oldest = data["messungen"]
+    assert (newest["status"], newest["r_ohm"], newest["tag_passt_nicht"]) == ("ok", 87450, False)
+    assert (oldest["status"], oldest["delta_prozent"], oldest["tag_passt_nicht"]) == ("unbekannt", -20.6, True)
+    assert (newest["geraet"], newest["benutzer"], newest["identifizierung"]) == ("A1B2C3", "m.mustermann", "nfc")
+    assert newest["zeit"] == "2026-11-24T09:41:12Z"
+    assert api_client.get("/v1/werk/sensoren/999999/messungen/").status_code == 404
+
+
+def test_staff_list_and_history_are_staff_only(api_client, site):
+    factory = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000123")
+    # The installer has the app's permission - not the staff page.
+    assert api_client.get("/v1/werk/sensoren/").status_code == 403
+    assert api_client.get(f"/v1/werk/sensoren/{factory.pk}/messungen/").status_code == 403
+
+    api_client.force_authenticate(user=f.make_user(is_superuser=True))
+    assert api_client.get("/v1/werk/sensoren/").status_code == 200
+
+
 def test_import_command_reads_the_csv(tmp_path):
     from django.core.management import call_command
 

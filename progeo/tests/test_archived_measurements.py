@@ -93,3 +93,59 @@ def test_the_switch_needs_a_boolean(api_client):
     response = api_client.post("/v1/user/archived_measurements/", {"hide": "yes"}, format="json")
 
     assert response.status_code == 400
+
+
+# -- the alarms of archived measurements: no suspected leak ------------------
+
+@pytest.fixture
+def leaks():
+    """(location, customer, kept alarm, archived alarm): sensor 1 alarmed on a
+    kept measurement, sensor 2 on one archived afterwards."""
+    # The controller account: staff without one of their own land there.
+    account = Account.objects.using(f.DB).get(pk=1)
+    location = f.make_location(account, project_id=931102)
+    device = f.make_device(location)
+    kept = f.make_alarm(device, sensor_id=1, triggered_ago=f.minutes(30))
+    archived = f.make_alarm(device, sensor_id=2, triggered_ago=f.minutes(20))
+    ProgeoMeasurement.objects.using(f.DB).filter(pk=archived.measurement_id).update(archived=True)
+    customer = f.make_user(perms=MODULES, accounts=[account])
+    return location, customer, kept, archived
+
+
+MODULES = ("module_measurements_enabled", "module_alarms_enabled")
+
+
+def _leak_sensors(api_client, user, location):
+    api_client.force_authenticate(user=user)
+    response = api_client.get("/v1/alarm/clusters/", {"location": location.pk})
+    assert response.status_code == 200, response.content
+    return {cluster["sensor_id"] for cluster in response.json()["clusters"]}
+
+
+def test_an_archived_measurement_raises_no_suspected_leak(api_client, leaks):
+    location, customer, _kept, _archived = leaks
+
+    assert _leak_sensors(api_client, customer, location) == {1}
+
+
+def test_staff_see_its_leak_unless_they_hide_the_archived(api_client, leaks):
+    location, _customer, _kept, _archived = leaks
+    staff = f.make_user(staff=True)
+    assert _leak_sensors(api_client, staff, location) == {1, 2}
+
+    UserProfile.objects.using(f.DB).create(user=staff, hide_archived_measurements=True)
+    staff.refresh_from_db(using=f.DB)
+    assert _leak_sensors(api_client, staff, location) == {1}
+
+
+def test_the_counts_and_lists_leave_its_alarm_out(api_client, leaks):
+    location, customer, kept, _archived = leaks
+    api_client.force_authenticate(user=customer)
+
+    summary = api_client.get("/v1/alarm/location_summary/").json()["locations"]
+    active = api_client.get("/v1/alarm/active/").json()["alarms"]
+    listed = api_client.get("/v1/alarm/", {"location": location.pk}).json()["alarms"]
+
+    assert summary == {str(location.pk): {"count": 1, "active": 1}}
+    assert [alarm["id"] for alarm in active] == [kept.pk]
+    assert [alarm["id"] for alarm in listed] == [kept.pk]

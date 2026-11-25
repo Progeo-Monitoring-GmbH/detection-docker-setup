@@ -25,7 +25,7 @@ from progeo.helper.location_access import (
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
 from progeo.helper.suspicion_clusters import computed_suspicion_points
-from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoRainEvent
+from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement, ProgeoRainEvent
 from progeo.v1.serializers import ProgeoAlarmSerializer, ProgeoRainEventSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -39,6 +39,15 @@ DEFAULT_ALARM_DAYS = 14
 MAX_HISTORY_DAYS = 1096
 # The locations overview's "active alarms" list stays bounded.
 ACTIVE_ALARMS_LIMIT = 1000
+
+
+def visible_alarms(queryset, user):
+    """`queryset` without the alarms of archived measurements unless `user`
+    sees those (ProgeoMeasurement.shows_archived): archiving test or faulty
+    data also clears the suspected leaks, counts and lists it raised."""
+    if ProgeoMeasurement.shows_archived(user):
+        return queryset
+    return queryset.filter(measurement__archived=False)
 
 
 class AlarmViewSet(ProgeoModalViewSet):
@@ -190,6 +199,8 @@ class AlarmViewSet(ProgeoModalViewSet):
         # alarms are spread over the project databases. Only their ids per
         # database: location_q there would cost a membership query each.
         groups = accessible_locations_by_db(request.user, accounts, location_ids)
+        # Once here - not per database inside the threads.
+        show_archived = ProgeoMeasurement.shows_archived(request.user)
 
         def summary_rows(db_name):
             rows = (
@@ -205,6 +216,8 @@ class AlarmViewSet(ProgeoModalViewSet):
                     | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
                 )
             )
+            if not show_archived:
+                rows = rows.filter(measurement__archived=False)
             # Only what the sensor grouping needs - not whole alarm rows.
             return list(rows.values(
                 "measurement__device__location_id", "sensor_id", "sensor_max_values", "normalized_at",
@@ -249,10 +262,14 @@ class AlarmViewSet(ProgeoModalViewSet):
         if not accounts:
             return RequestSuccess({"alarms": [], "truncated": False})
         groups = accessible_locations_by_db(request.user, accounts)
+        show_archived = ProgeoMeasurement.shows_archived(request.user)
 
         def active_rows(db_name):
+            alarms = ProgeoAlarm.objects.using(db_name)
+            if not show_archived:
+                alarms = alarms.filter(measurement__archived=False)
             return list(
-                ProgeoAlarm.objects.using(db_name)
+                alarms
                 .filter(measurement__device__location_id__in=groups[db_name], normalized_at__isnull=True)
                 .order_by(F("triggered_at").desc(nulls_last=True), "-id")
                 .values(
@@ -361,7 +378,7 @@ class AlarmViewSet(ProgeoModalViewSet):
             return None, None, location_id, None
         db = self._db_for(account, location_id)
         alarms = list(
-            ProgeoAlarm.objects.using(db)
+            visible_alarms(ProgeoAlarm.objects.using(db), request.user)
             .filter(location_q(request.user, account, "measurement__device__location__"))
             .filter(measurement__device__location_id=location_id)
             .filter(
@@ -774,7 +791,7 @@ class AlarmViewSet(ProgeoModalViewSet):
             )
 
         queryset = (
-            ProgeoAlarm.objects.using(db_name or self._db_for(account, location_id))
+            visible_alarms(ProgeoAlarm.objects.using(db_name or self._db_for(account, location_id)), self.request.user)
             .filter(location_q(self.request.user, account, "measurement__device__location__"))
             .filter(alarm_filter)
             .select_related("measurement__device__location")

@@ -114,6 +114,9 @@ const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
 const ThresholdFineTuneView = React.lazy(
   () => import('./main/staff/ThresholdFineTuneView.tsx'),
 );
+const FactorySensorsView = React.lazy(
+  () => import('./main/staff/FactorySensorsView.tsx'),
+);
 const ScreenReviewView = React.lazy(
   () => import('./main/ScreenReviewView.tsx'),
 );
@@ -308,6 +311,11 @@ const CoreRoutes = () => {
           <Route
             path="/staff/thresholds/"
             element={guard('/staff/thresholds/', <ThresholdFineTuneView />)}
+          />
+          {/* dm sensors: factory values (R_Werk) and the manuSensor site measurements. */}
+          <Route
+            path="/staff/sensors/"
+            element={guard('/staff/sensors/', <FactorySensorsView />)}
           />
           <Route
             path="/review/screens/"

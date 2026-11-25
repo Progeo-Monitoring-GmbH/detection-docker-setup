@@ -1,0 +1,126 @@
+/* /staff/sensors/ (FactorySensorsView) and its modals. The status colours
+   follow the kit's badges (StateBadge / SeverityBadge). */
+
+:root {
+  --fs-ok: #3f7a1c;
+  --fs-ok-bg: #ebf4e3;
+  --fs-check: #9a7208;
+  --fs-check-bg: #fbf3de;
+  --fs-defect: #c44d26;
+  --fs-defect-bg: #fbeae4;
+  --fs-unclear: #5b4a9b;
+  --fs-unclear-bg: #eeebf7;
+  --fs-none: #6e6868;
+  --fs-none-bg: #efecec;
+}
+
+.fs-status--ok {
+  color: var(--fs-ok);
+  background: var(--fs-ok-bg);
+}
+
+.fs-status--pruefen {
+  color: var(--fs-check);
+  background: var(--fs-check-bg);
+}
+
+.fs-status--defekt {
+  color: var(--fs-defect);
+  background: var(--fs-defect-bg);
+}
+
+.fs-status--unbekannt {
+  color: var(--fs-unclear);
+  background: var(--fs-unclear-bg);
+}
+
+.fs-status--ungemessen {
+  color: var(--fs-none);
+  background: var(--fs-none-bg);
+}
+
+.fs-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fs-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.fs-later {
+  font-size: 12px;
+  color: var(--fs-ok);
+}
+
+/* Modals: up to half the screen (wider than Bootstrap's default). */
+@media (min-width: 992px) {
+  .modal-dialog.fs-modal {
+    max-width: 50vw;
+  }
+}
+
+.fs-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+@media (max-width: 640px) {
+  .fs-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-field .form-label {
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  color: #6b6a64;
+}
+
+.fs-csv {
+  font-family: var(--bs-font-monospace);
+  font-size: 12.5px;
+}
+
+.fs-preview {
+  margin-top: 12px;
+}
+
+.fs-preview-summary {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+
+/* Higher than DataTable's own row background. */
+.fs-preview .rdt_TableRow.fs-preview-error {
+  background-color: var(--fs-defect-bg);
+}
+
+.fs-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 12px;
+}
+
+.fs-facts dt {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8b8383;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fs-facts dd {
+  margin: 0;
+}
+
+.fs-facts-link {
+  align-self: flex-end;
+  margin-left: auto;
+  font-size: 12.5px;
+}

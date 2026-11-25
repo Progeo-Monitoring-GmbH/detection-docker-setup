@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
-ARG BASE_IMAGE=progeomonitoring/detection-docker-setup:backend-base-py3.13-alpine3.24-v2.0.0
+ARG BASE_IMAGE=progeomonitoring/detection-docker-setup:backend-base-py3.15-alpine3.24-v3.0.0
 # Pre-built wheels for the base's Python/Alpine (docker/backend-base/Dockerfile,
 # --target wheels): opencv-python-headless has none for musl on PyPI and
 # would take ~30 min to compile in every build.
-ARG WHEELS_IMAGE=progeomonitoring/detection-docker-setup:backend-wheels-py3.13-alpine3.24-opencv5.0.0.93
+ARG WHEELS_IMAGE=progeomonitoring/detection-docker-setup:backend-wheels-py3.15-alpine3.24-opencv5.1.0.95
 
 FROM ${WHEELS_IMAGE} AS wheels
 

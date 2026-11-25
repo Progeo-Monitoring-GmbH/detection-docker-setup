@@ -81,6 +81,8 @@ export const APP_ROUTE_ACCESS = {
   '/review/screens/': staffPermission('module_admin_screen_review'),
   // The findings of fine_tune_thresholds: pick and apply alarm thresholds.
   '/staff/thresholds/': staffPermission('module_admin_thresholds'),
+  // dm sensors' factory values and site measurements - staff, as /v1/werk/sensoren/.
+  '/staff/sensors/': STAFF,
   '/escalations/:id': staffPermission('module_escalations_enabled'),
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
   '/backup/:account/overview/': allOf(
