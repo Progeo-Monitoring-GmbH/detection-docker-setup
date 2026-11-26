@@ -158,6 +158,45 @@ def _complete_count(order_record_id):
     ).count()
 
 
+def _complete_ids(order_record_ids):
+    """{order record id: {sensor record ids with a complete entry}}."""
+    from progeo.v1.models import ProgeoProductionEntry
+
+    result = {order: set() for order in order_record_ids}
+    for order, sensor in ProgeoProductionEntry.objects.using(DB).filter(
+        order_record_id__in=list(order_record_ids),
+        r_platine_status__isnull=False, r_aufgespult_status__isnull=False, r_kurzschluss_status__isnull=False,
+    ).values_list("order_record_id", "sensor_record_id"):
+        result[order].add(sensor)
+    return result
+
+
+def augment_list(answer):
+    """GET /v1/werk/auftraege/: every order plus "eintraege_erfasst" (complete
+    entries in the app, not cached) and "produziert_papier" (sensors "Produziert"
+    in Airtable without an app entry - the old paper protocol; null when
+    Airtable cannot tell)."""
+    rows = [dict(row) for row in answer["auftraege"]]
+    complete = _complete_ids([row["id"] for row in rows])
+    # A produced order: all its sensors are produced - no need to read thousands of them.
+    to_read = [row["id"] for row in rows if row.get("produktionsstatus") != dm_orders.STATUS_PRODUCED]
+    try:
+        produced = dm_orders.produced_sensor_ids(to_read)
+    except Exception as error:  # noqa: BLE001 - the list must not fail for a count
+        elog(f"Could not count the paper-produced sensors: {error}", tag="[PRODUKTION]")
+        produced = None
+    for row in rows:
+        done = complete[row["id"]]
+        row["eintraege_erfasst"] = len(done)
+        if row.get("produktionsstatus") == dm_orders.STATUS_PRODUCED:
+            row["produziert_papier"] = len(set(row.get("sensor_record_ids") or []) - done)
+        elif produced is None:
+            row["produziert_papier"] = None
+        else:
+            row["produziert_papier"] = len(set(produced.get(row["id"], [])) - done)
+    return {**answer, "auftraege": rows}
+
+
 def _queue(task_name, *args):
     """A celery task of progeo.tasks - nothing without Airtable configured."""
     from progeo.helper.airtable import AirtableHelper
@@ -192,7 +231,11 @@ def augment_detail(detail):
     detail["blaetter"] = math.ceil(len(detail["sensoren"]) / SHEET_SIZE)
     detail["freigegebene_blaetter"] = sorted(ProgeoProductionSheet.objects.using(DB).filter(
         order_record_id=record_id).values_list("blatt", flat=True))
-    detail["eintraege_erfasst"] = _complete_count(record_id)
+    done = _complete_ids([record_id])[record_id]
+    detail["eintraege_erfasst"] = len(done)
+    detail["produziert_papier"] = sum(
+        1 for sensor in detail["sensoren"]
+        if sensor.get("produktionsstatus") == dm_orders.STATUS_PRODUCED and sensor["id"] not in done)
     detail["geraet"] = progress_device(
         ProgeoProductionProgress.objects.using(DB).filter(order_record_id=record_id).first())
     return detail

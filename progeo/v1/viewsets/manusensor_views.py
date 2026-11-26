@@ -25,7 +25,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import has_module_permissions
-from progeo.helper import airtable_dm_sensors, dm_orders, manusensor
+from progeo.helper import airtable_dm_sensors, dm_orders, manusensor, production
 from progeo.helper.manusensor import ManuSensorError
 
 PERMISSION = "module_manusensor_enabled"
@@ -179,7 +179,8 @@ class DmOrdersView(_ManuSensorView):
     def get(self, request):
         try:
             self.check_user(request, _factory)
-            return Response(dm_orders.orders(dm_orders.parse_status(request.query_params.get("status"))))
+            return Response(production.augment_list(
+                dm_orders.orders(dm_orders.parse_status(request.query_params.get("status")))))
         except ManuSensorError as error:
             return _error(error)
 

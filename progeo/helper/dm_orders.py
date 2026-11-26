@@ -12,6 +12,7 @@ in the base is changed there only. The answers use the manuSensor format
 (ManuSensorError: {"fehler", "meldung"[, "feld"]}).
 """
 
+import hashlib
 import re
 from urllib.parse import quote
 
@@ -251,6 +252,38 @@ def produced_sensors(since, order_record_id=None):
         return [produced_row(record) for record in records]
 
     return _cached(f"produced:{since.isoformat()}:{order_record_id or ''}", load)
+
+
+# Orders per Airtable formula: keeps the formula short.
+_ORDERS_PER_QUERY = 10
+
+
+def fetch_produced_sensor_ids(order_record_ids):
+    """{order record id: [record ids of its "dm Sensoren" with Produktionsstatus
+    "Produziert"]} - in the app or on paper, the caller tells them apart."""
+    table = _helper().table(sensors_table_name())
+    result = {order: set() for order in order_record_ids}
+    for start in range(0, len(order_record_ids), _ORDERS_PER_QUERY):
+        chunk = order_record_ids[start:start + _ORDERS_PER_QUERY]
+        links = ", ".join(f"FIND({_quote(order)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))" for order in chunk)
+        formula = f"AND({{Produktionsstatus}}={_quote(STATUS_PRODUCED)}, OR({links}))"
+        for record in _all(table, formula=formula, fields=["Produktionsstatus", SENSOR_ORDER_RECORD_ID]):
+            fields = record.get("fields") or {}
+            if fields.get("Produktionsstatus") != STATUS_PRODUCED:
+                continue
+            for order in fields.get(SENSOR_ORDER_RECORD_ID) or []:
+                if order in result:
+                    result[order].add(record["id"])
+    return {order: sorted(ids) for order, ids in result.items()}
+
+
+def produced_sensor_ids(order_record_ids):
+    """fetch_produced_sensor_ids, cached a little while (the order list)."""
+    ids = sorted(order_record_ids)
+    if not ids:
+        return {}
+    digest = hashlib.sha1(",".join(ids).encode()).hexdigest()
+    return _cached(f"produced-ids:{digest}", lambda: fetch_produced_sensor_ids(ids))
 
 
 def _with_factory_values(order, sensors):
