@@ -34,6 +34,12 @@ server {
         return 404;
     }
 
+    # The debug toolbar (SQL, headers, cookies, others' requests) is never
+    # forwarded - 2026-11-26 leak. Locally, its panels work on the backend port.
+    location ^~ /__debug__/ {
+        return 404;
+    }
+
     location / {
         set $backend_upstream progeo-backend:8383;
         proxy_pass http://$backend_upstream;

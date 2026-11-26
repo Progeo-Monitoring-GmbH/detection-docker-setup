@@ -43,8 +43,8 @@ def _production_settings(**env):
 # -- production settings ---------------------------------------------------------
 
 def test_the_debug_toolbar_is_only_loaded_with_debug():
-    off = _production_settings(DEBUG="0")
-    on = _production_settings(DEBUG="1")
+    off = _production_settings(DEBUG="0", SERVER_ENV="local")
+    on = _production_settings(DEBUG="1", SERVER_ENV="local")
 
     assert "debug_toolbar" not in off["apps"]
     assert "debug_toolbar.middleware.DebugToolbarMiddleware" not in off["middleware"]
@@ -52,11 +52,21 @@ def test_the_debug_toolbar_is_only_loaded_with_debug():
     assert "debug_toolbar.middleware.DebugToolbarMiddleware" in on["middleware"]
 
 
+@pytest.mark.parametrize("server_env", ["", "staging", "live"])
+def test_debug_is_ignored_on_a_server(server_env):
+    """2026-11-26: DEBUG=1 on staging leaked data - only SERVER_ENV=local allows it."""
+    on_server = _production_settings(DEBUG="1", SERVER_ENV=server_env)
+
+    assert "debug_toolbar" not in on_server["apps"]
+    assert "debug_toolbar.middleware.DebugToolbarMiddleware" not in on_server["middleware"]
+    assert not on_server["cors_regexes"]
+
+
 @pytest.mark.parametrize("env, allowed", [
     ({"DEBUG": "0"}, False),
     ({"DEBUG": "0", "CORS_ALLOW_LOCAL_ORIGINS": "1"}, True),
-    ({"DEBUG": "1"}, True),
-    ({"DEBUG": "1", "CORS_ALLOW_LOCAL_ORIGINS": "0"}, False),
+    ({"DEBUG": "1", "SERVER_ENV": "local"}, True),
+    ({"DEBUG": "1", "SERVER_ENV": "local", "CORS_ALLOW_LOCAL_ORIGINS": "0"}, False),
 ])
 def test_lan_origins_are_only_allowed_with_debug_or_when_switched_on(env, allowed):
     assert bool(_production_settings(**env)["cors_regexes"]) is allowed

@@ -147,26 +147,10 @@ class Command(BaseCommand):
         return counts
 
     def _logout_everyone(self, apply):
-        from django.contrib.sessions.models import Session
-        from rest_framework.authtoken.models import Token
-        from rest_framework_simplejwt.token_blacklist.models import (
-            BlacklistedToken,
-            OutstandingToken,
-        )
+        from progeo.helper import logout_all
 
-        db = DEFAULT_DB_ALIAS
-        sessions = Session.objects.using(db)
-        tokens = Token.objects.using(db)
-        open_jwts = OutstandingToken.objects.using(db).filter(blacklistedtoken__isnull=True)
-        self.stdout.write(f"Logout - sessions: {sessions.count()}, login tokens: {tokens.count()}, "
-                          f"refresh JWTs to blacklist: {open_jwts.count()}")
-        if not apply:
-            return
-        with transaction.atomic(using=db):
-            sessions.delete()
-            tokens.delete()
-            BlacklistedToken.objects.using(db).bulk_create(
-                [BlacklistedToken(token=token) for token in open_jwts], batch_size=1000, ignore_conflicts=True)
+        counts = logout_all.logout_everyone(apply=apply)
+        self.stdout.write(f"Logout - {logout_all.summary(counts)}")
 
     def _superuser_password(self, apply):
         from django.contrib.auth.models import User

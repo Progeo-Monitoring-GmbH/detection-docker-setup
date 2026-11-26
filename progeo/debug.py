@@ -3,9 +3,14 @@ from django.conf import settings
 
 
 def show_toolbar(request):
+    """Only with DEBUG (local machines only, settings.py) and only for a client
+    on this machine or its private network: the toolbar shows SQL, headers,
+    cookies and the requests of others (its history) - 2026-11-26 leak."""
+    from progeo.security import client_is_local
+
     if request.path.endswith("all/qrcodes/"):
         return False
-    return settings.DEBUG
+    return bool(settings.DEBUG) and client_is_local(request)
 
 
 def hide_toolbar(request):

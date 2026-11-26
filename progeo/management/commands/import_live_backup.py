@@ -85,6 +85,8 @@ class Command(BaseCommand):
         started = time.monotonic()
         try:
             self._import(name, options)
+            if options["apply"]:
+                self._logout_live_logins()
         except BaseException as exc:
             if options["apply"]:
                 _write_status(ok=False, bundle=name, error=str(exc) or type(exc).__name__,
@@ -93,6 +95,17 @@ class Command(BaseCommand):
         if options["apply"]:
             _write_status(ok=True, bundle=name, error="", imported=name, seconds=round(time.monotonic() - started))
             self._reapply_e2e()
+
+    def _logout_live_logins(self):
+        """The restored dump is live's: its sessions, login tokens (the login
+        hands out the existing one - the same key works on live), refresh JWTs
+        and login links go. Fails the import if it can't - staging must never
+        run with live's logins (2026-11-26 leak)."""
+        from progeo.helper import logout_all
+
+        counts = logout_all.logout_everyone(apply=True, login_links=True)
+        ilog(f"[import_live_backup] live logins removed - {logout_all.summary(counts)}")
+        self.stdout.write(f"Live logins removed - {logout_all.summary(counts)}")
 
     def _reapply_e2e(self):
         """The live data has no UI-test accounts (helper/e2e.py): give the

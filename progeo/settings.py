@@ -8,6 +8,7 @@ from pathlib import Path
 
 from progeo.helper.basics import flog, read_env
 from progeo.oauth2_bcp import OAUTH2_RFC9700
+from progeo.security import effective_debug
 from progeo.sentry import init_sentry
 from progeo.v1.helper import parse_boolean, parse_int, parse_split_str
 
@@ -19,8 +20,13 @@ read_env(ENV_FILE_PATH)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = parse_boolean(os.getenv("DEBUG"))
+# DEBUG only on a developer's machine: SERVER_ENV=local (django.env). On a
+# server - SERVER_ENV unset, staging, live - DEBUG=1 is ignored (2026-11-26:
+# DEBUG=1 on staging leaked data through the debug toolbar and error pages).
+SERVER_ENV = (os.getenv("SERVER_ENV") or "").strip().lower()
+DEBUG = effective_debug(os.getenv("DEBUG"), SERVER_ENV)
+if parse_boolean(os.getenv("DEBUG")) and not DEBUG:
+    print("DEBUG=1 ignored: only with SERVER_ENV=local (developer machines).", file=sys.stderr)
 
 _raw_allowed_hosts = parse_split_str(os.getenv("DJANGO_ALLOWED_HOSTS", ""), ",")
 ALLOWED_HOSTS = [host.strip() for host in _raw_allowed_hosts if host.strip()]
