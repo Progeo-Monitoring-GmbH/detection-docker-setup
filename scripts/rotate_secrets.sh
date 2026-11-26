@@ -241,10 +241,14 @@ preflight() {
   done
   [[ -f $ENV_FILE && -f $DJANGO_ENV_FILE ]] || die "Run in the repository with .env and django.env."
   docker ps --format '{{.Names}}' | grep -qx progeo-database || die "progeo-database is not running."
-  info "Checking that the deployed image has rotate_encryption_keys..."
-  "${compose[@]}" run --rm --no-deps -T progeo-backend /bin/bash "$CONTAINER_ROOT/start-supervisord.sh" \
-      manage rotate_encryption_keys --help >/dev/null 2>&1 \
-    || die "The backend image has no 'manage.py rotate_encryption_keys' - deploy the current code first."
+  info "Checking that the deployed image can run rotate_encryption_keys..."
+  local output
+  if ! output=$("${compose[@]}" run --rm --no-deps -T progeo-backend /bin/bash "$CONTAINER_ROOT/start-supervisord.sh" \
+      manage rotate_encryption_keys --help 2>&1); then
+    # --help prints no secrets; the error says what is wrong.
+    printf '%s\n' "$output" | tail -n 15 >&2
+    die "The backend image can't run 'manage.py rotate_encryption_keys' (output above). Old image? Deploy the current code."
+  fi
 }
 
 print_manual() {

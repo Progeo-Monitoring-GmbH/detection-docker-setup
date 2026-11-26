@@ -81,11 +81,13 @@ fi
 # "manage <command> [args...]" (scripts/rotate_secrets.sh): one manage.py command
 # in a one-off container, with the django.env just built. Variables given to
 # `docker compose run -e NAME` (e.g. ROTATE_OLD_SECRET_KEY) reach it - su without
-# -l keeps the environment.
+# -l keeps the environment; the venv is activated like run-server.sh does (its
+# path passed as $0 - no quoting games). "--" before the user: BusyBox su would
+# take the command's own options (--apply, --help) as its own and fail.
 if [ "${1:-}" = "manage" ]; then
   shift
   cd "${PROJECT_ROOT:-/home/progeo/detection-docker-setup}"
-  exec su progeo -s /bin/bash -c 'exec python manage.py "$@"' manage "$@"
+  exec su -s /bin/bash -c '. "$0/bin/activate" && exec python manage.py "$@"' -- progeo "${VENV_ROOT:-/opt/venv}" "$@"
 fi
 
 # CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
