@@ -78,6 +78,16 @@ if [ "${1:-}" = "prepare" ]; then
   exec su progeo -s /bin/bash -c "bash run-server.sh --prepare-only"
 fi
 
+# "manage <command> [args...]" (scripts/rotate_secrets.sh): one manage.py command
+# in a one-off container, with the django.env just built. Variables given to
+# `docker compose run -e NAME` (e.g. ROTATE_OLD_SECRET_KEY) reach it - su without
+# -l keeps the environment.
+if [ "${1:-}" = "manage" ]; then
+  shift
+  cd "${PROJECT_ROOT:-/home/progeo/detection-docker-setup}"
+  exec su progeo -s /bin/bash -c 'exec python manage.py "$@"' manage "$@"
+fi
+
 # CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
 # name - half-hour, measure, daily, weekly, staging-import - or "all", e.g. while
 # split_project_dbs runs. Applied here, before crond starts: the jobs are

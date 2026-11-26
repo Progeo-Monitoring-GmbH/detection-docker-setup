@@ -189,8 +189,11 @@ JWT_REFRESH_TOKEN_DAYS = max(1, parse_int(os.getenv("JWT_REFRESH_TOKEN_DAYS"), 1
 # the portal (TwoFactorRequiredMiddleware) - switch on once staff know.
 TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", "ProGeo")
 # Encrypts the stored 2FA keys; empty = derived from SECRET_KEY. Set it once and
-# keep it - changing it (or SECRET_KEY without it) invalidates every 2FA device.
+# keep it - changing it (or SECRET_KEY without it) invalidates every 2FA device,
+# unless scripts/rotate_secrets.sh changes it (re-encrypts them).
 TWO_FACTOR_ENCRYPTION_KEY = os.getenv("TWO_FACTOR_ENCRYPTION_KEY", "")
+# The same for the device commands' payloads/results (helper/device_commands.py).
+DEVICE_COMMAND_ENCRYPTION_KEY = os.getenv("DEVICE_COMMAND_ENCRYPTION_KEY", "")
 TWO_FACTOR_REQUIRED_FOR_STAFF = parse_boolean(os.getenv("TWO_FACTOR_REQUIRED_FOR_STAFF", "0"))
 # Usage analysis of normal users (helper/activity.py, ProgeoActivity): page
 # views, their duration, clicks, logins - only with the user's consent

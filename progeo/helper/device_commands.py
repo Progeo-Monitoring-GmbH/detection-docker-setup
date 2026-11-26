@@ -138,14 +138,24 @@ class CommandError(ValueError):
 
 # ---------------------------------------------------------------------------- encryption
 
-def _fernet():
-    """Key from DEVICE_COMMAND_ENCRYPTION_KEY, else SECRET_KEY. Changing it
-    only loses what is stored right now (pending payloads, recent results)."""
+def key_secret(command_key=None, secret_key=None):
+    """The secret the key is derived from: DEVICE_COMMAND_ENCRYPTION_KEY, else
+    SECRET_KEY (the settings', or the given ones - rotate_encryption_keys).
+    Changing it without rotate_encryption_keys loses what is stored right now
+    (pending payloads, recent results)."""
+    if command_key is None and secret_key is None:
+        command_key, secret_key = getattr(settings, "DEVICE_COMMAND_ENCRYPTION_KEY", ""), settings.SECRET_KEY
+    return command_key or secret_key
+
+
+def fernet_for(secret):
     from cryptography.fernet import Fernet
 
-    secret = getattr(settings, "DEVICE_COMMAND_ENCRYPTION_KEY", "") or settings.SECRET_KEY
-    key = base64.urlsafe_b64encode(hashlib.sha256(f"progeo-device-command:{secret}".encode()).digest())
-    return Fernet(key)
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(f"progeo-device-command:{secret}".encode()).digest()))
+
+
+def _fernet():
+    return fernet_for(key_secret())
 
 
 def encrypt(data) -> str:

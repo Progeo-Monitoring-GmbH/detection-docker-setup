@@ -40,12 +40,22 @@ _RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i
 _ENCRYPTED_PREFIX = "fernet:"
 
 
-def _fernet():
+def key_secret(two_factor_key=None, secret_key=None):
+    """The secret the key is derived from: TWO_FACTOR_ENCRYPTION_KEY, else
+    SECRET_KEY (the settings', or the given ones - rotate_encryption_keys)."""
+    if two_factor_key is None and secret_key is None:
+        two_factor_key, secret_key = getattr(settings, "TWO_FACTOR_ENCRYPTION_KEY", ""), settings.SECRET_KEY
+    return two_factor_key or secret_key
+
+
+def fernet_for(secret):
     from cryptography.fernet import Fernet
 
-    secret = getattr(settings, "TWO_FACTOR_ENCRYPTION_KEY", "") or settings.SECRET_KEY
-    key = base64.urlsafe_b64encode(hashlib.sha256(f"progeo-2fa:{secret}".encode()).digest())
-    return Fernet(key)
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(f"progeo-2fa:{secret}".encode()).digest()))
+
+
+def _fernet():
+    return fernet_for(key_secret())
 
 
 def _encrypt_secret(secret: str) -> str:
