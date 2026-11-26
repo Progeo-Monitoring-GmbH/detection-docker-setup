@@ -60,7 +60,10 @@ class FakeAirtable:
         class Table:
             def all(self, formula=None, fields=None, max_records=None):
                 rows = airtable.records[name]
-                if name == "PA: dm" and formula:
+                if name == "PA: dm" and formula and "{Produktionsstatus}=" in formula:
+                    # orders(status): "{Produktionsstatus}='zu Produzieren'"
+                    rows = [r for r in rows if f"'{r['fields'].get('Produktionsstatus')}'" in formula]
+                elif name == "PA: dm" and formula:
                     rows = [r for r in rows if f"'{r['fields']['ID']}'" in formula or f"'{r['id']}'" in formula]
                 return copy.deepcopy(rows)
 

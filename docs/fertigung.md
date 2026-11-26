@@ -266,7 +266,8 @@ Datenbank („default“, wie `ProgeoFactorySensor`):
 - `ProgeoRoll` – Rollenregister aus 3.5 (mit `code`, `code_format`), `ProgeoRollPhoto` – Fotos.
 - `ProgeoWerkUser` – Backend-Benutzer ↔ Airtable-Ressource, Name, Kürzel (1a).
 
-Airtable – **neue Felder, von einem Base-Admin anzulegen**. Die Namen stehen in
+Airtable – **neue Felder, angelegt am 26.11.2026** (geprüft: keine Automation und kein Make-Szenario liest
+alle Felder oder lauscht auf „Last Modified“ von „PA: dm“). Die Namen stehen in
 `production.AIRTABLE_SENSOR_FIELDS`/`AIRTABLE_ORDER_FIELDS` und werden nur geschrieben, nicht von `dm_orders`
 gelesen – ein noch fehlendes Feld bricht so die Auftragsliste nicht. Bis die Felder existieren, schlägt die
 Kopie fehl und wird stündlich wiederholt (`push_pending_production`). Dazu in „Ressourcen“ das
@@ -313,6 +314,11 @@ Endpunkte (nur Staff/Superuser):
   (vollständige Einträge nach `erfasst_am`, Längen aus „dm Sensoren“ beim Speichern in
   `laenge_m`/`vorlauf_m`), Fehler und Warnungen mit QS-Stand, Aufträge, Rollen mit Anzahl Sensoren.
 - `POST /v1/werk/produktion/qs/` `{"sensor_record_ids": [...], "qs": "OK" | "Nacharbeit" | "Prüfen"}`.
+- Sensoren mit **Papierprotokoll** (in Airtable „Produziert“, nicht in der App) zählen bei Fortschritt und
+  Metern pro Tag mit (nach „Produziert am“), live aus Airtable gelesen (`dm_orders.produced_sensors`,
+  `load_order`, kurz gecacht). Jeder Sensor zählt einmal. Die Seite listet außerdem alle Aufträge „zu
+  Produzieren“. Ihre QS-Prüfung bleibt auf der Airtable-Seite „QS offen“. Antwortet Airtable nicht, zählen
+  nur die App-Einträge (`airtable_fehler: true`, Hinweis auf der Seite).
 
 Airtable „dm Sensoren“ (vorhandene Felder): **QS-Prüfung** (OK / Nacharbeit / Prüfen), **QS manuell**.
 

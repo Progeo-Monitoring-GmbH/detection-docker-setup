@@ -110,6 +110,9 @@ export type ProductionOverview = {
   auftraege: ProductionOrder[];
   auffaellig: FlaggedEntry[];
   rollen: ProductionRoll[];
+  /** Airtable didn't answer: the sensors produced the old way (scanned
+   * protocol) are missing, only the app's entries count. */
+  airtable_fehler: boolean;
 };
 
 const NONE = '–';

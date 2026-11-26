@@ -582,6 +582,11 @@ const ProductionView = () => {
         }
       >
         <div className="staff-insights-subtitle">{t('pr_subtitle')}</div>
+        {data?.airtable_fehler && (
+          <div className="pr-airtable-error" data-testid="production-airtable-error">
+            <ExclamationTriangle size={13} /> {t('pr_airtable_error')}
+          </div>
+        )}
       </PanelCard>
       {data === null ? (
         <Spinner size="sm" />

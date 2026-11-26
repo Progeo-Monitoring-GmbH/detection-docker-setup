@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the fixtures imported from test_production are the test parameters
 """The staff page of the production record dm (/staff/production/): the
 value checks (the app's SheetRules.kt), the QS check of the produced sensors
 and the overview - helper/production_overview.py, against a fake Airtable."""
@@ -214,6 +215,55 @@ def test_overview_counts_meters_per_day(api_client, worker, manager):
     counts = answer["kennzahlen"]
     assert (counts["sensoren_heute"], counts["messband_heute_m"], counts["vorlauf_heute_m"]) == (3, 30.0, 7.5)
     assert (counts["erfasst"], counts["gesamt"], counts["auftraege"]) == (4, 45, 1)
+
+
+def produced_in_airtable(airtable, numbers, moment):
+    """Sensors marked produced in "dm Sensoren" the old way (scanned protocol)."""
+    for record in airtable.records["dm Sensoren"]:
+        if int(record["fields"]["Nr."]) in numbers:
+            record["fields"].update({"Produktionsstatus": "Produziert", "Produziert am": iso(moment)})
+
+
+def test_overview_counts_sensors_produced_in_airtable(api_client, worker, manager, airtable):
+    now = today()
+    produced_in_airtable(airtable, {1, 30, 31}, now)
+    produced_in_airtable(airtable, {32}, now - datetime.timedelta(days=1))
+    # Sensor 1 is in the app too: counted once.
+    put_entries(api_client, [entry(1, erfasst_am=iso(now)), entry(2, erfasst_am=iso(now))])
+    api_client.force_authenticate(user=manager)
+
+    answer = api_client.get(f"{OVERVIEW}?tage=2").json()
+
+    assert answer["tage"][-1] == {"datum": now.date().isoformat(), "sensoren": 4, "messband_m": 40.0, "vorlauf_m": 10.0}
+    assert answer["tage"][0]["sensoren"] == 1
+    assert (answer["auftraege"][0]["erfasst"], answer["kennzahlen"]["erfasst"]) == (5, 5)
+    assert answer["airtable_fehler"] is False
+
+
+def test_open_orders_of_airtable_are_listed_without_app_entries(api_client, manager, airtable, queued):
+    api_client.force_authenticate(user=manager)
+
+    orders = api_client.get(OVERVIEW).json()["auftraege"]
+
+    assert [(order["id"], order["erfasst"], order["gesamt"]) for order in orders] == [(ORDER_RECORD, 0, 45)]
+
+
+def test_overview_without_airtable_shows_the_app_entries(api_client, worker, manager, monkeypatch):
+    put_entries(api_client, [entry(1, erfasst_am=iso(today()))])
+
+    def down(*_args, **_kwargs):
+        raise production_overview.ManuSensorError(502, "airtable_fehler", "Airtable ist gerade nicht erreichbar.")
+
+    monkeypatch.setattr(production_overview.dm_orders, "produced_sensors", down)
+    monkeypatch.setattr(production_overview.dm_orders, "load_order", down)
+    monkeypatch.setattr(production_overview.dm_orders, "orders", down)
+    api_client.force_authenticate(user=manager)
+
+    answer = api_client.get(OVERVIEW).json()
+
+    assert answer["airtable_fehler"] is True
+    assert (answer["tage"][-1]["sensoren"], answer["auftraege"][0]["erfasst"]) == (1, 1)
+    assert answer["auftraege"][0]["auftrag_id"] == ORDER_ID
 
 
 def test_overview_lists_bad_values_and_warnings(api_client, worker, manager):

@@ -220,6 +220,39 @@ def fetch_order_sensors(order_record_id, helper=None):
     return sorted((sensor_row(record) for record in records), key=_sensor_sort_key)
 
 
+STATUS_PRODUCED = "Produziert"
+# What the staff page (helper/production_overview.py) needs of a produced sensor.
+_PRODUCED_FIELDS = ("Länge", "Vorlauf gesamt", "Produktionsstatus", "Produziert am", SENSOR_ORDER_RECORD_ID)
+
+
+def produced_row(record):
+    fields = record.get("fields") or {}
+    return {
+        "id": record["id"],
+        "order_record_ids": list(fields.get(SENSOR_ORDER_RECORD_ID) or []),
+        "laenge_m": fields.get("Länge"),
+        "vorlauf_gesamt_m": fields.get("Vorlauf gesamt"),
+        "produktionsstatus": fields.get("Produktionsstatus"),
+        "produziert_am": fields.get("Produziert am"),
+    }
+
+
+def produced_sensors(since, order_record_id=None):
+    """The "dm Sensoren" produced on `since` (a date) or later - in the app or
+    the old way (scanned protocol) - of one order or all; cached a little while."""
+
+    def load():
+        parts = [f"{{Produktionsstatus}}={_quote(STATUS_PRODUCED)}",
+                 f"NOT(IS_BEFORE({{Produziert am}}, {_quote(since.isoformat())}))"]
+        if order_record_id:
+            parts.append(f"FIND({_quote(order_record_id)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))")
+        records = _all(_helper().table(sensors_table_name()), formula=f"AND({', '.join(parts)})",
+                       fields=list(_PRODUCED_FIELDS))
+        return [produced_row(record) for record in records]
+
+    return _cached(f"produced:{since.isoformat()}:{order_record_id or ''}", load)
+
+
 def _with_factory_values(order, sensors):
     """R_Werk of the sensors the factory app already stored (ProgeoFactorySensor)."""
     from progeo.helper.manusensor import DB, parse_project

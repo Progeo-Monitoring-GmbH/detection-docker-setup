@@ -184,6 +184,7 @@ const OVERVIEW: ProductionOverview = {
       sensoren: 6,
     },
   ],
+  airtable_fehler: false,
 };
 
 let container: HTMLDivElement;
@@ -280,6 +281,16 @@ describe('ProductionView', () => {
     expect(api.get).toHaveBeenLastCalledWith(
       '/v1/werk/produktion/?tage=14&auftrag=recORDER000000097',
     );
+  });
+
+  it('says when Airtable did not answer and only app entries count', async () => {
+    await render();
+    expect(byTestId('production-airtable-error')).toBeNull();
+
+    api.get.mockImplementation(() => ({ ...OVERVIEW, airtable_fehler: true }));
+    await click('production-order-row', 'recORDER000000097');
+
+    expect(byTestId('production-airtable-error')).not.toBeNull();
   });
 
   it('shows the rolls with their sensors and rest', async () => {

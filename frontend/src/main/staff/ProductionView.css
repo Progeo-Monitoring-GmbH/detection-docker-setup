@@ -82,6 +82,15 @@
   font-weight: 700;
 }
 
+.pr-page .pr-airtable-error {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--pr-warn);
+  background: var(--pr-warn-bg);
+}
+
 .pr-page .pr-row-actions {
   display: inline-flex;
   gap: 6px;

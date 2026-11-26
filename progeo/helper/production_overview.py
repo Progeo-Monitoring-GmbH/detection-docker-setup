@@ -10,7 +10,9 @@ production bonus).
                      is "OK", any other "Prüfen" - a manual "OK" is never overwritten.
 - decide()           POST /v1/werk/produktion/qs/   staff decide "OK" / "Nacharbeit"
 - overview()         GET  /v1/werk/produktion/      figures, meters per day, bad
-                     values and warnings, orders, rolls
+                     values and warnings, orders, rolls - the sensors produced the
+                     old way (scanned protocol, "Produziert" in Airtable) count in
+                     the progress and the meters, read live (dm_orders, cached)
 """
 
 import datetime
@@ -191,22 +193,41 @@ def _meters(value):
     return round(float(value or 0), 2)
 
 
-def _per_day(entries, days):
-    """Complete entries per day (Berlin) of the last `days` days, today last."""
+def _first_day(days):
     today = timezone.localtime(timezone.now(), BERLIN).date()
-    first = today - datetime.timedelta(days=days - 1)
+    return today - datetime.timedelta(days=days - 1)
+
+
+def _berlin_day(value):
+    from progeo.helper.manusensor import _aware
+
+    moment = _aware(value)
+    return timezone.localtime(moment, BERLIN).date() if moment else None
+
+
+def _per_day(entries, days, produced, app_ids):
+    """Sensors per day (Berlin) of the last `days` days, today last: the
+    complete app entries by erfasst_am, and the sensors produced the old way
+    (Airtable, not in the app) by "Produziert am"."""
+    first = _first_day(days)
     start = datetime.datetime.combine(first, datetime.time.min, tzinfo=BERLIN)
+    totals = {first + datetime.timedelta(days=offset): [0, 0.0, 0.0] for offset in range(days)}
     rows = entries.filter(_complete_q(), erfasst_am__gte=start).annotate(
         day=TruncDate("erfasst_am", tzinfo=BERLIN)).values("day").annotate(
         sensoren=Count("pk"), messband=Sum("laenge_m"), vorlauf=Sum("vorlauf_m"))
-    found = {row["day"]: row for row in rows}
-    result = []
-    for offset in range(days):
-        day = first + datetime.timedelta(days=offset)
-        row = found.get(day, {})
-        result.append({"datum": day.isoformat(), "sensoren": row.get("sensoren", 0),
-                       "messband_m": _meters(row.get("messband")), "vorlauf_m": _meters(row.get("vorlauf"))})
-    return result
+    for row in rows:
+        if row["day"] in totals:
+            totals[row["day"]] = [row["sensoren"], _meters(row["messband"]), _meters(row["vorlauf"])]
+    for sensor in produced:
+        day = _berlin_day(sensor["produziert_am"])
+        if sensor["id"] in app_ids or day not in totals:
+            continue
+        total = totals[day]
+        total[0] += 1
+        total[1] += float(length(sensor["laenge_m"]) or 0)
+        total[2] += float(length(sensor["vorlauf_gesamt_m"]) or 0)
+    return [{"datum": day.isoformat(), "sensoren": count, "messband_m": _meters(band), "vorlauf_m": _meters(lead)}
+            for day, (count, band, lead) in totals.items()]
 
 
 class _Initials:
@@ -246,41 +267,60 @@ def flagged_json(entry, initials):
     }
 
 
-def _airtable_order(record_id):
-    """The order as "PA: dm" has it (cached) - {} when Airtable can't say."""
-    try:
-        return dm_orders.resolve_order(record_id)
-    except ManuSensorError:
-        return {}
+class _Airtable:
+    """What the page reads from Airtable (cached in helper/dm_orders.py) -
+    nothing, and `failed`, when Airtable doesn't answer: the page then shows
+    the app's entries only."""
+
+    def __init__(self):
+        self.failed = False
+
+    def read(self, load, default):
+        try:
+            return load()
+        except ManuSensorError:
+            self.failed = True
+            return default
 
 
-def _orders(entries, flagged, order_key):
+def _orders(entries, flagged, order_key, airtable):
+    """The orders of the page: those with app entries or progress and those
+    still to produce in "PA: dm". Recorded = the complete app entries plus
+    the sensors produced the old way (each sensor once)."""
     from progeo.v1.models import ProgeoProductionProgress, ProgeoProductionSheet
 
     stats = {row["order_record_id"]: row for row in entries.values("order_record_id").annotate(
-        erfasst=Count("pk", filter=_complete_q()), zuletzt=Max("erfasst_am"), auftrag_id=Max("order_id"))}
+        zuletzt=Max("erfasst_am"), auftrag_id=Max("order_id"))}
+    app_ids = {}
+    for record_id, sensor_id in entries.filter(_complete_q()).values_list("order_record_id", "sensor_record_id"):
+        app_ids.setdefault(record_id, set()).add(sensor_id)
     progress = ProgeoProductionProgress.objects.using(DB)
     sheets = ProgeoProductionSheet.objects.using(DB)
     if order_key:
         progress, sheets = progress.filter(order_record_id=order_key), sheets.filter(order_record_id=order_key)
+        open_ids = set()
+    else:
+        open_ids = {order["id"] for order in airtable.read(
+            lambda: dm_orders.orders(dm_orders.STATUS_TO_PRODUCE)["auftraege"], [])}
     reports = {report.order_record_id: report for report in progress}
     released = {row["order_record_id"]: row for row in sheets.values("order_record_id").annotate(
         freigegeben=Count("pk"), gesamt=Max("blaetter_gesamt"))}
     result = []
-    for record_id in set(stats) | set(reports):
+    for record_id in set(stats) | set(reports) | open_ids:
         row, report = stats.get(record_id, {}), reports.get(record_id)
-        order = _airtable_order(record_id)
-        total = (order.get("anzahl_sensoren") or (report.sensoren_gesamt if report else None)
-                 or len(order.get("sensor_record_ids") or []) or None)
+        detail = airtable.read(lambda record_id=record_id: dm_orders.load_order(record_id), {})
+        sensors = detail.get("sensoren") or []
+        produced = {sensor["id"] for sensor in sensors if sensor.get("produktionsstatus") == dm_orders.STATUS_PRODUCED}
+        total = len(sensors) or detail.get("anzahl_sensoren") or (report.sensoren_gesamt if report else None)
         mine = [item for item in flagged if item["order_record_id"] == record_id]
         last = max(filter(None, [row.get("zuletzt"), report.zeitpunkt if report else None]), default=None)
         result.append({
             "id": record_id,
-            "auftrag_id": order.get("auftrag_id") or row.get("auftrag_id") or (report.order_id if report else ""),
-            "nr": order.get("nr"),
-            "projekt": order.get("projekt"),
-            "objekt": order.get("objekt"),
-            "erfasst": row.get("erfasst", 0),
+            "auftrag_id": detail.get("auftrag_id") or row.get("auftrag_id") or (report.order_id if report else ""),
+            "nr": detail.get("nr"),
+            "projekt": detail.get("projekt"),
+            "objekt": detail.get("objekt"),
+            "erfasst": len(app_ids.get(record_id, set()) | produced),
             "gesamt": total,
             "blaetter_freigegeben": released.get(record_id, {}).get("freigegeben", 0),
             "blaetter": released.get(record_id, {}).get("gesamt") or (math.ceil(total / SHEET_SIZE) if total else None),
@@ -319,15 +359,18 @@ def overview(params):
     initials = _Initials()
     flagged = [flagged_json(entry, initials) for entry in entries.filter(_flagged_q()).select_related(
         "erfasst_von", "sheet", "qs_von").order_by("-erfasst_am", "-pk")[:MAX_ROWS]]
-    per_day = _per_day(entries, days)
-    orders = _orders(entries, flagged, order_key)
+    airtable = _Airtable()
+    produced = airtable.read(lambda: dm_orders.produced_sensors(_first_day(days), order_key), [])
+    app_ids = set(entries.filter(_complete_q()).values_list("sensor_record_id", flat=True))
+    per_day = _per_day(entries, days, produced, app_ids)
+    orders = _orders(entries, flagged, order_key, airtable)
     today = per_day[-1]
     return {
         "kennzahlen": {
             "sensoren_heute": today["sensoren"],
             "messband_heute_m": today["messband_m"],
             "vorlauf_heute_m": today["vorlauf_m"],
-            "erfasst": entries.filter(_complete_q()).count(),
+            "erfasst": sum(order["erfasst"] for order in orders),
             "gesamt": sum(order["gesamt"] or 0 for order in orders),
             "auftraege": len(orders),
             "fehler": sum(row["stufe"] == "fehler" for row in flagged),
@@ -338,4 +381,6 @@ def overview(params):
         "auftraege": orders,
         "auffaellig": flagged,
         "rollen": _rolls(entries, order_key),
+        # Airtable did not answer: only the app's entries are counted.
+        "airtable_fehler": airtable.failed,
     }
