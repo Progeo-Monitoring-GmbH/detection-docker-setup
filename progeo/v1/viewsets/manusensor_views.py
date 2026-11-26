@@ -5,7 +5,9 @@ app reads it - not the {"success", "reason"} of the other views.
 - GET  /v1/location/<projekt>/sensor/<sensor>/   (or .../sensor/?tag_uid=)
 - POST /v1/location/<projekt>/messungen
   module_manusensor_enabled and access to the location of the project number.
-- POST /v1/werk/sensoren/   the factory values (factory app) - staff only.
+- POST /v1/werk/sensoren/   the factory values (factory app) - factory accounts.
+- GET  /v1/werk/auftraege/[<ID>/]   the dm production orders from Airtable
+  (helper/dm_orders.py) - factory accounts.
 """
 
 from rest_framework.authentication import SessionAuthentication
@@ -15,7 +17,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import has_module_permissions
-from progeo.helper import manusensor
+from progeo.helper import dm_orders, manusensor
 from progeo.helper.manusensor import ManuSensorError
 
 PERMISSION = "module_manusensor_enabled"
@@ -89,8 +91,11 @@ class ManuSensorMeasurementsView(_ManuSensorView):
         return Response(manusensor.answer(measurement), status=201 if created else 200)
 
 
-def _staff(user):
-    return user.is_staff or user.is_superuser
+def _factory(user):
+    """SPEC 1a: staff, superuser or group "Werk" (helper/werk_users.py)."""
+    from progeo.helper.werk_users import is_factory_user
+
+    return is_factory_user(user)
 
 
 class FactorySensorsView(_ManuSensorView):
@@ -102,7 +107,7 @@ class FactorySensorsView(_ManuSensorView):
 
     def get(self, request):
         try:
-            self.check_user(request, _staff)
+            self.check_user(request, _factory)
             project = request.query_params.get("projekt")
             project_id = manusensor.parse_project(project) if project else None
             if project and project_id is None:
@@ -113,7 +118,7 @@ class FactorySensorsView(_ManuSensorView):
 
     def post(self, request):
         try:
-            user = self.check_user(request, _staff)
+            user = self.check_user(request, _factory)
             data = request.data if isinstance(request.data, dict) else {}
             result = manusensor.store_factory_sensors(data.get("sensoren"), user=user)
         except ManuSensorError as error:
@@ -121,12 +126,35 @@ class FactorySensorsView(_ManuSensorView):
         return Response(result)
 
 
+class DmOrdersView(_ManuSensorView):
+    """The dm production orders ("PA: dm" in Airtable, helper/dm_orders.py) -
+    factory accounts. ?status= "zu Produzieren" (default), "Produziert", "alle"."""
+
+    def get(self, request):
+        try:
+            self.check_user(request, _factory)
+            return Response(dm_orders.orders(dm_orders.parse_status(request.query_params.get("status"))))
+        except ManuSensorError as error:
+            return _error(error)
+
+
+class DmOrderView(_ManuSensorView):
+    """One dm production order (its ID or Airtable record id) with its sensors."""
+
+    def get(self, request, auftrag):
+        try:
+            self.check_user(request, _factory)
+            return Response(dm_orders.order_detail(auftrag))
+        except ManuSensorError as error:
+            return _error(error)
+
+
 class FactorySensorMeasurementsView(_ManuSensorView):
     """The staff page: the site measurements of one factory sensor."""
 
     def get(self, request, pk):
         try:
-            self.check_user(request, _staff)
+            self.check_user(request, _factory)
             return Response(manusensor.sensor_history(pk))
         except ManuSensorError as error:
             return _error(error)

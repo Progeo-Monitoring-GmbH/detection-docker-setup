@@ -30,7 +30,7 @@ AREA_MODULES = {
     "devices": """
         controller_qrcodes controller_wifi device_commands device_thresholds device_legacy_query
         device_lorawan device_overview device_provisioning device_statistics_api
-        firmware_update firmware_upload manusensor
+        firmware_update firmware_upload manusensor dm_orders production
     """,
     "exports": "exports lageplan_export",
     "integrations": """

@@ -220,6 +220,13 @@ AIRTABLE_DM_SENSORS_TABLE = (os.getenv("AIRTABLE_DM_SENSORS_TABLE") or "dm Senso
 AIRTABLE_SITE_MEASUREMENTS_TABLE = (os.getenv("AIRTABLE_SITE_MEASUREMENTS_TABLE") or "Baustellenmessungen").strip()
 # |ΔR| to R_Werk (percent) up to which a site measurement is "ok".
 MANUSENSOR_TOLERANCE_PERCENT = float(os.getenv("MANUSENSOR_TOLERANCE_PERCENT") or 5.0)
+# helper/dm_orders.py: the dm production orders table, and how long (s) its
+# answers are cached (Airtable allows 5 requests/s per base; 0 = not cached).
+AIRTABLE_DM_ORDERS_TABLE = (os.getenv("AIRTABLE_DM_ORDERS_TABLE") or "PA: dm").strip()
+MANUSENSOR_ORDERS_CACHE_SECONDS = int(os.getenv("MANUSENSOR_ORDERS_CACHE_SECONDS") or 60)
+# helper/werk_users.py: the factory workers' table and its "gets an account" box.
+AIRTABLE_RESOURCES_TABLE = (os.getenv("AIRTABLE_RESOURCES_TABLE") or "Ressourcen").strip()
+AIRTABLE_RESOURCES_WERK_FIELD = (os.getenv("AIRTABLE_RESOURCES_WERK_FIELD") or "Werk-App").strip()
 # Field of the projects table that manage.py lageplan_resolution --airtable
 # writes the grade of a low-res Lageplan into (a text field, created by hand).
 AIRTABLE_LAGEPLAN_RESOLUTION_FIELD = (

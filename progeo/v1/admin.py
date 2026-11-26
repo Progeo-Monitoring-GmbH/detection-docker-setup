@@ -71,11 +71,16 @@ from progeo.v1.models import (
     ProgeoMeasurement,
     ProgeoMeasurePoint,
     ProgeoNoiseProfile,
+    ProgeoProductionEntry,
+    ProgeoProductionProgress,
+    ProgeoProductionSheet,
     ProgeoQA,
     ProgeoRainEvent,
     ProgeoReadinessSnapshot,
+    ProgeoRoll,
     ProgeoSensorMapping,
     ProgeoSiteMeasurement,
+    ProgeoWerkUser,
     ScreenReviewMark,
     ScreenReviewNote,
     SystemConfig,
@@ -1738,6 +1743,58 @@ class UserModulePermissionsAdmin(admin.ModelAdmin):
 
 
 # ==============================================================================================
+# Digital production record dm (docs/fertigung.md, helper/production.py, rolls.py, werk_users.py)
+
+
+class ProgeoWerkUserAdmin(admin.ModelAdmin):
+    """Factory accounts <-> Airtable "Ressourcen" (`manage.py sync_werk_users`).
+    The Kürzel may be set here (empty: the initials of the name)."""
+    list_display = ("name", "user", "kuerzel", "airtable_resource_id", "deactivated_by_sync", "synced_at")
+    list_editable = ("kuerzel",)
+    search_fields = ("name", "user__username", "user__email", "airtable_resource_id")
+    list_select_related = ("user",)
+    readonly_fields = ("synced_at", "created_at", "deactivated_by_sync")
+    ordering = ("name",)
+
+
+class ProgeoProductionSheetAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """Released sheets (20 sensors each) - copied to Airtable by celery."""
+    list_display = ("order_id", "blatt", "blaetter_gesamt", "freigegeben_von", "freigegeben_am",
+                    "airtable_synced_at", "airtable_error")
+    list_filter = (("airtable_synced_at", admin.EmptyFieldListFilter),)
+    search_fields = ("order_id", "order_record_id")
+    list_select_related = ("freigegeben_von",)
+    ordering = ("-freigegeben_am",)
+
+
+class ProgeoProductionEntryAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """The measured values per sensor (drafts until their sheet is released)."""
+    list_display = ("order_id", "sensor", "r_platine_ohm", "r_aufgespult_ohm", "r_kurzschluss_ohm", "metrierung_m",
+                    "erfasst_von", "erfasst_am", "sheet", "nach_freigabe_geaendert", "airtable_synced_at")
+    list_filter = ("nach_freigabe_geaendert", ("sheet", admin.EmptyFieldListFilter))
+    search_fields = ("order_id", "order_record_id", "sensor", "sensor_record_id")
+    list_select_related = ("erfasst_von", "sheet")
+    ordering = ("order_id", "sensor")
+
+
+class ProgeoProductionProgressAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """The newest progress report of the app per order."""
+    list_display = ("order_id", "erfasst", "sensoren_gesamt", "aktives_blatt", "benutzer", "geraet_id", "zeitpunkt")
+    search_fields = ("order_id", "benutzer", "geraet_id")
+    ordering = ("-zeitpunkt",)
+
+
+class ProgeoRollAdmin(admin.ModelAdmin):
+    """The roll register (measuring band, lead cable)."""
+    list_display = ("nummer", "typ", "kabeltyp", "nennlaenge_m", "metrierung_m", "rest_m", "leer", "zuletzt_benutzer",
+                    "zuletzt_auftrag_id", "zuletzt_am")
+    list_filter = ("typ", "leer")
+    search_fields = ("nummer", "code", "kabeltyp")
+    readonly_fields = ("angelegt_von", "angelegt_am")
+    ordering = ("-zuletzt_am",)
+
+
+# ==============================================================================================
 
 
 register_models = [
@@ -1774,6 +1831,11 @@ register_models = [
     {"model": AccessRequest, "admin": AccessRequestAdmin, "custom": True},
     {"model": ProgeoFactorySensor, "admin": ProgeoFactorySensorAdmin, "custom": True},
     {"model": ProgeoSiteMeasurement, "admin": ProgeoSiteMeasurementAdmin, "custom": True},
+    {"model": ProgeoWerkUser, "admin": ProgeoWerkUserAdmin, "custom": True},
+    {"model": ProgeoProductionSheet, "admin": ProgeoProductionSheetAdmin, "custom": True},
+    {"model": ProgeoProductionEntry, "admin": ProgeoProductionEntryAdmin, "custom": True},
+    {"model": ProgeoProductionProgress, "admin": ProgeoProductionProgressAdmin, "custom": True},
+    {"model": ProgeoRoll, "admin": ProgeoRollAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
     {"model": ProgeoQA, "admin": ProgeoQAAdmin, "custom": True},

@@ -1,0 +1,320 @@
+"""The factory's dm production orders ("PA: dm" in Airtable) for the
+manuSensor app - read live from Airtable, cached a little while.
+
+- GET /v1/werk/auftraege/[?status=zu Produzieren|Produziert|alle]
+  the orders (default: the ones still to produce) - orders().
+- GET /v1/werk/auftraege/<ID or recID>/
+  one order (its ID like "PROD_dm-Breitband_7099_97" or its Airtable record
+  id) with its "dm Sensoren" rows - order_detail().
+
+Airtable's field names live in ORDER_FIELDS / SENSOR_FIELDS; a renamed field
+in the base is changed there only. The answers use the manuSensor format
+(ManuSensorError: {"fehler", "meldung"[, "feld"]}).
+"""
+
+import re
+from urllib.parse import quote
+
+from django.conf import settings
+from django.core.cache import cache
+
+from progeo.helper.basics import elog
+from progeo.helper.manusensor import ManuSensorError, normalize_sensor
+
+STATUS_TO_PRODUCE = "zu Produzieren"
+STATUS_ALL = "alle"
+
+# answer key -> Airtable field of "PA: dm"
+ORDER_FIELDS = {
+    "auftrag_id": "ID",
+    "nr": "ID Nr.",
+    "projekt": "P-Nummer",
+    "objekt": "Objektname",
+    "auftrag_record_id": "Auftrag recID",
+    "besteller": "Besteller",
+    "bestelldatum": "Bestelldatum",
+    "liefertermin": "Liefertermin",
+    "dm_typ": "dm Typ",
+    "produktionsstatus": "Produktionsstatus",
+    "anzahl_sensoren": "Anzahl Sensoren",
+    "erste_nr": "Erste Nr.",
+    "verlegeplan": "Verlegeplan",
+    "kabeltyp_vorlauf": "Kabeltyp Vorlauf",
+    "standard_laenge_m": "Standard-Länge [m]",
+    "standard_vorlauf_m": "Standard-Vorlauf [m]",
+    "standard_vorlauf_zusatz_m": "Standard-Vorlauf Zusatz [m]",
+    "version_leiterplatte": "Version Leiterplatte",
+    "projekt_land": "Projekt Land",
+    "kabelmarkierung": "Kabelmarkierung",
+    "exemplare_kabelbeschriftung": "Exemplare Kabelbeschriftung",
+    "spulenbeschriftung": "Spulenbeschriftung",
+    "exemplare_spulenbeschriftung": "Exemplare Spulenbeschriftung",
+    "druck_ab_nr": "Druck ab Nr.",
+    "druck_bis_nr": "Druck bis Nr.",
+    "bemerkung": "Bemerkung",
+    "hinweis": "Hinweis",
+    "pdf_auftrag": "PDF Auftrag",
+    "geaendert_am": "Last Modified",
+}
+# Linked records: only the ids, the order's sensors are read from their table.
+ORDER_SENSOR_LINKS = "dm Sensoren"
+
+# answer key -> Airtable field of "dm Sensoren"
+SENSOR_FIELDS = {
+    "sensor_id": "ID",
+    "nr": "Nr.",
+    "laenge_m": "Länge",
+    "vorlauf_m": "Vorlauf",
+    "vorlauf_zusatz_m": "Vorlauf Zusatz",
+    "vorlauf_gesamt_m": "Vorlauf gesamt",
+    "blatt": "Blatt",
+    "measuring_unit": "Measuring Unit",
+    "entry_point": "Entry Point",
+    "mux_card": "MUX Card",
+    "pin": "PIN",
+    "produktionsstatus": "Produktionsstatus",
+    "produktionsdatum": "Produktionsdatum",
+    "produziert_am": "Produziert am",
+    "qs_pruefung": "QS-Prüfung",
+}
+# Lookup of the order's record id in "dm Sensoren" - finds an order's sensors.
+SENSOR_ORDER_RECORD_ID = "Prod Auftr recID"
+
+# Lookups arrive as lists; these are one value per order.
+_SINGLE = {"projekt", "objekt", "auftrag_record_id", "besteller"}
+_RECORD_ID = re.compile(r"rec[A-Za-z0-9]{14}")
+# "PROD_dm-Breitband_7099_97" - letters, digits, "_", "-", spaces at most.
+_ORDER_ID = re.compile(r"[\w\- ]{1,100}")
+
+
+def orders_table_name():
+    return getattr(settings, "AIRTABLE_DM_ORDERS_TABLE", "PA: dm")
+
+
+def sensors_table_name():
+    return getattr(settings, "AIRTABLE_DM_SENSORS_TABLE", "dm Sensoren")
+
+
+def cache_seconds():
+    return int(getattr(settings, "MANUSENSOR_ORDERS_CACHE_SECONDS", 60))
+
+
+def _quote(text):
+    """A text as an Airtable formula string literal."""
+    return "'" + str(text).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _helper():
+    from progeo.helper.airtable import AirtableHelper
+
+    helper = AirtableHelper()
+    if not helper.configured:
+        raise ManuSensorError(503, "airtable_nicht_konfiguriert", "Airtable ist im Backend nicht eingerichtet.")
+    return helper
+
+
+def cache_key(key):
+    """Spaces/umlauts of a status or ID quoted - safe for every cache backend."""
+    return f"manusensor:dm_orders:{quote(key, safe='')}"
+
+
+def _cached(key, load):
+    """load() - kept `cache_seconds()` in the cache (0: not cached)."""
+    seconds = cache_seconds()
+    if seconds <= 0:
+        return load()
+    key = cache_key(key)
+    value = cache.get(key)
+    if value is None:
+        value = load()
+        cache.set(key, value, seconds)
+    return value
+
+
+def _all(table, **options):
+    """table.all(), an Airtable failure as ManuSensorError 502."""
+    try:
+        return table.all(**options)
+    except Exception as error:  # requests/pyairtable errors alike
+        elog(f"Airtable read of {getattr(table, 'name', table)} failed: {error}", tag="[MANUSENSOR]")
+        raise ManuSensorError(502, "airtable_fehler", "Airtable ist gerade nicht erreichbar.") from error
+
+
+# ---------------------------------------------------------------------------- rows
+
+def _value(key, value):
+    if key in _SINGLE:
+        if isinstance(value, list):
+            value = value[0] if value else None
+        return str(value) if value not in (None, "") else None
+    if key == "kabeltyp_vorlauf":
+        return [str(item) for item in value] if isinstance(value, list) else ([str(value)] if value else [])
+    if key == "pdf_auftrag":
+        return [{"name": item.get("filename"), "url": item.get("url")}
+                for item in value or [] if isinstance(item, dict)]
+    if key in ("kabelmarkierung", "spulenbeschriftung"):
+        return bool(value)
+    return value
+
+
+def order_row(record):
+    """A "PA: dm" record as the app gets it - every key always there."""
+    fields = record.get("fields") or {}
+    row = {"id": record["id"]}
+    for key, field in ORDER_FIELDS.items():
+        row[key] = _value(key, fields.get(field))
+    row["sensor_record_ids"] = list(fields.get(ORDER_SENSOR_LINKS) or [])
+    return row
+
+
+def sensor_row(record):
+    fields = record.get("fields") or {}
+    row = {"id": record["id"]}
+    for key, field in SENSOR_FIELDS.items():
+        row[key] = fields.get(field)
+    # The 6-digit number the manuSensor app and the factory values use.
+    row["sensor"] = normalize_sensor(row["nr"])
+    return row
+
+
+def _sensor_sort_key(row):
+    number = row.get("sensor")
+    return (number is None, number or "", str(row.get("nr") or ""))
+
+
+# ---------------------------------------------------------------------------- reading
+
+def _order_fields():
+    return [*ORDER_FIELDS.values(), ORDER_SENSOR_LINKS]
+
+
+def fetch_orders(status=STATUS_TO_PRODUCE, helper=None):
+    """The "PA: dm" rows (Produktionsstatus `status`, or every one with
+    STATUS_ALL), newest order first."""
+    helper = helper or _helper()
+    options = {"fields": _order_fields()}
+    if status != STATUS_ALL:
+        options["formula"] = f"{{{ORDER_FIELDS['produktionsstatus']}}}={_quote(status)}"
+    rows = [order_row(record) for record in _all(helper.table(orders_table_name()), **options)]
+    rows.sort(key=lambda row: row["nr"] or 0, reverse=True)
+    return rows
+
+
+def fetch_order(key, helper=None):
+    """The "PA: dm" row of `key` (record id or its ID), None if there isn't one."""
+    helper = helper or _helper()
+    table = helper.table(orders_table_name())
+    if _RECORD_ID.fullmatch(key):
+        formula = f"RECORD_ID()={_quote(key)}"
+    else:
+        formula = f"{{{ORDER_FIELDS['auftrag_id']}}}={_quote(key)}"
+    records = _all(table, formula=formula, fields=_order_fields(), max_records=2)
+    return order_row(records[0]) if len(records) == 1 else None
+
+
+def fetch_order_sensors(order_record_id, helper=None):
+    """The "dm Sensoren" rows of an order, by number."""
+    helper = helper or _helper()
+    formula = f"FIND({_quote(order_record_id)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))"
+    records = _all(helper.table(sensors_table_name()), formula=formula, fields=list(SENSOR_FIELDS.values()))
+    return sorted((sensor_row(record) for record in records), key=_sensor_sort_key)
+
+
+def _with_factory_values(order, sensors):
+    """R_Werk of the sensors the factory app already stored (ProgeoFactorySensor)."""
+    from progeo.helper.manusensor import DB, parse_project
+    from progeo.v1.models import ProgeoFactorySensor
+
+    project_id = parse_project(order.get("projekt"))
+    known = {}
+    if project_id is not None:
+        known = dict(ProgeoFactorySensor.objects.using(DB).filter(
+            project_id=project_id, sensor__in=[s["sensor"] for s in sensors if s["sensor"]],
+        ).values_list("sensor", "r_werk_ohm"))
+    for sensor in sensors:
+        sensor["r_werk_ohm"] = known.get(sensor["sensor"])
+    return sensors
+
+
+# ---------------------------------------------------------------------------- answers
+
+def parse_status(value):
+    """?status= - default "zu Produzieren", "alle" for every order."""
+    text = str(value or "").strip()
+    if not text:
+        return STATUS_TO_PRODUCE
+    if text.lower() == STATUS_ALL:
+        return STATUS_ALL
+    if len(text) > 50:
+        raise ManuSensorError(422, "ungueltig", "status: höchstens 50 Zeichen.", "status")
+    return text
+
+
+def orders(status=STATUS_TO_PRODUCE):
+    """GET /v1/werk/auftraege/: {"status", "anzahl", "auftraege"}."""
+    rows = _cached(f"list:{status}", lambda: fetch_orders(status))
+    return {"status": status, "anzahl": len(rows), "auftraege": rows}
+
+
+def _check_key(key):
+    key = str(key or "").strip()
+    if not _ORDER_ID.fullmatch(key):
+        raise ManuSensorError(422, "ungueltig", "Auftrags-ID oder Airtable-Record-ID erwartet.", "auftrag")
+    return key
+
+
+def _unknown(key):
+    return ManuSensorError(404, "auftrag_unbekannt", f"Produktionsauftrag {key} nicht gefunden.")
+
+
+def load_order(key, fresh=False):
+    """The order of `key` with its "sensoren" (sorted - the sheets follow
+    this order), from the cache unless `fresh` - 404 if unknown. A copy: the
+    caller may change it."""
+    key = _check_key(key)
+
+    def load():
+        helper = _helper()
+        order = fetch_order(key, helper)
+        if order is None:
+            return None
+        return {**order, "sensoren": fetch_order_sensors(order["id"], helper)}
+
+    if fresh:
+        detail = load()
+        if detail is not None and cache_seconds() > 0:
+            cache.set(cache_key(f"detail:{key}"), detail, cache_seconds())
+    else:
+        detail = _cached(f"detail:{key}", load)
+    if detail is None:
+        raise _unknown(key)
+    return {**detail, "sensoren": [dict(sensor) for sensor in detail["sensoren"]]}
+
+
+def resolve_order(key):
+    """The order of `key` without its sensors (cached) - 404 if unknown."""
+    key = _check_key(key)
+    order = _cached(f"order:{key}", lambda: fetch_order(key))
+    if order is None:
+        raise _unknown(key)
+    return dict(order)
+
+
+def forget(*keys):
+    """Drops the cached answers of an order (its ID and record id) and the lists."""
+    names = [f"list:{status}" for status in (STATUS_TO_PRODUCE, "Produziert", STATUS_ALL)]
+    for key in keys:
+        if key:
+            names += [f"detail:{key}", f"order:{key}"]
+    cache.delete_many([cache_key(name) for name in names])
+
+
+def order_detail(key):
+    """GET /v1/werk/auftraege/<key>/: the order with "sensoren" - 404 if
+    unknown - plus the production state (helper/production.py, not cached)."""
+    from progeo.helper import production
+
+    detail = load_order(key)
+    # Not cached: the factory app stores R_Werk while the order is being produced.
+    _with_factory_values(detail, detail["sensoren"])
+    return production.augment_detail(detail)

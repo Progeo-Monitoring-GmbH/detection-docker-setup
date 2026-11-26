@@ -6,9 +6,19 @@ from pathlib import Path
 
 import pytest
 from django.core.cache import cache
+from django.test import override_settings
 
+from progeo.helper.project_dbs import register_project_db
 from progeo.tasks import refresh_legacy_gprs_state
 from progeo.tests import factories as f
+from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is the session fixture
+    ALIAS,
+    OTHER_PROJECT,
+    PROJECT,
+    UNKNOWN,
+    WITH_PROJECT_DBS,
+    project_dbs,
+)
 from progeo.v1.legacy import gprs_state
 from progeo.v1.legacy.gprs_port import firmware_fields
 from progeo.v1.legacy.gprs_table import SCRIPTS
@@ -18,6 +28,10 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
 )
+
+# The django_db marker checks its databases against DATABASES before any fixture runs.
+register_project_db(ALIAS)
+register_project_db(UNKNOWN)
 
 CASES = json.loads((Path(__file__).parent / "fixtures" / "legacy_gprs_oracle.json").read_text(encoding="utf-8"))
 
@@ -180,6 +194,36 @@ def test_the_model_defaults_are_a_valid_configuration(client, controllers):
     fields = firmware_fields(_answer(client, "4033"))
 
     assert (fields["pd"], fields["interval"]) == ("0x88", 3600)
+
+
+@WITH_PROJECT_DBS
+def test_devices_outside_their_locations_database_are_searched_in_one_pass(project_dbs, monkeypatch):
+    # Regression: each project without its device in its location's database
+    # (merged, "unknown", or no legacy device at all) searched all ~1100
+    # project databases on its own - ~90 s per run.
+    from progeo.helper import project_dbs as dbs
+
+    monkeypatch.setattr(dbs, "existing_project_aliases", lambda refresh=False: [ALIAS, UNKNOWN])
+    f.make_location(f.make_account(), project_id=PROJECT)  # its database: ALIAS
+    device = ProgeoDevice.objects.using(UNKNOWN).create(
+        raw_hash=str(PROJECT), location=None, data_interval=900, pull_resistance=72, sensor_count=5
+    )
+    measurement = ProgeoMeasurement.objects.using(UNKNOWN).create(
+        device_id=device.pk, raw_data={}, eigenpotenzial=[0], wirkpotenzial=[0]
+    )
+    ProgeoAlarm.objects.using(UNKNOWN).create(measurement_id=measurement.pk, sensor_id=4, max_value=80)
+    searched = []
+    original = gprs_state._legacy_devices
+    monkeypatch.setattr(gprs_state, "_legacy_devices",
+                        lambda db, projects: searched.append((db, set(projects))) or original(db, projects))
+
+    with override_settings(PROJECT_DB_SPLIT=True):
+        states = gprs_state.load_projects({PROJECT, OTHER_PROJECT})  # OTHER_PROJECT: no device anywhere
+
+    assert states == {PROJECT: {"interval": 900, "pull_resistance": 72, "sensor_count": 5, "pe": None, "alarms": [4]}}
+    sweep = [db for db, projects in searched if projects == {PROJECT, OTHER_PROJECT}]
+    assert sweep == [f.DB, UNKNOWN, ALIAS]  # one query per database for both, "unknown" first
+    assert len(searched) == 2 + len(sweep)  # plus the location databases: ALIAS and default
 
 
 def test_refresh_projects_updates_only_those(controllers):

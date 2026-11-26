@@ -67,6 +67,17 @@ celery_instance.conf.beat_schedule = {
         # is copied when it arrives - this only catches up).
         "schedule": crontab(minute=25),
     },
+    "push-production-hourly": {
+        "task": "progeo.tasks.push_pending_production",
+        # Production record dm: released sheets/entries whose Airtable copy
+        # failed (each is copied when released - this only catches up).
+        "schedule": crontab(minute=35),
+    },
+    "sync-werk-users-nightly": {
+        "task": "progeo.tasks.sync_werk_users",
+        # Factory accounts from the Airtable "Ressourcen" ("Werk-App" ticked).
+        "schedule": crontab(hour=2, minute=15),
+    },
     "detect-offline-devices-hourly": {
         "task": "progeo.tasks.detect_offline_devices",
         # Per device: still sending? Opens/updates/resolves the offline
@@ -138,8 +149,8 @@ celery_instance.conf.beat_schedule = {
         "task": "progeo.tasks.refresh_legacy_gprs_state",
         # Configuration and alarms of the legacy GPRS controllers for their
         # answers (v1/legacy/gprs_state.py) - read here, not per request.
-        # Hourly: a run takes minutes (it was the task with the most worker
-        # time). :11 right after evaluate-measurements (:10) picked up new
+        # Hourly. A run took ~90 s (one full search over ~1100 databases per
+        # project without a device there); one pass for all: ~6 s. :11 right after evaluate-measurements (:10) picked up new
         # alarms, clear of the other tasks walking every project database.
         "schedule": crontab(minute=11),
     },

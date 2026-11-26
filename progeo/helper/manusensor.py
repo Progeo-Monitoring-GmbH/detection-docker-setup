@@ -47,18 +47,20 @@ def tolerance_percent() -> float:
 class ManuSensorError(Exception):
     """An answer other than success: HTTP status, error code, text, field."""
 
-    def __init__(self, status, code, message, field=None):
+    def __init__(self, status, code, message, field=None, extra=None):
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
         self.field = field
+        # More keys of the answer, e.g. the current sensor list of a sheet.
+        self.extra = extra or {}
 
     def body(self):
         body = {"fehler": self.code, "meldung": self.message}
         if self.field:
             body["feld"] = self.field
-        return body
+        return {**body, **self.extra}
 
 
 def invalid(field, message):

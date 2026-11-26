@@ -20,6 +20,8 @@ from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.location_selection_viewset import LocationSelectionViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.manusensor_views import (
+    DmOrdersView,
+    DmOrderView,
     FactorySensorMeasurementsView,
     FactorySensorsView,
     ManuSensorMeasurementsView,
@@ -35,6 +37,18 @@ from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
 from progeo.v1.viewsets.threshold_fine_tune_viewset import ThresholdFineTuneViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
+from progeo.v1.viewsets.werk_views import (
+    ProductionEntriesView,
+    ProductionProgressView,
+    ProductionSheetReleaseView,
+    RollPhotoUploadView,
+    RollPhotoView,
+    RollSearchView,
+    RollsView,
+    RollView,
+    WerkMeView,
+    WerkUsersSyncView,
+)
 
 progeo_router = CustomRouter()
 progeo_router.register(r'account', AccountViewSet, basename='account')
@@ -110,6 +124,21 @@ urlpatterns = [
     re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
     # The staff page (/staff/sensors/): the site measurements of a factory sensor.
     re_path(r'^werk/sensoren/(?P<pk>\d+)/messungen/?$', FactorySensorMeasurementsView.as_view()),
+    # The dm production orders ("PA: dm" in Airtable, helper/dm_orders.py).
+    re_path(r'^werk/auftraege/?$', DmOrdersView.as_view()),
+    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/?$', DmOrderView.as_view()),
+    # The digital production record (docs/fertigung.md, v1/viewsets/werk_views.py).
+    re_path(r'^werk/ich/?$', WerkMeView.as_view()),
+    re_path(r'^werk/benutzer/sync/?$', WerkUsersSyncView.as_view()),
+    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/eintraege/?$', ProductionEntriesView.as_view()),
+    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/blaetter/(?P<blatt>[0-9]{1,5})/freigabe/?$',
+            ProductionSheetReleaseView.as_view()),
+    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/fortschritt/?$', ProductionProgressView.as_view()),
+    re_path(r'^werk/rollen/?$', RollsView.as_view()),
+    re_path(r'^werk/rollen/suche/?$', RollSearchView.as_view()),
+    re_path(r'^werk/rollen/fotos/(?P<foto_id>[0-9a-fA-F-]{36})/?$', RollPhotoView.as_view()),
+    re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/foto/?$', RollPhotoUploadView.as_view()),
+    re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/?$', RollView.as_view()),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),

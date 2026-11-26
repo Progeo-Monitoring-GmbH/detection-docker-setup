@@ -5,8 +5,9 @@ An answer needs, per project: interval, pulldown and sensor count of its
 legacy device (raw_hash = project id), PE of its location and its active
 alarms. With ~3 requests/s these are not queried per request: the beat task
 refresh_legacy_gprs_state (hourly) reads them for every project of
-gprs_table.py - one device and one alarm query per database, one location
-query - and stores a snapshot in the cache. Every process keeps its copy for
+gprs_table.py - one device and one alarm query per database (in parallel),
+one location query, one more pass over all databases for the devices not
+in their location's database - and stores a snapshot in the cache. Every process keeps its copy for
 LOCAL_TTL seconds, so an answer costs no database query. Only without a
 snapshot (cold start, cache flushed, beat not running) a request loads its
 own projects.
@@ -78,15 +79,52 @@ def _alarms_by_device(db, device_pks):
     return alarms
 
 
+DEVICE_FIELDS = ("pk", "raw_hash", "data_interval", "pull_resistance", "sensor_count", "location_id")
+
+
+def _legacy_devices(db, projects):
+    """(device rows, {device pk: alarms}) of the legacy devices of `projects` in `db`."""
+    from progeo.v1.models import ProgeoDevice
+
+    hashes = [str(project) for project in projects]
+    rows = list(ProgeoDevice.objects.using(db).filter(raw_hash__in=hashes).values(*DEVICE_FIELDS))
+    return rows, (_alarms_by_device(db, [row["pk"] for row in rows]) if rows else {})
+
+
+def _sweep_databases():
+    """Every database a legacy device outside its location's database may be
+    in, in find_legacy_device's order: "default", then the project
+    databases, unknown first (new devices land there)."""
+    from django.db import DEFAULT_DB_ALIAS
+
+    from progeo.helper.project_dbs import (
+        UNKNOWN_PROJECT,
+        existing_project_aliases,
+        project_key_from_alias,
+        register_project_db,
+    )
+
+    aliases = existing_project_aliases()
+    aliases.sort(key=lambda alias: project_key_from_alias(alias) != UNKNOWN_PROJECT)
+    # Registered here, not in the worker threads: that mutates DATABASES.
+    return [DEFAULT_DB_ALIAS, *(register_project_db(alias) for alias in aliases)]
+
+
 def load_projects(projects):
     """{project: {"interval", "pull_resistance", "sensor_count", "pe",
     "alarms"}} for the projects that have a legacy device; "alarms": sensor
-    numbers of the unacknowledged, not normalized alarms, strongest first."""
+    numbers of the unacknowledged, not normalized alarms, strongest first.
+
+    One query (plus one for the alarms) per database of the projects'
+    locations, in parallel (map_databases). Devices not found there - merged
+    projects, devices in "unknown", and projects without any legacy device -
+    are searched in one pass over every database for all of them together:
+    a full search per project (locate_device, misses cached for only 5 min)
+    cost ~1100 sequential connections per project and ~90 s per run."""
     from django.db import DEFAULT_DB_ALIAS
 
-    from progeo.helper.project_dbs import location_db, release_connection, split_enabled
-    from progeo.v1.legacy.gprs import find_legacy_device
-    from progeo.v1.models import ProgeoDevice, ProgeoLocation
+    from progeo.helper.project_dbs import location_db, map_databases, split_enabled
+    from progeo.v1.models import ProgeoLocation
 
     projects = {int(project) for project in projects}
     by_db = {}
@@ -100,26 +138,21 @@ def load_projects(projects):
     else:
         by_db[DEFAULT_DB_ALIAS] = projects
 
-    fields = ("pk", "raw_hash", "data_interval", "pull_resistance", "sensor_count", "location_id")
     devices, alarms = {}, {}
-    for db, group in by_db.items():
-        try:
-            rows = list(ProgeoDevice.objects.using(db).filter(raw_hash__in=[str(p) for p in group]).values(*fields))
+
+    def collect(results):
+        for rows, found_alarms in results:
             for row in rows:
-                devices[int(row["raw_hash"])] = row
-            if rows:
-                alarms.update(_alarms_by_device(db, [row["pk"] for row in rows]))
-        finally:
-            release_connection(db)
-    # A device outside its location's database (rare): looked up on its own.
-    for project in projects - devices.keys() if split_enabled() else ():
-        db, device = find_legacy_device(project)
-        if device is not None:
-            devices[project] = {field: getattr(device, field) for field in fields}
-            try:
-                alarms.update(_alarms_by_device(db, [device.pk]))
-            finally:
-                release_connection(db)
+                project = int(row["raw_hash"])
+                if project not in devices:  # the first database in search order wins
+                    devices[project] = row
+                    # By project: device pks repeat across databases.
+                    alarms[project] = found_alarms.get(row["pk"], [])
+
+    collect(map_databases(lambda db: _legacy_devices(db, by_db[db]), list(by_db)))
+    missing = projects - devices.keys()
+    if missing and split_enabled():
+        collect(map_databases(lambda db: _legacy_devices(db, missing), _sweep_databases()))
 
     location_ids = {row["location_id"] for row in devices.values() if row["location_id"]}
     pe = dict(
@@ -131,7 +164,7 @@ def load_projects(projects):
             "pull_resistance": row["pull_resistance"],
             "sensor_count": row["sensor_count"],
             "pe": pe.get(row["location_id"]),
-            "alarms": alarms.get(row["pk"], []),
+            "alarms": alarms[project],
         }
         for project, row in devices.items()
     }
