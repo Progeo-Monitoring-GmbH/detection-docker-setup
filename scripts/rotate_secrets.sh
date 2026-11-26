@@ -4,6 +4,7 @@
 #
 #   scripts/rotate_secrets.sh                    dry run: checks, shows WHICH keys it would rotate
 #   scripts/rotate_secrets.sh --apply            rotates
+#   scripts/rotate_secrets.sh --resume DIR       finishes an --apply that stopped (its backup DIR)
 #   scripts/rotate_secrets.sh --rollback DIR     back to the values backed up in DIR
 #
 # Run on the server, in the repository, as the user that runs scripts/deploy.sh,
@@ -285,7 +286,7 @@ apply() {
   cp -p "$ENV_FILE" "$backup/.env"
   cp -p "$DJANGO_ENV_FILE" "$backup/django.env"
   chmod 600 "$backup/.env" "$backup/django.env"
-  ROLLBACK_HINT="Rotation stopped. Nothing is lost - undo it with: scripts/rotate_secrets.sh --rollback ${backup}"
+  ROLLBACK_HINT="Rotation stopped. Nothing is lost - finish it: scripts/rotate_secrets.sh --resume ${backup} - or undo it: scripts/rotate_secrets.sh --rollback ${backup}"
   trap 'warn "$ROLLBACK_HINT"' ERR
   ok "Backup: ${backup} (old values - delete it once everything works)."
 
@@ -336,6 +337,56 @@ apply() {
   print_manual
 }
 
+# Finishes an --apply that stopped after writing the new values (e.g. while
+# re-encrypting): the env files and Postgres already have the new values, the
+# old ones are in the backup. Safe to run again - re-encrypting skips what the
+# new key already reads.
+resume() {
+  local backup=${1:-}
+  [[ -n $backup && -f $backup/.env && -f $backup/django.env ]] || die "Usage: $0 --resume secrets/rotation/<time>"
+  ROLLBACK_HINT="Not finished. Run --resume again, or undo it: scripts/rotate_secrets.sh --rollback ${backup}"
+  preflight
+  acquire_lock
+
+  # The old values as Django read them: .env first, then django.env (of the backup).
+  local key old_secret old_2fa old_cmd
+  for key in SECRET_KEY TWO_FACTOR_ENCRYPTION_KEY DEVICE_COMMAND_ENCRYPTION_KEY; do
+    if grep -qE "^${key}=" "$backup/.env"; then
+      printf -v "old_${key}" '%s' "$(file_value "$backup/.env" "$key")"
+    else
+      printf -v "old_${key}" '%s' "$(file_value "$backup/django.env" "$key")"
+    fi
+  done
+  old_secret=$old_SECRET_KEY
+  old_2fa=$old_TWO_FACTOR_ENCRYPTION_KEY
+  old_cmd=$old_DEVICE_COMMAND_ENCRYPTION_KEY
+  [[ -n $old_secret ]] || die "No SECRET_KEY in ${backup} - refusing."
+  [[ $old_secret != "$(env_value SECRET_KEY)" ]] \
+    || die "SECRET_KEY in the env files is still the old one - nothing to resume (run --apply)."
+
+  local extra=()
+  if [[ -n $(env_value DJANGO_SUPERUSER_USERNAME) && -n $(env_value DJANGO_SUPERUSER_PASSWORD) \
+        && $(env_value DJANGO_SUPERUSER_PASSWORD) != "$(file_value "$backup/django.env" DJANGO_SUPERUSER_PASSWORD)" ]]; then
+    extra+=(--superuser-password)
+  fi
+
+  info "Making sure redis runs with its new password..."
+  "${compose[@]}" up -d --force-recreate progeo-redis
+  info "Re-encrypting, logging everyone out..."
+  re_encrypt "$old_secret" "$old_2fa" "$old_cmd" --apply --logout-everyone ${extra[@]+"${extra[@]}"}
+
+  restart_all
+  local grafana_new
+  grafana_new=$(env_value GRAFANA_ADMIN_PASSWORD)
+  if [[ -n $grafana_new && $grafana_new != "$(file_value "$backup/.env" GRAFANA_ADMIN_PASSWORD)" ]]; then
+    reset_grafana_password "$grafana_new"
+  fi
+  wait_for_backend
+  ROLLBACK_HINT=""
+  ok "Rotation finished. Backup with the old values: ${backup} - delete it once everything works."
+  print_manual
+}
+
 rollback() {
   local backup=${1:-}
   [[ -n $backup && -f $backup/.env && -f $backup/django.env ]] || die "Usage: $0 --rollback secrets/rotation/<time>"
@@ -381,6 +432,7 @@ rollback() {
 case "${1:-}" in
   "") dry_run ;;
   --apply) apply ;;
+  --resume) resume "${2:-}" ;;
   --rollback) rollback "${2:-}" ;;
   -h|--help) sed -n '2,40p' "$0" ;;
   *) die "Unknown option $1 - see $0 --help" ;;

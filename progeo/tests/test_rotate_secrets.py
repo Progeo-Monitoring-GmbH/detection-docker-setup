@@ -146,6 +146,26 @@ def test_never_prints_a_secret(stored_with_old_key, monkeypatch):
         assert secret not in output
 
 
+@override_settings(SECRET_KEY=NEW, TWO_FACTOR_ENCRYPTION_KEY="", DEVICE_COMMAND_ENCRYPTION_KEY="")
+def test_closes_each_project_database_after_it(monkeypatch):
+    """Regression: with hundreds of project databases every one kept its
+    connection open - "FATAL: sorry, too many clients already"."""
+    from progeo.helper import project_dbs
+    from progeo.management.commands import rotate_encryption_keys as command
+
+    projects = ["unit_tests_project_970001", "unit_tests_project_970002"]
+    monkeypatch.setattr(project_dbs, "register_all_project_dbs", lambda: projects)
+    done, closed = [], []
+    monkeypatch.setattr(command.Command, "_device_commands_in",
+                        lambda self, alias, old, new, apply: done.append(alias) or command.Counts())
+    monkeypatch.setattr(command, "close_connection", closed.append)
+
+    rotate("--apply", monkeypatch=monkeypatch)
+
+    assert done == ["default", *projects]
+    assert closed == projects  # "default" stays - the rest of the command needs it
+
+
 def test_needs_the_old_secret_key(monkeypatch):
     monkeypatch.delenv("ROTATE_OLD_SECRET_KEY", raising=False)
 

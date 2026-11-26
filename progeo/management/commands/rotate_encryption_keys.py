@@ -36,6 +36,12 @@ PREFIX = "fernet:"
 COMMAND_FIELDS = ("payload_encrypted", "result_encrypted", "files_encrypted")
 
 
+def close_connection(alias):
+    from django.db import connections
+
+    connections[alias].close()
+
+
 def _rotate(value, old, new):
     """(kind, new value): "rotated", "current", "plain" (not encrypted) or "unreadable"."""
     from cryptography.fernet import InvalidToken
@@ -106,27 +112,39 @@ class Command(BaseCommand):
         self.stdout.write(f"2FA keys - {counts.text()}")
 
     def _device_commands(self, old, new, apply):
-        from progeo.helper.project_dbs import is_project_alias, register_all_project_dbs
+        from progeo.helper import project_dbs
+
+        aliases = [DEFAULT_DB_ALIAS,
+                   *(alias for alias in project_dbs.register_all_project_dbs() if project_dbs.is_project_alias(alias))]
+        for alias in aliases:
+            try:
+                counts = self._device_commands_in(alias, old, new, apply)
+            finally:
+                # One project database after the other: hundreds of open
+                # connections were "FATAL: sorry, too many clients already".
+                if alias != DEFAULT_DB_ALIAS:
+                    close_connection(alias)
+            self.stdout.write(f"Device commands ({alias}) - {counts.text()}")
+
+    def _device_commands_in(self, alias, old, new, apply):
         from progeo.v1.models import ProgeoDeviceCommand
 
-        aliases = [DEFAULT_DB_ALIAS, *(alias for alias in register_all_project_dbs() if is_project_alias(alias))]
-        for alias in aliases:
-            counts = Counts()
-            with transaction.atomic(using=alias):
-                rows = ProgeoDeviceCommand.objects.using(alias).select_for_update().only("pk", *COMMAND_FIELDS)
-                for command in rows:
-                    changed = []
-                    for field in COMMAND_FIELDS:
-                        kind, value = _rotate(getattr(command, field), old, new)
-                        if kind == "plain":
-                            continue
-                        counts.add(kind)
-                        if kind == "rotated":
-                            setattr(command, field, value)
-                            changed.append(field)
-                    if changed and apply:
-                        command.save(using=alias, update_fields=changed)
-            self.stdout.write(f"Device commands ({alias}) - {counts.text()}")
+        counts = Counts()
+        with transaction.atomic(using=alias):
+            rows = ProgeoDeviceCommand.objects.using(alias).select_for_update().only("pk", *COMMAND_FIELDS)
+            for command in rows:
+                changed = []
+                for field in COMMAND_FIELDS:
+                    kind, value = _rotate(getattr(command, field), old, new)
+                    if kind == "plain":
+                        continue
+                    counts.add(kind)
+                    if kind == "rotated":
+                        setattr(command, field, value)
+                        changed.append(field)
+                if changed and apply:
+                    command.save(using=alias, update_fields=changed)
+        return counts
 
     def _logout_everyone(self, apply):
         from django.contrib.sessions.models import Session
