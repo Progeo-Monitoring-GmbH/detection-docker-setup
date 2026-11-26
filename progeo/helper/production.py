@@ -160,10 +160,10 @@ def _complete_count(order_record_id):
 
 def _complete_ids(order_record_ids):
     """{order record id: {sensor record ids with a complete entry}}."""
-    from progeo.v1.models import ProgeoProductionEntry
+    from progeo.werk.models import ProductionEntry
 
     result = {order: set() for order in order_record_ids}
-    for order, sensor in ProgeoProductionEntry.objects.using(DB).filter(
+    for order, sensor in ProductionEntry.objects.using(DB).filter(
         order_record_id__in=list(order_record_ids),
         r_platine_status__isnull=False, r_aufgespult_status__isnull=False, r_kurzschluss_status__isnull=False,
     ).values_list("order_record_id", "sensor_record_id"):
