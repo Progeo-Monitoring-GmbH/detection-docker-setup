@@ -1977,6 +1977,9 @@ class ProgeoFactorySensor(models.Model):
     /v1/werk/sensoren/) or `manage.py import_factory_sensors`; the site app
     compares its re-measurement with it. Keyed by (project number, sensor
     number) - the location may not exist yet when the band is produced.
+    Also created from the Airtable table "dm Sensoren" (staff page import,
+    `manage.py import_dm_sensors` - helper/airtable_dm_sensors.py): those
+    have no R_Werk until the factory app or a CSV sends it.
     Lives in "default" (ProGeo's own production data, not a customer's)."""
 
     project_id = models.IntegerField()
@@ -1986,8 +1989,17 @@ class ProgeoFactorySensor(models.Model):
     # NTAG21x UID, hex upper case without separators - a check against
     # swapped or copied tags, not the key.
     tag_uid = models.CharField(max_length=20, null=True, blank=True)
-    r_werk_ohm = models.PositiveIntegerField()
+    # None: not measured in the factory yet (imported from Airtable) - the
+    # site measurements are answered "unbekannt" until it is known.
+    r_werk_ohm = models.PositiveIntegerField(null=True, blank=True)
     measured_at = models.DateTimeField(null=True, blank=True)
+    # The "dm Sensoren" row it was imported from / linked to, its Nr. as
+    # written there ("51 H4" -> sensor 000051), the production order
+    # ("PROD_dm-Breitband_7025_34") and the band's length in metres.
+    airtable_record_id = models.CharField(max_length=32, null=True, blank=True, db_index=True)
+    airtable_nr = models.CharField(max_length=32, null=True, blank=True)
+    production_order = models.CharField(max_length=64, null=True, blank=True)
+    length_m = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
@@ -2002,7 +2014,8 @@ class ProgeoFactorySensor(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.project_id}/{self.sensor} ({self.r_werk_ohm} Ω)"
+        r_werk = f"{self.r_werk_ohm} Ω" if self.r_werk_ohm is not None else "R_Werk fehlt"
+        return f"{self.project_id}/{self.sensor} ({r_werk})"
 
 
 class ProgeoSiteMeasurement(models.Model):

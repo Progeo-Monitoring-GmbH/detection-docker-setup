@@ -1351,19 +1351,23 @@ class SiteMeasurementInline(ReadOnlyInline):
 
 class ProgeoFactorySensorAdmin(admin.ModelAdmin):
     """dm sensors as the factory measured them (R_Werk) - from the factory
-    app or `manage.py import_factory_sensors`; corrected here by hand."""
+    app or `manage.py import_factory_sensors`, or imported from Airtable "dm
+    Sensoren" (without R_Werk); corrected here by hand."""
     form = FactorySensorForm
     list_display = (
-        "project_id", "sensor", "band", "tag_uid", "r_werk_ohm", "measured_at", "site_measurements", "updated_at",
-        "updated_by",
+        "project_id", "sensor", "airtable_nr", "band", "tag_uid", "r_werk_ohm", "measured_at", "site_measurements",
+        "updated_at", "updated_by",
     )
     list_display_links = ("project_id", "sensor")
-    list_filter = (("measured_at", admin.DateFieldListFilter), ("tag_uid", admin.EmptyFieldListFilter))
-    search_fields = ("project_id__exact", "sensor", "band", "tag_uid")
+    list_filter = (
+        ("measured_at", admin.DateFieldListFilter), ("tag_uid", admin.EmptyFieldListFilter),
+        ("r_werk_ohm", admin.EmptyFieldListFilter), ("airtable_record_id", admin.EmptyFieldListFilter),
+    )
+    search_fields = ("project_id__exact", "sensor", "band", "tag_uid", "airtable_nr", "production_order")
     list_select_related = ("updated_by",)
-    fields = ("project_id", "sensor", "band", "tag_uid", "r_werk_ohm", "measured_at", "created_at", "updated_at",
-              "updated_by")
-    readonly_fields = ("created_at", "updated_at", "updated_by")
+    fields = ("project_id", "sensor", "band", "tag_uid", "r_werk_ohm", "measured_at", "airtable_record_id",
+              "airtable_nr", "production_order", "length_m", "created_at", "updated_at", "updated_by")
+    readonly_fields = ("airtable_record_id", "created_at", "updated_at", "updated_by")
     inlines = (SiteMeasurementInline,)
     ordering = ("project_id", "sensor")
 

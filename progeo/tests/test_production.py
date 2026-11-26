@@ -175,7 +175,9 @@ def test_me_and_factory_check(api_client, worker):
 def test_only_factory_accounts(api_client, airtable, queued, method, path):
     api_client.force_authenticate(user=f.make_user(perms=("module_manusensor_enabled",)))
     answer = getattr(api_client, method)(path, {}, format="json")
-    assert (answer.status_code, answer.json()["fehler"]) == (403, "keine_berechtigung")
+    # The staff page tells the app's users what it needs.
+    code = "nur_mitarbeiter" if (method, path) == ("get", "/v1/werk/sensoren/") else "keine_berechtigung"
+    assert (answer.status_code, answer.json()["fehler"]) == (403, code)
 
 
 def test_sync_creates_updates_and_deactivates(airtable):

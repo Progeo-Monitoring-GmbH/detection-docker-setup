@@ -217,12 +217,14 @@ AIRTABLE_DOCUMENTS_TABLE = (os.getenv("AIRTABLE_DOCUMENTS_TABLE") or "Dokumente"
 # manuSensor (helper/manusensor.py): the factory's sensor table, and the table
 # every site measurement is copied to (linked to its "dm Sensoren" row).
 AIRTABLE_DM_SENSORS_TABLE = (os.getenv("AIRTABLE_DM_SENSORS_TABLE") or "dm Sensoren").strip()
+# The production orders of the dm sensors: the projects the staff page offers
+# to import "dm Sensoren" from (helper/airtable_dm_sensors.py).
+AIRTABLE_DM_ORDERS_TABLE = (os.getenv("AIRTABLE_DM_ORDERS_TABLE") or "PA: dm").strip()
 AIRTABLE_SITE_MEASUREMENTS_TABLE = (os.getenv("AIRTABLE_SITE_MEASUREMENTS_TABLE") or "Baustellenmessungen").strip()
 # |ΔR| to R_Werk (percent) up to which a site measurement is "ok".
 MANUSENSOR_TOLERANCE_PERCENT = float(os.getenv("MANUSENSOR_TOLERANCE_PERCENT") or 5.0)
-# helper/dm_orders.py: the dm production orders table, and how long (s) its
-# answers are cached (Airtable allows 5 requests/s per base; 0 = not cached).
-AIRTABLE_DM_ORDERS_TABLE = (os.getenv("AIRTABLE_DM_ORDERS_TABLE") or "PA: dm").strip()
+# helper/dm_orders.py: how long (s) the answers from AIRTABLE_DM_ORDERS_TABLE
+# are cached (Airtable allows 5 requests/s per base; 0 = not cached).
 MANUSENSOR_ORDERS_CACHE_SECONDS = int(os.getenv("MANUSENSOR_ORDERS_CACHE_SECONDS") or 60)
 # helper/werk_users.py: the factory workers' table and its "gets an account" box.
 AIRTABLE_RESOURCES_TABLE = (os.getenv("AIRTABLE_RESOURCES_TABLE") or "Ressourcen").strip()

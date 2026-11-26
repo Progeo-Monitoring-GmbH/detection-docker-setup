@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
-import { BoxArrowUpRight, ClockHistory, PlusLg } from 'react-bootstrap-icons';
+import {
+  BoxArrowUpRight,
+  ClockHistory,
+  CloudArrowDown,
+  PlusLg,
+} from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -22,6 +27,7 @@ import {
   adminUrl,
   formatDelta,
   formatOhm,
+  nrHint,
   SENSOR_STATUSES,
   SENSORS_URL,
   sensorStatus,
@@ -30,6 +36,7 @@ import {
   type SensorStatus,
   type UnmatchedMeasurement,
 } from './factorySensors';
+import FactorySensorAirtableImportModal from './FactorySensorAirtableImportModal';
 import FactorySensorCreateModal from './FactorySensorCreateModal';
 import FactorySensorHistoryModal from './FactorySensorHistoryModal';
 import { StatusBadge } from './FactorySensorStatus';
@@ -39,16 +46,20 @@ import './FactorySensorsView.css';
 const ALL = 'all';
 type Prefill = { projekt?: string; sensor?: string };
 
-const KPI_COLORS: Partial<Record<SensorStatus | 'ohne_werkswert', string>> = {
+const KPI_COLORS: Partial<
+  Record<SensorStatus | 'ohne_werkswert' | 'ohne_r_werk', string>
+> = {
   ok: 'var(--fs-ok)',
   pruefen: 'var(--fs-check)',
   defekt: 'var(--fs-defect)',
   unbekannt: 'var(--fs-unclear)',
+  ohne_r_werk: 'var(--fs-check)',
 };
 
 /**
  * /staff/sensors/ - the dm sensors' factory values (R_Werk) and what the
- * manuSensor app measured on site: create them (one or a pasted CSV), see
+ * manuSensor app measured on site: create them (one, a pasted CSV or the
+ * Airtable table "dm Sensoren" of a project - without R_Werk), see
  * each sensor's newest measurement and its history, and the measurements
  * that found no factory values. Staff only (as the endpoints).
  */
@@ -61,6 +72,7 @@ const FactorySensorsView = () => {
   const [data, setData] = useState<SensorsOverview | null>(null);
   const [creating, setCreating] = useState<Prefill | null>(null);
   const [history, setHistory] = useState<FactorySensorRow | null>(null);
+  const [importing, setImporting] = useState(false);
   const locale = i18n.language;
 
   const load = useCallback(() => {
@@ -104,13 +116,18 @@ const FactorySensorsView = () => {
         name: t('fs_col_sensor'),
         selector: (row) => row.sensor,
         cell: (row) => (
-          <span className="fw-bold" {...ROW_CLICK}>
-            {row.sensor}
+          <span {...ROW_CLICK}>
+            <span className="fw-bold">{row.sensor}</span>
+            {nrHint(row) && (
+              <span className="fs-nr-hint" title={t('fs_col_airtable_nr')}>
+                {nrHint(row)}
+              </span>
+            )}
           </span>
         ),
-        searchText: (row) => row.sensor,
+        searchText: (row) => `${row.sensor} ${row.airtable_nr ?? ''}`,
         sortable: true,
-        width: '96px',
+        width: '120px',
       },
       {
         id: 'band',
@@ -130,8 +147,26 @@ const FactorySensorsView = () => {
       {
         id: 'r_werk_ohm',
         name: t('fs_col_r_werk_ohm'),
-        selector: (row) => row.r_werk_ohm,
-        format: (row) => formatOhm(row.r_werk_ohm, locale),
+        selector: (row) => row.r_werk_ohm ?? 0,
+        cell: (row) =>
+          row.r_werk_ohm == null ? (
+            <span
+              className="fs-missing"
+              title={t('fs_r_werk_missing_hint')}
+              {...repeatedTestId('factory-sensors-r-werk-missing', row.id)}
+            >
+              {t('fs_r_werk_missing')}
+            </span>
+          ) : (
+            formatOhm(row.r_werk_ohm, locale)
+          ),
+        searchText: (row) =>
+          row.r_werk_ohm == null
+            ? t('fs_r_werk_missing')
+            : formatOhm(row.r_werk_ohm, locale),
+        sortFunction: byNumberNullsLast(
+          (row: FactorySensorRow) => row.r_werk_ohm,
+        ),
         sortable: true,
         right: true,
       },
@@ -300,7 +335,7 @@ const FactorySensorsView = () => {
 
   const counts = data?.kennzahlen;
   const kpis = (
-    ['sensoren', ...SENSOR_STATUSES, 'ohne_werkswert'] as const
+    ['sensoren', ...SENSOR_STATUSES, 'ohne_werkswert', 'ohne_r_werk'] as const
   ).map((key) => ({
     label: t(`fs_kpi_${key}`),
     value: counts ? String(counts[key]) : '–',
@@ -333,6 +368,13 @@ const FactorySensorsView = () => {
               value={project}
               onChange={setProject}
               testId="factory-sensors-project"
+            />
+            <PillButton
+              label={t('fs_import_title')}
+              icon={<CloudArrowDown size={12} />}
+              variant="ghost"
+              onClick={() => setImporting(true)}
+              testId="factory-sensors-import"
             />
             <PillButton
               label={t('fs_create_title')}
@@ -419,6 +461,16 @@ const FactorySensorsView = () => {
           onHide={() => setCreating(null)}
           onCreated={() => {
             setCreating(null);
+            load();
+          }}
+        />
+      )}
+      {importing && (
+        <FactorySensorAirtableImportModal
+          projekt={project === ALL ? undefined : project}
+          onHide={() => setImporting(false)}
+          onImported={() => {
+            setImporting(false);
             load();
           }}
         />

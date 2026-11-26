@@ -22,9 +22,12 @@ from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.manusensor_views import (
     DmOrdersView,
     DmOrderView,
+    DmSensorImportView,
+    DmSensorProjectsView,
     FactorySensorMeasurementsView,
     FactorySensorsView,
     ManuSensorMeasurementsView,
+    ManuSensorProjectsView,
     ManuSensorSensorView,
 )
 from progeo.v1.viewsets.notification_viewset import (
@@ -121,9 +124,14 @@ urlpatterns = [
     re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/sensor/(?:(?P<sensor>[0-9]{1,6})/?)?$',
             ManuSensorSensorView.as_view()),
     re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/messungen/?$', ManuSensorMeasurementsView.as_view()),
+    # The app's project picker: the projects with factory sensors.
+    re_path(r'^werk/projekte/?$', ManuSensorProjectsView.as_view()),
     re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
     # The staff page (/staff/sensors/): the site measurements of a factory sensor.
     re_path(r'^werk/sensoren/(?P<pk>\d+)/messungen/?$', FactorySensorMeasurementsView.as_view()),
+    # ... and the import of the Airtable table "dm Sensoren" (per project).
+    re_path(r'^werk/sensoren/airtable/?$', DmSensorProjectsView.as_view()),
+    re_path(r'^werk/sensoren/airtable/(?P<projekt>[0-9]{1,9})/?$', DmSensorImportView.as_view()),
     # The dm production orders ("PA: dm" in Airtable, helper/dm_orders.py).
     re_path(r'^werk/auftraege/?$', DmOrdersView.as_view()),
     re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/?$', DmOrderView.as_view()),

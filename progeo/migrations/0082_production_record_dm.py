@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('progeo', '0080_alter_loginlink_purpose'),
+        ('progeo', '0081_factory_sensor_airtable'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

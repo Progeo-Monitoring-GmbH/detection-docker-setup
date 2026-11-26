@@ -44,8 +44,15 @@ export type FactorySensorRow = {
   sensor: string;
   band: string | null;
   tag_uid: string | null;
-  r_werk_ohm: number;
+  /** null: imported from Airtable, not measured in the factory yet. */
+  r_werk_ohm: number | null;
   gemessen_am: string | null;
+  /** The Airtable "dm Sensoren" row it came from (else null). */
+  airtable_id: string | null;
+  /** Nr. as written in Airtable ("51 H4" for sensor 000051). */
+  airtable_nr: string | null;
+  produktionsauftrag: string | null;
+  laenge_m: number | null;
   messungen: number;
   letzte_messung: SiteMeasurement | null;
 };
@@ -58,10 +65,90 @@ export type UnmatchedMeasurement = SiteMeasurement & {
 export type SensorsOverview = {
   sensoren: FactorySensorRow[];
   ohne_werkswert: UnmatchedMeasurement[];
-  kennzahlen: Record<SensorStatus | 'sensoren' | 'ohne_werkswert', number>;
+  kennzahlen: Record<
+    SensorStatus | 'sensoren' | 'ohne_werkswert' | 'ohne_r_werk',
+    number
+  >;
   projekte: string[];
   toleranz_prozent: number;
 };
+
+// ---- Import of the Airtable table "dm Sensoren" (helper/airtable_dm_sensors.py)
+
+export const AIRTABLE_PROJECTS_URL = `${SENSORS_URL}airtable/`;
+export const airtableImportUrl = (projekt: string) =>
+  `${AIRTABLE_PROJECTS_URL}${encodeURIComponent(projekt)}/`;
+
+/** A project with production orders in Airtable ("PA: dm"). */
+export type DmProject = {
+  projekt: string;
+  objekt: string | null;
+  auftraege: number;
+  sensoren_airtable: number;
+  sensoren_angelegt: number;
+};
+
+export type ImportAction =
+  'neu' | 'verknuepfen' | 'vorhanden' | 'uebersprungen';
+export const IMPORT_ACTIONS: ImportAction[] = [
+  'neu',
+  'verknuepfen',
+  'vorhanden',
+  'uebersprungen',
+];
+export type SkipReason =
+  'kein_projekt' | 'keine_nummer' | 'doppelt' | 'belegt' | 'nummer_geaendert';
+
+/** A "dm Sensoren" row and what the import does with it. */
+export type DmImportRow = {
+  airtable_id: string;
+  projekt: string | null;
+  nr: string;
+  sensor: string | null;
+  laenge_m: number | null;
+  produktionsauftrag: string | null;
+  produktionsstatus: string | null;
+  aktion: ImportAction;
+  grund: SkipReason | null;
+  /** doppelt: the other Nr.; belegt / nummer_geaendert: the sensor there. */
+  konflikt: string[];
+  sensor_id: number | null;
+  r_werk_ohm: number | null;
+};
+
+export type DmImportPreview = {
+  projekt: string;
+  zeilen: DmImportRow[];
+  kennzahlen: Record<ImportAction, number> & {
+    zeilen: number;
+    gruende: Record<SkipReason, number>;
+  };
+};
+
+export type DmImportResult = {
+  projekt: string;
+  angelegt: number;
+  verknuepft: number;
+  aktualisiert: number;
+  unveraendert: number;
+  uebersprungen: number;
+};
+
+/** The rows the import takes (creates, links or refreshes) - 0 without a preview. */
+export const importable = (preview: DmImportPreview | null) =>
+  preview
+    ? preview.kennzahlen.neu +
+      preview.kennzahlen.verknuepfen +
+      preview.kennzahlen.vorhanden
+    : 0;
+
+/** The sensor's Airtable Nr. where it says more than the number ("51 H4"). */
+export const nrHint = (
+  row: Pick<FactorySensorRow, 'sensor' | 'airtable_nr'>,
+) =>
+  row.airtable_nr && row.airtable_nr !== String(Number(row.sensor))
+    ? row.airtable_nr
+    : null;
 
 /** One sensor as POST /v1/werk/sensoren/ takes it. */
 export type FactorySensorInput = {

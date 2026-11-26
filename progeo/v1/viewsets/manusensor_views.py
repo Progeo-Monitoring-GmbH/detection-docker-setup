@@ -3,11 +3,19 @@ progeo-manusensor). Every error is {"fehler", "meldung"[, "feld"]}, as the
 app reads it - not the {"success", "reason"} of the other views.
 
 - GET  /v1/location/<projekt>/sensor/<sensor>/   (or .../sensor/?tag_uid=)
+- GET  /v1/location/<projekt>/sensor/   every factory sensor of the project
 - POST /v1/location/<projekt>/messungen
   module_manusensor_enabled and access to the location of the project number.
+- GET  /v1/werk/projekte/   the projects with factory sensors whose location
+  the user may open - module_manusensor_enabled, the same location access.
 - POST /v1/werk/sensoren/   the factory values (factory app) - factory accounts.
+- GET  /v1/werk/sensoren/   the staff page (/staff/sensors/) - factory accounts.
+- GET  /v1/werk/sensoren/airtable/             projects to import (staff)
+- GET  /v1/werk/sensoren/airtable/<projekt>/   preview of the import (staff)
+- POST /v1/werk/sensoren/airtable/<projekt>/   import "dm Sensoren" (staff)
 - GET  /v1/werk/auftraege/[<ID>/]   the dm production orders from Airtable
   (helper/dm_orders.py) - factory accounts.
+Factory accounts: staff, superuser or group "Werk" (helper/werk_users.py).
 """
 
 from rest_framework.authentication import SessionAuthentication
@@ -17,7 +25,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import has_module_permissions
-from progeo.helper import dm_orders, manusensor
+from progeo.helper import airtable_dm_sensors, dm_orders, manusensor
 from progeo.helper.manusensor import ManuSensorError
 
 PERMISSION = "module_manusensor_enabled"
@@ -41,12 +49,17 @@ class _ManuSensorView(APIView):
             raise ManuSensorError(403, "keine_berechtigung", "Keine Berechtigung für die manuSensor-App.")
         return user
 
+    @classmethod
+    def check_app_user(cls, request):
+        """Signed in with the app's permission (staff always)."""
+        return cls.check_user(request, lambda user: has_module_permissions(user, PERMISSION))
+
     def location_of(self, request, projekt):
         """The user's location with project number `projekt` (as the portal
         finds it - every account of the user, staff any), else 404."""
         from progeo.v1.viewsets.locations_viewset import LocationViewSet
 
-        self.check_user(request, lambda user: has_module_permissions(user, PERMISSION))
+        self.check_app_user(request)
         project_id = manusensor.parse_project(projekt)
         location = None
         if project_id is not None:
@@ -58,7 +71,8 @@ class _ManuSensorView(APIView):
 
 class ManuSensorSensorView(_ManuSensorView):
     """The factory values of a sensor: by its number or its tag (B2: does it
-    belong to the project? R_Werk to show)."""
+    belong to the project? R_Werk to show). With neither: every factory
+    sensor of the project with its newest site measurement (the app's list)."""
 
     def get(self, request, projekt, sensor=None):
         try:
@@ -66,11 +80,13 @@ class ManuSensorSensorView(_ManuSensorView):
             if sensor is not None:
                 number = manusensor.normalize_sensor(sensor)
                 factory = manusensor.find_factory_sensor(project_id, sensor=number) if number else None
-            else:
+            elif "tag_uid" in request.query_params:
                 tag_uid = manusensor.normalize_tag_uid(request.query_params.get("tag_uid"))
                 if tag_uid is None:
-                    raise manusensor.invalid("tag_uid", "Sensornummer im Pfad oder ?tag_uid= angeben.")
+                    raise manusensor.invalid("tag_uid", "Tag-UID muss Hex sein (8-20 Zeichen).")
                 factory = manusensor.find_factory_sensor(project_id, tag_uid=tag_uid)
+            else:
+                return Response(manusensor.project_sensors(project_id))
             if factory is None:
                 raise ManuSensorError(404, "sensor_unbekannt", "Sensor nicht im Projekt")
         except ManuSensorError as error:
@@ -91,8 +107,34 @@ class ManuSensorMeasurementsView(_ManuSensorView):
         return Response(manusensor.answer(measurement), status=201 if created else 200)
 
 
+class ManuSensorProjectsView(_ManuSensorView):
+    """The app's project picker: every project with factory sensors whose
+    location the user may open (found as location_of finds it) - its number,
+    the location's name, its sensors and how many of them were measured on
+    site."""
+
+    def get(self, request):
+        from progeo.v1.viewsets.locations_viewset import LocationViewSet
+
+        try:
+            self.check_app_user(request)
+        except ManuSensorError as error:
+            return _error(error)
+        counts = manusensor.project_counts()
+        locations = LocationViewSet._find_project_locations(request, counts)
+        return Response({"projekte": [
+            {"projekt": str(project_id), "name": locations[project_id].name or None,
+             "sensoren": sensors, "gemessen": measured}
+            for project_id, (sensors, measured) in counts.items() if project_id in locations
+        ]})
+
+
+def _staff(user):
+    return user.is_staff or user.is_superuser
+
+
 def _factory(user):
-    """SPEC 1a: staff, superuser or group "Werk" (helper/werk_users.py)."""
+    """docs/fertigung.md 1a: staff, superuser or group "Werk" (helper/werk_users.py)."""
     from progeo.helper.werk_users import is_factory_user
 
     return is_factory_user(user)
@@ -107,7 +149,11 @@ class FactorySensorsView(_ManuSensorView):
 
     def get(self, request):
         try:
-            self.check_user(request, _factory)
+            # The app's users have its permission, not a factory account:
+            # tell them what the page needs instead of "no permission for the app".
+            user = self.check_user(request, lambda u: _factory(u) or has_module_permissions(u, PERMISSION))
+            if not _factory(user):
+                raise ManuSensorError(403, "nur_mitarbeiter", "Nur für ProGeo-Mitarbeiter (Seite /staff/sensors/).")
             project = request.query_params.get("projekt")
             project_id = manusensor.parse_project(project) if project else None
             if project and project_id is None:
@@ -145,6 +191,43 @@ class DmOrderView(_ManuSensorView):
         try:
             self.check_user(request, _factory)
             return Response(dm_orders.order_detail(auftrag))
+        except ManuSensorError as error:
+            return _error(error)
+
+
+class DmSensorProjectsView(_ManuSensorView):
+    """The staff page's Airtable import: the projects with production orders
+    in Airtable (helper/airtable_dm_sensors.py)."""
+
+    def get(self, request):
+        try:
+            self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.projects())
+        except ManuSensorError as error:
+            return _error(error)
+
+
+class DmSensorImportView(_ManuSensorView):
+    """GET - what importing the "dm Sensoren" rows of the project would do;
+    POST - import them (reads Airtable again, all or none)."""
+
+    def _project(self, projekt):
+        project_id = manusensor.parse_project(projekt)
+        if not project_id:
+            raise manusensor.invalid("projekt", "Projektnummer ist keine Zahl.")
+        return project_id
+
+    def get(self, request, projekt):
+        try:
+            self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.preview(self._project(projekt)))
+        except ManuSensorError as error:
+            return _error(error)
+
+    def post(self, request, projekt):
+        try:
+            user = self.check_user(request, _staff)
+            return Response(airtable_dm_sensors.import_project(self._project(projekt), user=user))
         except ManuSensorError as error:
             return _error(error)
 
