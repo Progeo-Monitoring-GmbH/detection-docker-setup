@@ -22,7 +22,7 @@ from progeo.werk.models import (
 )
 
 ORDER_RECORD = "recORDER000000A01"
-ORDER_ID = "PROD_dm-Breitband_7101_93"
+ORDER_ID = "PROD_dm-Breitband_24017_93"
 SENSOR_COUNT = 45  # 3 sheets: 20, 20, 5
 BASE = f"/v1/werk/auftraege/{ORDER_ID}"
 
@@ -33,7 +33,7 @@ def sensor_record(number):
 
 def order_record():
     return {"id": ORDER_RECORD, "fields": {
-        "ID": ORDER_ID, "ID Nr.": 93, "P-Nummer": ["7101"], "Produktionsstatus": "zu Produzieren",
+        "ID": ORDER_ID, "ID Nr.": 93, "P-Nummer": ["24017"], "Produktionsstatus": "zu Produzieren",
         "Anzahl Sensoren": SENSOR_COUNT, "dm Sensoren": [sensor_record(n) for n in range(1, SENSOR_COUNT + 1)],
     }}
 
@@ -189,7 +189,7 @@ def test_sync_creates_updates_and_deactivates(airtable):
         {"id": "recRESSOURCE00002", "fields": {"Name": "Jörg Weiß"}},
     ]
 
-    counts = werk_users.sync(helper=airtable, invite=False)
+    counts = werk_users.sync(helper=airtable)
 
     assert counts["angelegt"] == 2
     max_user = User.objects.using(f.DB).get(username="m.mueller")
@@ -201,25 +201,68 @@ def test_sync_creates_updates_and_deactivates(airtable):
 
     # Unticked: deactivated, not deleted; ticked again: active again.
     airtable.records["Ressourcen"] = airtable.records["Ressourcen"][:1]
-    assert werk_users.sync(helper=airtable, invite=False)["deaktiviert"] == 1
+    assert werk_users.sync(helper=airtable)["deaktiviert"] == 1
     joerg.refresh_from_db(using=f.DB)
     assert not joerg.is_active
     airtable.records["Ressourcen"].append({"id": "recRESSOURCE00002", "fields": {"Name": "Jörg Weiß"}})
-    werk_users.sync(helper=airtable, invite=False)
+    werk_users.sync(helper=airtable)
     joerg.refresh_from_db(using=f.DB)
     assert joerg.is_active and User.objects.using(f.DB).filter(username__startswith="j.weiss").count() == 1
 
 
-def test_sync_invites_new_accounts_with_an_address(airtable, monkeypatch, django_capture_on_commit_callbacks):
-    invited = []
-    monkeypatch.setattr(werk_users, "_queue_invite", invited.append)
+def test_sync_links_existing_accounts_instead_of_doubling_them(airtable, monkeypatch):
+    # No mail at all - invitations are sent by hand.
+    monkeypatch.setattr("progeo.tasks.send_login_link_task.delay",
+                        lambda *args, **kwargs: pytest.fail("no invitation expected"))
+    beispiel = f.make_user(username="Beispiel", staff=True, email="Beispiel@progeo.com")
+    probe = f.make_user(username="a.probe")
+    testerin = f.make_user(username="ltest", first_name="Lena", last_name="Test")
     airtable.records["Ressourcen"] = [
-        {"id": "recRESSOURCE00001", "fields": {"Name": "Max Müller", "E-Mail Adresse": "m.mueller@progeo.com"}},
-        {"id": "recRESSOURCE00002", "fields": {"Name": "Ohne Mail"}},
+        {"id": "recRESSOURCE00001", "fields": {"Name": "Tom Beispiel", "E-Mail Adresse": "beispiel@progeo.com"}},
+        {"id": "recRESSOURCE00002", "fields": {"Name": "Anna Probe"}},
+        {"id": "recRESSOURCE00003", "fields": {"Name": "Lena Test"}},
+        {"id": "recRESSOURCE00004", "fields": {"Name": "Paul Platzhalter", "E-Mail Adresse": "platzhalter@progeo.com"}},
     ]
-    with django_capture_on_commit_callbacks(using=f.DB, execute=True):
-        werk_users.sync(helper=airtable)
-    assert invited == [User.objects.using(f.DB).get(username="m.mueller").pk]
+    before = User.objects.using(f.DB).count()
+
+    report = werk_users.sync(helper=airtable)
+
+    assert (report["verknuepft"], report["angelegt"]) == (3, 1)
+    assert User.objects.using(f.DB).count() == before + 1
+    actions = {line["name"]: (line["benutzer"], line["aktion"]) for line in report["details"]}
+    assert actions["Tom Beispiel"] == ("Beispiel", "vorhandenes Konto verknüpft (E-Mail)")
+    assert actions["Anna Probe"] == ("a.probe", "vorhandenes Konto verknüpft (Benutzername)")
+    assert actions["Lena Test"] == ("ltest", "vorhandenes Konto verknüpft (Name)")
+    assert actions["Paul Platzhalter"][0] == "platzhalter"
+    beispiel.refresh_from_db(using=f.DB)
+    # Staff stays staff, keeps the password; the empty name is filled in.
+    assert beispiel.is_staff and beispiel.has_usable_password()
+    assert (beispiel.first_name, beispiel.last_name, beispiel.werk_user.airtable_resource_id) == (
+        "Tom", "Beispiel", "recRESSOURCE00001")
+    assert all(werk_users.is_factory_user(user) for user in (beispiel, probe, testerin))
+    platzhalter = User.objects.using(f.DB).get(username="platzhalter")
+    assert platzhalter.email == "platzhalter@progeo.com" and not platzhalter.has_usable_password()
+
+    # Again: nothing new.
+    again = werk_users.sync(helper=airtable)
+    assert (again["angelegt"], again["verknuepft"], again["aktualisiert"]) == (0, 0, 4)
+
+
+def test_sync_skips_ambiguous_matches_and_dry_run_changes_nothing(airtable):
+    f.make_user(username="mm1", first_name="Max", last_name="Muster")
+    f.make_user(username="mm2", first_name="Max", last_name="Muster")
+    airtable.records["Ressourcen"] = [
+        {"id": "recRESSOURCE00001", "fields": {"Name": "Max Muster"}},
+        {"id": "recRESSOURCE00002", "fields": {"Name": "Neu Person"}},
+    ]
+    before = User.objects.using(f.DB).count()
+
+    dry = werk_users.sync(helper=airtable, dry_run=True)
+
+    assert (dry["uebersprungen"], dry["angelegt"]) == (1, 1)
+    assert "mehrere Konten namens Max Muster" in dry["details"][0]["aktion"]
+    assert User.objects.using(f.DB).count() == before
+    assert not WerkUser.objects.using(f.DB).exists()
 
 
 # -- 2.1 detail ----------------------------------------------------------------------
@@ -290,10 +333,10 @@ def test_save_entries_and_read_them_back(api_client, worker):
                                             {"sensor_record_id": sensor_record(2), "ergebnis": "gespeichert"}],
                              "eintraege_erfasst": 2}
     stored = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(1))
-    assert (stored.erfasst_von, stored.sensor, stored.project_id, stored.order_id) == (worker, "000001", 7101, ORDER_ID)
+    assert (stored.erfasst_von, stored.sensor, stored.project_id, stored.order_id) == (worker, "000001", 24017, ORDER_ID)
     assert str(stored.metrierung_m) == "414.50"
     # R_Werk = ① for the site app.
-    factory = FactorySensor.objects.using(f.DB).get(project_id=7101, sensor="000001")
+    factory = FactorySensor.objects.using(f.DB).get(project_id=24017, sensor="000001")
     assert (factory.r_werk_ohm, factory.updated_by) == (99870, worker)
 
     back = api_client.get(f"{BASE}/eintraege/").json()["eintraege"]

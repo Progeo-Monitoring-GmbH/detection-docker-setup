@@ -4,7 +4,7 @@ manuSensor app - read live from Airtable, cached a little while.
 - GET /v1/werk/auftraege/[?status=zu Produzieren|Produziert|alle]
   the orders (default: the ones still to produce) - orders().
 - GET /v1/werk/auftraege/<ID or recID>/
-  one order (its ID like "PROD_dm-Breitband_7099_97" or its Airtable record
+  one order (its ID like "PROD_dm-Breitband_24018_97" or its Airtable record
   id) with its "dm Sensoren" rows - order_detail().
 
 Airtable's field names live in ORDER_FIELDS / SENSOR_FIELDS; a renamed field
@@ -84,7 +84,7 @@ SENSOR_ORDER_RECORD_ID = "Prod Auftr recID"
 # Lookups arrive as lists; these are one value per order.
 _SINGLE = {"projekt", "objekt", "auftrag_record_id", "besteller"}
 _RECORD_ID = re.compile(r"rec[A-Za-z0-9]{14}")
-# "PROD_dm-Breitband_7099_97" - letters, digits, "_", "-", spaces at most.
+# "PROD_dm-Breitband_24018_97" - letters, digits, "_", "-", spaces at most.
 _ORDER_ID = re.compile(r"[\w\- ]{1,100}")
 
 

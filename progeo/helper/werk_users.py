@@ -4,7 +4,8 @@ app's "who am I" and the sync of the Airtable "Ressourcen" with a ticked
 
 - is_factory_user(): staff, superuser or group "Werk".
 - me(): GET /v1/werk/ich/.
-- sync(): `manage.py sync_werk_users`, celery (nightly), staff button.
+- sync(): `manage.py sync_werk_users`, celery (nightly), staff button - links
+  existing accounts, creates the missing ones (no mail: invited by hand).
 """
 
 import re
@@ -13,9 +14,10 @@ import unicodedata
 from django.conf import settings
 from django.contrib.auth.models import Group, User
 from django.db import DEFAULT_DB_ALIAS, transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from progeo.helper.basics import elog, ilog, wlog
+from progeo.helper.basics import ilog, wlog
 
 DB = DEFAULT_DB_ALIAS
 GROUP = "Werk"
@@ -103,15 +105,6 @@ def _unique_username(base) -> str:
     return username
 
 
-def _queue_invite(user_id):
-    try:
-        from progeo.tasks import send_login_link_task
-
-        send_login_link_task.delay(user_id, "invite")
-    except Exception as error:  # noqa: BLE001 - the account exists, staff can invite by hand
-        elog(f"Could not queue the invitation of factory user {user_id}: {error}", tag="[WERK]")
-
-
 def resources_table_name():
     return getattr(settings, "AIRTABLE_RESOURCES_TABLE", "Ressourcen")
 
@@ -133,9 +126,60 @@ def fetch_resources(helper):
     ]
 
 
-def sync(helper=None, invite=True) -> dict:
-    """Creates/updates the accounts of the ticked resources, deactivates the
-    ones no longer ticked. Returns the counts."""
+def split_name(name):
+    """"Max von Muster" -> ("Max von", "Muster"); one word -> (word, "")."""
+    words = str(name or "").split()
+    if len(words) < 2:
+        return (words[0] if words else ""), ""
+    return " ".join(words[:-1])[:150], words[-1][:150]
+
+
+def find_account(resource):
+    """The existing account of a resource, only an unambiguous hit:
+    1. the same address (case ignored), 2. the username the sync would give
+    or the address before the "@" ("Oprei" for oprei@…), 3. first + last name.
+    Returns (user, how) - (None, None) for none, (None, why) if ambiguous."""
+    users = User.objects.using(DB)
+    email, name = resource["email"], resource["name"]
+    if email:
+        hits = list(users.filter(email__iexact=email)[:2])
+        if len(hits) == 1:
+            return hits[0], "E-Mail"
+        if len(hits) > 1:
+            return None, f"mehrere Konten mit {email}"
+    usernames = {make_username(email, name), make_username("", name)}
+    if email:
+        usernames.add(email.split("@", 1)[0].lower())
+    same_username = Q()
+    for username in usernames:
+        same_username |= Q(username__iexact=username)
+    hits = [user for user in users.filter(same_username)[:3]
+            # A username match with another address is someone else.
+            if not (email and user.email and user.email.lower() != email)]
+    if len(hits) == 1:
+        return hits[0], "Benutzername"
+    if len(hits) > 1:
+        return None, "mehrere Konten mit passendem Benutzernamen"
+    first, last = split_name(name)
+    if first and last:
+        hits = list(users.filter(first_name__iexact=first, last_name__iexact=last)[:2])
+        if len(hits) == 1:
+            return hits[0], "Name"
+        if len(hits) > 1:
+            return None, f"mehrere Konten namens {name}"
+    return None, None
+
+
+class _DryRun(Exception):
+    """Rolls a dry run back."""
+
+
+def sync(helper=None, dry_run=False) -> dict:
+    """Creates/links the accounts of the ticked resources, deactivates the
+    ones no longer ticked. An existing account (find_account) is linked,
+    never doubled. New accounts get no password and no mail - staff invite
+    them by hand. `dry_run`: everything rolled back, the report stays.
+    Returns the counts and "details" (one line per person)."""
     from progeo.helper.airtable import AirtableHelper
     from progeo.werk.models import WerkUser
 
@@ -143,65 +187,93 @@ def sync(helper=None, invite=True) -> dict:
     if not helper.configured:
         raise RuntimeError("Airtable is not configured")
     resources = fetch_resources(helper)
-    group, _created = Group.objects.using(DB).get_or_create(name=GROUP)
-    counts = {"angelegt": 0, "aktualisiert": 0, "deaktiviert": 0, "eingeladen": 0, "uebersprungen": 0}
-    now = timezone.now()
-    with transaction.atomic(using=DB):
-        for resource in resources:
-            link = WerkUser.objects.using(DB).select_related("user").filter(
-                airtable_resource_id=resource["id"]).first()
-            if link is not None:
-                user = link.user
-                counts["aktualisiert"] += 1
-            else:
-                user = None
-                if resource["email"]:
-                    user = User.objects.using(DB).filter(email__iexact=resource["email"]).first()
-                if user is not None and WerkUser.objects.using(DB).filter(user=user).exists():
-                    wlog(f"Resource {resource['id']}: {user.username} is linked to another resource", tag="[WERK]")
-                    counts["uebersprungen"] += 1
-                    continue
-                if user is None:
-                    words = resource["name"].split()
-                    user = User(
-                        username=_unique_username(make_username(resource["email"], resource["name"])),
-                        email=resource["email"],
-                        first_name=" ".join(words[:-1])[:150] if len(words) > 1 else resource["name"][:150],
-                        last_name=words[-1][:150] if len(words) > 1 else "",
-                    )
-                    user.set_unusable_password()
-                    user.save(using=DB)
-                    counts["angelegt"] += 1
-                    if invite and user.email:
-                        transaction.on_commit(lambda pk=user.pk: _queue_invite(pk), using=DB)
-                        counts["eingeladen"] += 1
-                else:
-                    counts["aktualisiert"] += 1
-                link = WerkUser(user=user, airtable_resource_id=resource["id"])
-            if link.deactivated_by_sync and not user.is_active:
-                user.is_active = True
-                user.save(using=DB, update_fields=["is_active"])
-            if resource["email"] and not user.email:
-                user.email = resource["email"]
-                user.save(using=DB, update_fields=["email"])
-            user.groups.add(group)
-            link.name = resource["name"]
-            link.deactivated_by_sync = False
-            link.synced_at = now
-            link.save(using=DB)
+    report = {"angelegt": 0, "verknuepft": 0, "aktualisiert": 0, "deaktiviert": 0, "uebersprungen": 0,
+              "details": []}
 
-        ticked = {resource["id"] for resource in resources}
-        gone = WerkUser.objects.using(DB).select_related("user").filter(
-            airtable_resource_id__isnull=False).exclude(airtable_resource_id__in=ticked)
-        for link in gone:
-            user = link.user
-            user.groups.remove(group)
-            # Staff keep their account - only the factory right goes.
-            if user.is_active and not user.is_staff and not user.is_superuser:
-                user.is_active = False
-                user.save(using=DB, update_fields=["is_active"])
-                link.deactivated_by_sync = True
-                link.save(using=DB, update_fields=["deactivated_by_sync"])
-                counts["deaktiviert"] += 1
-    ilog(f"Factory users synced: {counts}", tag="[WERK]")
-    return counts
+    def note(resource_name, username, action):
+        report["details"].append({"name": resource_name, "benutzer": username, "aktion": action})
+
+    try:
+        with transaction.atomic(using=DB):
+            _sync(resources, report, note, WerkUser)
+            if dry_run:
+                raise _DryRun
+    except _DryRun:
+        pass
+    counts = {key: value for key, value in report.items() if key != "details"}
+    ilog(f"Factory users synced{' (dry run)' if dry_run else ''}: {counts}", tag="[WERK]")
+    return report
+
+
+def _sync(resources, report, note, WerkUser):
+    group, _created = Group.objects.using(DB).get_or_create(name=GROUP)
+    now = timezone.now()
+    for resource in resources:
+        if not resource["name"]:
+            report["uebersprungen"] += 1
+            note("", None, f"übersprungen: {resource['id']} ohne Namen")
+            continue
+        link = WerkUser.objects.using(DB).select_related("user").filter(airtable_resource_id=resource["id"]).first()
+        if link is not None:
+            user, action = link.user, "aktualisiert"
+        else:
+            user, how = find_account(resource)
+            if user is None and how:
+                report["uebersprungen"] += 1
+                note(resource["name"], None, f"übersprungen: {how} - bitte von Hand verknüpfen")
+                continue
+            if user is not None and WerkUser.objects.using(DB).filter(user=user).exists():
+                report["uebersprungen"] += 1
+                note(resource["name"], user.username, "übersprungen: Konto gehört schon zu einer anderen Ressource")
+                wlog(f"Resource {resource['id']}: {user.username} is linked to another resource", tag="[WERK]")
+                continue
+            if user is None:
+                first, last = split_name(resource["name"])
+                user = User(username=_unique_username(make_username(resource["email"], resource["name"])),
+                            email=resource["email"], first_name=first, last_name=last)
+                user.set_unusable_password()
+                user.save(using=DB)
+                action = "angelegt (ohne Passwort, Einladung von Hand)"
+            else:
+                action = f"vorhandenes Konto verknüpft ({how})"
+            link = WerkUser(user=user, airtable_resource_id=resource["id"])
+        report["angelegt" if action.startswith("angelegt") else
+               "verknuepft" if action.startswith("vorhanden") else "aktualisiert"] += 1
+        changed = []
+        if link.deactivated_by_sync and not user.is_active:
+            user.is_active = True
+            changed.append("is_active")
+        if not user.first_name and not user.last_name:
+            user.first_name, user.last_name = split_name(resource["name"])
+            changed += ["first_name", "last_name"]
+        if resource["email"] and not user.email and \
+                not User.objects.using(DB).filter(email__iexact=resource["email"]).exclude(pk=user.pk).exists():
+            user.email = resource["email"]
+            changed.append("email")
+        if changed:
+            user.save(using=DB, update_fields=changed)
+        user.groups.add(group)
+        link.name = resource["name"]
+        link.deactivated_by_sync = False
+        link.synced_at = now
+        link.save(using=DB)
+        note(resource["name"], user.username, action)
+
+    ticked = {resource["id"] for resource in resources}
+    gone = WerkUser.objects.using(DB).select_related("user").filter(
+        airtable_resource_id__isnull=False).exclude(airtable_resource_id__in=ticked)
+    for link in gone:
+        user = link.user
+        if not user.groups.filter(pk=group.pk).exists() and not user.is_active:
+            continue
+        user.groups.remove(group)
+        # Staff keep their account - only the factory right goes.
+        if user.is_active and not user.is_staff and not user.is_superuser:
+            user.is_active = False
+            user.save(using=DB, update_fields=["is_active"])
+            link.deactivated_by_sync = True
+            link.save(using=DB, update_fields=["deactivated_by_sync"])
+            report["deaktiviert"] += 1
+            note(link.name, user.username, "deaktiviert (Haken entfernt)")
+        else:
+            note(link.name, user.username, "Werk-Recht entzogen (Staff-Konto bleibt aktiv)")
