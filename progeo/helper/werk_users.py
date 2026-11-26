@@ -49,9 +49,9 @@ def initials(name) -> str:
 
 
 def _werk_user(user):
-    from progeo.v1.models import ProgeoWerkUser
+    from progeo.werk.models import WerkUser
 
-    return ProgeoWerkUser.objects.using(DB).filter(user=user).first()
+    return WerkUser.objects.using(DB).filter(user=user).first()
 
 
 def display_name(user) -> str:
@@ -137,7 +137,7 @@ def sync(helper=None, invite=True) -> dict:
     """Creates/updates the accounts of the ticked resources, deactivates the
     ones no longer ticked. Returns the counts."""
     from progeo.helper.airtable import AirtableHelper
-    from progeo.v1.models import ProgeoWerkUser
+    from progeo.werk.models import WerkUser
 
     helper = helper or AirtableHelper()
     if not helper.configured:
@@ -148,7 +148,7 @@ def sync(helper=None, invite=True) -> dict:
     now = timezone.now()
     with transaction.atomic(using=DB):
         for resource in resources:
-            link = ProgeoWerkUser.objects.using(DB).select_related("user").filter(
+            link = WerkUser.objects.using(DB).select_related("user").filter(
                 airtable_resource_id=resource["id"]).first()
             if link is not None:
                 user = link.user
@@ -157,7 +157,7 @@ def sync(helper=None, invite=True) -> dict:
                 user = None
                 if resource["email"]:
                     user = User.objects.using(DB).filter(email__iexact=resource["email"]).first()
-                if user is not None and ProgeoWerkUser.objects.using(DB).filter(user=user).exists():
+                if user is not None and WerkUser.objects.using(DB).filter(user=user).exists():
                     wlog(f"Resource {resource['id']}: {user.username} is linked to another resource", tag="[WERK]")
                     counts["uebersprungen"] += 1
                     continue
@@ -177,7 +177,7 @@ def sync(helper=None, invite=True) -> dict:
                         counts["eingeladen"] += 1
                 else:
                     counts["aktualisiert"] += 1
-                link = ProgeoWerkUser(user=user, airtable_resource_id=resource["id"])
+                link = WerkUser(user=user, airtable_resource_id=resource["id"])
             if link.deactivated_by_sync and not user.is_active:
                 user.is_active = True
                 user.save(using=DB, update_fields=["is_active"])
@@ -191,7 +191,7 @@ def sync(helper=None, invite=True) -> dict:
             link.save(using=DB)
 
         ticked = {resource["id"] for resource in resources}
-        gone = ProgeoWerkUser.objects.using(DB).select_related("user").filter(
+        gone = WerkUser.objects.using(DB).select_related("user").filter(
             airtable_resource_id__isnull=False).exclude(airtable_resource_id__in=ticked)
         for link in gone:
             user = link.user

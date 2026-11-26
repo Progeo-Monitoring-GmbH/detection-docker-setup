@@ -64,29 +64,31 @@ from progeo.v1.models import (
     ProgeoDeviceCommand,
     ProgeoEscalation,
     ProgeoEscalationEntry,
-    ProgeoFactorySensor,
     ProgeoFavoriteLocation,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
     ProgeoNoiseProfile,
-    ProgeoProductionEntry,
-    ProgeoProductionProgress,
-    ProgeoProductionSheet,
     ProgeoQA,
     ProgeoRainEvent,
     ProgeoReadinessSnapshot,
-    ProgeoRoll,
     ProgeoSensorMapping,
-    ProgeoSiteMeasurement,
-    ProgeoWerkUser,
     ScreenReviewMark,
     ScreenReviewNote,
     SystemConfig,
     TwoFactorDevice,
     UserModulePermissions,
     UserProfile,
+)
+from progeo.werk.models import (
+    FactorySensor,
+    ProductionEntry,
+    ProductionProgress,
+    ProductionSheet,
+    Roll,
+    SiteMeasurement,
+    WerkUser,
 )
 
 # Registered with Django's plain ModelAdmin (progeo/admin.py).
@@ -1311,7 +1313,7 @@ class FactorySensorForm(ModelForm):
     """The same normalization as the factory app's upload (helper/manusensor.py)."""
 
     class Meta:
-        model = ProgeoFactorySensor
+        model = FactorySensor
         fields = "__all__"
 
     def clean_sensor(self):
@@ -1335,15 +1337,15 @@ class FactorySensorForm(ModelForm):
 
 
 SITE_STATUS_TONES = {
-    ProgeoSiteMeasurement.Status.OK: "ok",
-    ProgeoSiteMeasurement.Status.CHECK: "warn",
-    ProgeoSiteMeasurement.Status.DEFECT: "bad",
-    ProgeoSiteMeasurement.Status.UNKNOWN: "muted",
+    SiteMeasurement.Status.OK: "ok",
+    SiteMeasurement.Status.CHECK: "warn",
+    SiteMeasurement.Status.DEFECT: "bad",
+    SiteMeasurement.Status.UNKNOWN: "muted",
 }
 
 
 class SiteMeasurementInline(ReadOnlyInline):
-    model = ProgeoSiteMeasurement
+    model = SiteMeasurement
     fields = ("measured_at", "status", "r_ohm", "delta_percent", "tag_mismatch", "user")
     readonly_fields = fields
     ordering = ("-measured_at",)
@@ -1383,7 +1385,7 @@ class ProgeoFactorySensorAdmin(admin.ModelAdmin):
         count = getattr(obj, "_site_measurements", 0)
         if not count:
             return 0
-        return changelist_link(ProgeoSiteMeasurement, str(count), factory_sensor__id__exact=obj.pk)
+        return changelist_link(SiteMeasurement, str(count), factory_sensor__id__exact=obj.pk)
 
 
 class AirtableStateFilter(admin.SimpleListFilter):
@@ -1405,7 +1407,7 @@ class AirtableStateFilter(admin.SimpleListFilter):
 
 class ProgeoSiteMeasurementAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     """Re-measurements of the dm sensors on site (manuSensor app, POST
-    /v1/location/<projekt>/messungen) with the backend's answer - stored as
+    /v1/werk/baustelle/<projekt>/messungen) with the backend's answer - stored as
     received, so only viewed here. Copied to Airtable by celery
     (helper/manusensor.push_to_airtable); failed copies are retried hourly
     or with the action."""
@@ -1833,13 +1835,13 @@ register_models = [
     {"model": LoginLink, "admin": LoginLinkAdmin, "custom": True},
     {"model": TwoFactorDevice, "admin": TwoFactorDeviceAdmin, "custom": True},
     {"model": AccessRequest, "admin": AccessRequestAdmin, "custom": True},
-    {"model": ProgeoFactorySensor, "admin": ProgeoFactorySensorAdmin, "custom": True},
-    {"model": ProgeoSiteMeasurement, "admin": ProgeoSiteMeasurementAdmin, "custom": True},
-    {"model": ProgeoWerkUser, "admin": ProgeoWerkUserAdmin, "custom": True},
-    {"model": ProgeoProductionSheet, "admin": ProgeoProductionSheetAdmin, "custom": True},
-    {"model": ProgeoProductionEntry, "admin": ProgeoProductionEntryAdmin, "custom": True},
-    {"model": ProgeoProductionProgress, "admin": ProgeoProductionProgressAdmin, "custom": True},
-    {"model": ProgeoRoll, "admin": ProgeoRollAdmin, "custom": True},
+    {"model": FactorySensor, "admin": ProgeoFactorySensorAdmin, "custom": True},
+    {"model": SiteMeasurement, "admin": ProgeoSiteMeasurementAdmin, "custom": True},
+    {"model": WerkUser, "admin": ProgeoWerkUserAdmin, "custom": True},
+    {"model": ProductionSheet, "admin": ProgeoProductionSheetAdmin, "custom": True},
+    {"model": ProductionEntry, "admin": ProgeoProductionEntryAdmin, "custom": True},
+    {"model": ProductionProgress, "admin": ProgeoProductionProgressAdmin, "custom": True},
+    {"model": Roll, "admin": ProgeoRollAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
     {"model": ProgeoQA, "admin": ProgeoQAAdmin, "custom": True},

@@ -179,6 +179,7 @@ INSTALLED_APPS = [
 
     "colorfield",
     "progeo",
+    "progeo.werk",
 ]
 
 MIDDLEWARE = [

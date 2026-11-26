@@ -46,14 +46,14 @@ von“), haben aber bisher **keine Backend-Konten**. Sie bekommen eigene Konten 
 - `manage.py sync_werk_users` (auch als Celery-Task, z. B. nachts und per Knopf auf der Staff-Seite):
   - je angehakter Ressource ein `User` (Benutzername aus der E-Mail-Adresse vor dem „@“, sonst aus dem
     Namen, z. B. `m.muster`; eindeutig gemacht), Gruppe **„Werk“**, nicht `is_staff` (kein Admin-Zugang);
-  - Verknüpfung im neuen Modell `ProgeoWerkUser` (user ↔ `airtable_resource_id`, Name, Kürzel);
+  - Verknüpfung im neuen Modell `WerkUser` (user ↔ `airtable_resource_id`, Name, Kürzel);
   - mit E-Mail-Adresse: Einladung zum Passwort-Setzen über den normalen Einladungslink
     (`login_links.send_login_link(…, "invite")`), nicht über die einmalige Migrations-Kampagne
     (`docs/migration_invites.md`) – die wird abgeschaltet und ihr Text passt nicht;
     ohne E-Mail: Konto ohne Passwort, ein Admin setzt es auf der Staff-Seite;
   - Häkchen entfernt → Konto deaktiviert (`is_active = False`), nicht gelöscht (Einträge bleiben zuordenbar).
 - **Kürzel**: aus dem Namen (Vor- und Nachname, je erster Buchstabe, z. B. „MM“), überschreibbar in
-  `ProgeoWerkUser`. Die App bekommt es über `GET /v1/werk/ich/` →
+  `WerkUser`. Die App bekommt es über `GET /v1/werk/ich/` →
   `{"benutzer": "m.muster", "name": "Max Muster", "kuerzel": "MM", "werk": true}` (403 für alle anderen –
   daran erkennt die App, ob sie den Produktions-Bereich zeigt).
 - **„Produziert von“** bei der Freigabe = `airtable_resource_id` des `erfasst_von`-Benutzers. Fehlt die
@@ -132,7 +132,7 @@ Regeln:
   zählt, wer die Werte eingegeben hat, nicht wer beim Senden angemeldet ist). Sonst 422 mit `feld`.
 - Einträge zu einem bereits **freigegebenen** Blatt: erlaubt (Korrektur), werden gespeichert und als
   `"nach_freigabe_geaendert": true` markiert; die Airtable-Kopie wird aktualisiert.
-- **R_Werk**: Ist ① `ok`, wird `ProgeoFactorySensor` (project_id = Projekt des Auftrags, sensor)
+- **R_Werk**: Ist ① `ok`, wird `FactorySensor` (project_id = Projekt des Auftrags, sensor)
   angelegt/aktualisiert: `r_werk_ohm = ①`, `measured_at = erfasst_am`, `updated_by = erfasst_von`. Damit
   sieht die Baustellen-App den Werkswert sofort (wie heute über `POST /v1/werk/sensoren/`).
 - Plausibilität wird **nicht** abgelehnt (Werte sind Messergebnisse); nur Formatfehler → 422.
@@ -176,7 +176,7 @@ Regeln:
 - Wirkung je Sensor (in Airtable „dm Sensoren“, per Celery):
   - `Produktionsstatus` = „Produziert“
   - `Produziert am` = `freigegeben_am`, `Produktionsdatum` = Datum von `freigegeben_am` (Europe/Berlin)
-  - `Produziert von` = „Ressourcen“-Record des `erfasst_von`-Benutzers (`ProgeoWerkUser`, siehe 1a)
+  - `Produziert von` = „Ressourcen“-Record des `erfasst_von`-Benutzers (`WerkUser`, siehe 1a)
   - Messwertfelder (4.) aus dem Eintrag
 - Ist danach **jedes** Blatt des Auftrags freigegeben, setzt das Backend „PA: dm“ `Produktionsstatus` =
   „Produziert“.
@@ -256,15 +256,18 @@ Rolle zusätzlich: `"code": "…" | null, "code_format": "…" | null, "fotos": 
 
 ## 4. Datenmodell und Airtable
 
-Datenbank („default“, wie `ProgeoFactorySensor`):
-- `ProgeoProductionEntry` – je `sensor_record_id` (unique): Auftrag (ID + Record-ID), Projekt, Sensor,
+Datenbank: Django-App **`werk`** (`progeo/werk/models.py`), nur in „default“ – nie in den Projektdatenbanken,
+ihrem Template oder der Demo (`progeo/router.py` `DEFAULT_ONLY_APPS`). Dort liegen auch `FactorySensor` und
+`SiteMeasurement` (manuSensor). Aus der App `progeo` verschoben am 26.11.2026 (`progeo/migrations/0084`,
+`werk/migrations/0001`–`0002`: Tabellen `werk_*`, Daten bleiben):
+- `ProductionEntry` – je `sensor_record_id` (unique): Auftrag (ID + Record-ID), Projekt, Sensor,
   die drei Messwerte (ohm + status), Metrierung (+ manuell), Rollen, erfasst_von (FK User), erfasst_am,
   quelle, geraet_id, gespeichert_am, nach_freigabe_geaendert, airtable_synced_at.
-- `ProgeoProductionSheet` – (auftrag_record_id, blatt) unique: sensor_record_ids, freigegeben_von,
+- `ProductionSheet` – (auftrag_record_id, blatt) unique: sensor_record_ids, freigegeben_von,
   freigegeben_am, auffaellig_bestaetigt.
-- `ProgeoProductionProgress` – je Auftrag der letzte Stand aus 3.4.
-- `ProgeoRoll` – Rollenregister aus 3.5 (mit `code`, `code_format`), `ProgeoRollPhoto` – Fotos.
-- `ProgeoWerkUser` – Backend-Benutzer ↔ Airtable-Ressource, Name, Kürzel (1a).
+- `ProductionProgress` – je Auftrag der letzte Stand aus 3.4.
+- `Roll` – Rollenregister aus 3.5 (mit `code`, `code_format`), `RollPhoto` – Fotos.
+- `WerkUser` – Backend-Benutzer ↔ Airtable-Ressource, Name, Kürzel (1a).
 
 Airtable – **neue Felder, angelegt am 26.11.2026** (geprüft: keine Automation und kein Make-Szenario liest
 alle Felder oder lauscht auf „Last Modified“ von „PA: dm“). Die Namen stehen in
@@ -325,7 +328,7 @@ Airtable „dm Sensoren“ (vorhandene Felder): **QS-Prüfung** (OK / Nacharbeit
 ## 5. Tests (pytest, wie `tests/test_dm_orders.py` gegen ein Fake-Airtable)
 
 - 3.1: Speichern, unverändert, veraltet, 422 mit Feld (nichts gespeichert), 409 fremder Sensor, R_Werk
-  aus ① in `ProgeoFactorySensor`, `erfasst_von` ≠ angemeldeter Benutzer.
+  aus ① in `FactorySensor`, `erfasst_von` ≠ angemeldeter Benutzer.
 - 3.3: unvollständig (422), abweichend (409), idempotent, Airtable-Felder je Sensor, Auftrag fertig.
 - 3.4: Stand gespeichert, anderes Gerät gemeldet, Airtable höchstens alle 5 min.
 - 3.5: anlegen, doppelt (409), PATCH neuere gewinnt, Rest Vorlauf berechnet.

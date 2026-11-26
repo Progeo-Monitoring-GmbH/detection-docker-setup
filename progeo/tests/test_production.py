@@ -12,13 +12,13 @@ from django.contrib.auth.models import Group, User
 
 from progeo.helper import production, rolls, werk_users
 from progeo.tests import factories as f
-from progeo.v1.models import (
-    ProgeoFactorySensor,
-    ProgeoProductionEntry,
-    ProgeoProductionProgress,
-    ProgeoProductionSheet,
-    ProgeoRoll,
-    ProgeoWerkUser,
+from progeo.werk.models import (
+    FactorySensor,
+    ProductionEntry,
+    ProductionProgress,
+    ProductionSheet,
+    Roll,
+    WerkUser,
 )
 
 ORDER_RECORD = "recORDER000000A01"
@@ -97,7 +97,7 @@ def queued(monkeypatch):
 def make_werk_user(username="m.muster", name="Max Muster", resource="recRESSOURCE00001"):
     user = f.make_user(username=username)
     user.groups.add(Group.objects.using(f.DB).get_or_create(name=werk_users.GROUP)[0])
-    ProgeoWerkUser.objects.using(f.DB).create(user=user, name=name, airtable_resource_id=resource)
+    WerkUser.objects.using(f.DB).create(user=user, name=name, airtable_resource_id=resource)
     return user
 
 
@@ -150,7 +150,7 @@ def fill_sheet(api_client, blatt):
 def test_me_and_factory_check(api_client, worker):
     assert api_client.get("/v1/werk/ich/").json() == {
         "benutzer": "m.muster", "name": "Max Muster", "kuerzel": "MM", "werk": True}
-    ProgeoWerkUser.objects.using(f.DB).filter(user=worker).update(kuerzel="MXM")
+    WerkUser.objects.using(f.DB).filter(user=worker).update(kuerzel="MXM")
     assert api_client.get("/v1/werk/ich/").json()["kuerzel"] == "MXM"
     # Staff without a resource: name and initials from the account.
     staff = f.make_user(staff=True, first_name="Erika", last_name="Beispiel")
@@ -247,11 +247,11 @@ def test_save_entries_and_read_them_back(api_client, worker):
     assert answer.json() == {"ergebnisse": [{"sensor_record_id": sensor_record(1), "ergebnis": "gespeichert"},
                                             {"sensor_record_id": sensor_record(2), "ergebnis": "gespeichert"}],
                              "eintraege_erfasst": 2}
-    stored = ProgeoProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(1))
+    stored = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(1))
     assert (stored.erfasst_von, stored.sensor, stored.project_id, stored.order_id) == (worker, "000001", 7101, ORDER_ID)
     assert str(stored.metrierung_m) == "414.50"
     # R_Werk = ① for the site app.
-    factory = ProgeoFactorySensor.objects.using(f.DB).get(project_id=7101, sensor="000001")
+    factory = FactorySensor.objects.using(f.DB).get(project_id=7101, sensor="000001")
     assert (factory.r_werk_ohm, factory.updated_by) == (99870, worker)
 
     back = api_client.get(f"{BASE}/eintraege/").json()["eintraege"]
@@ -271,7 +271,7 @@ def test_resend_is_unchanged_and_an_older_change_is_outdated(api_client, worker)
                                            erfasst_am="2026-11-26T10:00:00Z")]).json()["ergebnisse"][0]["ergebnis"]
 
     assert (again, older, newer) == ("unveraendert", "veraltet", "gespeichert")
-    assert ProgeoProductionEntry.objects.using(f.DB).get().r_platine_ohm == 98000
+    assert ProductionEntry.objects.using(f.DB).get().r_platine_ohm == 98000
 
 
 @pytest.mark.parametrize("bad, field", [
@@ -289,7 +289,7 @@ def test_invalid_entries_are_422_and_nothing_is_stored(api_client, worker, bad, 
 
     assert answer.status_code == 422
     assert (answer.json()["fehler"], answer.json()["feld"]) == ("ungueltig", field)
-    assert not ProgeoProductionEntry.objects.using(f.DB).exists()
+    assert not ProductionEntry.objects.using(f.DB).exists()
 
 
 def test_erfasst_von_must_be_a_factory_account(api_client, worker):
@@ -302,7 +302,7 @@ def test_sensor_of_another_order_is_409(api_client, worker):
     answer = put_entries(api_client, [entry(1), entry(99, sensor_record_id="recFREMD000000001", sensor="99")])
 
     assert (answer.status_code, answer.json()["fehler"]) == (409, "sensor_nicht_im_auftrag")
-    assert not ProgeoProductionEntry.objects.using(f.DB).exists()
+    assert not ProductionEntry.objects.using(f.DB).exists()
 
 
 # -- 3.3 release -----------------------------------------------------------------------
@@ -315,7 +315,7 @@ def test_release_needs_a_complete_sheet(api_client, worker):
     assert answer.status_code == 422
     assert answer.json()["fehler"] == "blatt_unvollstaendig"
     assert answer.json()["sensor_record_ids"] == [sensor_record(20)]
-    assert not ProgeoProductionSheet.objects.using(f.DB).exists()
+    assert not ProductionSheet.objects.using(f.DB).exists()
 
 
 def test_release_with_other_sensors_is_409_with_the_current_list(api_client, worker):
@@ -338,9 +338,9 @@ def test_release_is_idempotent_and_copied_to_airtable(api_client, worker, airtab
     assert first.status_code == again.status_code == 200
     assert first.json() == again.json() == {
         "blatt": 1, "freigegeben_am": "2026-11-26T11:02:40Z", "sensoren": 20, "auftrag_fertig": False}
-    sheet = ProgeoProductionSheet.objects.using(f.DB).get()
+    sheet = ProductionSheet.objects.using(f.DB).get()
     assert sheet.auffaellig_bestaetigt == [sensor_record(3)]
-    assert ProgeoProductionEntry.objects.using(f.DB).filter(sheet=sheet).count() == 20
+    assert ProductionEntry.objects.using(f.DB).filter(sheet=sheet).count() == 20
     assert queued == [("push_production_sheet", sheet.pk)]
 
     assert production.push_sheet(sheet.pk) is True
@@ -365,7 +365,7 @@ def test_last_sheet_finishes_the_order(api_client, worker, airtable):
         answer = release(api_client, blatt).json()
     assert answer == {"blatt": 3, "freigegeben_am": "2026-11-26T11:02:40Z", "sensoren": 5, "auftrag_fertig": True}
 
-    last = ProgeoProductionSheet.objects.using(f.DB).get(blatt=3)
+    last = ProductionSheet.objects.using(f.DB).get(blatt=3)
     production.push_sheet(last.pk)
     assert airtable.writes[-1][3] == {"Freigegebene Blätter": 3, "Produktionsstatus": "Produziert"}
     beyond = release(api_client, 4, ids=[sensor_record(1)])
@@ -382,7 +382,7 @@ def test_change_after_release_is_marked_and_copied_again(api_client, worker, que
                                                 erfasst_am="2026-11-26T12:00:00Z")])
 
     assert answer.json()["ergebnisse"][0]["ergebnis"] == "gespeichert"
-    changed = ProgeoProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(5))
+    changed = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(5))
     assert changed.nach_freigabe_geaendert and changed.airtable_synced_at is None
     assert queued[-1] == ("push_production_entry", changed.pk)
     assert production.push_entry(changed.pk) is True
@@ -402,16 +402,16 @@ def progress_body(**changes):
 
 def test_progress_is_kept_and_another_device_is_reported(api_client, worker, queued,
                                                         django_capture_on_commit_callbacks):
-    ProgeoRoll.objects.using(f.DB).create(nummer="MB-0142", typ="messband", nennlaenge_m=200, rest_m=200)
+    Roll.objects.using(f.DB).create(nummer="MB-0142", typ="messband", nennlaenge_m=200, rest_m=200)
     with django_capture_on_commit_callbacks(using=f.DB, execute=True):
         first = api_client.post(f"{BASE}/fortschritt/", progress_body(), format="json")
 
     assert first.json() == {"ok": True, "anderes_geraet": None}
-    progress = ProgeoProductionProgress.objects.using(f.DB).get()
+    progress = ProductionProgress.objects.using(f.DB).get()
     assert (progress.erfasst, progress.sensoren_gesamt, progress.aktives_blatt) == (67, SENSOR_COUNT, 4)
     assert production.progress_text(progress) == "67 / 45 · Blatt 4 · m.muster · 26.11. 10:41"
     # The roll's state is updated too (unknown rolls are skipped).
-    roll = ProgeoRoll.objects.using(f.DB).get(nummer="MB-0142")
+    roll = Roll.objects.using(f.DB).get(nummer="MB-0142")
     assert (float(roll.rest_m), roll.zuletzt_auftrag_id) == (52.5, ORDER_ID)
     assert api_client.get(f"{BASE}/").json()["geraet"] == {
         "id": "tablet-1", "benutzer": "m.muster", "zuletzt": "2026-11-26T09:41:12Z"}
@@ -428,11 +428,11 @@ def test_progress_reaches_airtable_at_most_every_5_minutes(api_client, worker, q
         api_client.post(f"{BASE}/fortschritt/", progress_body(), format="json")
         api_client.post(f"{BASE}/fortschritt/", progress_body(erfasst=68, zeitpunkt="2026-11-26T09:43:12Z"),
                         format="json")
-    progress = ProgeoProductionProgress.objects.using(f.DB).get()
+    progress = ProductionProgress.objects.using(f.DB).get()
     assert queued == [("push_production_progress", progress.pk)]
     assert progress.erfasst == 68
 
-    ProgeoProductionProgress.objects.using(f.DB).update(
+    ProductionProgress.objects.using(f.DB).update(
         airtable_gesendet_am=progress.airtable_gesendet_am - datetime.timedelta(minutes=6))
     with django_capture_on_commit_callbacks(using=f.DB, execute=True):
         api_client.post(f"{BASE}/fortschritt/", progress_body(zeitpunkt="2026-11-26T09:50:12Z"), format="json")
@@ -493,7 +493,7 @@ def image_base64(fmt="JPEG", size=(2400, 1200)):
 def test_roll_photo_upload_shrink_idempotent_and_download(api_client, worker):
     from PIL import Image
 
-    ProgeoRoll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=200)
+    Roll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=200)
     photo_id = str(uuid.uuid4())
     body = {"foto_id": photo_id, "mime": "image/jpeg", "daten": image_base64()}
 
@@ -511,7 +511,7 @@ def test_roll_photo_upload_shrink_idempotent_and_download(api_client, worker):
 
 
 def test_roll_photo_too_big_or_wrong_type(api_client, worker):
-    ProgeoRoll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=200)
+    Roll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=200)
 
     too_big = api_client.post("/v1/werk/rollen/MB-0141/foto/", {
         "foto_id": str(uuid.uuid4()), "mime": "image/jpeg",

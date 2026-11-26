@@ -32,27 +32,34 @@ from progeo.v1.models import (
     ProgeoDevice,
     ProgeoDeviceCommand,
     ProgeoEscalation,
-    ProgeoFactorySensor,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoNoiseProfile,
     ProgeoRainEvent,
     ProgeoSensorMapping,
-    ProgeoSiteMeasurement,
     ScreenReviewMark,
     ScreenReviewNote,
     SystemConfig,
     TwoFactorDevice,
     UserProfile,
 )
+from progeo.werk.models import FactorySensor, SiteMeasurement
 
 pytestmark = pytest.mark.django_db
 
-BASE = "/aadmin/progeo/"
-PROGEO_ADMINS = sorted(
-    model._meta.model_name for model in admin.site._registry if model._meta.app_label == "progeo"
-)
+# The apps whose admin pages these tests cover: progeo and the factory (werk).
+ADMIN_APPS = ("progeo", "werk")
+APP_OF = {
+    model._meta.model_name: model._meta.app_label
+    for model in admin.site._registry if model._meta.app_label in ADMIN_APPS
+}
+PROGEO_ADMINS = sorted(APP_OF)
+
+
+def _url(path):
+    """"factorysensor/1/change/" -> "/aadmin/werk/factorysensor/1/change/"."""
+    return f"/aadmin/{APP_OF[path.split('/', 1)[0]]}/{path}"
 SECRET = "fernet:do-not-show-this-secret"
 
 
@@ -69,7 +76,7 @@ def admin_client(staff):
 
 
 def _get(client, path, **params):
-    response = client.get(BASE + path, params, secure=True)
+    response = client.get(_url(path), params, secure=True)
     assert response.status_code == 200, (path, params, response.status_code, response.get("Location"))
     return response
 
@@ -83,10 +90,10 @@ def _site_measurement(**fields):
         "mess_id": uuid.uuid4(), "project_id": 970101, "sensor": "000007", "measured_at": timezone.now(),
         "identification": "nfc", "trigger": "manual", "r_ohm": 1010, "r_status": "ok", "device_id": "app-1",
         "payload": {"benutzer": "monteur"}, "r_werk_ohm": 1000, "delta_percent": 1.0, "tolerance_percent": 5.0,
-        "status": ProgeoSiteMeasurement.Status.OK,
+        "status": SiteMeasurement.Status.OK,
     }
     defaults.update(fields)
-    return ProgeoSiteMeasurement.objects.using(f.DB).create(**defaults)
+    return SiteMeasurement.objects.using(f.DB).create(**defaults)
 
 
 @pytest.fixture
@@ -99,7 +106,7 @@ def rows(staff):
     alarm = f.make_alarm(device, triggered_ago=f.minutes(30))
     plan = ProgeoLageplan.objects.using(f.DB).create(location=location, name="EG")
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk, project_id=970101)
-    factory = ProgeoFactorySensor.objects.using(f.DB).create(project_id=970101, sensor="000007", r_werk_ohm=1000)
+    factory = FactorySensor.objects.using(f.DB).create(project_id=970101, sensor="000007", r_werk_ohm=1000)
     access = f.make_access(location, user)
     now = timezone.now()
     return {
@@ -147,8 +154,8 @@ def rows(staff):
         "notificationtoken": NotificationToken.objects.using(f.DB).create(
             token_hash="e" * 64, case=case, address="row-user@progeo.com", expires_at=now + datetime.timedelta(days=9),
         ),
-        "progeofactorysensor": factory,
-        "progeositemeasurement": _site_measurement(factory_sensor=factory, user_id=user.pk),
+        "factorysensor": factory,
+        "sitemeasurement": _site_measurement(factory_sensor=factory, user_id=user.pk),
         "userprofile": UserProfile.objects.using(f.DB).get_or_create(user=user, defaults={"mobile": "+4917000"})[0],
         "screenreviewnote": ScreenReviewNote.objects.using(f.DB).create(
             run="run1", image="status.png", kind="note", action="question", comment="Warum?",
@@ -174,8 +181,8 @@ def test_every_list_loads_also_with_a_search(admin_client, rows, model_name):
     "progeolocation", "progeodevice", "progeoalarm", "progeomeasurement", "progeolageplan", "progeomeasurepoint",
     "progeoaccess", "progeoaccessindex", "email", "sms", "progeorainevent", "progeonoiseprofile",
     "progeosensormapping", "progeodevicecommand", "progeoescalation", "outboundmessage", "emailsuppression",
-    "loginlink", "twofactordevice", "accessrequest", "notificationcase", "notificationtoken", "progeofactorysensor",
-    "progeositemeasurement", "userprofile", "screenreviewnote", "screenreviewmark", "systemconfig", "account",
+    "loginlink", "twofactordevice", "accessrequest", "notificationcase", "notificationtoken", "factorysensor",
+    "sitemeasurement", "userprofile", "screenreviewnote", "screenreviewmark", "systemconfig", "account",
 ])
 def test_every_detail_page_loads(admin_client, rows, model_name):
     obj = rows["location"] if model_name == "progeolocation" else rows[model_name]
@@ -184,9 +191,9 @@ def test_every_detail_page_loads(admin_client, rows, model_name):
 
 def test_every_add_page_that_exists_loads(admin_client):
     for model, model_admin in admin.site._registry.items():
-        if model._meta.app_label != "progeo":
+        if model._meta.app_label not in ADMIN_APPS:
             continue
-        response = admin_client.get(f"{BASE}{model._meta.model_name}/add/", secure=True)
+        response = admin_client.get(_url(f"{model._meta.model_name}/add/"), secure=True)
         expected = 200 if model_admin.has_add_permission(_request()) else 403
         assert response.status_code == expected, model._meta.model_name
 
@@ -204,7 +211,7 @@ HIDDEN_FIELDS = {
     "progeoalarm": set(),
     "progeodevicecommand": {"summary", "payload_encrypted", "result_encrypted", "files_encrypted"},
     "progeosensormapping": {"positions", "manual"},
-    "progeositemeasurement": {"payload", "status", "delta_percent", "location_pk", "factory_sensor"},
+    "sitemeasurement": {"payload", "status", "delta_percent", "location_pk", "factory_sensor"},
     "loginlink": {"token_hash"},
     "twofactordevice": {"secret", "recovery_codes", "last_step"},
     "accessrequest": {"verify_token_hash"},
@@ -220,7 +227,7 @@ HIDDEN_FIELDS = {
 def test_the_detail_pages_leave_no_field_out_by_accident(model_name):
     model, model_admin = next(
         (model, model_admin) for model, model_admin in admin.site._registry.items()
-        if model._meta.app_label == "progeo" and model._meta.model_name == model_name
+        if model._meta.app_label in ADMIN_APPS and model._meta.model_name == model_name
     )
     if model._meta.proxy or not (model_admin.fields or model_admin.fieldsets):
         return  # Django shows every field (the proxy picks its own few of User's)
@@ -276,7 +283,7 @@ def _more(kind, staff, count):
             ProgeoAccessIndex.objects.using(f.DB).get_or_create(user=user, location=location)
         elif kind == "progeoescalation":
             ProgeoEscalation.objects.using(f.DB).create(location=location, title="t", assigned_to_id=user.pk)
-        elif kind == "progeositemeasurement":
+        elif kind == "sitemeasurement":
             _site_measurement(user_id=user.pk)
         elif kind == "loginlink":
             LoginLink.objects.using(f.DB).create(user_id=user.pk, purpose="login", token_hash=f.unique("t")[:64],
@@ -295,7 +302,7 @@ def _list_queries(client, model_name):
     "progeolocation", "progeodevice", "progeomeasurement", "progeoalarm", "progeoaccess", "email", "sms",
     "progeomeasurepoint",
     "progeolageplan", "progeorainevent", "progeonoiseprofile", "progeosensormapping", "progeodevicecommand",
-    "progeoaccessindex", "progeoescalation", "progeositemeasurement", "loginlink",
+    "progeoaccessindex", "progeoescalation", "sitemeasurement", "loginlink",
 ])
 def test_the_list_needs_no_query_per_row(admin_client, staff, model_name):
     _more(model_name, staff, 2)
@@ -363,7 +370,7 @@ def test_site_measurements_by_airtable_state(admin_client):
     failed = _site_measurement(airtable_error="422 Unknown field")
 
     for state, expected in (("synced", synced), ("pending", pending), ("error", failed)):
-        listed = _listed(_get(admin_client, "progeositemeasurement/", airtable=state))
+        listed = _listed(_get(admin_client, "sitemeasurement/", airtable=state))
         assert listed & {synced, pending, failed} == {expected}, state
 
 
@@ -441,7 +448,7 @@ def test_the_configuration_masks_secrets_but_shows_the_rest(admin_client, rows):
     assert "mail.progeo.com" in page
     assert "••••" in page
     assert 'name="_save"' not in page
-    assert admin_client.get(f"{BASE}systemconfig/{rows['systemconfig'].pk}/delete/", secure=True).status_code == 403
+    assert admin_client.get(_url(f"systemconfig/{rows['systemconfig'].pk}/delete/"), secure=True).status_code == 403
 
 
 def test_two_factor_rows_show_the_codes_left_and_can_be_reset(admin_client, rows):
@@ -449,7 +456,7 @@ def test_two_factor_rows_show_the_codes_left_and_can_be_reset(admin_client, rows
     page = _get(admin_client, f"twofactordevice/{device.pk}/change/").content.decode()
 
     assert "Recovery codes left" in page
-    admin_client.post(f"{BASE}twofactordevice/{device.pk}/delete/", {"post": "yes"}, secure=True)
+    admin_client.post(_url(f"twofactordevice/{device.pk}/delete/"), {"post": "yes"}, secure=True)
     assert not TwoFactorDevice.objects.using(f.DB).filter(pk=device.pk).exists()
 
 
@@ -458,7 +465,7 @@ def test_two_factor_rows_show_the_codes_left_and_can_be_reset(admin_client, rows
 
 def _action(client, model_name, action, objs):
     return client.post(
-        f"{BASE}{model_name}/", {"action": action, "_selected_action": [obj.pk for obj in objs]},
+        _url(f"{model_name}/"), {"action": action, "_selected_action": [obj.pk for obj in objs]},
         secure=True, follow=True,
     )
 
@@ -469,7 +476,7 @@ def test_the_airtable_action_queues_the_selected_measurements(admin_client, monk
     monkeypatch.setattr("progeo.helper.manusensor.queue_airtable_push", queued.append)
     first, second = _site_measurement(), _site_measurement()
 
-    response = _action(admin_client, "progeositemeasurement", "copy_to_airtable", [first, second])
+    response = _action(admin_client, "sitemeasurement", "copy_to_airtable", [first, second])
 
     assert sorted(queued) == sorted([first.pk, second.pk])
     assert "2 measurement(s) queued" in response.content.decode()
@@ -478,17 +485,17 @@ def test_the_airtable_action_queues_the_selected_measurements(admin_client, monk
 def test_the_airtable_action_says_when_airtable_is_not_configured(admin_client, monkeypatch):
     monkeypatch.setattr(AirtableHelper, "configured", property(lambda self: False))
 
-    response = _action(admin_client, "progeositemeasurement", "copy_to_airtable", [_site_measurement()])
+    response = _action(admin_client, "sitemeasurement", "copy_to_airtable", [_site_measurement()])
 
     assert "Airtable is not configured" in response.content.decode()
 
 
 def test_site_measurements_are_read_only(admin_client, rows):
-    page = _get(admin_client, f"progeositemeasurement/{rows['progeositemeasurement'].pk}/change/").content.decode()
+    page = _get(admin_client, f"sitemeasurement/{rows['sitemeasurement'].pk}/change/").content.decode()
 
     assert 'name="_save"' not in page
     assert "monteur" in page  # the payload
-    assert admin_client.get(f"{BASE}progeositemeasurement/add/", secure=True).status_code == 403
+    assert admin_client.get(_url("sitemeasurement/add/"), secure=True).status_code == 403
 
 
 # The site measurements inline's empty formset.
@@ -496,18 +503,18 @@ NO_INLINE_ROWS = {"site_measurements-TOTAL_FORMS": "0", "site_measurements-INITI
 
 
 def test_factory_sensors_are_normalized_like_the_upload(admin_client, staff):
-    response = admin_client.post(f"{BASE}progeofactorysensor/add/", {
+    response = admin_client.post(_url("factorysensor/add/"), {
         "project_id": 970111, "sensor": "42", "band": "B1", "tag_uid": "04:a1:b2 c3-d4", "r_werk_ohm": 990,
         **NO_INLINE_ROWS,
     }, secure=True)
 
     assert response.status_code == 302, response.content.decode()[:2000]
-    sensor = ProgeoFactorySensor.objects.using(f.DB).get(project_id=970111)
+    sensor = FactorySensor.objects.using(f.DB).get(project_id=970111)
     assert (sensor.sensor, sensor.tag_uid, sensor.updated_by_id) == ("000042", "04A1B2C3D4", staff.pk)
 
 
 def test_a_factory_sensor_needs_a_sensor_number(admin_client):
-    response = admin_client.post(f"{BASE}progeofactorysensor/add/", {
+    response = admin_client.post(_url("factorysensor/add/"), {
         "project_id": 970112, "sensor": "12a", "r_werk_ohm": 990, **NO_INLINE_ROWS,
     }, secure=True)
 

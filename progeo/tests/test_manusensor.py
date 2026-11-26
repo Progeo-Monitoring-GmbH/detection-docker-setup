@@ -9,7 +9,7 @@ import pytest
 
 from progeo.helper import manusensor
 from progeo.tests import factories as f
-from progeo.v1.models import ProgeoFactorySensor, ProgeoSiteMeasurement
+from progeo.werk.models import FactorySensor, SiteMeasurement
 
 PROJECT = 24017
 PERMISSION = "module_manusensor_enabled"
@@ -28,7 +28,7 @@ def site(api_client):
     account = f.make_account()
     location = f.make_location(account, name="Halle", project_id=PROJECT)
     installer = f.make_user(perms=(PERMISSION,), accounts=[account])
-    ProgeoFactorySensor.objects.using(f.DB).create(
+    FactorySensor.objects.using(f.DB).create(
         project_id=PROJECT, sensor="000123", band="4711", tag_uid="04A1B2C3D4E5F6", r_werk_ohm=88120,
     )
     api_client.force_authenticate(user=installer)
@@ -62,7 +62,7 @@ def body(**changes):
 
 def post(api_client, data, project="24017"):
     # The app posts without the trailing slash.
-    return api_client.post(f"/v1/location/{project}/messungen", data, format="json")
+    return api_client.post(f"/v1/werk/baustelle/{project}/messungen", data, format="json")
 
 
 # -- GET sensor ---------------------------------------------------------------------
@@ -71,45 +71,51 @@ def test_sensor_by_number_and_by_tag(api_client, site):
     expected = {"projekt": "24017", "sensor": "000123", "band": "4711",
                 "tag_uid": "04A1B2C3D4E5F6", "r_werk_ohm": 88120}
 
-    assert api_client.get("/v1/location/24017/sensor/000123/").json() == expected
+    assert api_client.get("/v1/werk/baustelle/24017/sensor/000123/").json() == expected
     # Typed without leading zeros, too.
-    assert api_client.get("/v1/location/24017/sensor/123/").json() == expected
-    by_tag = api_client.get("/v1/location/24017/sensor/", {"tag_uid": "04a1b2c3d4e5f6"})
+    assert api_client.get("/v1/werk/baustelle/24017/sensor/123/").json() == expected
+    by_tag = api_client.get("/v1/werk/baustelle/24017/sensor/", {"tag_uid": "04a1b2c3d4e5f6"})
     assert by_tag.status_code == 200
     assert by_tag.json() == expected
 
 
 def test_unknown_sensor_is_404_in_the_apps_format(api_client, site):
-    response = api_client.get("/v1/location/24017/sensor/000999/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/000999/")
 
     assert response.status_code == 404
     assert response.json() == {"fehler": "sensor_unbekannt", "meldung": "Sensor nicht im Projekt"}
-    assert api_client.get("/v1/location/24017/sensor/", {"tag_uid": "04FFFFFFFFFFFF"}).status_code == 404
+    assert api_client.get("/v1/werk/baustelle/24017/sensor/", {"tag_uid": "04FFFFFFFFFFFF"}).status_code == 404
 
 
 def test_the_path_is_the_project_number_not_the_pk(api_client, site):
-    response = api_client.get(f"/v1/location/{site['location'].pk}/sensor/000123/")
+    response = api_client.get(f"/v1/werk/baustelle/{site['location'].pk}/sensor/000123/")
 
     assert response.status_code == 404
     assert response.json()["fehler"] == "projekt_unbekannt"
 
 
+def test_the_old_location_routes_are_gone(api_client, site):
+    """Since the Werk app (26.11.2026) only under /v1/werk/baustelle/."""
+    assert api_client.get("/v1/location/24017/sensor/000123/").status_code == 404
+    assert api_client.post("/v1/location/24017/messungen", {}, format="json").status_code == 404
+
+
 def test_needs_the_module_permission_and_the_location(api_client, site):
     plain = f.make_user(accounts=[site["account"]])
     api_client.force_authenticate(user=plain)
-    assert api_client.get("/v1/location/24017/sensor/000123/").json()["fehler"] == "keine_berechtigung"
+    assert api_client.get("/v1/werk/baustelle/24017/sensor/000123/").json()["fehler"] == "keine_berechtigung"
 
     stranger = f.make_user(perms=(PERMISSION,), accounts=[f.make_account()])
     api_client.force_authenticate(user=stranger)
-    response = api_client.get("/v1/location/24017/sensor/000123/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/000123/")
     assert (response.status_code, response.json()["fehler"]) == (404, "projekt_unbekannt")
 
     api_client.force_authenticate(user=None)
-    assert api_client.get("/v1/location/24017/sensor/000123/").status_code == 401
+    assert api_client.get("/v1/werk/baustelle/24017/sensor/000123/").status_code == 401
 
 
 def test_an_invalid_tag_is_still_422(api_client, site):
-    response = api_client.get("/v1/location/24017/sensor/", {"tag_uid": "xyz"})
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/", {"tag_uid": "xyz"})
 
     assert (response.status_code, response.json()["fehler"], response.json()["feld"]) == (422, "ungueltig", "tag_uid")
 
@@ -117,14 +123,14 @@ def test_an_invalid_tag_is_still_422(api_client, site):
 # -- GET sensor list (the app's picker) ---------------------------------------------
 
 def test_sensor_list_of_the_project_for_an_installer(api_client, site):
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000045", r_werk_ohm=90000)
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000045", r_werk_ohm=90000)
     # Another project's sensor isn't listed.
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
     post(api_client, body(mess_id=str(uuid.uuid4()), r_ohm=70_000))
     post(api_client, body(mess_id=str(uuid.uuid4())))  # the newer one counts
     assert not site["installer"].is_staff
 
-    response = api_client.get("/v1/location/24017/sensor/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/")
 
     assert response.status_code == 200
     data = response.json()
@@ -144,14 +150,14 @@ def test_sensor_list_of_the_project_for_an_installer(api_client, site):
 def test_sensor_list_of_a_project_without_sensors_is_empty(api_client, site):
     f.make_location(site["account"], name="Leer", project_id=24018)
 
-    response = api_client.get("/v1/location/24018/sensor/")
+    response = api_client.get("/v1/werk/baustelle/24018/sensor/")
 
     assert response.status_code == 200
     assert response.json() == {"projekt": "24018", "toleranz_prozent": 5.0, "sensoren": []}
 
 
 def test_sensor_list_of_an_unknown_project_is_404(api_client, site):
-    response = api_client.get("/v1/location/99999/sensor/")
+    response = api_client.get("/v1/werk/baustelle/99999/sensor/")
 
     assert response.status_code == 404
     assert response.json() == {"fehler": "projekt_unbekannt", "meldung": "Projekt 99999 nicht gefunden."}
@@ -159,36 +165,36 @@ def test_sensor_list_of_an_unknown_project_is_404(api_client, site):
 
 def test_sensor_list_needs_the_module_permission_and_the_location(api_client, site):
     api_client.force_authenticate(user=f.make_user(accounts=[site["account"]]))
-    response = api_client.get("/v1/location/24017/sensor/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/")
     assert response.status_code == 403
     assert response.json() == {"fehler": "keine_berechtigung", "meldung": "Keine Berechtigung für die manuSensor-App."}
 
     # The permission without access to the project's location.
     api_client.force_authenticate(user=f.make_user(perms=(PERMISSION,), accounts=[f.make_account()]))
-    response = api_client.get("/v1/location/24017/sensor/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/")
     assert (response.status_code, response.json()["fehler"]) == (404, "projekt_unbekannt")
 
     api_client.force_authenticate(user=None)
-    response = api_client.get("/v1/location/24017/sensor/")
+    response = api_client.get("/v1/werk/baustelle/24017/sensor/")
     assert (response.status_code, response.json()["fehler"]) == (401, "nicht_angemeldet")
 
 
 # -- GET project list (the app's picker) --------------------------------------------
 
 def test_project_list_counts_sensors_and_measured_ones(api_client, site):
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000124", r_werk_ohm=90000)
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000124", r_werk_ohm=90000)
     post(api_client, body(mess_id=str(uuid.uuid4())))
     post(api_client, body(mess_id=str(uuid.uuid4())))  # the same sensor again
     post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000999"))  # no factory values
     # A location of the installer without a name.
     f.make_location(site["account"], name="", project_id=7099)
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
     # A location of the installer without factory sensors isn't listed.
     f.make_location(site["account"], name="Leer", project_id=24018)
     # Factory sensors of a location the installer may not open, or of none.
     f.make_location(f.make_account(), name="Fremd", project_id=7100)
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7100, sensor="000001", r_werk_ohm=88000)
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7101, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7100, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7101, sensor="000001", r_werk_ohm=88000)
 
     response = api_client.get("/v1/werk/projekte/")
 
@@ -203,7 +209,7 @@ def test_project_list_names_the_main_location_and_staff_see_every_located_projec
     # A later duplicate of the number: the main location (the oldest) names it.
     f.make_location(site["account"], name="Halle (Duplikat)", project_id=PROJECT)
     f.make_location(f.make_account(), name="Fremd", project_id=7100)
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7100, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7100, sensor="000001", r_werk_ohm=88000)
     assert [row["name"] for row in api_client.get("/v1/werk/projekte/").json()["projekte"]] == ["Halle"]
 
     api_client.force_authenticate(user=f.make_user(staff=True))
@@ -226,7 +232,7 @@ def test_project_list_queries_do_not_grow_with_the_projects(api_client, site):
     before = queries()
     for project_id in (7099, 7100, 7101):
         f.make_location(site["account"], project_id=project_id)
-        ProgeoFactorySensor.objects.using(f.DB).create(project_id=project_id, sensor="000001", r_werk_ohm=88000)
+        FactorySensor.objects.using(f.DB).create(project_id=project_id, sensor="000001", r_werk_ohm=88000)
 
     assert len(api_client.get("/v1/werk/projekte/").json()["projekte"]) == 4
     assert queries() == before
@@ -244,7 +250,7 @@ def test_project_list_needs_the_module_permission(api_client, site):
 
 
 def test_project_list_is_empty_without_factory_sensors(api_client, site):
-    ProgeoFactorySensor.objects.using(f.DB).all().delete()
+    FactorySensor.objects.using(f.DB).all().delete()
 
     assert api_client.get("/v1/werk/projekte/").json() == {"projekte": []}
 
@@ -260,7 +266,7 @@ def test_measurement_answers_the_deviation_and_status(api_client, site, no_airta
     assert response.status_code == 201
     assert response.json() == {"mess_id": "6f1c2a9e-3b4d-4f8a-9c21-7e5d0a1b2c3d", "r_werk_ohm": 88120,
                                "delta_prozent": -0.8, "toleranz_prozent": 5.0, "status": "ok"}
-    stored = ProgeoSiteMeasurement.objects.using(f.DB).get()
+    stored = SiteMeasurement.objects.using(f.DB).get()
     assert (stored.project_id, stored.sensor, stored.location_pk) == (PROJECT, "000123", site["location"].pk)
     assert stored.user == site["installer"]
     assert stored.factory_sensor.r_werk_ohm == 88120
@@ -290,7 +296,7 @@ def test_resending_is_idempotent_and_a_reused_id_conflicts(api_client, site):
     again = post(api_client, body())
     assert again.status_code == 200
     assert again.json()["status"] == "ok"
-    assert ProgeoSiteMeasurement.objects.using(f.DB).count() == 1
+    assert SiteMeasurement.objects.using(f.DB).count() == 1
 
     conflict = post(api_client, body(r_ohm=50_000))
     assert conflict.status_code == 409
@@ -319,7 +325,7 @@ def test_invalid_measurements_are_422_with_the_field(api_client, site, changes, 
     assert response.status_code == 422
     assert response.json()["fehler"] == "ungueltig"
     assert response.json()["feld"] == field
-    assert not ProgeoSiteMeasurement.objects.using(f.DB).exists()
+    assert not SiteMeasurement.objects.using(f.DB).exists()
 
 
 def test_optional_fields_may_be_null(api_client, site):
@@ -349,8 +355,8 @@ def test_factory_app_creates_and_updates_sensors(api_client, site):
 
     assert response.status_code == 200
     assert response.json() == {"angelegt": 1, "aktualisiert": 1}
-    assert ProgeoFactorySensor.objects.using(f.DB).get(sensor="000123").r_werk_ohm == 88200
-    assert ProgeoFactorySensor.objects.using(f.DB).get(sensor="000124").updated_by == staff
+    assert FactorySensor.objects.using(f.DB).get(sensor="000123").r_werk_ohm == 88200
+    assert FactorySensor.objects.using(f.DB).get(sensor="000124").updated_by == staff
 
 
 def test_factory_app_is_all_or_nothing_and_staff_only(api_client, site):
@@ -365,7 +371,7 @@ def test_factory_app_is_all_or_nothing_and_staff_only(api_client, site):
 
     assert response.status_code == 422
     assert response.json()["feld"] == "sensoren[1].r_werk_ohm"
-    assert not ProgeoFactorySensor.objects.using(f.DB).filter(sensor="000200").exists()
+    assert not FactorySensor.objects.using(f.DB).filter(sensor="000200").exists()
 
     # One tag per project.
     copied = [{"projekt": "24017", "sensor": "000300", "tag_uid": "04A1B2C3D4E5F6", "r_werk_ohm": 90000}]
@@ -376,8 +382,8 @@ def test_factory_app_is_all_or_nothing_and_staff_only(api_client, site):
 # -- staff page: list and history -----------------------------------------------------
 
 def test_staff_list_shows_sensors_with_their_last_measurement_and_the_counts(api_client, site):
-    second = ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000124", r_werk_ohm=90000)
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    second = FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000124", r_werk_ohm=90000)
+    FactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
     post(api_client, body(mess_id=str(uuid.uuid4()), r_ohm=70_000))
     post(api_client, body(mess_id=str(uuid.uuid4())))  # the newer one counts
     post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000124", r_ohm=None, r_status="offen"))
@@ -401,7 +407,7 @@ def test_staff_list_shows_sensors_with_their_last_measurement_and_the_counts(api
 
 
 def test_staff_list_filters_by_project(api_client, site):
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=7099, sensor="000001", r_werk_ohm=88000)
     api_client.force_authenticate(user=f.make_user(staff=True))
 
     data = api_client.get("/v1/werk/sensoren/", {"projekt": "7099"}).json()
@@ -416,7 +422,7 @@ def test_staff_list_shows_measurements_without_factory_values(api_client, site):
     post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000999"))
     post(api_client, body(mess_id=str(uuid.uuid4()), sensor="000777"))
     # Created afterwards: the measurement stays unmatched, but the page says so.
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000777", r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000777", r_werk_ohm=88000)
     api_client.force_authenticate(user=f.make_user(staff=True))
 
     data = api_client.get("/v1/werk/sensoren/").json()
@@ -433,7 +439,7 @@ def test_staff_list_shows_measurements_without_factory_values(api_client, site):
 def test_staff_history_of_a_sensor(api_client, site):
     post(api_client, body(mess_id=str(uuid.uuid4()), r_ohm=70_000, tag_uid="04FFFFFFFFFFFF"))
     post(api_client, body(mess_id=str(uuid.uuid4())))
-    factory = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000123")
+    factory = FactorySensor.objects.using(f.DB).get(sensor="000123")
     api_client.force_authenticate(user=f.make_user(staff=True))
 
     data = api_client.get(f"/v1/werk/sensoren/{factory.pk}/messungen/").json()
@@ -447,7 +453,7 @@ def test_staff_history_of_a_sensor(api_client, site):
 
 
 def test_staff_list_and_history_are_staff_only(api_client, site):
-    factory = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000123")
+    factory = FactorySensor.objects.using(f.DB).get(sensor="000123")
     # The installer has the app's permission - not the staff page.
     response = api_client.get("/v1/werk/sensoren/")
     assert response.status_code == 403
@@ -473,7 +479,7 @@ def test_import_command_reads_the_csv(tmp_path):
 
     call_command("import_factory_sensors", str(path))
 
-    assert set(ProgeoFactorySensor.objects.using(f.DB).filter(project_id=7099)
+    assert set(FactorySensor.objects.using(f.DB).filter(project_id=7099)
                .values_list("sensor", "r_werk_ohm")) == {("001429", 88000), ("001430", 89000)}
 
 
@@ -481,7 +487,7 @@ def test_import_command_reads_the_csv(tmp_path):
 
 def test_airtable_copy_links_the_dm_sensor_and_remembers_its_row(api_client, site, monkeypatch):
     post(api_client, body())
-    measurement = ProgeoSiteMeasurement.objects.using(f.DB).get()
+    measurement = SiteMeasurement.objects.using(f.DB).get()
     calls = []
 
     class FakeTable:

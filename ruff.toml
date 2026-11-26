@@ -4,6 +4,8 @@
 # Migrations are generated (or squashed) and never edited afterwards: their
 # import order is Django's.
 "progeo/migrations/*" = ["RUF012", "I001"]
+"progeo/werk/migrations/*" = ["RUF012", "I001"]
+"progeo/werk/models.py" = ["RUF012"]
 "progeo/router.py" = ["RUF012"]
 "progeo/v1/admin.py" = ["RUF012"]
 "progeo/v1/models.py" = ["RUF012"]

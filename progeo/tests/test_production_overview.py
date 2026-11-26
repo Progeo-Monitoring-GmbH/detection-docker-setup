@@ -24,14 +24,14 @@ from progeo.tests.test_production import (  # noqa: F401 - the fixtures
     sensor_record,
     worker,
 )
-from progeo.v1.models import ProgeoProductionEntry, ProgeoRoll
+from progeo.werk.models import ProductionEntry, Roll
 
 OVERVIEW = "/v1/werk/produktion/"
 QS = "/v1/werk/produktion/qs/"
 
 
 def stored(number):
-    return ProgeoProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(number))
+    return ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(number))
 
 
 def reading(ohm, status="ok"):
@@ -308,8 +308,8 @@ def test_overview_lists_orders_and_filters_by_one(api_client, worker, manager):
 
 
 def test_overview_lists_the_rolls_with_their_sensors(api_client, worker, manager):
-    ProgeoRoll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=52.5)
-    ProgeoRoll.objects.using(f.DB).create(nummer="VL-0031", typ="vorlauf", nennlaenge_m=1000)
+    Roll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=52.5)
+    Roll.objects.using(f.DB).create(nummer="VL-0031", typ="vorlauf", nennlaenge_m=1000)
     put_entries(api_client, [entry(1), entry(2), entry(3, messband_rolle="MB-0142")])
     api_client.force_authenticate(user=manager)
 

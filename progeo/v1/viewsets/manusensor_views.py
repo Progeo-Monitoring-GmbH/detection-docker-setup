@@ -2,9 +2,9 @@
 progeo-manusensor). Every error is {"fehler", "meldung"[, "feld"]}, as the
 app reads it - not the {"success", "reason"} of the other views.
 
-- GET  /v1/location/<projekt>/sensor/<sensor>/   (or .../sensor/?tag_uid=)
-- GET  /v1/location/<projekt>/sensor/   every factory sensor of the project
-- POST /v1/location/<projekt>/messungen
+- GET  /v1/werk/baustelle/<projekt>/sensor/<sensor>/   (or .../sensor/?tag_uid=)
+- GET  /v1/werk/baustelle/<projekt>/sensor/   every factory sensor of the project
+- POST /v1/werk/baustelle/<projekt>/messungen
   module_manusensor_enabled and access to the location of the project number.
 - GET  /v1/werk/projekte/   the projects with factory sensors whose location
   the user may open - module_manusensor_enabled, the same location access.

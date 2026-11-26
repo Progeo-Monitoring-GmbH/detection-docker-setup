@@ -8,7 +8,7 @@ import pytest
 from progeo.helper import airtable_dm_sensors as dm
 from progeo.helper import manusensor
 from progeo.tests import factories as f
-from progeo.v1.models import ProgeoFactorySensor, ProgeoSiteMeasurement
+from progeo.werk.models import FactorySensor, SiteMeasurement
 
 PROJECT = 7024
 
@@ -88,11 +88,11 @@ def test_project_and_production_order_of_a_row():
 # -- the plan -----------------------------------------------------------------------
 
 def test_plan_creates_skips_and_links():
-    factory_only = ProgeoFactorySensor(pk=1, project_id=PROJECT, sensor="000020", r_werk_ohm=88000)
-    imported = ProgeoFactorySensor(pk=2, project_id=PROJECT, sensor="000030", airtable_record_id="recC")
-    taken = ProgeoFactorySensor(pk=3, project_id=PROJECT, sensor="000040", airtable_record_id="recOTHER",
+    factory_only = FactorySensor(pk=1, project_id=PROJECT, sensor="000020", r_werk_ohm=88000)
+    imported = FactorySensor(pk=2, project_id=PROJECT, sensor="000030", airtable_record_id="recC")
+    taken = FactorySensor(pk=3, project_id=PROJECT, sensor="000040", airtable_record_id="recOTHER",
                                 airtable_nr="40")
-    moved = ProgeoFactorySensor(pk=4, project_id=PROJECT, sensor="000050", airtable_record_id="recE")
+    moved = FactorySensor(pk=4, project_id=PROJECT, sensor="000050", airtable_record_id="recE")
     records = [
         record("recA", "10"),
         record("recB", "20"),
@@ -139,11 +139,11 @@ def test_preview_reads_the_project_and_changes_nothing(api_client, staff, airtab
     (table, options), = airtable.calls
     assert table == "dm Sensoren"
     assert options["formula"] == "ARRAYJOIN({P-Nummer (from Produktionsauftrag)})='7024'"
-    assert not ProgeoFactorySensor.objects.using(f.DB).exists()
+    assert not FactorySensor.objects.using(f.DB).exists()
 
 
 def test_import_creates_sensors_without_r_werk_and_keeps_factory_values(api_client, staff, airtable):
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000002", band="4711",
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000002", band="4711",
                                                    tag_uid="04A1B2C3D4E5F6", r_werk_ohm=88120)
     airtable.records = [record("recA", "D_1", length=12.5), record("recB", "2")]
 
@@ -152,11 +152,11 @@ def test_import_creates_sensors_without_r_werk_and_keeps_factory_values(api_clie
     assert response.status_code == 200
     assert response.json() == {"angelegt": 1, "verknuepft": 1, "aktualisiert": 0, "unveraendert": 0,
                                "uebersprungen": 0, "projekt": "7024"}
-    new = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000001")
+    new = FactorySensor.objects.using(f.DB).get(sensor="000001")
     assert (new.r_werk_ohm, new.airtable_record_id, new.airtable_nr, new.length_m, new.production_order) == \
         (None, "recA", "D_1", 12.5, "PROD_dm-Schmalband_7024_37")
     assert new.updated_by == staff
-    linked = ProgeoFactorySensor.objects.using(f.DB).get(sensor="000002")
+    linked = FactorySensor.objects.using(f.DB).get(sensor="000002")
     assert (linked.r_werk_ohm, linked.band, linked.tag_uid, linked.airtable_record_id) == \
         (88120, "4711", "04A1B2C3D4E5F6", "recB")
 
@@ -164,8 +164,8 @@ def test_import_creates_sensors_without_r_werk_and_keeps_factory_values(api_clie
     assert api_client.post(f"/v1/werk/sensoren/airtable/{PROJECT}/").json()["unveraendert"] == 2
     airtable.records[0]["fields"]["Länge"] = 13.0
     assert api_client.post(f"/v1/werk/sensoren/airtable/{PROJECT}/").json()["aktualisiert"] == 1
-    assert ProgeoFactorySensor.objects.using(f.DB).get(sensor="000001").length_m == 13.0
-    assert ProgeoFactorySensor.objects.using(f.DB).count() == 2
+    assert FactorySensor.objects.using(f.DB).get(sensor="000001").length_m == 13.0
+    assert FactorySensor.objects.using(f.DB).count() == 2
 
 
 def test_projects_come_from_the_production_orders(api_client, staff, airtable):
@@ -175,7 +175,7 @@ def test_projects_come_from_the_production_orders(api_client, staff, airtable):
         {"id": "rec3", "fields": {"P-Nummer": ["7099"], "Objektname": ["Dach"]}},
         {"id": "rec4", "fields": {"P-Nummer": ["XXXX"]}},
     ]
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000001")
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000001")
 
     data = api_client.get("/v1/werk/sensoren/airtable/").json()
 
@@ -214,12 +214,12 @@ def test_a_sensor_without_r_werk_is_answered_unclear_and_listed(api_client):
     account = f.make_account()
     f.make_location(account, name="Halle", project_id=PROJECT)
     installer = f.make_user(perms=("module_manusensor_enabled",), accounts=[account])
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000001", airtable_record_id="recA")
+    FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000001", airtable_record_id="recA")
     api_client.force_authenticate(user=installer)
 
-    sensor = api_client.get(f"/v1/location/{PROJECT}/sensor/1/").json()
+    sensor = api_client.get(f"/v1/werk/baustelle/{PROJECT}/sensor/1/").json()
     assert sensor["r_werk_ohm"] is None
-    response = api_client.post(f"/v1/location/{PROJECT}/messungen", {
+    response = api_client.post(f"/v1/werk/baustelle/{PROJECT}/messungen", {
         "mess_id": str(uuid.uuid4()), "zeit": "2026-11-24T09:41:12Z", "projekt": str(PROJECT), "sensor": "000001",
         "identifizierung": "manuell", "ausloeser": "app", "r_ohm": 87450, "r_status": "ok",
         "geraet": {"id": "A1B2C3"}, "app": {"version": "1.0.0", "plattform": "android"},
@@ -228,7 +228,7 @@ def test_a_sensor_without_r_werk_is_answered_unclear_and_listed(api_client):
     assert response.status_code == 201
     assert (response.json()["status"], response.json()["r_werk_ohm"], response.json()["delta_prozent"]) == \
         ("unbekannt", None, None)
-    assert ProgeoSiteMeasurement.objects.using(f.DB).get().factory_sensor.sensor == "000001"
+    assert SiteMeasurement.objects.using(f.DB).get().factory_sensor.sensor == "000001"
 
     api_client.force_authenticate(user=f.make_user(staff=True))
     data = api_client.get("/v1/werk/sensoren/").json()
@@ -236,15 +236,15 @@ def test_a_sensor_without_r_werk_is_answered_unclear_and_listed(api_client):
     assert data["sensoren"][0]["airtable_id"] == "recA"
     # Measured without R_Werk: listed until it is known.
     assert [(row["sensor"], row["werkswert_vorhanden"]) for row in data["ohne_werkswert"]] == [("000001", False)]
-    ProgeoFactorySensor.objects.using(f.DB).filter(sensor="000001").update(r_werk_ohm=88000)
+    FactorySensor.objects.using(f.DB).filter(sensor="000001").update(r_werk_ohm=88000)
     data = api_client.get("/v1/werk/sensoren/").json()
     assert data["ohne_werkswert"][0]["werkswert_vorhanden"] is True
 
 
 def test_airtable_copy_uses_the_imported_row(monkeypatch):
-    factory = ProgeoFactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000051",
+    factory = FactorySensor.objects.using(f.DB).create(project_id=PROJECT, sensor="000051",
                                                              airtable_record_id="recDM51H4", airtable_nr="51 H4")
-    measurement = ProgeoSiteMeasurement.objects.using(f.DB).create(
+    measurement = SiteMeasurement.objects.using(f.DB).create(
         mess_id=uuid.uuid4(), measured_at="2026-11-24T09:41:12Z", project_id=PROJECT, sensor="000051",
         identification="manuell", trigger="app", r_status="ok", r_ohm=87450, device_id="A1B2C3",
         factory_sensor=factory, status="unbekannt", tolerance_percent=5.0, payload={},
@@ -279,9 +279,9 @@ def test_import_command(airtable, capsys):
     airtable.records = [record("recA", "1"), record("recB", "")]
 
     call_command("import_dm_sensors", "--projekt", str(PROJECT), "--dry-run")
-    assert not ProgeoFactorySensor.objects.using(f.DB).exists()
+    assert not FactorySensor.objects.using(f.DB).exists()
     call_command("import_dm_sensors")
 
-    assert list(ProgeoFactorySensor.objects.using(f.DB).values_list("project_id", "sensor")) == [(PROJECT, "000001")]
+    assert list(FactorySensor.objects.using(f.DB).values_list("project_id", "sensor")) == [(PROJECT, "000001")]
     assert "skipped" in capsys.readouterr().out
     assert "formula" not in airtable.calls[-1][1]

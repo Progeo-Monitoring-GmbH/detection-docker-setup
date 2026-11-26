@@ -82,9 +82,9 @@ def _unknown(nummer):
 
 
 def get_roll(nummer):
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
-    roll = ProgeoRoll.objects.using(DB).filter(nummer=nummer).first()
+    roll = Roll.objects.using(DB).filter(nummer=nummer).first()
     if roll is None:
         raise _unknown(nummer)
     return roll
@@ -94,9 +94,9 @@ def get_roll(nummer):
 
 def roll_list(typ=None, leer=None):
     """GET /v1/werk/rollen/?typ=&leer=0|1 - the last used first."""
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
-    rolls = ProgeoRoll.objects.using(DB).prefetch_related("fotos")
+    rolls = Roll.objects.using(DB).prefetch_related("fotos")
     if typ:
         if typ not in TYPES:
             raise invalid("typ", "typ: \"messband\" oder \"vorlauf\".")
@@ -119,7 +119,7 @@ def _bool(data, key, default=False):
 def create(data, user):
     """POST /v1/werk/rollen/ - 409 rolle_vorhanden (with the roll) if the
     number or the scanned code exists."""
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
     if not isinstance(data, dict):
         raise invalid(None, "JSON-Objekt erwartet.")
@@ -149,17 +149,17 @@ def create(data, user):
     else:
         rest = _meters(data.get("rest_m"), "rest_m")
         values["rest_m"] = rest if rest is not None else values["nennlaenge_m"]
-    duplicate = ProgeoRoll.objects.using(DB).filter(nummer=nummer).first()
+    duplicate = Roll.objects.using(DB).filter(nummer=nummer).first()
     if duplicate is None and values["code"]:
-        duplicate = ProgeoRoll.objects.using(DB).filter(code=values["code"]).first()
+        duplicate = Roll.objects.using(DB).filter(code=values["code"]).first()
     if duplicate is not None:
         raise ManuSensorError(409, "rolle_vorhanden", f"Rolle {duplicate.nummer} gibt es schon.",
                               extra={"rolle": roll_json(duplicate)})
     try:
         with transaction.atomic(using=DB):
-            roll = ProgeoRoll.objects.using(DB).create(**values)
+            roll = Roll.objects.using(DB).create(**values)
     except IntegrityError:
-        duplicate = ProgeoRoll.objects.using(DB).get(nummer=nummer)
+        duplicate = Roll.objects.using(DB).get(nummer=nummer)
         raise ManuSensorError(409, "rolle_vorhanden", f"Rolle {nummer} gibt es schon.",
                               extra={"rolle": roll_json(duplicate)}) from None
     return roll_json(roll)
@@ -167,13 +167,13 @@ def create(data, user):
 
 def find_by_code(code):
     """GET /v1/werk/rollen/suche/?code= - by the scanned code, else the number."""
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
     code = str(code or "").strip()
     if not code:
         raise invalid("code", "code fehlt.")
-    roll = ProgeoRoll.objects.using(DB).filter(code=code).first() \
-        or ProgeoRoll.objects.using(DB).filter(nummer=code).first()
+    roll = Roll.objects.using(DB).filter(code=code).first() \
+        or Roll.objects.using(DB).filter(nummer=code).first()
     if roll is None:
         raise _unknown(code)
     return roll_json(roll)
@@ -213,12 +213,12 @@ def _state_values(roll, data, prefix=""):
 def patch(nummer, data):
     """PATCH /v1/werk/rollen/<nummer>/: rest_m / metrierung_m / leer - the
     newer report wins ("am"). Answer: the roll and "ergebnis"."""
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
     if not isinstance(data, dict):
         raise invalid(None, "JSON-Objekt erwartet.")
     with transaction.atomic(using=DB):
-        roll = ProgeoRoll.objects.using(DB).select_for_update().filter(nummer=nummer).first()
+        roll = Roll.objects.using(DB).select_for_update().filter(nummer=nummer).first()
         if roll is None:
             raise _unknown(nummer)
         values = _state_values(roll, data)
@@ -233,13 +233,13 @@ def patch(nummer, data):
 def report_from_progress(row, progress, order_id):
     """A roll of a progress report: its state like PATCH; unknown or
     invalid ones are skipped (the report itself is fine)."""
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
     nummer = row.get("nummer")
     if not isinstance(nummer, str):
         return
     with transaction.atomic(using=DB):
-        roll = ProgeoRoll.objects.using(DB).select_for_update().filter(nummer=nummer.strip()).first()
+        roll = Roll.objects.using(DB).select_for_update().filter(nummer=nummer.strip()).first()
         if roll is None or (row.get("typ") and row.get("typ") != roll.typ):
             return
         try:
@@ -256,7 +256,7 @@ def add_photo(nummer, data, user):
     foto_id. Stored at most 2000 px. Answer {"foto_url"}."""
     from PIL import Image, ImageOps, UnidentifiedImageError
 
-    from progeo.v1.models import ProgeoRollPhoto
+    from progeo.werk.models import RollPhoto
 
     roll = get_roll(nummer)
     if not isinstance(data, dict):
@@ -265,7 +265,7 @@ def add_photo(nummer, data, user):
         photo_id = uuid.UUID(str(data.get("foto_id")))
     except ValueError:
         raise invalid("foto_id", "foto_id muss eine UUID sein.") from None
-    existing = ProgeoRollPhoto.objects.using(DB).filter(foto_id=photo_id).first()
+    existing = RollPhoto.objects.using(DB).filter(foto_id=photo_id).first()
     if existing is not None:
         if existing.roll_id != roll.pk:
             raise ManuSensorError(409, "foto_id_konflikt", "Diese foto_id gehört zu einer anderen Rolle.", "foto_id")
@@ -303,18 +303,18 @@ def add_photo(nummer, data, user):
         file.write(buffer.getvalue())
     try:
         with transaction.atomic(using=DB):
-            photo = ProgeoRollPhoto.objects.using(DB).create(
+            photo = RollPhoto.objects.using(DB).create(
                 roll=roll, foto_id=photo_id, datei=name, mime=mime, angelegt_von=user)
     except IntegrityError:
-        photo = ProgeoRollPhoto.objects.using(DB).get(foto_id=photo_id)
+        photo = RollPhoto.objects.using(DB).get(foto_id=photo_id)
     return {"foto_url": photo_url(photo)}
 
 
 def photo_file(photo_id):
     """(path, mime) of a photo - 404 if unknown."""
-    from progeo.v1.models import ProgeoRollPhoto
+    from progeo.werk.models import RollPhoto
 
-    photo = ProgeoRollPhoto.objects.using(DB).filter(foto_id=photo_id).first()
+    photo = RollPhoto.objects.using(DB).filter(foto_id=photo_id).first()
     path = os.path.join(photo_dir(), photo.datei) if photo else None
     if photo is None or not os.path.isfile(path):
         raise ManuSensorError(404, "foto_unbekannt", "Foto nicht gefunden.")

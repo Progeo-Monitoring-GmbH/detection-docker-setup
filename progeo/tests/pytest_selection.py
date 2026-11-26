@@ -30,7 +30,7 @@ AREA_MODULES = {
     "devices": """
         controller_qrcodes controller_wifi device_commands device_thresholds device_legacy_query
         device_lorawan device_overview device_provisioning device_statistics_api
-        firmware_update firmware_upload manusensor dm_orders production production_overview
+        firmware_update firmware_upload manusensor dm_orders production production_overview werk_app
     """,
     "exports": "exports lageplan_export",
     "integrations": """
@@ -52,7 +52,7 @@ AREA_MODULES = {
         outbound test_mail_command
     """,
     "operations": """
-        activity activity_sessions celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
+        activity activity_sessions celery_schedule clear_logs debug_toolbar deployment_settings docker_agent docker_api health logging_handler log_stream metrics
         periodic_task_skipping sentry_shutdown task_config_errors
     """,
 }

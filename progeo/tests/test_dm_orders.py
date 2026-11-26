@@ -5,7 +5,7 @@ import pytest
 
 from progeo.helper import dm_orders
 from progeo.tests import factories as f
-from progeo.v1.models import ProgeoFactorySensor
+from progeo.werk.models import FactorySensor
 
 ORDER_OPEN = {
     "id": "recORDER0000000A1",
@@ -139,7 +139,7 @@ def test_status_is_quoted_in_the_formula(airtable):
 
 
 def test_detail_by_id_or_record_id_with_sensors_and_factory_values(api_client, staff, airtable):
-    ProgeoFactorySensor.objects.using(f.DB).create(project_id=7101, sensor="000001", r_werk_ohm=88120)
+    FactorySensor.objects.using(f.DB).create(project_id=7101, sensor="000001", r_werk_ohm=88120)
 
     answer = api_client.get("/v1/werk/auftraege/PROD_dm-Breitband_7101_93/")
 

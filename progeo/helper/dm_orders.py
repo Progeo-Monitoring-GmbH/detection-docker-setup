@@ -254,14 +254,14 @@ def produced_sensors(since, order_record_id=None):
 
 
 def _with_factory_values(order, sensors):
-    """R_Werk of the sensors the factory app already stored (ProgeoFactorySensor)."""
+    """R_Werk of the sensors the factory app already stored (FactorySensor)."""
     from progeo.helper.manusensor import DB, parse_project
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     project_id = parse_project(order.get("projekt"))
     known = {}
     if project_id is not None:
-        known = dict(ProgeoFactorySensor.objects.using(DB).filter(
+        known = dict(FactorySensor.objects.using(DB).filter(
             project_id=project_id, sensor__in=[s["sensor"] for s in sensors if s["sensor"]],
         ).values_list("sensor", "r_werk_ohm"))
     for sensor in sensors:

@@ -19,17 +19,6 @@ from progeo.v1.viewsets.firmware_viewset import (
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.location_selection_viewset import LocationSelectionViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
-from progeo.v1.viewsets.manusensor_views import (
-    DmOrdersView,
-    DmOrderView,
-    DmSensorImportView,
-    DmSensorProjectsView,
-    FactorySensorMeasurementsView,
-    FactorySensorsView,
-    ManuSensorMeasurementsView,
-    ManuSensorProjectsView,
-    ManuSensorSensorView,
-)
 from progeo.v1.viewsets.notification_viewset import (
     NotificationCaseViewSet,
     NotificationLocationViewSet,
@@ -40,20 +29,6 @@ from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
 from progeo.v1.viewsets.threshold_fine_tune_viewset import ThresholdFineTuneViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
-from progeo.v1.viewsets.werk_views import (
-    ProductionEntriesView,
-    ProductionOverviewView,
-    ProductionProgressView,
-    ProductionQsView,
-    ProductionSheetReleaseView,
-    RollPhotoUploadView,
-    RollPhotoView,
-    RollSearchView,
-    RollsView,
-    RollView,
-    WerkMeView,
-    WerkUsersSyncView,
-)
 
 progeo_router = CustomRouter()
 progeo_router.register(r'account', AccountViewSet, basename='account')
@@ -120,38 +95,8 @@ threshold_fine_tune_router.register(r'', ThresholdFineTuneViewSet, basename='thr
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
-    # manuSensor app (helper/manusensor.py) - before the location routes:
-    # <projekt> is the project number, not a pk; POST .../messungen comes
-    # without the trailing slash.
-    re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/sensor/(?:(?P<sensor>[0-9]{1,6})/?)?$',
-            ManuSensorSensorView.as_view()),
-    re_path(r'^location/(?P<projekt>[A-Za-z0-9-]{1,12})/messungen/?$', ManuSensorMeasurementsView.as_view()),
-    # The app's project picker: the projects with factory sensors.
-    re_path(r'^werk/projekte/?$', ManuSensorProjectsView.as_view()),
-    re_path(r'^werk/sensoren/?$', FactorySensorsView.as_view()),
-    # The staff page (/staff/sensors/): the site measurements of a factory sensor.
-    re_path(r'^werk/sensoren/(?P<pk>\d+)/messungen/?$', FactorySensorMeasurementsView.as_view()),
-    # ... and the import of the Airtable table "dm Sensoren" (per project).
-    re_path(r'^werk/sensoren/airtable/?$', DmSensorProjectsView.as_view()),
-    re_path(r'^werk/sensoren/airtable/(?P<projekt>[0-9]{1,9})/?$', DmSensorImportView.as_view()),
-    # The dm production orders ("PA: dm" in Airtable, helper/dm_orders.py).
-    re_path(r'^werk/auftraege/?$', DmOrdersView.as_view()),
-    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/?$', DmOrderView.as_view()),
-    # The digital production record (docs/fertigung.md, v1/viewsets/werk_views.py).
-    re_path(r'^werk/ich/?$', WerkMeView.as_view()),
-    re_path(r'^werk/benutzer/sync/?$', WerkUsersSyncView.as_view()),
-    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/eintraege/?$', ProductionEntriesView.as_view()),
-    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/blaetter/(?P<blatt>[0-9]{1,5})/freigabe/?$',
-            ProductionSheetReleaseView.as_view()),
-    re_path(r'^werk/auftraege/(?P<auftrag>[^/]{1,100})/fortschritt/?$', ProductionProgressView.as_view()),
-    re_path(r'^werk/rollen/?$', RollsView.as_view()),
-    re_path(r'^werk/rollen/suche/?$', RollSearchView.as_view()),
-    re_path(r'^werk/rollen/fotos/(?P<foto_id>[0-9a-fA-F-]{36})/?$', RollPhotoView.as_view()),
-    re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/foto/?$', RollPhotoUploadView.as_view()),
-    re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/?$', RollView.as_view()),
-    # The staff page /staff/production/ (helper/production_overview.py).
-    re_path(r'^werk/produktion/?$', ProductionOverviewView.as_view()),
-    re_path(r'^werk/produktion/qs/?$', ProductionQsView.as_view()),
+    # The Werk app (progeo/werk/urls.py): manuSensor app, factory values, production record.
+    re_path(r'^werk/', include('progeo.werk.urls')),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),

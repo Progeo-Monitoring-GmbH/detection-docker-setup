@@ -138,11 +138,11 @@ def decide(data, user):
     """Staff decide the QS check of released sensors: "OK" / "Nacharbeit"
     (manual - the automatic check keeps it), "Prüfen" undecides. Copied to
     Airtable like a changed entry."""
-    from progeo.v1.models import ProgeoProductionEntry
+    from progeo.werk.models import ProductionEntry
 
     ids, status = _clean_decision(data)
     with transaction.atomic(using=DB):
-        found = ProgeoProductionEntry.objects.using(DB).select_for_update().in_bulk(ids, field_name="sensor_record_id")
+        found = ProductionEntry.objects.using(DB).select_for_update().in_bulk(ids, field_name="sensor_record_id")
         missing = [sensor_id for sensor_id in ids if sensor_id not in found]
         if missing:
             raise ManuSensorError(404, "sensor_unbekannt", "Für diese Sensoren gibt es keine Einträge.",
@@ -287,15 +287,15 @@ def _orders(entries, flagged, order_key, airtable):
     """The orders of the page: those with app entries or progress and those
     still to produce in "PA: dm". Recorded = the complete app entries plus
     the sensors produced the old way (each sensor once)."""
-    from progeo.v1.models import ProgeoProductionProgress, ProgeoProductionSheet
+    from progeo.werk.models import ProductionProgress, ProductionSheet
 
     stats = {row["order_record_id"]: row for row in entries.values("order_record_id").annotate(
         zuletzt=Max("erfasst_am"), auftrag_id=Max("order_id"))}
     app_ids = {}
     for record_id, sensor_id in entries.filter(_complete_q()).values_list("order_record_id", "sensor_record_id"):
         app_ids.setdefault(record_id, set()).add(sensor_id)
-    progress = ProgeoProductionProgress.objects.using(DB)
-    sheets = ProgeoProductionSheet.objects.using(DB)
+    progress = ProductionProgress.objects.using(DB)
+    sheets = ProductionSheet.objects.using(DB)
     if order_key:
         progress, sheets = progress.filter(order_record_id=order_key), sheets.filter(order_record_id=order_key)
         open_ids = set()
@@ -335,13 +335,13 @@ def _orders(entries, flagged, order_key, airtable):
 
 def _rolls(entries, order_key):
     from progeo.helper import rolls
-    from progeo.v1.models import ProgeoRoll
+    from progeo.werk.models import Roll
 
     used = {}
     for field in ("messband_rolle", "vorlauf_rolle"):
         for row in entries.exclude(**{f"{field}__isnull": True}).values(field).annotate(n=Count("pk")):
             used[row[field]] = used.get(row[field], 0) + row["n"]
-    register = ProgeoRoll.objects.using(DB).prefetch_related("fotos")
+    register = Roll.objects.using(DB).prefetch_related("fotos")
     if order_key:
         register = register.filter(nummer__in=list(used))
     register = register.order_by(F("zuletzt_am").desc(nulls_last=True), "-angelegt_am", "-pk")
@@ -350,10 +350,10 @@ def _rolls(entries, order_key):
 
 def overview(params):
     """GET /v1/werk/produktion/?tage=14&auftrag=<record id>."""
-    from progeo.v1.models import ProgeoProductionEntry
+    from progeo.werk.models import ProductionEntry
 
     days, order_key = _days(params.get("tage")), _order_key(params.get("auftrag"))
-    entries = ProgeoProductionEntry.objects.using(DB)
+    entries = ProductionEntry.objects.using(DB)
     if order_key:
         entries = entries.filter(order_record_id=order_key)
     initials = _Initials()

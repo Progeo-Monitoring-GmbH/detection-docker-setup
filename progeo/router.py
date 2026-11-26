@@ -124,10 +124,21 @@ class ProjectRouter:
     _warned = set()
 
     # Apps only "default" uses: the portal's OpenID Connect provider (chat
-    # login, progeo/oidc.py). Their migrations in every project database (and
-    # the template they are cloned from, and the demo) made adv_migrate crawl
-    # - there they are recorded without running.
-    DEFAULT_ONLY_APPS = {"oauth2_provider"}
+    # login, progeo/oidc.py) and the factory (progeo/werk - its rows are
+    # ProGeo's, not a project's). Their migrations in every project database
+    # (and the template they are cloned from, and the demo) made adv_migrate
+    # crawl - there they are recorded without running.
+    DEFAULT_ONLY_APPS = {"oauth2_provider", "werk"}
+
+    @classmethod
+    def default_only_db(cls, db):
+        """Whether `db` holds the DEFAULT_ONLY_APPS' tables ("default", or the
+        tests' "unit_tests") - not a project database, the template or the demo."""
+        from django.conf import settings
+
+        from progeo.helper.project_dbs import is_project_alias, template_alias
+
+        return not (is_project_alias(db) or db in (template_alias(), getattr(settings, "DEMO_DATABASE", None)))
 
     def db_for_read(self, model, **hints):
         return self._route(model, hints)
@@ -138,14 +149,8 @@ class ProjectRouter:
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         if app_label not in self.DEFAULT_ONLY_APPS:
             return None
-        from django.conf import settings
-
-        from progeo.helper.project_dbs import is_project_alias, template_alias
-
         # Not db == "default": the tests migrate their database as "unit_tests".
-        if is_project_alias(db) or db in (template_alias(), getattr(settings, "DEMO_DATABASE", None)):
-            return False
-        return None
+        return None if self.default_only_db(db) else False
 
 
 class AccountRouter:

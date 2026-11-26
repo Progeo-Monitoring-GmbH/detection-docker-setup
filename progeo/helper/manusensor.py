@@ -2,14 +2,14 @@
 installers re-measure the sensor resistance of laid smartex dm bands on the
 construction site, the backend compares it with the factory value R_Werk.
 
-- Factory values: ProgeoFactorySensor, keyed by (project number, sensor
+- Factory values: FactorySensor, keyed by (project number, sensor
   number), stored by the factory app (POST /v1/werk/sensoren/) or
   `manage.py import_factory_sensors` - store_factory_sensors().
-- GET /v1/location/<projekt>/sensor/<sensor>/ (or ?tag_uid=): the factory
+- GET /v1/werk/baustelle/<projekt>/sensor/<sensor>/ (or ?tag_uid=): the factory
   values of a sensor - sensor_info(); with neither, every sensor of the
   project - project_sensors(). GET /v1/werk/projekte/: the projects with
   factory sensors - project_counts().
-- POST /v1/location/<projekt>/messungen: a site measurement - validated
+- POST /v1/werk/baustelle/<projekt>/messungen: a site measurement - validated
   (validate_measurement), stored idempotently by its mess_id
   (record_measurement) and answered with the status (evaluate).
 - Copied to Airtable afterwards (push_to_airtable, celery), so a slow Airtable
@@ -92,16 +92,16 @@ def normalize_tag_uid(value):
 # ---------------------------------------------------------------------------- factory values
 
 def find_factory_sensor(project_id, sensor=None, tag_uid=None):
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
-    rows = ProgeoFactorySensor.objects.using(DB).filter(project_id=project_id)
+    rows = FactorySensor.objects.using(DB).filter(project_id=project_id)
     if sensor is not None:
         return rows.filter(sensor=sensor).first()
     return rows.filter(tag_uid=tag_uid).first()
 
 
 def sensor_info(factory):
-    """GET /v1/location/<projekt>/sensor/<sensor>/: what the factory knows."""
+    """GET /v1/werk/baustelle/<projekt>/sensor/<sensor>/: what the factory knows."""
     return {
         "projekt": str(factory.project_id),
         "sensor": factory.sensor,
@@ -152,7 +152,7 @@ def store_factory_sensors(rows, user=None):
     JSON: projekt, sensor, band, tag_uid, r_werk_ohm, gemessen_am) - all or
     none: the first invalid row raises ManuSensorError (422, its field).
     Returns {"angelegt": n, "aktualisiert": n}."""
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     if not isinstance(rows, list) or not rows:
         raise invalid("sensoren", "Liste der Sensoren fehlt.")
@@ -164,7 +164,7 @@ def store_factory_sensors(rows, user=None):
     try:
         with transaction.atomic(using=DB):
             for project_id, sensor, values in parsed:
-                _row, new = ProgeoFactorySensor.objects.using(DB).update_or_create(
+                _row, new = FactorySensor.objects.using(DB).update_or_create(
                     project_id=project_id, sensor=sensor, defaults={**values, "updated_by": user},
                 )
                 created += new
@@ -214,13 +214,13 @@ def _with_newest_measurement(sensors):
     number of its site measurements (`measurements`)."""
     from django.db.models import Count, OuterRef, Subquery
 
-    from progeo.v1.models import ProgeoSiteMeasurement
+    from progeo.werk.models import SiteMeasurement
 
-    newest = ProgeoSiteMeasurement.objects.using(DB).filter(factory_sensor=OuterRef("pk")).order_by("-pk")
+    newest = SiteMeasurement.objects.using(DB).filter(factory_sensor=OuterRef("pk")).order_by("-pk")
     sensors = list(sensors.annotate(
         last_pk=Subquery(newest.values("pk")[:1]), measurements=Count("site_measurements"),
     ))
-    last = ProgeoSiteMeasurement.objects.using(DB).select_related("user").in_bulk(
+    last = SiteMeasurement.objects.using(DB).select_related("user").in_bulk(
         [sensor.last_pk for sensor in sensors if sensor.last_pk]
     )
     return [(sensor, last.get(sensor.last_pk)) for sensor in sensors]
@@ -229,7 +229,7 @@ def _with_newest_measurement(sensors):
 def factory_sensor_row(sensor, measurement):
     """A factory sensor (from _with_newest_measurement) with its newest site
     measurement: a row of GET /v1/werk/sensoren/ and of the app's list
-    GET /v1/location/<projekt>/sensor/."""
+    GET /v1/werk/baustelle/<projekt>/sensor/."""
     return {
         "id": sensor.pk,
         "projekt": str(sensor.project_id),
@@ -248,12 +248,12 @@ def factory_sensor_row(sensor, measurement):
 
 
 def project_sensors(project_id):
-    """GET /v1/location/<projekt>/sensor/ (the app, neither number nor tag):
+    """GET /v1/werk/baustelle/<projekt>/sensor/ (the app, neither number nor tag):
     every factory sensor of the project with its newest site measurement, by
     number - the rows of the staff page. No paging."""
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
-    sensors = ProgeoFactorySensor.objects.using(DB).filter(project_id=project_id).order_by("sensor")
+    sensors = FactorySensor.objects.using(DB).filter(project_id=project_id).order_by("sensor")
     return {
         "projekt": str(project_id),
         "toleranz_prozent": tolerance_percent(),
@@ -266,10 +266,10 @@ def project_counts():
     project with factory sensors - one query (GET /v1/werk/projekte/)."""
     from django.db.models import Count, Q
 
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     rows = (
-        ProgeoFactorySensor.objects.using(DB).values("project_id")
+        FactorySensor.objects.using(DB).values("project_id")
         .annotate(
             sensors=Count("pk", distinct=True),
             measured=Count("pk", distinct=True, filter=Q(site_measurements__isnull=False)),
@@ -285,11 +285,11 @@ def staff_overview(project_id=None):
     with its newest site measurement, the site measurements without factory
     values (no sensor, or one without R_Werk), the counts and the project
     numbers there are."""
-    from progeo.v1.models import ProgeoFactorySensor, ProgeoSiteMeasurement
+    from progeo.werk.models import FactorySensor, SiteMeasurement
 
-    sensors = ProgeoFactorySensor.objects.using(DB).order_by("project_id", "sensor")
+    sensors = FactorySensor.objects.using(DB).order_by("project_id", "sensor")
     # Answered without R_Werk: an unknown sensor or one imported without it.
-    unmatched = ProgeoSiteMeasurement.objects.using(DB).filter(r_werk_ohm__isnull=True).select_related("user")
+    unmatched = SiteMeasurement.objects.using(DB).filter(r_werk_ohm__isnull=True).select_related("user")
     if project_id is not None:
         sensors = sensors.filter(project_id=project_id)
         unmatched = unmatched.filter(project_id=project_id)
@@ -304,12 +304,12 @@ def staff_overview(project_id=None):
         rows.append(factory_sensor_row(sensor, measurement))
     # R_Werk known after the measurement: it stays unmatched (it was answered
     # without R_Werk) - the page says the values exist now.
-    known = set(ProgeoFactorySensor.objects.using(DB).filter(
+    known = set(FactorySensor.objects.using(DB).filter(
         project_id__in={m.project_id for m in unmatched}, r_werk_ohm__isnull=False,
     ).values_list("project_id", "sensor"))
     projects = sorted(
-        set(ProgeoFactorySensor.objects.using(DB).values_list("project_id", flat=True))
-        | set(ProgeoSiteMeasurement.objects.using(DB).values_list("project_id", flat=True))
+        set(FactorySensor.objects.using(DB).values_list("project_id", flat=True))
+        | set(SiteMeasurement.objects.using(DB).values_list("project_id", flat=True))
     )
     return {
         "sensoren": rows,
@@ -325,9 +325,9 @@ def staff_overview(project_id=None):
 def sensor_history(factory_pk):
     """GET /v1/werk/sensoren/<pk>/messungen/ (staff): the site measurements of
     a factory sensor, newest first - 404 for an unknown one."""
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
-    factory = ProgeoFactorySensor.objects.using(DB).filter(pk=factory_pk).first()
+    factory = FactorySensor.objects.using(DB).filter(pk=factory_pk).first()
     if factory is None:
         raise ManuSensorError(404, "sensor_unbekannt", "Sensor nicht gefunden")
     measurements = factory.site_measurements.using(DB).select_related("user").order_by("-pk")
@@ -365,7 +365,7 @@ def _optional_text(data, key, field, length):
 
 
 def validate_measurement(data, project_id):
-    """The body of POST /v1/location/<projekt>/messungen, checked against the
+    """The body of POST /v1/werk/baustelle/<projekt>/messungen, checked against the
     SPEC - the cleaned values, or ManuSensorError (422 with the field)."""
     if not isinstance(data, dict):
         raise invalid(None, "JSON-Objekt erwartet.")
@@ -479,17 +479,17 @@ def record_measurement(data, project_id, location, user):
     (measurement, created). A measurement already stored under its mess_id
     with the same body is answered again (created False); with another body
     it is refused (409 mess_id_konflikt)."""
-    from progeo.v1.models import ProgeoSiteMeasurement
+    from progeo.werk.models import SiteMeasurement
 
     cleaned = validate_measurement(data, project_id)
-    existing = ProgeoSiteMeasurement.objects.using(DB).filter(mess_id=cleaned["mess_id"]).first()
+    existing = SiteMeasurement.objects.using(DB).filter(mess_id=cleaned["mess_id"]).first()
     if existing is not None:
         return _resent(existing, data), False
     factory = find_factory_sensor(project_id, sensor=cleaned["sensor"])
     verdict = evaluate(factory, cleaned["r_status"], cleaned["r_ohm"], cleaned["tag_uid"])
     try:
         with transaction.atomic(using=DB):
-            measurement = ProgeoSiteMeasurement.objects.using(DB).create(
+            measurement = SiteMeasurement.objects.using(DB).create(
                 **cleaned,
                 project_id=project_id,
                 location_pk=getattr(location, "pk", None),
@@ -500,7 +500,7 @@ def record_measurement(data, project_id, location, user):
             )
     except IntegrityError:
         # The same mess_id arrived twice at once (the app's resend timer).
-        existing = ProgeoSiteMeasurement.objects.using(DB).get(mess_id=cleaned["mess_id"])
+        existing = SiteMeasurement.objects.using(DB).get(mess_id=cleaned["mess_id"])
         return _resent(existing, data), False
     transaction.on_commit(lambda: queue_airtable_push(measurement.pk), using=DB)
     return measurement, True
@@ -596,10 +596,10 @@ def push_to_airtable(measurement_pk):
     the one it has). Errors are kept on the measurement (airtable_error) -
     push_pending_to_airtable tries again. True when it arrived."""
     from progeo.helper.airtable import AirtableHelper
-    from progeo.v1.models import ProgeoSiteMeasurement
+    from progeo.werk.models import SiteMeasurement
 
     measurement = (
-        ProgeoSiteMeasurement.objects.using(DB).select_related("user", "factory_sensor")
+        SiteMeasurement.objects.using(DB).select_related("user", "factory_sensor")
         .filter(pk=measurement_pk).first()
     )
     helper = AirtableHelper()
@@ -616,10 +616,10 @@ def push_to_airtable(measurement_pk):
         else:
             record = table.create(fields, typecast=True)
     except Exception as error:  # noqa: BLE001 - kept for the next try
-        ProgeoSiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(airtable_error=str(error)[:2000])
+        SiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(airtable_error=str(error)[:2000])
         elog(f"Airtable copy of site measurement {measurement.pk} failed: {error}", tag="[MANUSENSOR]")
         return False
-    ProgeoSiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(
+    SiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(
         airtable_record_id=record["id"], airtable_synced_at=timezone.now(), airtable_error=None,
     )
     return True
@@ -628,10 +628,10 @@ def push_to_airtable(measurement_pk):
 def push_pending_to_airtable(limit=200):
     """The site measurements not in Airtable yet (a failed or lost copy) -
     the oldest first. Returns how many arrived."""
-    from progeo.v1.models import ProgeoSiteMeasurement
+    from progeo.werk.models import SiteMeasurement
 
     pending = (
-        ProgeoSiteMeasurement.objects.using(DB).filter(airtable_record_id__isnull=True)
+        SiteMeasurement.objects.using(DB).filter(airtable_record_id__isnull=True)
         .order_by("pk").values_list("pk", flat=True)[:limit]
     )
     return sum(push_to_airtable(pk) for pk in pending)

@@ -279,6 +279,8 @@ INSTALLED_APPS = [
 
     "colorfield",
     "progeo",
+    # ProGeo's factory data linked with Airtable - "default" only (progeo/router.py).
+    "progeo.werk",
 ]
 # The debug toolbar shows SQL, settings and headers: only with DEBUG on.
 if not DEBUG:
@@ -317,7 +319,8 @@ DEBUG_TOOLBAR_CONFIG = {
 
 DEBUG_TOOLBAR_PANELS = [
     'debug_toolbar.panels.timer.TimerPanel',
-    'debug_toolbar.panels.history.HistoryPanel',
+    # The toolbar's history panel, without its 500 on an ASGI request whose body is closed.
+    'progeo.debug.HistoryPanel',
     #'debug_toolbar.panels.versions.VersionsPanel',
     #'debug_toolbar.panels.settings.SettingsPanel',
     #'debug_toolbar.panels.headers.HeadersPanel',

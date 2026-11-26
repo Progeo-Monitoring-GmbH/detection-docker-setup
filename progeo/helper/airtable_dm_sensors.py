@@ -1,4 +1,4 @@
-"""Creates dm sensors (ProgeoFactorySensor) from the Airtable table
+"""Creates dm sensors (FactorySensor) from the Airtable table
 "dm Sensoren" - the staff page /staff/sensors/ (per project, with a preview)
 and `manage.py import_dm_sensors` (every project).
 
@@ -149,7 +149,7 @@ def _skip(row, reason, conflict=()):
 
 def plan(records, existing):
     """What importing `records` (Airtable records of "dm Sensoren") does,
-    given the `existing` ProgeoFactorySensor rows of their projects (and the
+    given the `existing` FactorySensor rows of their projects (and the
     ones linked to them): one row each (see the module), in Airtable's order.
     Rows the import changes keep the sensor in "_sensor" (not sent)."""
     rows = [_row(record) for record in records]
@@ -217,7 +217,7 @@ def _airtable_values(row):
 def apply(rows, user=None):
     """Carries out the plan `rows` - all or none. Returns the counts
     {"angelegt", "verknuepft", "aktualisiert", "unveraendert", "uebersprungen"}."""
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     user = user if getattr(user, "pk", None) else None
     result = {"angelegt": 0, "verknuepft": 0, "aktualisiert": 0, "unveraendert": 0, "uebersprungen": 0}
@@ -226,7 +226,7 @@ def apply(rows, user=None):
         if row["aktion"] == "uebersprungen":
             result["uebersprungen"] += 1
         elif row["aktion"] == "neu":
-            new.append(ProgeoFactorySensor(
+            new.append(FactorySensor(
                 project_id=int(row["projekt"]), sensor=row["sensor"], updated_by=user, **_airtable_values(row),
             ))
         else:
@@ -245,7 +245,7 @@ def apply(rows, user=None):
             # Not bulk_update: auto_now (updated_at) is only set by save().
             for sensor in changed:
                 sensor.save(using=DB, update_fields=[*MODEL_FIELDS, "updated_by", "updated_at"])
-            ProgeoFactorySensor.objects.using(DB).bulk_create(new, batch_size=500)
+            FactorySensor.objects.using(DB).bulk_create(new, batch_size=500)
     except IntegrityError as error:
         # Someone created one of the sensors since the preview.
         raise ManuSensorError(409, "gleichzeitig_geaendert",
@@ -266,10 +266,10 @@ def fetch_records(project_id=None, helper=None):
 
 
 def _existing(project_ids, record_ids):
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     query = Q(project_id__in=project_ids) | Q(airtable_record_id__in=record_ids)
-    return list(ProgeoFactorySensor.objects.using(DB).filter(query))
+    return list(FactorySensor.objects.using(DB).filter(query))
 
 
 def plan_project(project_id, helper=None):
@@ -300,7 +300,7 @@ def import_project(project_id, user=None, helper=None):
 def projects(helper=None):
     """GET /v1/werk/sensoren/airtable/: the projects with production orders
     in Airtable ("PA: dm") - number, object, sensors there, sensors here."""
-    from progeo.v1.models import ProgeoFactorySensor
+    from progeo.werk.models import FactorySensor
 
     helper = _helper(helper)
     orders = _airtable(lambda: helper.table(_orders_table()).all(fields=[ORDER_PROJECT, ORDER_OBJECT, ORDER_SENSORS]))
@@ -317,7 +317,7 @@ def projects(helper=None):
             if name and name not in entry["objekte"]:
                 entry["objekte"].append(name)
     here = dict(
-        ProgeoFactorySensor.objects.using(DB).filter(project_id__in=found)
+        FactorySensor.objects.using(DB).filter(project_id__in=found)
         .values_list("project_id").annotate(count=Count("pk")).values_list("project_id", "count")
     )
     return {

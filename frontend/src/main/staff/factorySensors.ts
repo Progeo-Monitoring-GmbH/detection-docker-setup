@@ -6,9 +6,9 @@
 
 export const SENSORS_URL = '/v1/werk/sensoren/';
 export const historyUrl = (id: number) => `${SENSORS_URL}${id}/messungen/`;
-/** The Django admin of a factory sensor - corrections are made there. */
+/** The Django admin of a factory sensor (app werk) - corrections are made there. */
 export const adminUrl = (id: number) =>
-  `/aadmin/progeo/progeofactorysensor/${id}/change/`;
+  `/aadmin/werk/factorysensor/${id}/change/`;
 
 export type MeasurementStatus = 'ok' | 'pruefen' | 'defekt' | 'unbekannt';
 export type SensorStatus = MeasurementStatus | 'ungemessen';
