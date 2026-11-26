@@ -89,10 +89,22 @@ und der Auftrag zusätzlich:
 "blaetter": 92,
 "freigegebene_blaetter": [1, 2],
 "eintraege_erfasst": 47,            // Sensoren mit ①②③ (aus der Datenbank, nicht gepuffert)
+"produziert_papier": 120,           // in Airtable „Produziert“, ohne App-Eintrag (Papierprotokoll)
 "geraet": {"id": "a1b2…", "benutzer": "m.muster", "zuletzt": "2026-11-26T09:41:12Z"}  // oder null
 ```
 
 Diese Zusatzfelder kommen aus der Datenbank und werden **nicht** 60 s gepuffert.
+
+### 2.2 Erweiterung von `GET /v1/werk/auftraege/`
+
+Jeder Auftrag der Liste bekommt ebenfalls `eintraege_erfasst` (Datenbank, nicht gepuffert) und
+`produziert_papier` (`helper/production.py` `augment_list`), damit die App den Fortschritt auch für
+Sensoren zeigt, die noch auf Papier produziert wurden:
+
+- Auftrag „Produziert“: alle verknüpften Sensoren ohne vollständigen App-Eintrag (keine Airtable-Abfrage).
+- Sonst: die Sensoren mit Produktionsstatus „Produziert“ dieser Aufträge (eine Airtable-Abfrage je
+  10 Aufträge, 60 s gepuffert) ohne vollständigen App-Eintrag.
+- Antwortet Airtable dabei nicht, ist `produziert_papier` `null`; die Liste antwortet trotzdem.
 
 ## 3. Neue Endpunkte
 

@@ -1,6 +1,8 @@
 """The dm production orders for the manuSensor app (helper/dm_orders.py,
 GET /v1/werk/auftraege/[<ID>/]) - against a fake Airtable."""
 
+import hashlib
+
 import pytest
 
 from progeo.helper import dm_orders
@@ -79,6 +81,10 @@ def _matches(record, formula):
         return f"'{fields.get('ID')}'" == formula.split("=", 1)[1]
     if formula.startswith("FIND("):
         return any(f"'{order}'" in formula for order in fields.get("Prod Auftr recID", []))
+    if formula.startswith("AND({Produktionsstatus}='Produziert', OR(FIND("):
+        # The produced sensors of the listed orders (paper count, production.augment_list).
+        return fields.get("Produktionsstatus") == "Produziert" and any(
+            f"'{order}'" in formula for order in fields.get("Prod Auftr recID", []))
     raise AssertionError(f"unexpected formula {formula}")
 
 
@@ -129,7 +135,8 @@ def test_list_by_other_status_and_all(api_client, staff, airtable):
     every = api_client.get("/v1/werk/auftraege", {"status": "alle"}).json()
     # Newest order (highest ID Nr.) first.
     assert [o["nr"] for o in every["auftraege"]] == [97, 93]
-    assert airtable.calls[-1][1] is None
+    # "alle": the orders are read without a formula.
+    assert [call for call in airtable.calls if call[0] == "PA: dm"][-1][1] is None
 
 
 def test_status_is_quoted_in_the_formula(airtable):
@@ -191,13 +198,15 @@ def test_answers_are_cached(api_client, staff, airtable, settings):
     from django.core.cache import cache
 
     settings.MANUSENSOR_ORDERS_CACHE_SECONDS = 60
-    keys = [dm_orders.cache_key("list:zu Produzieren"), dm_orders.cache_key("detail:PROD_dm-Breitband_7101_93")]
+    keys = [dm_orders.cache_key("list:zu Produzieren"), dm_orders.cache_key("detail:PROD_dm-Breitband_7101_93"),
+            dm_orders.cache_key("produced-ids:" + hashlib.sha1(b"recORDER0000000A1").hexdigest())]
     cache.delete_many(keys)
     try:
         for _ in range(2):
             assert api_client.get("/v1/werk/auftraege/").json()["anzahl"] == 1
             assert len(api_client.get("/v1/werk/auftraege/PROD_dm-Breitband_7101_93/").json()["sensoren"]) == 2
-        # One list + one order + its sensors - the second round from the cache.
-        assert len(airtable.calls) == 3
+        # One list + its produced sensors (paper count) + one order + its sensors - the second round
+        # from the cache.
+        assert len(airtable.calls) == 4
     finally:
         cache.delete_many(keys)

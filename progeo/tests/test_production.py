@@ -235,6 +235,48 @@ def test_detail_has_the_sheets_and_the_production_state(api_client, worker):
     assert detail["geraet"] is None
 
 
+def produced_on_paper(airtable, *numbers):
+    """Sensors made the old way: "Produziert" in Airtable, no entry in the app."""
+    for record in airtable.records["dm Sensoren"]:
+        if int(record["fields"]["Nr."]) in numbers:
+            record["fields"]["Produktionsstatus"] = "Produziert"
+
+
+def test_list_and_detail_count_the_app_entries_and_the_sensors_produced_on_paper(api_client, worker, airtable):
+    produced_on_paper(airtable, 1, 41, 42, 43, 44, 45)
+    # Sensor 1 has its entry in the app (released through it): not paper. Sensor 3 is not complete.
+    put_entries(api_client, [entry(1), entry(2), entry(3, r_kurzschluss=None)])
+
+    order = api_client.get("/v1/werk/auftraege/").json()["auftraege"][0]
+    detail = api_client.get(f"{BASE}/").json()
+
+    assert (order["eintraege_erfasst"], order["produziert_papier"]) == (2, 5)
+    assert (detail["eintraege_erfasst"], detail["produziert_papier"]) == (2, 5)
+
+
+def test_a_produced_order_counts_every_sensor_without_an_app_entry_as_paper(api_client, worker, airtable):
+    airtable.records["PA: dm"][0]["fields"]["Produktionsstatus"] = "Produziert"
+    put_entries(api_client, [entry(1), entry(2)])
+
+    order = api_client.get("/v1/werk/auftraege/?status=Produziert").json()["auftraege"][0]
+
+    assert (order["eintraege_erfasst"], order["produziert_papier"]) == (2, SENSOR_COUNT - 2)
+
+
+def test_the_list_still_answers_when_airtable_cannot_count_the_paper_sensors(api_client, worker, monkeypatch):
+    from progeo.helper import dm_orders
+
+    def broken(order_record_ids):
+        raise ConnectionError("Airtable down")
+
+    monkeypatch.setattr(dm_orders, "fetch_produced_sensor_ids", broken)
+
+    order = api_client.get("/v1/werk/auftraege/").json()["auftraege"][0]
+
+    assert order["produziert_papier"] is None
+    assert order["eintraege_erfasst"] == 0
+
+
 # -- 3.1 / 3.2 entries -----------------------------------------------------------------
 
 def test_save_entries_and_read_them_back(api_client, worker):
