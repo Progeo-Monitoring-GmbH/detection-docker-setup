@@ -2153,6 +2153,16 @@ class ProgeoProductionEntry(models.Model):
         ProgeoProductionSheet, on_delete=models.SET_NULL, null=True, blank=True, related_name="entries"
     )
     nach_freigabe_geaendert = models.BooleanField(default=False)
+    # The sensor's lengths in "dm Sensoren" when it was saved (Länge, Vorlauf
+    # gesamt) - the staff page's meters per day without asking Airtable.
+    laenge_m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    vorlauf_m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    # "QS-Prüfung" of "dm Sensoren" (helper/production_overview.py): set on
+    # release (OK / Prüfen from the values), decided by staff (qs_manuell).
+    qs_status = models.CharField(max_length=12, null=True, blank=True)
+    qs_manuell = models.BooleanField(default=False)
+    qs_von = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    qs_am = models.DateTimeField(null=True, blank=True)
     # Airtable "dm Sensoren" - only released entries are copied.
     airtable_synced_at = models.DateTimeField(null=True, blank=True)
     airtable_error = models.TextField(null=True, blank=True)

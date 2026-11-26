@@ -11,6 +11,7 @@ import {
   Activity,
   Bell,
   Calendar3,
+  ClipboardCheck,
   Database,
   DatabaseCheck,
   Images,
@@ -298,6 +299,14 @@ const LocationSidebar = ({
       icon: Rulers,
       to: '/staff/sensors/',
       visible: can(routeRule('/staff/sensors/')),
+    },
+    {
+      // The production record dm: progress, bad values, QS check, rolls.
+      key: 'production',
+      label: t('sidebar_production'),
+      icon: ClipboardCheck,
+      to: '/staff/production/',
+      visible: can(routeRule('/staff/production/')),
     },
     {
       // How the project databases are used - which are dead.

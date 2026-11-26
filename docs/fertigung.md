@@ -293,8 +293,28 @@ Vorhandene Felder, die die Freigabe setzt: Produktionsstatus, Produziert am, Pro
 | App-Fortschritt | Text, z. B. „67 / 1834 · Blatt 4 · m.muster · 26.11. 10:41“ |
 | Freigegebene Blätter | Zahl |
 
-Make: Für Blätter mit Protokoll-Quelle „App“ entfällt „Produktionsprotokoll vom Scanner“; ob und wie der
-QS-Schritt („QS-Prüfung“) App-Protokolle prüft, ist **offen** (eigener Punkt).
+Make: Für Blätter mit Protokoll-Quelle „App“ entfällt „Produktionsprotokoll vom Scanner“.
+
+### 4.1 QS-Prüfung und Staff-Seite `/staff/production/` (`helper/production_overview.py`)
+
+Die QS-Prüfung der App-Protokolle macht das Backend (die „Automatik“ aus der Feldbeschreibung von
+„QS-Prüfung“), Staff entscheidet den Rest:
+- Werte wie in der App (`SheetRules.kt` in progeo-manusensor – beide gleich halten): ① und ② 80–120 kΩ,
+  sonst **Warnung**; ③ unter 150 Ω, sonst **Fehler**; „offen“ ist ein Fehler.
+- Bei der **Freigabe** eines Blatts: Sensoren nur mit guten Werten → „QS-Prüfung“ = **OK**, sonst
+  **Prüfen**. Ändert sich ein freigegebener Sensor, wird neu geprüft – ein **manuelles OK bleibt**, eine
+  manuelle Nacharbeit wird nach neuer Messung wieder automatisch (Nacharbeit erledigt).
+- Staff entscheidet auf `/staff/production/` **OK** oder **Nacharbeit** (`qs_manuell`, „QS manuell“ ✓),
+  „Prüfen“ nimmt die Entscheidung zurück. Kopie nach „dm Sensoren“ wie ein geänderter Eintrag.
+- Entwürfe (Blatt nicht freigegeben) haben keine QS-Prüfung (409 `nicht_freigegeben`).
+
+Endpunkte (nur Staff/Superuser):
+- `GET /v1/werk/produktion/?tage=14&auftrag=<record id>` – Kennzahlen, Messband-/Vorlauf-Meter pro Tag
+  (vollständige Einträge nach `erfasst_am`, Längen aus „dm Sensoren“ beim Speichern in
+  `laenge_m`/`vorlauf_m`), Fehler und Warnungen mit QS-Stand, Aufträge, Rollen mit Anzahl Sensoren.
+- `POST /v1/werk/produktion/qs/` `{"sensor_record_ids": [...], "qs": "OK" | "Nacharbeit" | "Prüfen"}`.
+
+Airtable „dm Sensoren“ (vorhandene Felder): **QS-Prüfung** (OK / Nacharbeit / Prüfen), **QS manuell**.
 
 ## 5. Tests (pytest, wie `tests/test_dm_orders.py` gegen ein Fake-Airtable)
 
@@ -309,5 +329,6 @@ QS-Schritt („QS-Prüfung“) App-Protokolle prüft, ist **offen** (eigener Pun
 
 ## 6. Offen
 
-1. QS-Prüfung für App-Protokolle (Make-Szenario) – später zu klären.
+1. QS-Prüfung für App-Protokolle: im Backend (4.1). Offen nur, ob das Make-Szenario App-Protokolle
+   überspringen muss, damit es die QS-Prüfung nicht überschreibt.
 2. Welche Codes die Rollenetiketten der Lieferanten tragen (das Backend speichert den rohen Inhalt).

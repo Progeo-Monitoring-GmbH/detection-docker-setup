@@ -78,6 +78,8 @@ describe('APP_ROUTE_ACCESS', () => {
         '/map/',
         // Any staff, as its endpoints (/v1/werk/sensoren/).
         '/staff/sensors/',
+        // Any staff, as /v1/werk/produktion/.
+        '/staff/production/',
       ].sort(),
     );
 

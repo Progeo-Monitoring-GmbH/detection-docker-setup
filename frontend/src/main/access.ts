@@ -83,6 +83,8 @@ export const APP_ROUTE_ACCESS = {
   '/staff/thresholds/': staffPermission('module_admin_thresholds'),
   // dm sensors' factory values and site measurements - staff, as /v1/werk/sensoren/.
   '/staff/sensors/': STAFF,
+  // The production record dm and its QS check - staff, as /v1/werk/produktion/.
+  '/staff/production/': STAFF,
   '/escalations/:id': staffPermission('module_escalations_enabled'),
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
   '/backup/:account/overview/': allOf(

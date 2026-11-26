@@ -10,12 +10,14 @@ helper/werk_users.py); errors as {"fehler", "meldung"[, "feld"]}.
   GET /v1/werk/rollen/suche/?code=, POST /v1/werk/rollen/<nummer>/foto/,
   GET /v1/werk/rollen/fotos/<foto_id>/
 - POST /v1/werk/benutzer/sync/   (staff) the accounts from Airtable "Ressourcen"
+- GET  /v1/werk/produktion/      (staff) the overview of the staff page /staff/production/
+- POST /v1/werk/produktion/qs/   (staff) the QS check of produced sensors
 """
 
 from django.http import FileResponse
 from rest_framework.response import Response
 
-from progeo.helper import production, rolls, werk_users
+from progeo.helper import production, production_overview, rolls, werk_users
 from progeo.helper.manusensor import ManuSensorError
 from progeo.v1.viewsets.manusensor_views import _error, _factory, _ManuSensorView
 
@@ -146,3 +148,27 @@ class WerkUsersSyncView(_WerkView):
 
         sync_werk_users.delay()
         return Response({"ok": True}, status=202)
+
+
+def _staff(user):
+    return user.is_staff or user.is_superuser
+
+
+class ProductionOverviewView(_WerkView):
+    """The staff page /staff/production/ (helper/production_overview.py)."""
+
+    def get(self, request):
+        try:
+            self.check_user(request, _staff)
+            return Response(production_overview.overview(request.query_params))
+        except ManuSensorError as error:
+            return _error(error)
+
+
+class ProductionQsView(_WerkView):
+    def post(self, request):
+        try:
+            user = self.check_user(request, _staff)
+            return Response(production_overview.decide(_body(request), user))
+        except ManuSensorError as error:
+            return _error(error)

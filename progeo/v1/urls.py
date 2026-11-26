@@ -42,7 +42,9 @@ from progeo.v1.viewsets.threshold_fine_tune_viewset import ThresholdFineTuneView
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
 from progeo.v1.viewsets.werk_views import (
     ProductionEntriesView,
+    ProductionOverviewView,
     ProductionProgressView,
+    ProductionQsView,
     ProductionSheetReleaseView,
     RollPhotoUploadView,
     RollPhotoView,
@@ -147,6 +149,9 @@ urlpatterns = [
     re_path(r'^werk/rollen/fotos/(?P<foto_id>[0-9a-fA-F-]{36})/?$', RollPhotoView.as_view()),
     re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/foto/?$', RollPhotoUploadView.as_view()),
     re_path(r'^werk/rollen/(?P<nummer>[^/]{1,32})/?$', RollView.as_view()),
+    # The staff page /staff/production/ (helper/production_overview.py).
+    re_path(r'^werk/produktion/?$', ProductionOverviewView.as_view()),
+    re_path(r'^werk/produktion/qs/?$', ProductionQsView.as_view()),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),

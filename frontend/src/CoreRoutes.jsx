@@ -117,6 +117,9 @@ const ThresholdFineTuneView = React.lazy(
 const FactorySensorsView = React.lazy(
   () => import('./main/staff/FactorySensorsView.tsx'),
 );
+const ProductionView = React.lazy(
+  () => import('./main/staff/ProductionView.tsx'),
+);
 const ScreenReviewView = React.lazy(
   () => import('./main/ScreenReviewView.tsx'),
 );
@@ -316,6 +319,11 @@ const CoreRoutes = () => {
           <Route
             path="/staff/sensors/"
             element={guard('/staff/sensors/', <FactorySensorsView />)}
+          />
+          {/* The production record dm: progress, bad values, QS check, rolls. */}
+          <Route
+            path="/staff/production/"
+            element={guard('/staff/production/', <ProductionView />)}
           />
           <Route
             path="/review/screens/"

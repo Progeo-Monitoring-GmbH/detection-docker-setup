@@ -56,7 +56,9 @@ AIRTABLE_SENSOR_FIELDS = {
     "vorlauf_rolle": "Vorlauf-Rolle",
     "erfasst_von": "Erfasst von",
     "quelle": "Protokoll-Quelle",
-    # existing fields
+    # existing fields (QS: helper/production_overview.py)
+    "qs": "QS-Prüfung",
+    "qs_manuell": "QS manuell",
     "status": "Produktionsstatus",
     "produziert_am": "Produziert am",
     "produktionsdatum": "Produktionsdatum",
@@ -294,6 +296,7 @@ def _store_factory_value(project_id, row):
 def save_entries(key, data):
     """3.1: stores the entries of `data` - all checked first (422/409: nothing
     stored). Returns {"ergebnisse", "eintraege_erfasst"}."""
+    from progeo.helper import production_overview
     from progeo.v1.models import ProgeoProductionEntry, ProgeoProductionSheet
 
     device, rows = _clean_entries(data)
@@ -330,11 +333,15 @@ def save_entries(key, data):
                 setattr(entry, field, row[field])
             entry.order_id, entry.order_record_id = detail["auftrag_id"] or "", record_id
             entry.project_id, entry.sensor, entry.geraet_id = project_id, row["sensor"], device
+            sensor = sensors[row["sensor_record_id"]]
+            entry.laenge_m = production_overview.length(sensor.get("laenge_m"))
+            entry.vorlauf_m = production_overview.length(sensor.get("vorlauf_gesamt_m"))
             sheet = sheet_of.get(row["sensor_record_id"])
             if sheet is not None:
                 entry.sheet = sheet
                 entry.nach_freigabe_geaendert = True
                 entry.airtable_synced_at = None
+                production_overview.check(entry)
             entry.save(using=DB)
             if sheet is not None:
                 changed_after_release.append(entry.pk)
@@ -407,8 +414,9 @@ def _clean_release(data):
 
 
 def release_sheet(key, blatt, data):
-    """3.3: releases sheet `blatt` - its sensors are produced. Again the
-    same sheet: the same answer."""
+    """3.3: releases sheet `blatt` - its sensors are produced and get their
+    automatic QS check. Again the same sheet: the same answer."""
+    from progeo.helper import production_overview
     from progeo.v1.models import ProgeoProductionEntry, ProgeoProductionSheet
 
     device, ids, user, released_at, flagged = _clean_release(data)
@@ -436,8 +444,13 @@ def release_sheet(key, blatt, data):
                 sensor_record_ids=expected, blaetter_gesamt=len(sheets), freigegeben_von=user,
                 freigegeben_am=released_at, auffaellig_bestaetigt=flagged, geraet_id=device,
             )
-            ProgeoProductionEntry.objects.using(DB).filter(sensor_record_id__in=expected).update(
-                sheet=sheet, airtable_synced_at=None)
+            released = list(ProgeoProductionEntry.objects.using(DB).select_for_update().filter(
+                sensor_record_id__in=expected))
+            for entry in released:
+                entry.sheet, entry.airtable_synced_at = sheet, None
+                production_overview.check(entry)
+            ProgeoProductionEntry.objects.using(DB).bulk_update(released, [
+                "sheet", "airtable_synced_at", "qs_status", "qs_manuell", "qs_von", "qs_am"])
             transaction.on_commit(lambda: _queue("push_production_sheet", sheet.pk), using=DB)
     except IntegrityError:
         # Released twice at once (the app's resend).
@@ -527,6 +540,9 @@ def sensor_fields(entry):
     fields[names["vorlauf_rolle"]] = entry.vorlauf_rolle or ""
     fields[names["erfasst_von"]] = entry.erfasst_von.username if entry.erfasst_von else ""
     fields[names["quelle"]] = SOURCE_APP
+    if entry.qs_status:
+        fields[names["qs"]] = entry.qs_status
+        fields[names["qs_manuell"]] = entry.qs_manuell
     sheet = entry.sheet
     if sheet is not None:
         from progeo.helper.werk_users import resource_id

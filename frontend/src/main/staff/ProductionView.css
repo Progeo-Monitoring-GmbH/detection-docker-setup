@@ -1,0 +1,119 @@
+/* /staff/production/ (ProductionView). The value colours follow the
+   manuSensor app: green ok, amber warning, red bad. */
+
+:root {
+  --pr-ok: #3f7a1c;
+  --pr-ok-bg: #ebf4e3;
+  --pr-warn: #9a7208;
+  --pr-warn-bg: #fbf3de;
+  --pr-bad: #c44d26;
+  --pr-bad-bg: #fbeae4;
+  --pr-open: #1f62a3;
+  --pr-open-bg: #e6eef7;
+  --pr-none: #6e6868;
+  --pr-none-bg: #efecec;
+  --pr-track: #e6e3dc;
+  --pr-bar: #1f62a3;
+}
+
+.pr-page .pr-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-page .pr-value--ok {
+  color: var(--pr-ok);
+}
+
+.pr-page .pr-value--warn {
+  color: var(--pr-warn);
+  background: var(--pr-warn-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.pr-page .pr-value--bad {
+  color: var(--pr-bad);
+  background: var(--pr-bad-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.pr-page .pr-value--none {
+  color: var(--pr-none);
+}
+
+.pr-page .pr-qs {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.pr-page .pr-qs--ok {
+  color: var(--pr-ok);
+  background: var(--pr-ok-bg);
+}
+
+.pr-page .pr-qs--rework {
+  color: var(--pr-bad);
+  background: var(--pr-bad-bg);
+}
+
+.pr-page .pr-qs--open {
+  color: var(--pr-open);
+  background: var(--pr-open-bg);
+}
+
+.pr-page .pr-qs--draft {
+  color: var(--pr-none);
+  background: var(--pr-none-bg);
+}
+
+.pr-page .pr-count--bad {
+  color: var(--pr-bad);
+  font-weight: 700;
+}
+
+.pr-page .pr-count--warn {
+  color: var(--pr-warn);
+  font-weight: 700;
+}
+
+.pr-page .pr-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.pr-page .pr-bulk {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr-page .pr-progress-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+
+.pr-page .pr-progress {
+  display: block;
+  height: 6px;
+  width: 100%;
+  max-width: 180px;
+  border-radius: 3px;
+  background: var(--pr-track);
+  overflow: hidden;
+}
+
+.pr-page .pr-progress-bar {
+  display: block;
+  height: 100%;
+  background: var(--pr-bar);
+}
+
