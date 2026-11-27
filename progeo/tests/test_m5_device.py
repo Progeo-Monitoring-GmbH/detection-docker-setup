@@ -305,3 +305,9 @@ def test_dry_run_still_applies_with_bypass(esendex_api, esendex_configured, sett
 
     assert result["dry_run"] is True
     assert calls == []
+
+
+def test_is_provisioned_m5_ignores_a_self_reported_bundle():
+    assert m5_device.is_provisioned_m5(ProgeoDevice(hardware="M5 AIN4"))
+    assert not m5_device.is_provisioned_m5(ProgeoDevice(hardware="", firmware_bundle="m5-ain4-4.0.0"))
+    assert not m5_device.is_provisioned_m5(ProgeoDevice(hardware="smartex mx"))

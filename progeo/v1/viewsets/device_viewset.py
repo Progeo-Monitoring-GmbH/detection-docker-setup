@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from celery.exceptions import TimeoutError
 from django.utils import timezone
+from rest_framework import exceptions
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
@@ -45,6 +46,7 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.location_live import is_alarm_flag, notify_location_status
+from progeo.helper.m5_device import is_provisioned_m5
 from progeo.helper.measurement_utils import flatten_numeric_values
 from progeo.helper.project_dbs import location_db, release_connection, split_enabled
 from progeo.management.commands.patch_live import fetch_device_locations
@@ -454,13 +456,19 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             "count": len(values) // 2,
         })
 
+    def handle_exception(self, exc):
+        # Every refusal of the device SMS route answers 403 with the contract body.
+        if getattr(self, "action", None) == "device_sms" and isinstance(
+            exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed, exceptions.PermissionDenied)
+        ):
+            return Response({"success": False, "sent": False, "reason": "device token required"}, status=403)
+        return super().handle_exception(exc)
+
     @action(detail=True, url_path="sms", authentication_classes=[TransferTokenAuthentication],
             permission_classes=[IsDeviceTransferToken], methods=["POST"])
     def device_sms(self, request, pk, *args, **kwargs):
         """An M5 sends an SMS through the backend (helper/device_sms.py). The
         device is the one of its transfer token, never the body's."""
-        from progeo.helper.m5_device import is_m5
-
         def refuse(reason):
             return Response({"success": False, "sent": False, "reason": reason}, status=403)
 
@@ -471,9 +479,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             ProgeoDevice.objects.using(db_name).select_related("location").filter(raw_hash=raw_hash).first()
             if db_name else None
         )
-        if device is None or not is_m5(device):
+        if device is None or not is_provisioned_m5(device):
             return refuse("not an M5 device")
-        if str(body.get("device_hash") or raw_hash).strip() != raw_hash or str(device.location.project_id) != str(pk):
+        if str(body.get("device_hash") or "").strip() != raw_hash or str(device.location.project_id) != str(pk):
             return refuse("device mismatch")
         status, result = device_sms.send_device_sms(device, db_name, body)
         return Response({**result, "success": status == 200}, status=status)

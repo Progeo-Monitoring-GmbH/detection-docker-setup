@@ -1,5 +1,4 @@
 from datetime import timedelta
-from typing import ClassVar
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
@@ -216,8 +215,6 @@ class IsDeviceTransferToken(BasePermission):
     """A device's own transfer token (names its device in raw_data), sent as
     "Authorization: Token" - not as ?token= (it lands in access logs) and
     never staff. For what a device may only do for itself (SMS)."""
-
-    message: ClassVar[dict] = {"success": False, "sent": False, "reason": "device token required"}
 
     def has_permission(self, request, view):
         token = getattr(request, "auth", None)

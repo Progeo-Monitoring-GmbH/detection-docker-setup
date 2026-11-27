@@ -14,3 +14,9 @@ def is_m5(device) -> bool:
     if (getattr(device, "hardware", None) or "") == M5_MODEL:
         return True
     return (getattr(device, "firmware_bundle", None) or "").startswith(M5_BUNDLE_PREFIX)
+
+
+def is_provisioned_m5(device) -> bool:
+    """Whether `device` was provisioned as an M5 (its model) - unlike is_m5 a
+    bundle the device reports itself does not count."""
+    return (getattr(device, "hardware", None) or "") == M5_MODEL
