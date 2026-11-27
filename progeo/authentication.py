@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import ClassVar
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
@@ -209,6 +210,25 @@ class IsTransferRequest(BasePermission):
         if isinstance(user, TransferPrincipal) and isinstance(request.auth, LimitedToken):
             return True
         return bool(getattr(user, "is_authenticated", False) and (user.is_staff or user.is_superuser))
+
+
+class IsDeviceTransferToken(BasePermission):
+    """A device's own transfer token (names its device in raw_data), sent as
+    "Authorization: Token" - not as ?token= (it lands in access logs) and
+    never staff. For what a device may only do for itself (SMS)."""
+
+    message: ClassVar[dict] = {"success": False, "sent": False, "reason": "device token required"}
+
+    def has_permission(self, request, view):
+        token = getattr(request, "auth", None)
+        if not (isinstance(getattr(request, "user", None), TransferPrincipal) and isinstance(token, LimitedToken)):
+            return False
+        if token.purpose != TRANSFER_TOKEN_PURPOSE:
+            return False
+        raw_data = token.raw_data if isinstance(token.raw_data, dict) else {}
+        if not raw_data.get("device"):
+            return False
+        return request.META.get("HTTP_AUTHORIZATION", "").startswith("Token ")
 
 
 class ExpiringTokenAuthentication(TokenAuthentication):

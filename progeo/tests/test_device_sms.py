@@ -158,3 +158,106 @@ def test_empty_esendex_error_reason_falls_back_to_class_name(esendex_api, device
 
     monkeypatch.setattr(device_sms.esendex, "send_sms", _boom)
     assert _send(device) == (502, {"sent": False, "reason": "EsendexError"})
+
+
+# -- route POST /v1/device/<project>/sms/ --------------------------------------
+
+from progeo.tests.test_device_commands import (  # noqa: F401
+    _as_controller,
+    _project_ids,
+    provisioned,
+)
+from progeo.v1.models import Account, LimitedToken
+
+
+def _provision(api_client, model):
+    account = Account.objects.using(f.DB).get(pk=1)
+    location = f.make_location(account, project_id=next(_project_ids), notifications_disabled=True)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    preview = api_client.post(
+        "/v1/device/provision/preview/", {"location": location.pk, "model": model}, format="json"
+    ).json()
+    api_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
+    return location, preview
+
+
+def _post(api_client, location, body=None, query=""):
+    return api_client.post(
+        f"/v1/device/{location.project_id}/sms/{query}", {**_data(), **(body or {})}, format="json"
+    )
+
+
+@pytest.fixture
+def m5(api_client):
+    location, preview = _provision(api_client, "M5 AIN4")
+    _as_controller(api_client, preview)
+    return location, preview
+
+
+def test_route_sends_for_provisioned_m5(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    response = _post(api_client, m5[0])
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["success"] is True and body["sent"] is True
+    assert len(calls) == 1
+
+
+def test_route_refuses_query_token(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    location, preview = m5
+    api_client.credentials()
+    response = _post(api_client, location, query=f"?token={preview['token']}")
+    assert response.status_code == 403
+    assert response.json()["reason"] == "device token required"
+    assert calls == []
+
+
+def test_route_refuses_staff(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    api_client.credentials()
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    assert _post(api_client, m5[0]).status_code == 403
+    assert calls == []
+
+
+def test_route_refuses_token_without_device(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    token = LimitedToken.objects.using(f.DB).create(
+        raw_hash=f.unique("token"), account_id=1, purpose="transfer", raw_data={})
+    api_client.credentials(HTTP_AUTHORIZATION=f"Token {token.raw_hash}")
+    assert _post(api_client, m5[0]).status_code == 403
+    assert calls == []
+
+
+def test_route_refuses_lua_box(esendex_api, api_client):
+    calls, _reply = esendex_api
+    location, preview = _provision(api_client, "smartex mx")
+    _as_controller(api_client, preview)
+    response = _post(api_client, location)
+    assert response.status_code == 403
+    assert response.json() == {"success": False, "sent": False, "reason": "not an M5 device"}
+    assert calls == []
+
+
+def test_route_refuses_device_hash_mismatch(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    response = _post(api_client, m5[0], {"device_hash": "other-1"})
+    assert response.status_code == 403
+    assert response.json()["reason"] == "device mismatch"
+    assert calls == []
+
+
+def test_route_refuses_other_project(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    other = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))
+    response = _post(api_client, other)
+    assert response.status_code == 403
+    assert response.json()["reason"] == "device mismatch"
+    assert calls == []
+
+
+def test_route_passes_status_through(esendex_api, api_client, m5):
+    response = _post(api_client, m5[0], {"to": "123"})
+    assert response.status_code == 400
+    assert response.json()["success"] is False

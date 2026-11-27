@@ -15,6 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import (
     ExpiringTokenAuthentication,
+    IsDeviceTransferToken,
     IsTransferRequest,
     TransferPrincipal,
     TransferTokenAuthentication,
@@ -25,7 +26,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import device_commands, firmware_update
+from progeo.helper import device_commands, device_sms, firmware_update
 from progeo.helper.alarm_evaluation import (
     evaluate_live_sample,
     evaluate_measurement_instantly,
@@ -452,6 +453,30 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             "measurement_id": measure.pk,
             "count": len(values) // 2,
         })
+
+    @action(detail=True, url_path="sms", authentication_classes=[TransferTokenAuthentication],
+            permission_classes=[IsDeviceTransferToken], methods=["POST"])
+    def device_sms(self, request, pk, *args, **kwargs):
+        """An M5 sends an SMS through the backend (helper/device_sms.py). The
+        device is the one of its transfer token, never the body's."""
+        from progeo.helper.m5_device import is_m5
+
+        def refuse(reason):
+            return Response({"success": False, "sent": False, "reason": reason}, status=403)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_hash = str(request.auth.raw_data["device"]).strip()
+        db_name = device_commands.device_db(raw_hash)
+        device = (
+            ProgeoDevice.objects.using(db_name).select_related("location").filter(raw_hash=raw_hash).first()
+            if db_name else None
+        )
+        if device is None or not is_m5(device):
+            return refuse("not an M5 device")
+        if str(body.get("device_hash") or raw_hash).strip() != raw_hash or str(device.location.project_id) != str(pk):
+            return refuse("device mismatch")
+        status, result = device_sms.send_device_sms(device, db_name, body)
+        return Response({**result, "success": status == 200}, status=status)
 
     @action(detail=False, url_path="sample/debug", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):
