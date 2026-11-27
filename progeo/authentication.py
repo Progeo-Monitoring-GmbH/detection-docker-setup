@@ -214,7 +214,8 @@ class IsTransferRequest(BasePermission):
 class ExpiringTokenAuthentication(TokenAuthentication):
     """DRF's token login (/auth/login/), but a token is only valid for
     DRF_TOKEN_MAX_AGE_DAYS after it was issued - an expired one is deleted,
-    /auth/login/ then issues a new one. Password changes delete it anyway
+    /auth/login/ then issues a new one. A login QR code's token never expires
+    (helper/tokens.is_qr_token). Password changes delete it anyway
     (helper/tokens.py)."""
 
     def authenticate_credentials(self, key):
@@ -228,8 +229,13 @@ class ExpiringTokenAuthentication(TokenAuthentication):
 def is_expired_drf_token(token) -> bool:
     from django.conf import settings
 
+    from progeo.helper.tokens import is_qr_token
+
     max_age_days = getattr(settings, "DRF_TOKEN_MAX_AGE_DAYS", 30)
-    return bool(max_age_days) and token.created <= timezone.now() - timedelta(days=max_age_days)
+    if not max_age_days or token.created > timezone.now() - timedelta(days=max_age_days):
+        return False
+    # Only old tokens pay for the lookup: a QR code's is valid until revoked.
+    return not is_qr_token(token)
 
 
 def login_name(user) -> str:

@@ -61,23 +61,6 @@ celery_instance.conf.beat_schedule = {
         # Statistics only - it sends no mails.
         "schedule": crontab(hour=0, minute=37),
     },
-    "push-site-measurements-hourly": {
-        "task": "progeo.tasks.push_pending_site_measurements",
-        # manuSensor: the site measurements whose Airtable copy failed (each
-        # is copied when it arrives - this only catches up).
-        "schedule": crontab(minute=25),
-    },
-    "push-production-hourly": {
-        "task": "progeo.tasks.push_pending_production",
-        # Production record dm: released sheets/entries whose Airtable copy
-        # failed (each is copied when released - this only catches up).
-        "schedule": crontab(minute=35),
-    },
-    "sync-werk-users-nightly": {
-        "task": "progeo.tasks.sync_werk_users",
-        # Factory accounts from the Airtable "Ressourcen" ("Werk-App" ticked).
-        "schedule": crontab(hour=2, minute=15),
-    },
     "detect-offline-devices-hourly": {
         "task": "progeo.tasks.detect_offline_devices",
         # Per device: still sending? Opens/updates/resolves the offline
@@ -164,6 +147,27 @@ if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
         # (It used to say minute="*/67", which only ever matches minute 0.)
         "schedule": crontab(minute=10),
     }
+if settings.WERK_ENABLED:
+    # The Werk module's tasks (progeo/werk/tasks.py) - only with the module on.
+    celery_instance.conf.beat_schedule.update({
+        "push-site-measurements-hourly": {
+            "task": "progeo.werk.tasks.push_pending_site_measurements",
+            # manuSensor: the site measurements whose Airtable copy failed (each
+            # is copied when it arrives - this only catches up).
+            "schedule": crontab(minute=25),
+        },
+        "push-production-hourly": {
+            "task": "progeo.werk.tasks.push_pending_production",
+            # Production record dm: released sheets/entries whose Airtable copy
+            # failed (each is copied when released - this only catches up).
+            "schedule": crontab(minute=35),
+        },
+        "sync-werk-users-nightly": {
+            "task": "progeo.werk.tasks.sync_werk_users",
+            # Factory accounts from the Airtable "Ressourcen" ("Werk-App" ticked).
+            "schedule": crontab(hour=2, minute=15),
+        },
+    })
 
 
 def _without_disabled_tasks(schedule, disabled):

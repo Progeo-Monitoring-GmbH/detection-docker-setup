@@ -1,5 +1,5 @@
-"""The digital production record dm (docs/fertigung.md, helper/production.py,
-rolls.py, werk_users.py, v1/viewsets/werk_views.py) - against a fake Airtable."""
+"""The digital production record dm (docs/fertigung.md, werk/production.py,
+rolls.py, werk_users.py, werk/views.py) - against a fake Airtable."""
 
 import base64
 import copy
@@ -10,8 +10,8 @@ import uuid
 import pytest
 from django.contrib.auth.models import Group, User
 
-from progeo.helper import production, rolls, werk_users
 from progeo.tests import factories as f
+from progeo.werk import production, rolls, werk_users
 from progeo.werk.models import (
     FactorySensor,
     ProductionEntry,
@@ -53,6 +53,8 @@ class FakeAirtable:
     def __init__(self):
         self.writes = []
         self.records = {"PA: dm": [order_record()], "dm Sensoren": sensor_records(), "Ressourcen": []}
+        # Record ids Airtable refuses (e.g. deleted there) - their write request fails.
+        self.fail_ids = set()
 
     def table(self, name):
         airtable = self
@@ -68,6 +70,8 @@ class FakeAirtable:
                 return copy.deepcopy(rows)
 
             def batch_update(self, records, typecast):
+                if any(record["id"] in airtable.fail_ids for record in records):
+                    raise RuntimeError("422 ROW_DOES_NOT_EXIST")
                 airtable.writes.append(("batch_update", name, copy.deepcopy(records)))
 
             def update(self, record_id, fields, typecast):
@@ -215,8 +219,9 @@ def test_sync_links_existing_accounts_instead_of_doubling_them(airtable, monkeyp
     monkeypatch.setattr("progeo.tasks.send_login_link_task.delay",
                         lambda *args, **kwargs: pytest.fail("no invitation expected"))
     beispiel = f.make_user(username="Beispiel", staff=True, email="Beispiel@progeo.com")
-    probe = f.make_user(username="a.probe")
-    testerin = f.make_user(username="ltest", first_name="Lena", last_name="Test")
+    # Internal accounts (own address, no customer account) - only those are linked.
+    probe = f.make_user(username="a.probe", email="anna.probe@progeo.com")
+    testerin = f.make_user(username="ltest", first_name="Lena", last_name="Test", email="lena.test@progeo.com")
     airtable.records["Ressourcen"] = [
         {"id": "recRESSOURCE00001", "fields": {"Name": "Tom Beispiel", "E-Mail Adresse": "beispiel@progeo.com"}},
         {"id": "recRESSOURCE00002", "fields": {"Name": "Anna Probe"}},
@@ -307,7 +312,7 @@ def test_a_produced_order_counts_every_sensor_without_an_app_entry_as_paper(api_
 
 
 def test_the_list_still_answers_when_airtable_cannot_count_the_paper_sensors(api_client, worker, monkeypatch):
-    from progeo.helper import dm_orders
+    from progeo.werk import dm_orders
 
     def broken(order_record_ids):
         raise ConnectionError("Airtable down")
@@ -429,8 +434,12 @@ def test_release_is_idempotent_and_copied_to_airtable(api_client, worker, airtab
     assert queued == [("push_production_sheet", sheet.pk)]
 
     assert production.push_sheet(sheet.pk) is True
-    (_kind, table, records), (_kind2, order_table, record_id, order_fields) = airtable.writes
-    assert (table, len(records), records[0]["id"]) == ("dm Sensoren", 20, sensor_record(1))
+    # 10 records per write request, then the order.
+    *batches, (_kind, order_table, record_id, order_fields) = airtable.writes
+    assert [(kind, table, len(rows)) for kind, table, rows in batches] == [
+        ("batch_update", "dm Sensoren", 10), ("batch_update", "dm Sensoren", 10)]
+    records = [row for _kind, _table, rows in batches for row in rows]
+    assert [row["id"] for row in records] == [sensor_record(n) for n in range(1, 21)]
     fields = records[0]["fields"]
     assert fields["Produktionsstatus"] == "Produziert"
     assert (fields["Produziert am"], fields["Produktionsdatum"]) == ("2026-11-26T11:02:40Z", "2026-11-26")
@@ -609,3 +618,140 @@ def test_roll_photo_too_big_or_wrong_type(api_client, worker):
     gif = api_client.post("/v1/werk/rollen/MB-0141/foto/", {
         "foto_id": str(uuid.uuid4()), "mime": "image/gif", "daten": "R0lGOD"}, format="json")
     assert (gif.status_code, gif.json()["feld"]) == (422, "mime")
+
+
+# -- review fixes ----------------------------------------------------------------------
+
+def test_sync_never_links_or_deactivates_a_customer_account(airtable):
+    customer = f.make_user(username="k.kunde", first_name="Karl", last_name="Kunde",
+                           accounts=[f.make_account()])
+    airtable.records["Ressourcen"] = [{"id": "recRESSOURCE00001", "fields": {"Name": "Karl Kunde"}}]
+
+    report = werk_users.sync(helper=airtable)
+
+    assert (report["uebersprungen"], report["angelegt"]) == (1, 0)
+    assert "kein internes Konto" in report["details"][0]["aktion"]
+    assert not werk_users.is_factory_user(customer)
+
+    # Linked by hand and unticked later: loses the factory right, keeps the portal account.
+    WerkUser.objects.using(f.DB).create(user=customer, name="Karl Kunde", airtable_resource_id="recRESSOURCE00001")
+    customer.groups.add(Group.objects.using(f.DB).get_or_create(name=werk_users.GROUP)[0])
+    airtable.records["Ressourcen"] = []
+    assert werk_users.sync(helper=airtable)["deaktiviert"] == 0
+    customer.refresh_from_db(using=f.DB)
+    assert customer.is_active and not werk_users.is_factory_user(customer)
+
+
+@pytest.mark.parametrize("bad, field", [
+    ({"erfasst_am": "2026-02-30T10:00:00Z"}, "eintraege[0].erfasst_am"),
+    ({"erfasst_am": "2026-11-26T25:00:00Z"}, "eintraege[0].erfasst_am"),
+    ({"r_platine": {"ohm": 4_294_967_295, "status": "ok"}}, "eintraege[0].r_platine.ohm"),
+])
+def test_impossible_dates_and_huge_numbers_are_422_not_500(api_client, worker, bad, field):
+    answer = put_entries(api_client, [entry(1, **bad)])
+    assert (answer.status_code, answer.json()["feld"]) == (422, field)
+
+
+def test_broken_json_and_bad_ids_answer_in_the_apps_format(api_client, worker):
+    broken = api_client.generic("PUT", f"{BASE}/eintraege/", "{nope", content_type="application/json")
+    assert (broken.status_code, broken.json()["fehler"]) == (400, "ungueltig")
+    not_a_uuid = api_client.get("/v1/werk/rollen/fotos/------------------------------------/")
+    assert (not_a_uuid.status_code, not_a_uuid.json()["fehler"]) == (404, "foto_unbekannt")
+    fill_sheet(api_client, 1)
+    objects = release(api_client, 1, auffaellig_bestaetigt=[{"id": sensor_record(1)}])
+    assert (objects.status_code, objects.json()["feld"]) == (422, "auffaellig_bestaetigt")
+
+
+def test_a_released_sensor_keeps_its_values(api_client, worker):
+    fill_sheet(api_client, 1)
+    release(api_client, 1)
+
+    answer = put_entries(api_client, [entry(3, r_kurzschluss=None, erfasst_am="2026-11-26T12:00:00Z")])
+
+    assert (answer.status_code, answer.json()["feld"]) == (422, "eintraege[0]")
+    assert ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(3)).r_kurzschluss_ohm == 96
+
+
+def test_rework_stays_until_a_new_measurement(api_client, worker):
+    fill_sheet(api_client, 1)
+    release(api_client, 1)
+    ProductionEntry.objects.using(f.DB).filter(sensor_record_id=sensor_record(4)).update(
+        qs_status="Nacharbeit", qs_manuell=True)
+
+    put_entries(api_client, [entry(4, messband_rolle="MB-0142", erfasst_am="2026-11-26T12:00:00Z")])
+    stored = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(4))
+    assert (stored.qs_status, stored.qs_manuell) == ("Nacharbeit", True)
+
+    put_entries(api_client, [entry(4, r_platine={"ohm": 98000, "status": "ok"}, erfasst_am="2026-11-26T13:00:00Z")])
+    stored.refresh_from_db(using=f.DB)
+    assert (stored.qs_status, stored.qs_manuell) == ("OK", False)
+
+
+def test_one_row_airtable_refuses_does_not_hold_up_the_others(api_client, worker, airtable):
+    fill_sheet(api_client, 1)
+    release(api_client, 1)
+    sheet = ProductionSheet.objects.using(f.DB).get()
+    airtable.fail_ids = {sensor_record(5)}
+
+    assert production.push_sheet(sheet.pk) is False
+
+    copied = ProductionEntry.objects.using(f.DB).filter(sheet=sheet, airtable_synced_at__isnull=False).count()
+    refused = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(5))
+    assert copied == 19 and "ROW_DOES_NOT_EXIST" in refused.airtable_error
+    # The order still learns about the sheet.
+    assert airtable.writes[-1][1:3] == ("PA: dm", ORDER_RECORD)
+
+    # Fixed in Airtable: the hourly retry sends only the missing row.
+    airtable.fail_ids, airtable.writes = set(), []
+    production.push_pending()
+    sent = [row["id"] for kind, _table, *rest in airtable.writes if kind == "batch_update" for row in rest[0]]
+    assert sent == [sensor_record(5)]
+    sheet.refresh_from_db(using=f.DB)
+    assert sheet.airtable_synced_at is not None
+
+
+def test_the_last_progress_report_reaches_airtable(api_client, worker, queued, airtable):
+    api_client.post(f"{BASE}/fortschritt/", progress_body(), format="json")
+    progress = ProductionProgress.objects.using(f.DB).get()
+    production.push_progress(progress.pk)
+    # The last report comes within the 5 minutes - not copied right away ...
+    api_client.post(f"{BASE}/fortschritt/", progress_body(erfasst=45, zeitpunkt="2026-11-26T09:43:12Z"), format="json")
+    assert airtable.writes[-1][3]["App-Fortschritt"].startswith("67 / 45")
+
+    # ... but by the hourly retry.
+    production.push_pending()
+    assert airtable.writes[-1][3]["App-Fortschritt"].startswith("45 / 45")
+    writes = len(airtable.writes)
+    production.push_pending()
+    assert len(airtable.writes) == writes  # nothing new: nothing sent
+
+
+def test_a_resent_release_needs_no_airtable(api_client, worker, monkeypatch):
+    fill_sheet(api_client, 1)
+    first = release(api_client, 1).json()
+    monkeypatch.setattr("progeo.werk.dm_orders.fetch_order_sensors",
+                        lambda *args, **kwargs: pytest.fail("Airtable read for a resend"))
+    assert release(api_client, 1).json() == first
+
+
+def test_order_is_not_done_while_a_later_sheet_is_open(api_client, worker, airtable):
+    fill_sheet(api_client, 1)
+    release(api_client, 1)
+    # Sensors added in Airtable after sheet 1: the order now has 4 sheets.
+    airtable.records["dm Sensoren"] += [
+        {"id": sensor_record(n), "fields": {"Nr.": str(n), "Länge": 10, "Prod Auftr recID": [ORDER_RECORD]}}
+        for n in range(SENSOR_COUNT + 1, SENSOR_COUNT + 21)]
+    fill_sheet(api_client, 2)
+    release(api_client, 2)
+    third = [sensor_record(n) for n in range(41, 61)]
+    put_entries(api_client, [entry(n) for n in range(41, 61)])
+    assert release(api_client, 3, ids=third).status_code == 200
+    # 3 released, but the last releases saw 4 sheets.
+    assert production.order_released(ORDER_RECORD) == (3, False)
+
+
+def test_a_photo_with_too_many_pixels_is_refused_unread(api_client, worker):
+    Roll.objects.using(f.DB).create(nummer="MB-0141", typ="messband", nennlaenge_m=200, rest_m=200)
+    huge = api_client.post("/v1/werk/rollen/MB-0141/foto/", {
+        "foto_id": str(uuid.uuid4()), "mime": "image/png", "daten": image_base64("PNG", (8000, 6000))}, format="json")
+    assert (huge.status_code, huge.json()["feld"]) == (422, "daten")

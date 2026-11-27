@@ -19,8 +19,8 @@ from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.db.models import F
 
-from progeo.helper.manusensor import ManuSensorError, _iso, invalid
-from progeo.helper.production import _device, _meters, _text, _timestamp
+from progeo.werk.manusensor import ManuSensorError, _iso, invalid
+from progeo.werk.production import _device, _meters, _text, _timestamp
 
 DB = DEFAULT_DB_ALIAS
 TYPES = ("messband", "vorlauf")
@@ -28,6 +28,10 @@ NOMINAL = {"messband": Decimal(200), "vorlauf": Decimal(1000)}
 PHOTO_TYPES = {"image/jpeg": ("JPEG", "jpg"), "image/png": ("PNG", "png")}
 PHOTO_MAX_BYTES = 5 * 1024 * 1024
 PHOTO_MAX_PIXELS = 2000
+# A small file can still be a huge image (gigabytes once decoded): refused unread.
+PHOTO_MAX_SOURCE_PIXELS = 40_000_000
+# Roll.nennlaenge_m is DecimalField(8, 2).
+MAX_NOMINAL_M = Decimal("999999.99")
 
 _NUMBER = re.compile(r"[^/\\]{1,32}")
 
@@ -130,7 +134,7 @@ def create(data, user):
     if typ not in TYPES:
         raise invalid("typ", "typ: \"messband\" oder \"vorlauf\".")
     nominal = _meters(data.get("nennlaenge_m"), "nennlaenge_m")
-    if nominal is not None and nominal <= 0:
+    if nominal is not None and not 0 < nominal <= MAX_NOMINAL_M:
         raise invalid("nennlaenge_m", "nennlaenge_m: größer als 0.")
     values = {
         "nummer": nummer, "typ": typ, "nennlaenge_m": nominal or NOMINAL[typ],
@@ -289,8 +293,11 @@ def add_photo(nummer, data, user):
         with Image.open(io.BytesIO(raw)) as image:
             if image.format != image_format:
                 raise invalid("mime", f"Das Bild ist kein {image_format}.")
-            image = ImageOps.exif_transpose(image)
+            if image.width * image.height > PHOTO_MAX_SOURCE_PIXELS:
+                raise invalid("daten", "Foto hat zu viele Pixel (höchstens 40 Megapixel).")
+            # Shrunk before it is turned: only the small image is copied.
             image.thumbnail((PHOTO_MAX_PIXELS, PHOTO_MAX_PIXELS))
+            image = ImageOps.exif_transpose(image)
             if image_format == "JPEG" and image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
             buffer = io.BytesIO()
@@ -314,7 +321,10 @@ def photo_file(photo_id):
     """(path, mime) of a photo - 404 if unknown."""
     from progeo.werk.models import RollPhoto
 
-    photo = RollPhoto.objects.using(DB).filter(foto_id=photo_id).first()
+    try:
+        photo = RollPhoto.objects.using(DB).filter(foto_id=uuid.UUID(str(photo_id))).first()
+    except ValueError:  # the route lets through 36 of [0-9a-f-] - not every one is a UUID
+        photo = None
     path = os.path.join(photo_dir(), photo.datei) if photo else None
     if photo is None or not os.path.isfile(path):
         raise ManuSensorError(404, "foto_unbekannt", "Foto nicht gefunden.")

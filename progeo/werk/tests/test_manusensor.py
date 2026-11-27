@@ -1,4 +1,4 @@
-"""manuSensor app (helper/manusensor.py, v1/viewsets/manusensor_views.py):
+"""manuSensor app (werk/manusensor.py, werk/manusensor_views.py):
 the endpoints as progeo-manusensor's SPEC.md section 5 and its client
 (shared/.../api/MeasurementApi.kt) expect them."""
 
@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from progeo.helper import manusensor
 from progeo.tests import factories as f
+from progeo.werk import manusensor
 from progeo.werk.models import FactorySensor, SiteMeasurement
 
 PROJECT = 24017

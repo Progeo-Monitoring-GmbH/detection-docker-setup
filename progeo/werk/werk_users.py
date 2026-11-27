@@ -134,11 +134,40 @@ def split_name(name):
     return " ".join(words[:-1])[:150], words[-1][:150]
 
 
+INTERNAL_MAIL_DOMAIN = "@progeo.com"
+
+
+def is_customer(user) -> bool:
+    """A member of a customer account (portal user)."""
+    return user.accounts.exists()
+
+
+def is_internal(user) -> bool:
+    """An account the sync may give the factory right: staff, superuser,
+    already "Werk", or an own address without a customer account. A
+    customer who happens to share a name must never get it."""
+    if user.is_staff:
+        return True
+    if user.is_superuser:
+        return True
+    if user.groups.filter(name=GROUP).exists():
+        return True
+    return (user.email or "").lower().endswith(INTERNAL_MAIL_DOMAIN) and not is_customer(user)
+
+
 def find_account(resource):
-    """The existing account of a resource, only an unambiguous hit:
-    1. the same address (case ignored), 2. the username the sync would give
-    or the address before the "@" ("Oprei" for oprei@…), 3. first + last name.
-    Returns (user, how) - (None, None) for none, (None, why) if ambiguous."""
+    """The existing internal account of a resource (is_internal), only an
+    unambiguous hit: 1. the same address (case ignored), 2. the username the
+    sync would give or the address before the "@" ("beispiel" for
+    beispiel@…), 3. first + last name. Returns (user, how) - (None, None)
+    for none, (None, why) if ambiguous or not internal (link it by hand)."""
+    user, how = _match_account(resource)
+    if user is not None and not is_internal(user):
+        return None, f"Konto {user.username} ({how}) ist kein internes Konto"
+    return user, how
+
+
+def _match_account(resource):
     users = User.objects.using(DB)
     email, name = resource["email"], resource["name"]
     if email:
@@ -267,8 +296,8 @@ def _sync(resources, report, note, WerkUser):
         if not user.groups.filter(pk=group.pk).exists() and not user.is_active:
             continue
         user.groups.remove(group)
-        # Staff keep their account - only the factory right goes.
-        if user.is_active and not user.is_staff and not user.is_superuser:
+        # Staff and customer accounts keep their account - only the factory right goes.
+        if user.is_active and not user.is_staff and not user.is_superuser and not is_customer(user):
             user.is_active = False
             user.save(using=DB, update_fields=["is_active"])
             link.deactivated_by_sync = True
@@ -276,4 +305,4 @@ def _sync(resources, report, note, WerkUser):
             report["deaktiviert"] += 1
             note(link.name, user.username, "deaktiviert (Haken entfernt)")
         else:
-            note(link.name, user.username, "Werk-Recht entzogen (Staff-Konto bleibt aktiv)")
+            note(link.name, user.username, "Werk-Recht entzogen (Konto bleibt aktiv)")

@@ -10,7 +10,7 @@ Hand ausgefüllt, gescannt und vom Make-Szenario „Produktionsprotokoll vom Sca
 
 | Endpunkt | Zweck | Status |
 |---|---|---|
-| `GET /v1/werk/auftraege/` | Auftragsliste | vorhanden (`helper/dm_orders.py`) |
+| `GET /v1/werk/auftraege/` | Auftragsliste | vorhanden (`werk/dm_orders.py`) |
 | `GET /v1/werk/auftraege/<auftrag>/` | Auftrag mit Sensoren | vorhanden, erweitert (2.1) – **umgesetzt** |
 | `PUT /v1/werk/auftraege/<auftrag>/eintraege/` | Messwerte je Sensor speichern (Entwurf) | **umgesetzt** (3.1) |
 | `GET /v1/werk/auftraege/<auftrag>/eintraege/` | gespeicherte Einträge zurücklesen | **umgesetzt** (3.2) |
@@ -25,6 +25,10 @@ Hand ausgefüllt, gescannt und vom Make-Szenario „Produktionsprotokoll vom Sca
 `<auftrag>` = lesbare Auftrags-ID (`PROD_dm-Breitband_7099_97`) oder Airtable-Record-ID, wie heute.
 
 Gemeinsame Regeln (wie die vorhandenen manuSensor-Endpunkte):
+- **Modul `progeo/werk`, abschaltbar**: alles hier liegt im Werk-Modul (Modelle, Helfer, Views, URLs,
+  Admin, Celery-Tasks, Management-Befehle, Tests unter `progeo/werk/tests/`). Es wird nur geladen, wenn
+  `django.env` `WERK_ENABLED=1` setzt (Standard: aus) – sonst gibt es keine `/v1/werk/`-Routen (404),
+  keine Admin-Seiten und keine Werk-Tasks; die Tabellen in „default“ bleiben unberührt.
 - JSON über HTTPS, UTF-8, Bearer-Token (progeo-core-Login). **Nur Werk-Konten**: `user.is_staff or
   user.is_superuser or user in Gruppe "Werk"` (neue Prüfung `is_factory_user()`, gilt auch für die
   vorhandenen `/v1/werk/…`-Endpunkte), sonst `403 keine_berechtigung`. Siehe 1a.
@@ -44,14 +48,19 @@ von“), haben aber bisher **keine Backend-Konten**. Sie bekommen eigene Konten 
 - Neues Kontrollkästchen in „Ressourcen“: **„Werk-App“** (vom Base-Admin anzulegen). Angehakt = bekommt
   ein Backend-Konto.
 - `manage.py sync_werk_users` (auch als Celery-Task, z. B. nachts und per Knopf auf der Staff-Seite):
-  - je angehakter Ressource ein `User` (Benutzername aus der E-Mail-Adresse vor dem „@“, sonst aus dem
-    Namen, z. B. `m.muster`; eindeutig gemacht), Gruppe **„Werk“**, nicht `is_staff` (kein Admin-Zugang);
-  - Verknüpfung im neuen Modell `WerkUser` (user ↔ `airtable_resource_id`, Name, Kürzel);
-  - mit E-Mail-Adresse: Einladung zum Passwort-Setzen über den normalen Einladungslink
-    (`login_links.send_login_link(…, "invite")`), nicht über die einmalige Migrations-Kampagne
-    (`docs/migration_invites.md`) – die wird abgeschaltet und ihr Text passt nicht;
-    ohne E-Mail: Konto ohne Passwort, ein Admin setzt es auf der Staff-Seite;
-  - Häkchen entfernt → Konto deaktiviert (`is_active = False`), nicht gelöscht (Einträge bleiben zuordenbar).
+  - ein **vorhandenes internes Konto** wird verknüpft statt doppelt angelegt: gleiche E-Mail-Adresse
+    (Groß-/Kleinschreibung egal), sonst passender Benutzername, sonst Vor- + Nachname – nur bei genau
+    einem Treffer. „Intern“ = Staff, Superuser, schon „Werk“ oder eigene @progeo.com-Adresse ohne
+    Kundenkonto. Ein Kundenkonto (Mitglied eines Accounts) wird nie verknüpft; Mehrdeutiges wird
+    übersprungen und im Bericht zum Verknüpfen von Hand genannt. Leere Vor-/Nachnamen werden ergänzt;
+  - sonst je angehakter Ressource ein neuer `User` (Benutzername aus der E-Mail-Adresse vor dem „@“,
+    sonst aus dem Namen, z. B. `m.muster`; eindeutig gemacht), Gruppe **„Werk“**, nicht `is_staff`
+    (kein Admin-Zugang), **ohne Passwort**;
+  - Verknüpfung im Modell `WerkUser` (user ↔ `airtable_resource_id`, Name, Kürzel);
+  - **keine Einladungs-Mail**: Einladungen bzw. Passwörter vergibt Staff von Hand;
+  - `--dry-run` zeigt, was passieren würde, ohne etwas zu ändern; jeder Lauf gibt je Person eine Zeile aus;
+  - Häkchen entfernt → Werk-Recht entzogen; ein reines Werk-Konto wird deaktiviert (`is_active = False`),
+    nicht gelöscht (Einträge bleiben zuordenbar). Staff- und Kundenkonten bleiben aktiv.
 - **Kürzel**: aus dem Namen (Vor- und Nachname, je erster Buchstabe, z. B. „MM“), überschreibbar in
   `WerkUser`. Die App bekommt es über `GET /v1/werk/ich/` →
   `{"benutzer": "m.muster", "name": "Max Muster", "kuerzel": "MM", "werk": true}` (403 für alle anderen –
@@ -98,7 +107,7 @@ Diese Zusatzfelder kommen aus der Datenbank und werden **nicht** 60 s gepuffert.
 ### 2.2 Erweiterung von `GET /v1/werk/auftraege/`
 
 Jeder Auftrag der Liste bekommt ebenfalls `eintraege_erfasst` (Datenbank, nicht gepuffert) und
-`produziert_papier` (`helper/production.py` `augment_list`), damit die App den Fortschritt auch für
+`produziert_papier` (`werk/production.py` `augment_list`), damit die App den Fortschritt auch für
 Sensoren zeigt, die noch auf Papier produziert wurden:
 
 - Auftrag „Produziert“: alle verknüpften Sensoren ohne vollständigen App-Eintrag (keine Airtable-Abfrage).
@@ -311,7 +320,7 @@ Vorhandene Felder, die die Freigabe setzt: Produktionsstatus, Produziert am, Pro
 
 Make: Für Blätter mit Protokoll-Quelle „App“ entfällt „Produktionsprotokoll vom Scanner“.
 
-### 4.1 QS-Prüfung und Staff-Seite `/staff/production/` (`helper/production_overview.py`)
+### 4.1 QS-Prüfung und Staff-Seite `/staff/production/` (`werk/production_overview.py`)
 
 Die QS-Prüfung der App-Protokolle macht das Backend (die „Automatik“ aus der Feldbeschreibung von
 „QS-Prüfung“), Staff entscheidet den Rest:
@@ -337,7 +346,7 @@ Endpunkte (nur Staff/Superuser):
 
 Airtable „dm Sensoren“ (vorhandene Felder): **QS-Prüfung** (OK / Nacharbeit / Prüfen), **QS manuell**.
 
-## 5. Tests (pytest, wie `tests/test_dm_orders.py` gegen ein Fake-Airtable)
+## 5. Tests (pytest, wie `werk/tests/test_dm_orders.py` gegen ein Fake-Airtable)
 
 - 3.1: Speichern, unverändert, veraltet, 422 mit Feld (nichts gespeichert), 409 fremder Sensor, R_Werk
   aus ① in `FactorySensor`, `erfasst_von` ≠ angemeldeter Benutzer.
@@ -345,8 +354,15 @@ Airtable „dm Sensoren“ (vorhandene Felder): **QS-Prüfung** (OK / Nacharbeit
 - 3.4: Stand gespeichert, anderes Gerät gemeldet, Airtable höchstens alle 5 min.
 - 3.5: anlegen, doppelt (409), PATCH neuere gewinnt, Rest Vorlauf berechnet.
 - Rollenfoto: Upload, zu groß (413), falscher Typ (422); Suche per Code.
-- `sync_werk_users`: anlegen, Gruppe „Werk“, Häkchen weg → deaktiviert, Kürzel; `GET /v1/werk/ich/`.
+- `sync_werk_users`: anlegen, Gruppe „Werk“, Häkchen weg → deaktiviert, Kürzel; `GET /v1/werk/ich/`;
+  vorhandene interne Konten verknüpfen (E-Mail, Benutzername, Name), Kundenkonten nie, Mehrdeutiges
+  überspringen, `--dry-run` ändert nichts.
 - Weder Staff noch Gruppe „Werk“: 403 auf allen `/v1/werk/…`-Endpunkten.
+- Robustheit: unmögliche Daten und zu große Zahlen → 422 (nicht 500); kaputtes JSON im App-Format;
+  freigegebener Sensor verliert keine Werte; Nacharbeit bleibt bis zur neuen Messung; eine von Airtable
+  abgelehnte Zeile hält die anderen nicht auf; letzte Fortschrittsmeldung kommt an (stündlich); erneute
+  Freigabe ohne Airtable; Auftrag nicht „Produziert“, solange ein später dazugekommenes Blatt offen ist;
+  Foto mit zu vielen Pixeln abgelehnt.
 
 ## 6. Offen
 

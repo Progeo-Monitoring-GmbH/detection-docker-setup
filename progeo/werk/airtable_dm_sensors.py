@@ -31,7 +31,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 
 from progeo.helper.basics import ilog
-from progeo.helper.manusensor import (
+from progeo.werk.manusensor import (
     DB,
     ManuSensorError,
     normalize_sensor,

@@ -223,19 +223,19 @@ AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
 AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
 AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
 AIRTABLE_DOCUMENTS_TABLE = (os.getenv("AIRTABLE_DOCUMENTS_TABLE") or "Dokumente").strip()
-# manuSensor (helper/manusensor.py): the factory's sensor table, and the table
+# manuSensor (werk/manusensor.py): the factory's sensor table, and the table
 # every site measurement is copied to (linked to its "dm Sensoren" row).
 AIRTABLE_DM_SENSORS_TABLE = (os.getenv("AIRTABLE_DM_SENSORS_TABLE") or "dm Sensoren").strip()
 # The production orders of the dm sensors: the projects the staff page offers
-# to import "dm Sensoren" from (helper/airtable_dm_sensors.py).
+# to import "dm Sensoren" from (werk/airtable_dm_sensors.py).
 AIRTABLE_DM_ORDERS_TABLE = (os.getenv("AIRTABLE_DM_ORDERS_TABLE") or "PA: dm").strip()
 AIRTABLE_SITE_MEASUREMENTS_TABLE = (os.getenv("AIRTABLE_SITE_MEASUREMENTS_TABLE") or "Baustellenmessungen").strip()
 # |ΔR| to R_Werk (percent) up to which a site measurement is "ok".
 MANUSENSOR_TOLERANCE_PERCENT = float(os.getenv("MANUSENSOR_TOLERANCE_PERCENT") or 5.0)
-# helper/dm_orders.py: how long (s) the answers from AIRTABLE_DM_ORDERS_TABLE
+# werk/dm_orders.py: how long (s) the answers from AIRTABLE_DM_ORDERS_TABLE
 # are cached (Airtable allows 5 requests/s per base; 0 = not cached).
 MANUSENSOR_ORDERS_CACHE_SECONDS = int(os.getenv("MANUSENSOR_ORDERS_CACHE_SECONDS") or 60)
-# helper/werk_users.py: the factory workers' table and its "gets an account" box.
+# werk/werk_users.py: the factory workers' table and its "gets an account" box.
 AIRTABLE_RESOURCES_TABLE = (os.getenv("AIRTABLE_RESOURCES_TABLE") or "Ressourcen").strip()
 AIRTABLE_RESOURCES_WERK_FIELD = (os.getenv("AIRTABLE_RESOURCES_WERK_FIELD") or "Werk-App").strip()
 # Field of the projects table that manage.py lageplan_resolution --airtable
@@ -288,9 +288,14 @@ INSTALLED_APPS = [
 
     "colorfield",
     "progeo",
-    # ProGeo's factory data linked with Airtable - "default" only (progeo/router.py).
-    "progeo.werk",
 ]
+# The Werk module (progeo/werk): ProGeo's factory data linked with Airtable -
+# manuSensor app, factory values, production record. Off unless django.env
+# sets WERK_ENABLED=1: then its models, /v1/werk/ routes, admin pages and
+# celery tasks are loaded ("default" only - progeo/router.py).
+WERK_ENABLED = parse_boolean(os.getenv("WERK_ENABLED", "0"))
+if WERK_ENABLED:
+    INSTALLED_APPS.append("progeo.werk")
 # The debug toolbar shows SQL, settings and headers: only with DEBUG on.
 if not DEBUG:
     INSTALLED_APPS.remove("debug_toolbar")

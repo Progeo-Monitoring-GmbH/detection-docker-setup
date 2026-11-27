@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+{% comment %}
+  Login QR codes of several users (StaffUserQrCodesView): A4 portrait, two
+  users per page - each in its own half with a dashed cut line between them.
+  Self-contained (no external CSS) so the downloaded file prints offline.
+{% endcomment %}
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>QR-Codes {{ generated_at|date:"d.m.Y" }}</title>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { font-family: Arial, Helvetica, sans-serif; }
+
+    .sheet {
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      break-after: page;
+      page-break-after: always;
+    }
+    .sheet:last-child { break-after: auto; page-break-after: auto; }
+
+    /* One user: exactly half an A4 page; the content keeps 20 mm off every
+       edge so the cut (and the printer's margin) never touches it. */
+    .card {
+      height: 148.5mm;
+      padding: 20mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      overflow: hidden;
+    }
+    .card + .card { border-top: 1px dashed #888; }
+
+    .title { margin: 0 0 3mm; font-size: 18pt; font-weight: bold; word-break: break-word; }
+    .login { margin: 0 0 6mm; font-size: 11pt; color: #333; word-break: break-all; }
+    .code { width: 70mm; height: 70mm; image-rendering: pixelated; }
+    .valid { margin: 5mm 0 0; font-size: 9pt; color: #555; }
+
+    @media screen {
+      body { background: #e9ecef; padding: 10mm 0; }
+      .sheet { background: #fff; box-shadow: 0 1mm 4mm rgba(0, 0, 0, 0.2); margin-bottom: 10mm; }
+    }
+    @media print {
+      .sheet { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+{% for card in cards %}{% if forloop.counter0|divisibleby:2 %}
+  <div class="sheet">{% endif %}
+    <section class="card">
+      <h1 class="title">{{ card.title }}</h1>
+      <p class="login">{{ card.login }}</p>
+      <img class="code" src="{{ card.image }}" alt="QR-Code {{ card.title }}">
+      <p class="valid">Gültig bis auf Widerruf</p>
+    </section>{% if forloop.counter|divisibleby:2 or forloop.last %}
+  </div>{% endif %}
+{% endfor %}
+</body>
+</html>

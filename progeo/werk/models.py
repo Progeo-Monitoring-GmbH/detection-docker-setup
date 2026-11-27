@@ -2,11 +2,11 @@
 data, linked with Airtable - in "default" only.
 
 - FactorySensor, SiteMeasurement: the dm sensors' factory values (R_Werk) and
-  the manuSensor app's site measurements (helper/manusensor.py,
-  helper/airtable_dm_sensors.py).
+  the manuSensor app's site measurements (werk/manusensor.py,
+  werk/airtable_dm_sensors.py).
 - WerkUser, ProductionSheet, ProductionEntry, ProductionProgress, Roll,
   RollPhoto: the digital production record dm (docs/fertigung.md,
-  helper/production.py, rolls.py, werk_users.py, production_overview.py),
+  werk/production.py, rolls.py, werk_users.py, production_overview.py),
   keyed by Airtable record ids.
 
 Moved from the progeo app (progeo/migrations/0084_move_to_werk.py); the
@@ -19,13 +19,13 @@ from django.db import models
 
 class FactorySensor(models.Model):
     """A smartex dm sensor as the factory measured it (manuSensor app, see
-    helper/manusensor.py): the band's sensor resistance R_Werk, the project it
+    werk/manusensor.py): the band's sensor resistance R_Werk, the project it
     was made for and its NFC tag. Stored by the factory app (POST
     /v1/werk/sensoren/) or `manage.py import_factory_sensors`; the site app
     compares its re-measurement with it. Keyed by (project number, sensor
     number) - the location may not exist yet when the band is produced.
     Also created from the Airtable table "dm Sensoren" (staff page import,
-    `manage.py import_dm_sensors` - helper/airtable_dm_sensors.py): those
+    `manage.py import_dm_sensors` - werk/airtable_dm_sensors.py): those
     have no R_Werk until the factory app or a CSV sends it.
     Lives in "default" (ProGeo's own production data, not a customer's)."""
 
@@ -71,7 +71,7 @@ class SiteMeasurement(models.Model):
     (payload, the main values as columns) and what the backend answered
     (status from the deviation to R_Werk). Idempotent by mess_id - the app
     resends until it has an answer. Copied to Airtable afterwards
-    (airtable_* - helper/manusensor.push_to_airtable). Lives in "default"."""
+    (airtable_* - werk/manusensor.push_to_airtable). Lives in "default"."""
 
     class Status(models.TextChoices):
         OK = "ok", "OK"
@@ -120,13 +120,13 @@ class SiteMeasurement(models.Model):
 
 # ---------------------------------------------------------------------------- digital production record dm
 # docs/fertigung.md (Digitales Fertigungsprotokoll dm): the factory fills the protocol of
-# a "PA: dm" order in the manuSensor app (helper/production.py, rolls.py,
+# a "PA: dm" order in the manuSensor app (werk/production.py, rolls.py,
 # werk_users.py). All in "default", keyed by Airtable record ids.
 
 
 class WerkUser(models.Model):
     """A factory worker's backend account, linked to their Airtable
-    "Ressourcen" row (`manage.py sync_werk_users`, helper/werk_users.py).
+    "Ressourcen" row (`manage.py sync_werk_users`, werk/werk_users.py).
     Staff accounts may have one too (for "Produziert von")."""
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="werk_user")
@@ -204,7 +204,7 @@ class ProductionEntry(models.Model):
     # gesamt) - the staff page's meters per day without asking Airtable.
     laenge_m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     vorlauf_m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    # "QS-Prüfung" of "dm Sensoren" (helper/production_overview.py): set on
+    # "QS-Prüfung" of "dm Sensoren" (werk/production_overview.py): set on
     # release (OK / Prüfen from the values), decided by staff (qs_manuell).
     qs_status = models.CharField(max_length=12, null=True, blank=True)
     qs_manuell = models.BooleanField(default=False)

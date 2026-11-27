@@ -1,6 +1,6 @@
 """The routes of the Werk app, under /v1/werk/ (progeo/v1/urls.py).
 
-- baustelle/<projekt>/...   the manuSensor app on site (helper/manusensor.py):
+- baustelle/<projekt>/...   the manuSensor app on site (werk/manusensor.py):
                             the factory values of the project's sensors, site
                             measurements. <projekt> is the project number, not
                             a pk; POST .../messungen comes without the slash.
@@ -17,7 +17,7 @@ Until 26.11.2026 the site routes were /v1/location/<projekt>/sensor/ and
 
 from django.urls import re_path
 
-from progeo.v1.viewsets.manusensor_views import (
+from progeo.werk.manusensor_views import (
     DmOrdersView,
     DmOrderView,
     DmSensorImportView,
@@ -28,7 +28,7 @@ from progeo.v1.viewsets.manusensor_views import (
     ManuSensorProjectsView,
     ManuSensorSensorView,
 )
-from progeo.v1.viewsets.werk_views import (
+from progeo.werk.views import (
     ProductionEntriesView,
     ProductionOverviewView,
     ProductionProgressView,
@@ -58,10 +58,10 @@ urlpatterns = [
     # ... and the import of the Airtable table "dm Sensoren" (per project).
     re_path(r'^sensoren/airtable/?$', DmSensorProjectsView.as_view()),
     re_path(r'^sensoren/airtable/(?P<projekt>[0-9]{1,9})/?$', DmSensorImportView.as_view()),
-    # The dm production orders ("PA: dm" in Airtable, helper/dm_orders.py).
+    # The dm production orders ("PA: dm" in Airtable, werk/dm_orders.py).
     re_path(r'^auftraege/?$', DmOrdersView.as_view()),
     re_path(rf'^auftraege/{ORDER}/?$', DmOrderView.as_view()),
-    # The digital production record (docs/fertigung.md, v1/viewsets/werk_views.py).
+    # The digital production record (docs/fertigung.md, werk/views.py).
     re_path(r'^ich/?$', WerkMeView.as_view()),
     re_path(r'^benutzer/sync/?$', WerkUsersSyncView.as_view()),
     re_path(rf'^auftraege/{ORDER}/eintraege/?$', ProductionEntriesView.as_view()),
@@ -72,7 +72,7 @@ urlpatterns = [
     re_path(r'^rollen/fotos/(?P<foto_id>[0-9a-fA-F-]{36})/?$', RollPhotoView.as_view()),
     re_path(r'^rollen/(?P<nummer>[^/]{1,32})/foto/?$', RollPhotoUploadView.as_view()),
     re_path(r'^rollen/(?P<nummer>[^/]{1,32})/?$', RollView.as_view()),
-    # The staff page /staff/production/ (helper/production_overview.py).
+    # The staff page /staff/production/ (werk/production_overview.py).
     re_path(r'^produktion/?$', ProductionOverviewView.as_view()),
     re_path(r'^produktion/qs/?$', ProductionQsView.as_view()),
 ]

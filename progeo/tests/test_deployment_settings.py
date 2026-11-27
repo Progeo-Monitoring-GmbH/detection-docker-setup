@@ -170,8 +170,11 @@ def test_the_test_settings_run_the_production_middleware_and_apps():
     toolbar = "debug_toolbar.middleware.DebugToolbarMiddleware"
     assert _without(active_settings.MIDDLEWARE, toolbar) == \
         _without(production.MIDDLEWARE, toolbar, "progeo.metrics.MetricsMiddleware")
+    # The tests switch the Werk module on (WERK_ENABLED, off by default in production).
+    werk = [] if production.WERK_ENABLED else ["progeo.werk"]
+    assert active_settings.WERK_ENABLED
     assert _without(active_settings.INSTALLED_APPS, "debug_toolbar") == \
-        _without(production.INSTALLED_APPS, "debug_toolbar", "django_celery_results")
+        _without(production.INSTALLED_APPS, "debug_toolbar", "django_celery_results") + werk
     assert active_settings.DATABASE_ROUTERS == production.DATABASE_ROUTERS
 
 

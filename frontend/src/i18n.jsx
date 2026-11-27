@@ -3392,6 +3392,14 @@ i18n
             'Log in as "{{username}}"? You will see the portal exactly as this user does, for at most one hour. Your changes are logged with your name.',
           staff_impersonate_confirm_title: 'Log in as this user?',
           staff_impersonate_error: 'Could not log in as this user',
+          staff_qr_codes: 'QR codes ({{count}})',
+          staff_qr_codes_hint:
+            'Login QR codes of the ticked users as a printable HTML file (half a page each). Users without a code get one; existing codes stay valid.',
+          staff_qr_codes_done:
+            'QR codes of {{count}} users exported ({{created}} newly created)',
+          staff_qr_codes_skipped:
+            'No QR code for inactive users or other superusers: {{usernames}}',
+          staff_qr_codes_error: 'Could not export the QR codes',
           impersonation_banner:
             'You are logged in as <strong>{{username}}</strong> (via {{impersonator}}).',
           impersonation_back: 'Back to my account',
@@ -7014,6 +7022,14 @@ i18n
           staff_impersonate_confirm_title: 'Als dieser Benutzer anmelden?',
           staff_impersonate_error:
             'Anmelden als dieser Benutzer fehlgeschlagen',
+          staff_qr_codes: 'QR-Codes ({{count}})',
+          staff_qr_codes_hint:
+            'Anmelde-QR-Codes der markierten Benutzer als druckbare HTML-Datei (je eine halbe Seite). Benutzer ohne Code bekommen einen, bestehende bleiben gültig.',
+          staff_qr_codes_done:
+            'QR-Codes von {{count}} Benutzern exportiert ({{created}} neu erstellt)',
+          staff_qr_codes_skipped:
+            'Kein QR-Code für inaktive Benutzer oder andere Superuser: {{usernames}}',
+          staff_qr_codes_error: 'QR-Codes konnten nicht exportiert werden',
           impersonation_banner:
             'Sie sind angemeldet als <strong>{{username}}</strong> (über {{impersonator}}).',
           impersonation_back: 'Zurück zu meinem Konto',

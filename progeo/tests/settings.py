@@ -179,8 +179,10 @@ INSTALLED_APPS = [
 
     "colorfield",
     "progeo",
+    # The tests cover the Werk module - on here (off by default: settings.WERK_ENABLED).
     "progeo.werk",
 ]
+WERK_ENABLED = True
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

@@ -27,7 +27,9 @@ def selection_project(pytester, monkeypatch):
 
 def test_every_test_module_has_one_registered_area():
     module_names = [f"test_{name}.py" for names in AREA_MODULES.values() for name in names.split()]
-    test_files = {path.name for path in Path(__file__).parent.glob("test_*.py")}
+    # progeo/tests and the Werk module's own tests (progeo/werk/tests).
+    test_dirs = (Path(__file__).parent, Path(__file__).resolve().parents[1] / "werk" / "tests")
+    test_files = {path.name for directory in test_dirs for path in directory.glob("test_*.py")}
 
     assert len(module_names) == len(set(module_names))
     assert set(module_names) == test_files, (

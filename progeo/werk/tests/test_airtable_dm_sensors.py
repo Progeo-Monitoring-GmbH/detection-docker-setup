@@ -1,13 +1,13 @@
-"""Import of the Airtable table "dm Sensoren" (helper/airtable_dm_sensors.py,
+"""Import of the Airtable table "dm Sensoren" (werk/airtable_dm_sensors.py,
 the staff page /staff/sensors/ and `manage.py import_dm_sensors`)."""
 
 import uuid
 
 import pytest
 
-from progeo.helper import airtable_dm_sensors as dm
-from progeo.helper import manusensor
 from progeo.tests import factories as f
+from progeo.werk import airtable_dm_sensors as dm
+from progeo.werk import manusensor
 from progeo.werk.models import FactorySensor, SiteMeasurement
 
 PROJECT = 7024

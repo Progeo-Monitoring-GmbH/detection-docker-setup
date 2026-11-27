@@ -15,6 +15,7 @@ import {
   Key,
   PencilSquare,
   PersonPlus,
+  QrCode,
   ShieldLock,
   ShieldX,
   Trash,
@@ -63,6 +64,7 @@ import {
 } from './staffAccounts';
 import './StaffAdmin.css';
 import { useMobileColumns } from '../components/ui/kit/mobileTable';
+import { downloadBlob } from '../download';
 
 type PermissionDef = {
   code: string;
@@ -825,6 +827,11 @@ const StaffAdmin = () => {
     updateFilters({ ...filters, [key]: value });
   const filtersActive = Object.values(filters).some(Boolean);
 
+  // Superusers: the users ticked for the QR code sheet (StaffUserQrCodesView).
+  const [qrSelection, setQrSelection] = useState<StaffUser[]>([]);
+  const [clearQrSelection, setClearQrSelection] = useState(false);
+  const [qrBusy, setQrBusy] = useState(false);
+
   const authUser = auth?.user as { user_id?: number | string } | null;
   // Staff or superuser, like the route (access.ts) and the backend.
   const { isStaffOrSuperuser: isStaff, isSuperuser } = staffFlags(auth?.user);
@@ -994,6 +1001,54 @@ const StaffAdmin = () => {
       (error) => {
         showRequestError(enqueueSnackbar, t('staff_impersonate_error'), error);
         setBusyId(null);
+      },
+    );
+  };
+
+  // The backend gives no code to inactive users or other superusers.
+  const qrCodeImpossible = (user: StaffUser) =>
+    !user.is_active ||
+    (user.is_superuser && String(user.id) !== String(authUser?.user_id));
+
+  const handleExportQrCodes = () => {
+    setQrBusy(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/api/auth-support/staff/users/qr-codes/',
+      { user_ids: qrSelection.map((user) => user.id) },
+      (result) => {
+        const data = result?.data as {
+          html: string;
+          filename: string;
+          created: string[];
+          skipped: { username: string }[];
+        };
+        downloadBlob(
+          new Blob([data.html], { type: 'text/html;charset=utf-8' }),
+          data.filename,
+        );
+        showSuccessBar(
+          enqueueSnackbar,
+          t('staff_qr_codes_done', {
+            count: qrSelection.length - data.skipped.length,
+            created: data.created.length,
+          }),
+        );
+        if (data.skipped.length > 0) {
+          showInfoBar(
+            enqueueSnackbar,
+            t('staff_qr_codes_skipped', {
+              usernames: data.skipped.map((entry) => entry.username).join(', '),
+            }),
+          );
+        }
+        setQrSelection([]);
+        setClearQrSelection((current) => !current);
+        setQrBusy(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, t('staff_qr_codes_error'), error);
+        setQrBusy(false);
       },
     );
   };
@@ -1412,6 +1467,23 @@ const StaffAdmin = () => {
                 <ArrowRepeat className="me-1" />
                 {t('staff_refresh')}
               </Button>
+              {isSuperuser && (
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={handleExportQrCodes}
+                  disabled={qrSelection.length === 0 || qrBusy}
+                  title={t('staff_qr_codes_hint')}
+                  data-testid="staff-users-qr-codes"
+                >
+                  {qrBusy ? (
+                    <Spinner size="sm" animation="border" className="me-1" />
+                  ) : (
+                    <QrCode className="me-1" />
+                  )}
+                  {t('staff_qr_codes', { count: qrSelection.length })}
+                </Button>
+              )}
               {canAddUser && (
                 <Button
                   variant="primary"
@@ -1554,6 +1626,12 @@ const StaffAdmin = () => {
             columns={columns}
             {...expandable}
             data={filteredUsers}
+            selectableRows={isSuperuser}
+            selectableRowDisabled={qrCodeImpossible}
+            onSelectedRowsChange={({ selectedRows }) =>
+              setQrSelection(selectedRows)
+            }
+            clearSelectedRows={clearQrSelection}
             defaultSortFieldId="email"
             pagination
             paginationResetDefaultPage={resetPage}

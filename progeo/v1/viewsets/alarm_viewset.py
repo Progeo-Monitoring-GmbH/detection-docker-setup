@@ -25,7 +25,12 @@ from progeo.helper.location_access import (
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
 from progeo.helper.suspicion_clusters import computed_suspicion_points
-from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement, ProgeoRainEvent
+from progeo.v1.models import (
+    ProgeoAlarm,
+    ProgeoLocation,
+    ProgeoMeasurement,
+    ProgeoRainEvent,
+)
 from progeo.v1.serializers import ProgeoAlarmSerializer, ProgeoRainEventSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import include, re_path
 
 from progeo.routers import CustomRouter
@@ -95,8 +96,6 @@ threshold_fine_tune_router.register(r'', ThresholdFineTuneViewSet, basename='thr
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
-    # The Werk app (progeo/werk/urls.py): manuSensor app, factory values, production record.
-    re_path(r'^werk/', include('progeo.werk.urls')),
     re_path(r'^location/', include(location_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),
@@ -122,3 +121,8 @@ urlpatterns = [
     re_path(r'^e2e/info/$', E2EInfoView.as_view(), name='e2e_info'),
     re_path(r'^e2e/notification-link/$', E2ENotificationLinkView.as_view(), name='e2e_notification_link'),
 ]
+
+if settings.WERK_ENABLED:
+    # The Werk module (progeo/werk/urls.py): manuSensor app, factory values,
+    # production record - only with WERK_ENABLED (django.env).
+    urlpatterns.append(re_path(r'^werk/', include('progeo.werk.urls')))

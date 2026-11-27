@@ -1376,6 +1376,11 @@ class UserProfile(models.Model):
     # "de" / "en": the language of the user's mails and messenger messages
     # (helper/emailhelper.recipient_language) - set with the portal language.
     language = models.CharField(max_length=8, null=True, blank=True)
+    # `created` of the DRF token issued as the user's login QR code
+    # (helper/tokens.mark_qr_token): that token never expires
+    # (authentication.is_expired_drf_token) - only revoking it ends it. The
+    # timestamp, not the key: no second copy of the secret.
+    qr_token_created = models.DateTimeField(null=True, blank=True)
 
     def messenger_address(self):
         """Where the messenger notifications go, or None when incomplete."""

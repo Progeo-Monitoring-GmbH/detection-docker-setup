@@ -1,7 +1,7 @@
 # ruff: noqa: F811 - the fixtures imported from test_production are the test parameters
 """The staff page of the production record dm (/staff/production/): the
 value checks (the app's SheetRules.kt), the QS check of the produced sensors
-and the overview - helper/production_overview.py, against a fake Airtable."""
+and the overview - werk/production_overview.py, against a fake Airtable."""
 
 import datetime
 from types import SimpleNamespace
@@ -9,10 +9,11 @@ from types import SimpleNamespace
 import pytest
 from django.utils import timezone
 
-from progeo.helper import production, production_overview
-from progeo.helper.production_overview import BAD, NONE, OK, WARN
 from progeo.tests import factories as f
-from progeo.tests.test_production import (  # noqa: F401 - the fixtures
+from progeo.werk import production, production_overview
+from progeo.werk.models import ProductionEntry, Roll
+from progeo.werk.production_overview import BAD, NONE, OK, WARN
+from progeo.werk.tests.test_production import (  # noqa: F401 - the fixtures
     ORDER_ID,
     ORDER_RECORD,
     airtable,
@@ -24,7 +25,6 @@ from progeo.tests.test_production import (  # noqa: F401 - the fixtures
     sensor_record,
     worker,
 )
-from progeo.werk.models import ProductionEntry, Roll
 
 OVERVIEW = "/v1/werk/produktion/"
 QS = "/v1/werk/produktion/qs/"
@@ -283,7 +283,7 @@ def test_overview_lists_bad_values_and_warnings(api_client, worker, manager):
     assert bad["werte"]["r_kurzschluss"] == {"ohm": 180, "status": "ok", "flag": "bad"}
     assert bad["werte"]["r_platine"]["flag"] == "ok"
     assert bad["qs"]["status"] == "Prüfen"
-    assert (bad["auftrag_id"], bad["order_record_id"], bad["projekt"]) == (ORDER_ID, ORDER_RECORD, 7101)
+    assert (bad["auftrag_id"], bad["order_record_id"], bad["projekt"]) == (ORDER_ID, ORDER_RECORD, 24017)
     assert (rows["000004"]["stufe"], rows["000004"]["bestaetigt"]) == ("warnung", False)
     # A draft: no sheet, no QS yet.
     assert (rows["000021"]["stufe"], rows["000021"]["blatt"], rows["000021"]["qs"]) == ("fehler", None, None)
@@ -298,7 +298,7 @@ def test_overview_lists_orders_and_filters_by_one(api_client, worker, manager):
 
     orders = api_client.get(OVERVIEW).json()["auftraege"]
     assert orders == [{
-        "id": ORDER_RECORD, "auftrag_id": ORDER_ID, "nr": 93, "projekt": "7101", "objekt": None,
+        "id": ORDER_RECORD, "auftrag_id": ORDER_ID, "nr": 93, "projekt": "24017", "objekt": None,
         "erfasst": 20, "gesamt": 45, "blaetter_freigegeben": 1, "blaetter": 3,
         "fehler": 0, "warnungen": 0, "qs_offen": 0, "zuletzt": "2026-11-26T09:41:12Z",
     }]

@@ -1,11 +1,11 @@
-from progeo.helper.werk_users import sync
 from progeo.management.commands._base import BaseCommand
+from progeo.werk.werk_users import sync
 
 
 class Command(BaseCommand):
     help = (
         "Factory accounts (group \"Werk\") for the Airtable \"Ressourcen\" with a ticked "
-        "\"Werk-App\" box (helper/werk_users.py): an existing account (same address, matching "
+        "\"Werk-App\" box (werk/werk_users.py): an existing account (same address, matching "
         "username or first + last name) is linked, a missing one created without password. "
         "No mail is sent - invite the new accounts by hand. Unticked: deactivated.\n\n"
         "Example:\n"

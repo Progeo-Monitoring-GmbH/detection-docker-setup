@@ -197,7 +197,7 @@ def test_the_model_defaults_are_a_valid_configuration(client, controllers):
 
 
 @WITH_PROJECT_DBS
-def test_devices_outside_their_locations_database_are_searched_in_one_pass(project_dbs, monkeypatch):
+def test_devices_outside_their_locations_database_are_searched_in_one_pass(project_dbs, monkeypatch):  # noqa: F811 - the imported session fixture
     # Regression: each project without its device in its location's database
     # (merged, "unknown", or no legacy device at all) searched all ~1100
     # project databases on its own - ~90 s per run.

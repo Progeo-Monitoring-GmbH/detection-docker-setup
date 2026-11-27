@@ -719,6 +719,83 @@ class StaffUserImpersonateView(APIView):
         return RequestSuccess({"access": str(access), "username": user.username})
 
 
+def _qr_code_title(user) -> str:
+    """The heading of a user's QR code card: the full name, else the login name."""
+    from progeo.authentication import login_name
+
+    return user.get_full_name().strip() or login_name(user)
+
+
+class StaffUserQrCodesView(APIView):
+    """The login QR codes of several users as one printable HTML sheet (A4,
+    half a page per user, a cut line between them) - the same code each user
+    sees in Mein Konto (UserProfileViewSet.qr_code): {"token": "..."}.
+
+    POST {"user_ids": [...]}. Superusers only. A user's valid DRF token is
+    kept; one is created only if there is none (or it expired). Either way it
+    is valid until revoked from now on (helper/tokens.mark_qr_token). Inactive users
+    and other superusers get no code (a printed superuser login is too much).
+    {html, filename, created: [usernames], skipped: [{username, reason}]}."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        import json
+
+        from django.template.loader import render_to_string
+        from django.utils import timezone
+
+        from progeo.authentication import login_name
+        from progeo.helper.basics import ilog
+        from progeo.helper.tokens import drf_token_for_qr_code
+        from progeo.v1.viewsets.setup_viewset import qr_code_data_uri
+
+        if not request.user.is_superuser:
+            return RequestFailed({"reason": "Superuser access required"})
+        raw_ids = request.data.get("user_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return RequestFailed({"reason": "No users selected"})
+        try:
+            user_ids = [int(pk) for pk in raw_ids]
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Invalid user ids"})
+
+        users = list(User.objects.using(_USER_DB).filter(pk__in=user_ids).order_by("last_name", "first_name", "email", "username"))
+        if not users:
+            return RequestFailed({"reason": "Unknown users"})
+
+        cards, created, skipped = [], [], []
+        for user in users:
+            if not user.is_active:
+                skipped.append({"username": user.username, "reason": "inactive"})
+                continue
+            if user.is_superuser and user.pk != request.user.pk:
+                skipped.append({"username": user.username, "reason": "superuser"})
+                continue
+            token, was_created = drf_token_for_qr_code(user)
+            if was_created:
+                created.append(user.username)
+            cards.append({
+                "title": _qr_code_title(user),
+                "login": login_name(user),
+                "image": qr_code_data_uri(json.dumps({"token": token.key})),
+            })
+
+        if not cards:
+            return RequestFailed({"reason": "No QR code possible for the selected users", "skipped": skipped})
+
+        now = timezone.localtime()
+        html = render_to_string("qrcode/users.html", {"cards": cards, "generated_at": now})
+        ilog(f"{request.user.username} exported login QR codes of {len(cards)} users "
+             f"({len(created)} tokens created)", tag="[QR-CODES]")
+        return RequestSuccess({
+            "html": html,
+            "filename": f"qr-codes-{now:%Y-%m-%d-%H%M}.html",
+            "created": created,
+            "skipped": skipped,
+        })
+
+
 # Convenience action methods for the ViewSet-style route mapping used below.
 def _check_staff(fn):
     def _wrapper(request, *args, **kwargs):

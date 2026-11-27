@@ -24,9 +24,9 @@ from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
-from progeo.helper import dm_orders, production
-from progeo.helper.manusensor import ManuSensorError, _iso, invalid
-from progeo.helper.production import BERLIN, DB, MEASURES, SHEET_SIZE
+from progeo.werk import dm_orders, production
+from progeo.werk.manusensor import ManuSensorError, _iso, invalid
+from progeo.werk.production import BERLIN, DB, MEASURES, SHEET_SIZE
 
 # The value checks (SheetRules.kt).
 NONE, OK, WARN, BAD = "none", "ok", "warn", "bad"
@@ -104,7 +104,8 @@ def check(entry):
     good values, else "Prüfen" for staff. A manual "OK" stays."""
     if entry.qs_manuell and entry.qs_status == QS_OK:
         return
-    entry.qs_status = QS_OK if level(entry) == OK else QS_CHECK
+    # Every value good - a missing one is never "OK" (level() ranks it lowest).
+    entry.qs_status = QS_OK if all(value == OK for value in _flags(entry).values()) else QS_CHECK
     entry.qs_manuell = False
     entry.qs_von = None
     entry.qs_am = timezone.now()
@@ -199,7 +200,7 @@ def _first_day(days):
 
 
 def _berlin_day(value):
-    from progeo.helper.manusensor import _aware
+    from progeo.werk.manusensor import _aware
 
     moment = _aware(value)
     return timezone.localtime(moment, BERLIN).date() if moment else None
@@ -237,7 +238,7 @@ class _Initials:
         self.known = {}
 
     def __call__(self, user):
-        from progeo.helper.werk_users import abbreviation
+        from progeo.werk.werk_users import abbreviation
 
         if user is None:
             return None
@@ -268,7 +269,7 @@ def flagged_json(entry, initials):
 
 
 class _Airtable:
-    """What the page reads from Airtable (cached in helper/dm_orders.py) -
+    """What the page reads from Airtable (cached in werk/dm_orders.py) -
     nothing, and `failed`, when Airtable doesn't answer: the page then shows
     the app's entries only."""
 
@@ -334,7 +335,7 @@ def _orders(entries, flagged, order_key, airtable):
 
 
 def _rolls(entries, order_key):
-    from progeo.helper import rolls
+    from progeo.werk import rolls
     from progeo.werk.models import Roll
 
     used = {}

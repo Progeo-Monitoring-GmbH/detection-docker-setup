@@ -65,6 +65,7 @@ from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserInviteView,
     StaffUserListView,
     StaffUserPasswordView,
+    StaffUserQrCodesView,
 )
 
 
@@ -92,6 +93,7 @@ urlpatterns = [
     re_path(r"^api/token/$", ProgeoTokenObtainPairView.as_view(), name="token_obtain_pair"),
     re_path(r"^api/auth-support/module-permissions/$", UserModulePermissionView.as_view(), name="module_permissions"),
     re_path(r"^api/auth-support/staff/users/$", StaffUserListView.as_view(), name="staff_users"),
+    re_path(r"^api/auth-support/staff/users/qr-codes/$", StaffUserQrCodesView.as_view(), name="staff_users_qr_codes"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/update/$", StaffUserDetailView.as_view(), name="staff_user_update"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/password/$", StaffUserPasswordView.as_view(), name="staff_user_password"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/delete/$", StaffUserDeleteView.as_view(), name="staff_user_delete"),

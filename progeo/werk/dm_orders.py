@@ -20,7 +20,8 @@ from django.conf import settings
 from django.core.cache import cache
 
 from progeo.helper.basics import elog
-from progeo.helper.manusensor import ManuSensorError, normalize_sensor
+from progeo.werk.airtable_dm_sensors import sensor_from_nr
+from progeo.werk.manusensor import ManuSensorError
 
 STATUS_TO_PRODUCE = "zu Produzieren"
 STATUS_ALL = "alle"
@@ -173,8 +174,9 @@ def sensor_row(record):
     row = {"id": record["id"]}
     for key, field in SENSOR_FIELDS.items():
         row[key] = fields.get(field)
-    # The 6-digit number the manuSensor app and the factory values use.
-    row["sensor"] = normalize_sensor(row["nr"])
+    # The 6-digit number the manuSensor app and the factory values use - as the
+    # staff import reads it ("23 H4" -> "000023"), else such a sensor could never be recorded.
+    row["sensor"] = sensor_from_nr(row["nr"])
     return row
 
 
@@ -222,7 +224,7 @@ def fetch_order_sensors(order_record_id, helper=None):
 
 
 STATUS_PRODUCED = "Produziert"
-# What the staff page (helper/production_overview.py) needs of a produced sensor.
+# What the staff page (werk/production_overview.py) needs of a produced sensor.
 _PRODUCED_FIELDS = ("Länge", "Vorlauf gesamt", "Produktionsstatus", "Produziert am", SENSOR_ORDER_RECORD_ID)
 
 
@@ -288,7 +290,7 @@ def produced_sensor_ids(order_record_ids):
 
 def _with_factory_values(order, sensors):
     """R_Werk of the sensors the factory app already stored (FactorySensor)."""
-    from progeo.helper.manusensor import DB, parse_project
+    from progeo.werk.manusensor import DB, parse_project
     from progeo.werk.models import FactorySensor
 
     project_id = parse_project(order.get("projekt"))
@@ -377,8 +379,8 @@ def forget(*keys):
 
 def order_detail(key):
     """GET /v1/werk/auftraege/<key>/: the order with "sensoren" - 404 if
-    unknown - plus the production state (helper/production.py, not cached)."""
-    from progeo.helper import production
+    unknown - plus the production state (werk/production.py, not cached)."""
+    from progeo.werk import production
 
     detail = load_order(key)
     # Not cached: the factory app stores R_Werk while the order is being produced.

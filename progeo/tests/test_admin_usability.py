@@ -473,7 +473,7 @@ def _action(client, model_name, action, objs):
 def test_the_airtable_action_queues_the_selected_measurements(admin_client, monkeypatch):
     queued = []
     monkeypatch.setattr(AirtableHelper, "configured", property(lambda self: True))
-    monkeypatch.setattr("progeo.helper.manusensor.queue_airtable_push", queued.append)
+    monkeypatch.setattr("progeo.werk.manusensor.queue_airtable_push", queued.append)
     first, second = _site_measurement(), _site_measurement()
 
     response = _action(admin_client, "sitemeasurement", "copy_to_airtable", [first, second])

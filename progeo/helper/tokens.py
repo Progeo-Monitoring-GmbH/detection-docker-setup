@@ -41,30 +41,54 @@ def valid_drf_token(user):
     return None if token is None or is_expired_drf_token(token) else token
 
 
+def mark_qr_token(token):
+    """`token` is the user's login QR code from now on: it never expires
+    (is_qr_token) - it ends only when revoked (replace_drf_token,
+    revoke_user_tokens: password change/reset, logout everywhere)."""
+    from progeo.v1.models import UserProfile
+
+    UserProfile.objects.using(DB).update_or_create(
+        user_id=token.user_id, defaults={"qr_token_created": token.created},
+    )
+
+
+def is_qr_token(token) -> bool:
+    """Was `token` issued as its user's login QR code (mark_qr_token)?"""
+    from progeo.v1.models import UserProfile
+
+    return UserProfile.objects.using(DB).filter(
+        user_id=token.user_id, qr_token_created=token.created,
+    ).exists()
+
+
 def drf_token_for_qr_code(user):
-    """(token, created): the DRF token of `user` for the profile's QR code
-    (module_profile_qr_code). An existing one is kept - /auth/login/ hands out
-    the same - an expired one is replaced."""
+    """(token, created): the DRF token of `user` for the QR code (profile,
+    staff export). An existing one is kept - /auth/login/ hands out the same -
+    an expired one is replaced. Either way it is valid until revoked from now
+    on (mark_qr_token)."""
     from rest_framework.authtoken.models import Token
 
     token = valid_drf_token(user)
-    if token is not None:
-        return token, False
-    Token.objects.using(DB).filter(user_id=user.pk).delete()
-    token = Token.objects.using(DB).create(user_id=user.pk)
-    ilog(f"[tokens] DRF token for the QR code of user {user.pk} created")
-    return token, True
+    created = token is None
+    if created:
+        Token.objects.using(DB).filter(user_id=user.pk).delete()
+        token = Token.objects.using(DB).create(user_id=user.pk)
+        ilog(f"[tokens] DRF token for the QR code of user {user.pk} created")
+    mark_qr_token(token)
+    return token, created
 
 
 def replace_drf_token(user):
     """A new DRF token for `user`; the old one - leaked, say - stops working
-    at once, for the QR code and for every client that logged in with it."""
+    at once, for the QR code and for every client that logged in with it. The
+    new one is the QR code's (mark_qr_token): valid until revoked."""
     from django.db import transaction
     from rest_framework.authtoken.models import Token
 
     with transaction.atomic(using=DB):
         deleted, _ = Token.objects.using(DB).filter(user_id=user.pk).delete()
         token = Token.objects.using(DB).create(user_id=user.pk)
+        mark_qr_token(token)
     ilog(f"[tokens] DRF token of user {user.pk} revoked and replaced" if deleted
          else f"[tokens] DRF token for the QR code of user {user.pk} created")
     return token

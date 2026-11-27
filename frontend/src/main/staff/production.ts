@@ -1,7 +1,7 @@
 /**
  * The staff page of the production record dm (ProductionView): types of
  * GET /v1/werk/produktion/ and POST /v1/werk/produktion/qs/
- * (helper/production_overview.py) and the pure helpers.
+ * (werk/production_overview.py) and the pure helpers.
  */
 
 export const OVERVIEW_URL = '/v1/werk/produktion/';

@@ -1,8 +1,8 @@
 from django.core.management.base import CommandError
 
-from progeo.helper import airtable_dm_sensors
-from progeo.helper.manusensor import ManuSensorError
 from progeo.management.commands._base import BaseCommand
+from progeo.werk import airtable_dm_sensors
+from progeo.werk.manusensor import ManuSensorError
 
 
 class Command(BaseCommand):

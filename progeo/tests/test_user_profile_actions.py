@@ -314,6 +314,89 @@ def test_qr_code_replaces_an_expired_token(api_client, settings):
     assert Token.objects.using(f.DB).get(user=user).key != old.key
 
 
+def _age(token, days):
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from rest_framework.authtoken.models import Token
+
+    Token.objects.using(f.DB).filter(pk=token.pk).update(created=timezone.now() - timedelta(days=days))
+
+
+def test_the_qr_code_token_is_valid_until_revoked(api_client, settings):
+    from rest_framework.authtoken.models import Token
+    from rest_framework.test import APIClient
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = f.make_user(perms=("module_profile_qr_code",))
+    api_client.force_authenticate(user=user)
+    api_client.post("/v1/user/qr-code/")
+    token = Token.objects.using(f.DB).get(user=user)
+    _age(token, 400)
+    # The mark follows the token's `created` - keep it in step with the aged row.
+    UserProfile.objects.using(f.DB).filter(user=user).update(
+        qr_token_created=Token.objects.using(f.DB).get(pk=token.pk).created)
+
+    login = APIClient().get("/v1/user/profile/", HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    assert login.status_code == 200
+    assert login.json()["qr_code_exists"] is True
+    second = api_client.post("/v1/user/qr-code/")
+    assert second.json()["created"] is False
+    assert Token.objects.using(f.DB).get(user=user).key == token.key
+
+
+def test_an_existing_token_shown_as_qr_code_no_longer_expires(api_client, settings):
+    from rest_framework.authtoken.models import Token
+    from rest_framework.test import APIClient
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = f.make_user(perms=("module_profile_qr_code",))
+    token = Token.objects.using(f.DB).create(user=user)  # from /auth/login/, say
+    api_client.force_authenticate(user=user)
+
+    assert api_client.post("/v1/user/qr-code/").json()["created"] is False
+    profile = UserProfile.objects.using(f.DB).get(user=user)
+    _age(token, 400)
+    profile.qr_token_created = Token.objects.using(f.DB).get(pk=token.pk).created
+    profile.save(update_fields=["qr_token_created"])
+
+    assert APIClient().get("/v1/user/profile/", HTTP_AUTHORIZATION=f"Token {token.key}").status_code == 200
+
+
+def test_other_drf_tokens_still_expire(settings):
+    from rest_framework.authtoken.models import Token
+
+    from progeo.authentication import is_expired_drf_token
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = f.make_user()
+    token = Token.objects.using(f.DB).create(user=user)
+    UserProfile.objects.using(f.DB).create(user=user, qr_token_created=token.created)  # an older QR code's
+    Token.objects.using(f.DB).filter(pk=token.pk).delete()
+    fresh = Token.objects.using(f.DB).create(user=user)
+    _age(fresh, 31)
+
+    assert is_expired_drf_token(Token.objects.using(f.DB).get(pk=fresh.pk)) is True
+
+
+def test_a_revoked_qr_code_stops_working_and_its_successor_never_expires(api_client, settings):
+    from rest_framework.authtoken.models import Token
+    from rest_framework.test import APIClient
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = f.make_user(perms=("module_profile_qr_code",))
+    api_client.force_authenticate(user=user)
+    api_client.post("/v1/user/qr-code/")
+    old = Token.objects.using(f.DB).get(user=user).key
+
+    api_client.post("/v1/user/qr-code/revoke/")
+
+    new = Token.objects.using(f.DB).get(user=user)
+    assert APIClient().get("/v1/user/profile/", HTTP_AUTHORIZATION=f"Token {old}").status_code == 401
+    assert UserProfile.objects.using(f.DB).get(user=user).qr_token_created == new.created
+
+
 def test_qr_code_is_a_png_image(api_client):
     api_client.force_authenticate(user=f.make_user(perms=("module_profile_qr_code",)))
 

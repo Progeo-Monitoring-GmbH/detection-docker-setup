@@ -1,6 +1,6 @@
 /**
  * The staff page of the dm sensors' factory values (FactorySensorsView):
- * types of GET /v1/werk/sensoren/ (helper/manusensor.py staff_overview) and
+ * types of GET /v1/werk/sensoren/ (werk/manusensor.py staff_overview) and
  * the pure helpers - CSV paste, server errors, formatting.
  */
 
@@ -73,7 +73,7 @@ export type SensorsOverview = {
   toleranz_prozent: number;
 };
 
-// ---- Import of the Airtable table "dm Sensoren" (helper/airtable_dm_sensors.py)
+// ---- Import of the Airtable table "dm Sensoren" (werk/airtable_dm_sensors.py)
 
 export const AIRTABLE_PROJECTS_URL = `${SENSORS_URL}airtable/`;
 export const airtableImportUrl = (projekt: string) =>

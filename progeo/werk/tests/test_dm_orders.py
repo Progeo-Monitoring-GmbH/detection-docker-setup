@@ -1,12 +1,12 @@
-"""The dm production orders for the manuSensor app (helper/dm_orders.py,
+"""The dm production orders for the manuSensor app (werk/dm_orders.py,
 GET /v1/werk/auftraege/[<ID>/]) - against a fake Airtable."""
 
 import hashlib
 
 import pytest
 
-from progeo.helper import dm_orders
 from progeo.tests import factories as f
+from progeo.werk import dm_orders
 from progeo.werk.models import FactorySensor
 
 ORDER_OPEN = {

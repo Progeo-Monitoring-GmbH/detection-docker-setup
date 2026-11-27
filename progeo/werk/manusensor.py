@@ -29,6 +29,11 @@ from django.utils.dateparse import parse_datetime
 
 from progeo.helper.basics import elog, ilog
 
+# Postgres integer columns - a bigger value would be a 500 instead of a 422.
+MAX_INT = 2_147_483_647
+# The hourly retry leaves a measurement this long to its own copy (queued at once).
+AIRTABLE_RETRY_AFTER = datetime.timedelta(minutes=10)
+
 DB = DEFAULT_DB_ALIAS
 
 IDENTIFICATIONS = ("nfc", "manuell")
@@ -123,7 +128,7 @@ def _factory_row(index, row):
     if sensor is None:
         raise invalid(f"{prefix}.sensor", "Sensornummer muss aus 1-6 Ziffern bestehen.")
     r_werk = row.get("r_werk_ohm")
-    if isinstance(r_werk, bool) or not isinstance(r_werk, int) or r_werk <= 0:
+    if isinstance(r_werk, bool) or not isinstance(r_werk, int) or not 0 < r_werk <= MAX_INT:
         raise invalid(f"{prefix}.r_werk_ohm", "R_Werk muss eine positive ganze Zahl (Ohm) sein.")
     tag_uid = None
     if row.get("tag_uid") not in (None, ""):
@@ -340,7 +345,10 @@ def _aware(value):
     """An ISO 8601 timestamp as an aware datetime, else None."""
     if not isinstance(value, str):
         return None
-    parsed = parse_datetime(value.strip())
+    try:
+        parsed = parse_datetime(value.strip())
+    except ValueError:  # well-formed but impossible, e.g. 2026-02-30 or 25:00
+        return None
     if parsed is None or timezone.is_naive(parsed):
         return None
     return parsed
@@ -350,7 +358,8 @@ def _optional_int(data, key, field, minimum=None):
     value = data.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, int) or (minimum is not None and value < minimum):
+    if isinstance(value, bool) or not isinstance(value, int) or (minimum is not None and value < minimum) \
+            or abs(value) > MAX_INT:
         raise invalid(field, f"{field}: ganze Zahl erwartet.")
     return value
 
@@ -545,7 +554,7 @@ def queue_airtable_push(measurement_pk):
     if not AirtableHelper().configured:
         return
     try:
-        from progeo.tasks import push_site_measurement_to_airtable
+        from progeo.werk.tasks import push_site_measurement_to_airtable
 
         push_site_measurement_to_airtable.delay(measurement_pk)
     except Exception as error:  # noqa: BLE001 - the hourly retry picks it up
@@ -630,8 +639,11 @@ def push_pending_to_airtable(limit=200):
     the oldest first. Returns how many arrived."""
     from progeo.werk.models import SiteMeasurement
 
+    # Not the ones whose own copy may still be queued or running - that would
+    # create their row in Airtable twice.
     pending = (
-        SiteMeasurement.objects.using(DB).filter(airtable_record_id__isnull=True)
+        SiteMeasurement.objects.using(DB)
+        .filter(airtable_record_id__isnull=True, received_at__lt=timezone.now() - AIRTABLE_RETRY_AFTER)
         .order_by("pk").values_list("pk", flat=True)[:limit]
     )
     return sum(push_to_airtable(pk) for pk in pending)

@@ -22,9 +22,9 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.utils import timezone
 
-from progeo.helper import dm_orders
 from progeo.helper.basics import elog, ilog, wlog
-from progeo.helper.manusensor import (
+from progeo.werk import dm_orders
+from progeo.werk.manusensor import (
     ManuSensorError,
     _aware,
     _iso,
@@ -39,6 +39,8 @@ MEASURES = ("r_platine", "r_aufgespult", "r_kurzschluss")
 MEASURE_LABELS = {"r_platine": "①", "r_aufgespult": "②", "r_kurzschluss": "③"}
 SOURCES = ("manuell", "modul")
 MAX_ENTRIES = 1000
+# Postgres integer columns (PositiveIntegerField) - a bigger value would be a 500.
+MAX_INT = 2_147_483_647
 PROGRESS_AIRTABLE_MINUTES = 5
 BERLIN = zoneinfo.ZoneInfo("Europe/Berlin")
 
@@ -56,7 +58,7 @@ AIRTABLE_SENSOR_FIELDS = {
     "vorlauf_rolle": "Vorlauf-Rolle",
     "erfasst_von": "Erfasst von",
     "quelle": "Protokoll-Quelle",
-    # existing fields (QS: helper/production_overview.py)
+    # existing fields (QS: werk/production_overview.py)
     "qs": "QS-Prüfung",
     "qs_manuell": "QS manuell",
     "status": "Produktionsstatus",
@@ -132,8 +134,8 @@ def _measure(value, field):
         raise invalid(field, f"{field}: Objekt {{ohm, status}} oder null erwartet.")
     status, ohm = value.get("status"), value.get("ohm")
     if status == "ok":
-        if isinstance(ohm, bool) or not isinstance(ohm, int) or ohm < 0:
-            raise invalid(f"{field}.ohm", f"{field}.ohm: ganze Zahl ≥ 0 erwartet.")
+        if isinstance(ohm, bool) or not isinstance(ohm, int) or not 0 <= ohm <= MAX_INT:
+            raise invalid(f"{field}.ohm", f"{field}.ohm: ganze Zahl von 0 bis {MAX_INT} erwartet.")
         return ohm, "ok"
     if status == "offen":
         if ohm is not None:
@@ -204,7 +206,7 @@ def _queue(task_name, *args):
     if not AirtableHelper().configured:
         return
     try:
-        from progeo import tasks
+        from progeo.werk import tasks
 
         getattr(tasks, task_name).delay(*args)
     except Exception as error:  # noqa: BLE001 - the hourly retry picks it up
@@ -273,7 +275,7 @@ def _clean_entry(index, row):
 
 def _clean_entries(data):
     """The body of 3.1 checked - (device, [cleaned]) or ManuSensorError 422."""
-    from progeo.helper.werk_users import factory_users_by_name
+    from progeo.werk.werk_users import factory_users_by_name
 
     if not isinstance(data, dict):
         raise invalid(None, "JSON-Objekt erwartet.")
@@ -339,8 +341,7 @@ def _store_factory_value(project_id, row):
 def save_entries(key, data):
     """3.1: stores the entries of `data` - all checked first (422/409: nothing
     stored). Returns {"ergebnisse", "eintraege_erfasst"}."""
-    from progeo.helper import production_overview
-    from progeo.werk.models import ProductionEntry, ProductionSheet
+    from progeo.werk.models import ProductionSheet
 
     device, rows = _clean_entries(data)
     detail = _order_sensors(key, [row["sensor_record_id"] for row in rows])
@@ -359,6 +360,25 @@ def save_entries(key, data):
         for sheet in ProductionSheet.objects.using(DB).filter(order_record_id=record_id)
         for sensor_id in sheet.sensor_record_ids
     }
+    for index, row in enumerate(rows):
+        # A produced sensor keeps ①, ② and ③ - a value may change, not vanish.
+        if row["sensor_record_id"] in sheet_of and not all(row[f"{name}_status"] for name in MEASURES):
+            raise invalid(f"eintraege[{index}]", "Freigegebener Sensor: ①, ② und ③ müssen gemessen sein.")
+    try:
+        results = _store_entries(rows, detail, device, record_id, project_id, sensors, sheet_of)
+    except IntegrityError:
+        # A new entry stored at the same moment by a resend - again, now it is an update.
+        results = _store_entries(rows, detail, device, record_id, project_id, sensors, sheet_of)
+    return {"ergebnisse": results, "eintraege_erfasst": _complete_count(record_id)}
+
+
+MEASURE_FIELDS = tuple(f"{name}_{part}" for name in MEASURES for part in ("ohm", "status"))
+
+
+def _store_entries(rows, detail, device, record_id, project_id, sensors, sheet_of):
+    from progeo.werk import production_overview
+    from progeo.werk.models import ProductionEntry
+
     results, changed_after_release = [], []
     with transaction.atomic(using=DB):
         existing = ProductionEntry.objects.using(DB).select_for_update().in_bulk(
@@ -371,6 +391,7 @@ def save_entries(key, data):
             if entry is not None and _same(entry, row):
                 results.append({"sensor_record_id": row["sensor_record_id"], "ergebnis": "unveraendert"})
                 continue
+            measured_before = None if entry is None else [getattr(entry, field) for field in MEASURE_FIELDS]
             entry = entry or ProductionEntry(sensor_record_id=row["sensor_record_id"])
             for field in VALUE_FIELDS:
                 setattr(entry, field, row[field])
@@ -379,12 +400,15 @@ def save_entries(key, data):
             sensor = sensors[row["sensor_record_id"]]
             entry.laenge_m = production_overview.length(sensor.get("laenge_m"))
             entry.vorlauf_m = production_overview.length(sensor.get("vorlauf_gesamt_m"))
-            sheet = sheet_of.get(row["sensor_record_id"])
+            # The locked row knows its sheet even if it was released a moment ago.
+            sheet = entry.sheet if entry.sheet_id else sheet_of.get(row["sensor_record_id"])
             if sheet is not None:
                 entry.sheet = sheet
                 entry.nach_freigabe_geaendert = True
                 entry.airtable_synced_at = None
-                production_overview.check(entry)
+                # A new measurement is checked again; a changed roll name keeps the decision.
+                if measured_before != [getattr(entry, field) for field in MEASURE_FIELDS]:
+                    production_overview.check(entry)
             entry.save(using=DB)
             if sheet is not None:
                 changed_after_release.append(entry.pk)
@@ -392,7 +416,7 @@ def save_entries(key, data):
             results.append({"sensor_record_id": row["sensor_record_id"], "ergebnis": "gespeichert"})
         for pk in changed_after_release:
             transaction.on_commit(lambda pk=pk: _queue("push_production_entry", pk), using=DB)
-    return {"ergebnisse": results, "eintraege_erfasst": _complete_count(record_id)}
+    return results
 
 
 def entry_json(entry):
@@ -424,20 +448,30 @@ def entries(key):
 
 # ---------------------------------------------------------------------------- 3.3 release
 
-def _release_answer(sheet):
+def order_released(order_record_id):
+    """(released sheets, done): done when every sheet is released - counted
+    against the highest sheet count any release saw (sensors added later)."""
+    from django.db.models import Count, Max
+
     from progeo.werk.models import ProductionSheet
 
-    released = ProductionSheet.objects.using(DB).filter(order_record_id=sheet.order_record_id).count()
+    state = ProductionSheet.objects.using(DB).filter(order_record_id=order_record_id).aggregate(
+        released=Count("pk"), total=Max("blaetter_gesamt"))
+    return state["released"], bool(state["released"]) and state["released"] >= state["total"]
+
+
+def _release_answer(sheet):
+    _released, done = order_released(sheet.order_record_id)
     return {
         "blatt": sheet.blatt,
         "freigegeben_am": _iso(sheet.freigegeben_am),
         "sensoren": len(sheet.sensor_record_ids),
-        "auftrag_fertig": released >= sheet.blaetter_gesamt,
+        "auftrag_fertig": done,
     }
 
 
 def _clean_release(data):
-    from progeo.helper.werk_users import factory_users_by_name
+    from progeo.werk.werk_users import factory_users_by_name
 
     if not isinstance(data, dict):
         raise invalid(None, "JSON-Objekt erwartet.")
@@ -451,7 +485,7 @@ def _clean_release(data):
         raise invalid("freigegeben_von", f"{name} ist kein Werk-Benutzer.")
     released_at = _timestamp(data.get("freigegeben_am"), "freigegeben_am")
     flagged = data.get("auffaellig_bestaetigt") or []
-    if not isinstance(flagged, list) or not set(flagged) <= set(ids):
+    if not isinstance(flagged, list) or not all(isinstance(i, str) for i in flagged) or not set(flagged) <= set(ids):
         raise invalid("auffaellig_bestaetigt", "auffaellig_bestaetigt: Sensoren dieses Blatts erwartet.")
     return device, ids, user, released_at, flagged
 
@@ -459,15 +493,17 @@ def _clean_release(data):
 def release_sheet(key, blatt, data):
     """3.3: releases sheet `blatt` - its sensors are produced and get their
     automatic QS check. Again the same sheet: the same answer."""
-    from progeo.helper import production_overview
+    from progeo.werk import production_overview
     from progeo.werk.models import ProductionEntry, ProductionSheet
 
     device, ids, user, released_at, flagged = _clean_release(data)
-    detail = dm_orders.load_order(key, fresh=True)
-    record_id = detail["id"]
-    done = ProductionSheet.objects.using(DB).filter(order_record_id=record_id, blatt=blatt).first()
+    # A resend is answered without reading all sensors from Airtable again.
+    done = ProductionSheet.objects.using(DB).filter(
+        order_record_id=dm_orders.resolve_order(key)["id"], blatt=blatt).first()
     if done is not None:
         return _release_answer(done)
+    detail = dm_orders.load_order(key, fresh=True)
+    record_id = detail["id"]
     sheets = sheets_of(detail["sensoren"])
     if not 1 <= blatt <= len(sheets):
         raise ManuSensorError(404, "blatt_unbekannt", f"Der Auftrag hat {len(sheets)} Blätter.", "blatt")
@@ -513,12 +549,12 @@ def _clean_progress(data):
         "zeitpunkt": _timestamp(data.get("zeitpunkt"), "zeitpunkt"),
     }
     sheet = data.get("aktives_blatt")
-    if sheet is not None and (isinstance(sheet, bool) or not isinstance(sheet, int) or sheet < 1):
+    if sheet is not None and (isinstance(sheet, bool) or not isinstance(sheet, int) or not 1 <= sheet <= MAX_INT):
         raise invalid("aktives_blatt", "aktives_blatt: Blattnummer ≥ 1 oder null.")
     cleaned["aktives_blatt"] = sheet
     for field in ("erfasst", "ungesendet"):
         value = data.get(field, 0)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_INT:
             raise invalid(field, f"{field}: ganze Zahl ≥ 0 erwartet.")
         cleaned[field] = value
     released = data.get("freigegebene_blaetter") or []
@@ -535,13 +571,26 @@ def _clean_progress(data):
 def report_progress(key, data):
     """3.4: keeps the newest report of the order; another device than the
     last one is answered with it ("anderes_geraet")."""
-    from progeo.helper import rolls
-    from progeo.werk.models import ProductionProgress
+    from progeo.werk import rolls
 
     cleaned = _clean_progress(data)
     order = dm_orders.resolve_order(key)
     total = order.get("anzahl_sensoren") or len(order.get("sensor_record_ids") or []) or None
-    other, due = None, False
+    try:
+        other = _store_progress(order, cleaned, total)
+    except IntegrityError:
+        # The first report of the order twice at once - again, now it is an update.
+        other = _store_progress(order, cleaned, total)
+    for roll in cleaned["rollen"]:
+        rolls.report_from_progress(roll, cleaned, order.get("auftrag_id"))
+    return {"ok": True, "anderes_geraet": other}
+
+
+def _store_progress(order, cleaned, total):
+    """The report stored - the other device that reported before, else None."""
+    from progeo.werk.models import ProductionProgress
+
+    other = None
     with transaction.atomic(using=DB):
         progress = ProductionProgress.objects.using(DB).select_for_update().filter(
             order_record_id=order["id"]).first()
@@ -562,9 +611,7 @@ def report_progress(key, data):
             progress.save(using=DB)
             if due:
                 transaction.on_commit(lambda: _queue("push_production_progress", progress.pk), using=DB)
-    for roll in cleaned["rollen"]:
-        rolls.report_from_progress(roll, cleaned, order.get("auftrag_id"))
-    return {"ok": True, "anderes_geraet": other}
+    return other
 
 
 # ---------------------------------------------------------------------------- Airtable
@@ -588,7 +635,7 @@ def sensor_fields(entry):
         fields[names["qs_manuell"]] = entry.qs_manuell
     sheet = entry.sheet
     if sheet is not None:
-        from progeo.helper.werk_users import resource_id
+        from progeo.werk.werk_users import resource_id
 
         fields[names["status"]] = PRODUCED
         fields[names["produziert_am"]] = _iso(sheet.freigegeben_am)
@@ -615,21 +662,34 @@ def _entries_failed(pks, error):
     ProductionEntry.objects.using(DB).filter(pk__in=pks).update(airtable_error=str(error)[:2000])
 
 
+AIRTABLE_BATCH = 10  # records per Airtable write request
+
+
+def _push_batch(table, batch):
+    """One write request - the pks that arrived. A failed request is tried
+    row by row, so one bad row (e.g. deleted in Airtable) only fails itself."""
+    try:
+        table.batch_update([{"id": e.sensor_record_id, "fields": sensor_fields(e)} for e in batch], typecast=True)
+        return [entry.pk for entry in batch]
+    except Exception as error:  # noqa: BLE001 - kept for the hourly retry
+        if len(batch) == 1:
+            _entries_failed([batch[0].pk], error)
+            elog(f"Airtable copy of production entry {batch[0]} failed: {error}", tag="[PRODUKTION]")
+            return []
+    return [pk for entry in batch for pk in _push_batch(table, [entry])]
+
+
 def push_entries(entries_, helper):
-    """Copies released entries to "dm Sensoren" (10 per request). True when they arrived."""
+    """Copies released entries to "dm Sensoren". True when all arrived."""
     from progeo.werk.models import ProductionEntry
 
-    pks = [entry.pk for entry in entries_]
-    try:
-        table = helper.table(dm_orders.sensors_table_name())
-        table.batch_update([{"id": e.sensor_record_id, "fields": sensor_fields(e)} for e in entries_], typecast=True)
-    except Exception as error:  # noqa: BLE001 - kept for the hourly retry
-        _entries_failed(pks, error)
-        elog(f"Airtable copy of production entries {pks} failed: {error}", tag="[PRODUKTION]")
-        return False
-    ProductionEntry.objects.using(DB).filter(pk__in=pks).update(
+    table = helper.table(dm_orders.sensors_table_name())
+    arrived = []
+    for start in range(0, len(entries_), AIRTABLE_BATCH):
+        arrived += _push_batch(table, entries_[start:start + AIRTABLE_BATCH])
+    ProductionEntry.objects.using(DB).filter(pk__in=arrived).update(
         airtable_synced_at=timezone.now(), airtable_error=None)
-    return True
+    return len(arrived) == len(entries_)
 
 
 def push_entry(entry_pk):
@@ -653,14 +713,13 @@ def push_sheet(sheet_pk):
     helper = _helper()
     if sheet is None or helper is None:
         return False
+    # Only what didn't arrive yet - a retry doesn't send the whole sheet again.
     sheet_entries = list(ProductionEntry.objects.using(DB).select_related("erfasst_von", "sheet").filter(
-        sheet=sheet))
-    if not push_entries(sheet_entries, helper):
-        ProductionSheet.objects.using(DB).filter(pk=sheet.pk).update(airtable_error="Sensoren nicht übertragen")
-        return False
-    released = ProductionSheet.objects.using(DB).filter(order_record_id=sheet.order_record_id).count()
+        sheet=sheet, airtable_synced_at__isnull=True).order_by("sensor", "pk"))
+    entries_arrived = push_entries(sheet_entries, helper)
+    released, done = order_released(sheet.order_record_id)
     fields = {AIRTABLE_ORDER_FIELDS["freigegeben"]: released}
-    if released >= sheet.blaetter_gesamt:
+    if done:
         fields[AIRTABLE_ORDER_FIELDS["status"]] = PRODUCED
     try:
         helper.table(dm_orders.orders_table_name()).update(sheet.order_record_id, fields, typecast=True)
@@ -668,9 +727,12 @@ def push_sheet(sheet_pk):
         ProductionSheet.objects.using(DB).filter(pk=sheet.pk).update(airtable_error=str(error)[:2000])
         elog(f"Airtable update of {sheet.order_id} after {sheet} failed: {error}", tag="[PRODUKTION]")
         return False
+    dm_orders.forget(sheet.order_id, sheet.order_record_id)
+    if not entries_arrived:
+        ProductionSheet.objects.using(DB).filter(pk=sheet.pk).update(airtable_error="Sensoren nicht übertragen")
+        return False
     ProductionSheet.objects.using(DB).filter(pk=sheet.pk).update(
         airtable_synced_at=timezone.now(), airtable_error=None)
-    dm_orders.forget(sheet.order_id, sheet.order_record_id)
     return True
 
 
@@ -696,17 +758,23 @@ def push_progress(progress_pk):
     try:
         helper.table(dm_orders.orders_table_name()).update(
             progress.order_record_id, {AIRTABLE_ORDER_FIELDS["fortschritt"]: progress_text(progress)}, typecast=True)
-    except Exception as error:  # noqa: BLE001 - the next report tries again (after 5 minutes)
+    except Exception as error:  # noqa: BLE001 - push_pending tries again
         ProductionProgress.objects.using(DB).filter(pk=progress.pk).update(airtable_error=str(error)[:2000])
         elog(f"Airtable progress of {progress.order_id} failed: {error}", tag="[PRODUKTION]")
         return False
-    ProductionProgress.objects.using(DB).filter(pk=progress.pk).update(airtable_error=None)
+    # Sent now: a report received later is newer than this copy (push_pending).
+    ProductionProgress.objects.using(DB).filter(pk=progress.pk).update(
+        airtable_error=None, airtable_gesendet_am=timezone.now())
     return True
 
 
 def push_pending(limit=200):
-    """Hourly: the released sheets and entries whose copy failed or got lost."""
-    from progeo.werk.models import ProductionEntry, ProductionSheet
+    """Hourly: the released sheets and entries whose copy failed or got lost,
+    and the progress reports newer than their last copy (the last report of
+    an order, held back by the 5 minutes, or a failed copy)."""
+    from django.db.models import F, Q
+
+    from progeo.werk.models import ProductionEntry, ProductionProgress, ProductionSheet
 
     pushed = 0
     for pk in ProductionSheet.objects.using(DB).filter(airtable_synced_at__isnull=True).order_by(
@@ -715,9 +783,16 @@ def push_pending(limit=200):
     helper = _helper()
     if helper is None:
         return pushed
+    # Never tried before failed ones - a row that keeps failing can't hold the others up.
     pending = list(ProductionEntry.objects.using(DB).select_related("erfasst_von", "sheet").filter(
         sheet__isnull=False, sheet__airtable_synced_at__isnull=False, airtable_synced_at__isnull=True,
-    ).order_by("pk")[:limit])
-    if pending and push_entries(pending, helper):
-        pushed += len(pending)
+    ).order_by(F("airtable_error").asc(nulls_first=True), "pk")[:limit])
+    if pending:
+        push_entries(pending, helper)
+        pushed += ProductionEntry.objects.using(DB).filter(
+            pk__in=[entry.pk for entry in pending], airtable_synced_at__isnull=False).count()
+    stale = ProductionProgress.objects.using(DB).filter(
+        Q(airtable_gesendet_am__isnull=True) | Q(empfangen_am__gt=F("airtable_gesendet_am")))
+    for pk in stale.order_by("pk").values_list("pk", flat=True)[:limit]:
+        pushed += push_progress(pk)
     return pushed
