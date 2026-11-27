@@ -45,6 +45,7 @@ DEFAULT_LIMITS = {
     "sms_global_hour": 20,
     "sms_global_day": 50,
     "sms_max_segments": 1,
+    "sms_device_hour": 30,
     "messenger_per_recipient_hour": 10,
     "messenger_per_recipient_day": 50,
     "messenger_global_hour": 50,
@@ -151,7 +152,7 @@ def _count(channel: str, since, recipient: str | None = None) -> int:
 
     queryset = OutboundMessage.objects.using(DB).filter(
         channel=channel, created__gte=since, status__in=OutboundMessage.COUNTED_STATUSES,
-    )
+    ).exclude(category__startswith="device_")
     if recipient is not None:
         queryset = queryset.filter(recipient=recipient)
     return queryset.count()

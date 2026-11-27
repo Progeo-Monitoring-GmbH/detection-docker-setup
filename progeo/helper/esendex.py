@@ -104,7 +104,8 @@ def _log_sms(to: str, body: str, sender: str | None, location, db: str, sent: bo
 
 def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = None,
              location=None, db: str = "default", category: str = "system",
-             bypass_location_switch: bool = False) -> dict:
+             bypass_location_switch: bool = False, bypass_limits: bool = False,
+             max_segments: int | None = None) -> dict:
     """Send one SMS through Esendex and log the attempt as an SMS row.
 
     The outbound guard runs first (helper/outbound.py): a `location` whose
@@ -124,6 +125,10 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         location: optional location (project) the SMS belongs to.
         db: database the SMS row is stored in (the location's account db).
         category: kind of message for the outbound log (alarm, test, ...).
+        bypass_limits: skip the per-recipient / global limits and the circuit
+            breaker (device SMS; the dry run still applies).
+        max_segments: cut the text at this many segments instead of
+            OUTBOUND_LIMITS["sms_max_segments"].
 
     Returns e.g. ``{"success": True, "to": ..., "batch_id": "...",
     "message_ids": ["..."], "from": "..."}`` - plus ``"dry_run": True`` when
@@ -138,7 +143,7 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
 
     status = OutboundMessage.Status
     channel = OutboundMessage.Channel.SMS
-    body = outbound.sms_text(body)
+    body = outbound.sms_text(body, max_segments)
     recipient = outbound.normalize_phone(to) or str(to).strip()
     effective_sender = sender or _effective_cfg(cfg).get("from") or None
 
@@ -150,7 +155,7 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         return {"success": False, "withheld": True, "to": str(to).strip(), "from": effective_sender,
                 "batch_id": None, "message_ids": []}
 
-    _allowed, rejected = outbound.check(channel, [recipient])
+    rejected = {} if bypass_limits else outbound.check(channel, [recipient])[1]
     if recipient in rejected:
         reject_status, error = rejected[recipient]
         elog(f"SMS to {to} not sent: {error}", tag="[ESENDEX]")

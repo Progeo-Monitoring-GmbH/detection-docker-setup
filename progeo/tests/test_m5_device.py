@@ -1,19 +1,29 @@
 """M5 AIN4 devices: detection, threshold capability, extra sample fields
 (helper/m5_device.py; device_thresholds, DeviceViewSet sample and sample/cc)."""
+# ruff: noqa: F811 - the imported fixtures are re-used as test arguments
 import itertools
 
 import pytest
+from django.utils import timezone
 
 from progeo.helper import (
     device_commands,
     device_provisioning,
     device_thresholds,
+    esendex,
     firmware_update,
     m5_device,
+    outbound,
 )
 from progeo.tests import factories as f
+from progeo.tests.test_email_and_sms_helpers import (  # noqa: F401 - fixtures
+    ESENDEX,
+    esendex_api,
+    isolated_config,
+)
 from progeo.v1.models import (
     Account,
+    OutboundMessage,
     ProgeoDevice,
     ProgeoDeviceCommand,
     ProgeoMeasurement,
@@ -241,3 +251,68 @@ def test_location_devices_reports_is_m5(api_client):
     rows = {row["id"]: row for row in body["devices"]}
     assert rows[m5.id]["is_m5"] is True
     assert rows[lua.id]["is_m5"] is False
+
+
+# -- Geraete-SMS: Versand ohne Limits ----------------------------------------
+
+@pytest.fixture
+def esendex_configured(db):
+    from progeo.v1.models import SystemConfig
+
+    SystemConfig.objects.using(f.DB).create(key="esendex", value=dict(ESENDEX))
+
+
+def _outbound_rows(count, category, recipient="+4915100", status=OutboundMessage.Status.SENT):
+    for _ in range(count):
+        OutboundMessage.objects.using(f.DB).create(
+            channel=OutboundMessage.Channel.SMS, status=status, recipient=recipient,
+            category=category, created=timezone.now())
+
+
+def test_bypass_limits_sends_despite_tripped_breaker(esendex_api, esendex_configured):
+    calls, _reply = esendex_api
+    outbound.trip_breaker("x")
+
+    result = esendex.send_sms("+4915100", "A", bypass_limits=True, category="device_alarm")
+
+    assert result["success"] is True
+    assert len(calls) == 1
+
+
+def test_bypass_limits_sends_despite_recipient_limit(esendex_api, esendex_configured):
+    calls, _reply = esendex_api
+    _outbound_rows(3, "alarm")
+
+    esendex.send_sms("+4915100", "A", bypass_limits=True, category="device_alarm")
+
+    assert len(calls) == 1
+
+
+def test_device_sms_not_counted_for_other_limits(esendex_api, esendex_configured):
+    calls, _reply = esendex_api
+    _outbound_rows(25, "device_alarm", recipient="+4915999")
+
+    result = esendex.send_sms("+4915100", "A", category="alarm")
+
+    assert result["success"] is True
+    assert len(calls) == 1
+    assert outbound.breaker_state()["tripped"] is False
+
+
+def test_max_segments_three_keeps_long_text(esendex_api, esendex_configured):
+    calls, _reply = esendex_api
+    text = "a" * 400
+
+    esendex.send_sms("+4915100", text, bypass_limits=True, max_segments=3, category="device_alarm")
+
+    assert calls[0]["json"]["messages"][0]["body"] == text
+
+
+def test_dry_run_still_applies_with_bypass(esendex_api, esendex_configured, settings):
+    calls, _reply = esendex_api
+    settings.SMS_DRY_RUN = True
+
+    result = esendex.send_sms("+4915100", "A", bypass_limits=True, category="device_alarm")
+
+    assert result["dry_run"] is True
+    assert calls == []
