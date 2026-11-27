@@ -8,7 +8,7 @@ import { staffFlags } from '../../main/access';
 import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
-import ConfigSectionCards, { type ConfigSection, maskedSecret } from './ConfigSectionCards';
+import ConfigSectionCards, { type ConfigSection, type SectionValues, maskedSecret } from './ConfigSectionCards';
 import { bundleVersionLabel, type FirmwareBundle } from './firmwareBundle';
 import { repeatedTestId } from '../../testIds';
 import './DeviceProvisionPanel.css';
@@ -30,6 +30,8 @@ type M5Defaults = {
   interval_sec: number;
   poll_sec: number;
   threshold_mv: Record<string, number>;
+  rs485_enabled?: boolean;
+  rs485_interval_sec?: number;
 };
 
 const DEFAULT_M5_MODEL = 'M5 AIN4';
@@ -57,6 +59,10 @@ type ProvisionSettings = {
   /** The threshold was typed by hand: a new pulldown no longer resets it. */
   threshold_touched: boolean;
   poll_sec: string;
+  /** M5 only: the RS485 climate sensors (XY-MD04) report to a LoRaWAN project of their own. */
+  rs485_enabled: boolean;
+  rs485_project_id: string;
+  rs485_interval_sec: string;
 };
 
 type QrCode = { payload: string; image: string };
@@ -101,6 +107,9 @@ const EMPTY_SETTINGS: ProvisionSettings = {
   threshold_mv: '',
   threshold_touched: false,
   poll_sec: '300',
+  rs485_enabled: false,
+  rs485_project_id: '',
+  rs485_interval_sec: '900',
 };
 
 /** ASCII only, like the backend's ascii_model: "smartex® mx-va" -> "smartex mx-va". */
@@ -196,6 +205,10 @@ const DeviceProvisionPanel = ({
   /** M5: the threshold must be 1..999 mV - an empty field is never sent as 0. */
   const thresholdValid = (value: string) => /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 999;
 
+  /** M5: with RS485 on, the climate project id must be a positive integer. */
+  const rs485Valid = (value: ProvisionSettings) =>
+    !value.rs485_enabled || (/^\d+$/.test(value.rs485_project_id.trim()) && Number(value.rs485_project_id) >= 1);
+
   /** M5: the factory threshold of a pulldown (defaults.m5.threshold_mv has string keys). */
   const defaultThreshold = (pulldown: string) => {
     const value = m5Defaults?.threshold_mv?.[pulldown];
@@ -222,6 +235,9 @@ const DeviceProvisionPanel = ({
       result.sensors = String(m5Defaults.sensors);
       result.interval_sec = String(m5Defaults.interval_sec);
       result.poll_sec = String(m5Defaults.poll_sec);
+      result.rs485_enabled = m5Defaults.rs485_enabled ?? false;
+      result.rs485_project_id = '';
+      result.rs485_interval_sec = String(m5Defaults.rs485_interval_sec ?? 900);
       result.protective_earth = false;
       result.rpi = false;
       result.router = false;
@@ -249,7 +265,7 @@ const DeviceProvisionPanel = ({
   }, [locationId, location?.model, m5Defaults]);
 
   const generate = (next: ProvisionSettings = settings) => {
-    if (next.model !== '' && next.model === m5Model && !thresholdValid(next.threshold_mv)) {
+    if (next.model !== '' && next.model === m5Model && (!thresholdValid(next.threshold_mv) || !rs485Valid(next))) {
       return;
     }
     setLoading(true);
@@ -261,7 +277,15 @@ const DeviceProvisionPanel = ({
       '/v1/device/provision/preview/',
       {
         config_format: nextIsM5 ? 'm5' : 'lua',
-        ...(nextIsM5 ? { threshold_mv: Number(next.threshold_mv), poll_sec: Number(next.poll_sec) } : {}),
+        ...(nextIsM5
+          ? {
+              threshold_mv: Number(next.threshold_mv),
+              poll_sec: Number(next.poll_sec),
+              rs485_enabled: next.rs485_enabled,
+              ...(next.rs485_project_id.trim() !== '' ? { rs485_project_id: Number(next.rs485_project_id) } : {}),
+              rs485_interval_sec: Number(next.rs485_interval_sec),
+            }
+          : {}),
         location: locationId,
         model: asciiModel(next.model),
         // '': the backend's default bundle (or its fallback version without any).
@@ -588,6 +612,62 @@ const DeviceProvisionPanel = ({
               }),
         }),
     },
+    ...(isM5
+      ? [
+          {
+            name: 'rs485',
+            title: t('provision_rs485_title'),
+            tone: 'green' as const,
+            rows: [
+              {
+                key: 'rs485_enabled',
+                label: t('provision_rs485_enabled'),
+                value: settings.rs485_enabled ? 'true' : 'false',
+              },
+              ...(settings.rs485_enabled
+                ? [{ key: 'rs485_project_id', label: t('provision_rs485_project_id'), value: settings.rs485_project_id }]
+                : []),
+              { key: 'rs485_interval_sec', label: t('provision_rs485_interval_sec'), value: settings.rs485_interval_sec },
+            ],
+            fields: [
+              {
+                key: 'rs485_enabled',
+                label: t('provision_rs485_enabled'),
+                kind: 'switch' as const,
+                testId: 'device-provision-rs485-enabled',
+              },
+              // Shown while enabled (the dialog's draft decides, see ConfigSectionCards.showWhen).
+              {
+                key: 'rs485_project_id',
+                label: t('provision_rs485_project_id'),
+                kind: 'number' as const,
+                min: 1,
+                testId: 'device-provision-rs485-project',
+                showWhen: 'rs485_enabled',
+              },
+              {
+                key: 'rs485_interval_sec',
+                label: t('provision_rs485_interval_sec'),
+                kind: 'number' as const,
+                min: 30,
+                max: 86400,
+                testId: 'device-provision-rs485-interval',
+              },
+            ],
+            values: {
+              rs485_enabled: settings.rs485_enabled,
+              rs485_project_id: settings.rs485_project_id,
+              rs485_interval_sec: settings.rs485_interval_sec,
+            },
+            onSave: (values: SectionValues) =>
+              applySettings({
+                rs485_enabled: values.rs485_enabled === true,
+                rs485_project_id: String(values.rs485_project_id ?? '').trim(),
+                rs485_interval_sec: String(values.rs485_interval_sec).trim(),
+              }),
+          },
+        ]
+      : []),
     {
       name: 'control',
       tone: 'amber',
@@ -671,7 +751,7 @@ const DeviceProvisionPanel = ({
               size="sm"
               variant={preview ? 'outline-secondary' : 'primary'}
               onClick={() => generate()}
-              disabled={loading || !settings.model || (isM5 && !thresholdValid(settings.threshold_mv))}
+              disabled={loading || !settings.model || (isM5 && (!thresholdValid(settings.threshold_mv) || !rs485Valid(settings)))}
               data-testid="device-provision-generate"
             >
               {loading && !preview ? (

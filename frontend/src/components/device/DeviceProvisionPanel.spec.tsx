@@ -21,7 +21,7 @@ vi.mock('../../axiosConfig', () => ({
             interval_sec: 1800,
             pulldown_resistance: 136,
             firmware: null,
-            m5: { sensors: 4, interval_sec: 300, poll_sec: 300, threshold_mv: { '136': 891, '72': 450, '40': 76, '24': 8 } },
+            m5: { sensors: 4, interval_sec: 300, poll_sec: 300, rs485_enabled: false, rs485_interval_sec: 900, threshold_mv: { '136': 891, '72': 450, '40': 76, '24': 8 } },
           },
           m5_model: 'M5 AIN4',
           firmware_bundles: [],
@@ -236,6 +236,35 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       });
     };
 
+    it('shows the RS485 card for M5 only, the project field once enabled, and sends the three values', () => {
+      expect(card('rs485')).toBeNull();
+      pickM5();
+
+      expect(card('rs485')?.textContent).toContain('provision_rs485_title');
+      click(one('device-provision-sections-edit', 'rs485'));
+      expect(one('device-provision-rs485-project')).toBeNull();
+      click(one('device-provision-rs485-enabled'));
+      expect(one('device-provision-rs485-project')).not.toBeNull();
+      type('device-provision-rs485-project', '2001');
+      type('device-provision-rs485-interval', '600');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({
+        rs485_enabled: true,
+        rs485_project_id: 2001,
+        rs485_interval_sec: 600,
+      });
+    });
+
+    it('sends RS485 disabled with the default interval and no project by default', () => {
+      pickM5();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ rs485_enabled: false, rs485_interval_sec: 900 });
+      expect(api.previews[0]).not.toHaveProperty('rs485_project_id');
+    });
+
     it('labels the M5 rows through t(), not raw keys', () => {
       pickM5();
 
@@ -289,6 +318,9 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       click(one('device-provision-generate'));
 
       expect(api.previews[0]).toMatchObject({ config_format: 'lua', model: 'smartex vt', sensors: 32, interval_sec: 1800 });
+      for (const key of ['rs485_enabled', 'rs485_project_id', 'rs485_interval_sec']) {
+        expect(api.previews[0]).not.toHaveProperty(key);
+      }
     });
 
     it('offers the M5 to staff only', () => {

@@ -13,7 +13,8 @@ export type SectionValues = Record<string, string | boolean>;
 
 /** One input of a section's dialog; `key` is the value's name in the config. */
 /** `label`: the translated name shown instead of `key`. */
-export type SectionField = { key: string; label?: string; testId?: string } & (
+/** `showWhen`: the key of a switch in the same dialog - the field shows (and counts) only while it is on. */
+export type SectionField = { key: string; label?: string; testId?: string; showWhen?: string } & (
   | { kind: 'text' | 'password' }
   | { kind: 'number'; min?: number; max?: number }
   | { kind: 'select'; options: { value: string; label: string; title?: string }[] }
@@ -23,6 +24,8 @@ export type SectionField = { key: string; label?: string; testId?: string } & (
 export type ConfigSection = {
   /** The section's name in the config ("wifi", "router", ...). */
   name: string;
+  /** The translated card name shown instead of `name`. */
+  title?: string;
   tone: SectionTone;
   /** What the card shows: the config's values, in its order. */
   rows: { key: string; label?: string; value: ReactNode; testId?: string }[];
@@ -85,9 +88,11 @@ const ConfigSectionCards = ({
 
   const set = (key: string, value: string | boolean) => setDraft((current) => ({ ...current, [key]: value }));
 
+  const visibleFields = (edited?.fields || []).filter((field) => !field.showWhen || draft[field.showWhen] === true);
+
   const draftValid =
     !!edited &&
-    (edited.fields || []).every((field) => numberValid(field, draft[field.key])) &&
+    visibleFields.every((field) => numberValid(field, draft[field.key])) &&
     (edited.valid?.(draft) ?? true);
 
   const save = () => {
@@ -159,15 +164,15 @@ const ConfigSectionCards = ({
             {...repeatedTestId(`${testId}-card`, section.name)}
           >
             <header className="config-section-head">
-              <span className="config-section-name">{section.name}</span>
+              <span className="config-section-name">{section.title ?? section.name}</span>
               {section.onRemove && (
                 <button
                   type="button"
                   className="config-section-action"
                   onClick={section.onRemove}
                   disabled={disabled}
-                  title={t('provision_section_remove', { section: section.name })}
-                  aria-label={t('provision_section_remove', { section: section.name })}
+                  title={t('provision_section_remove', { section: section.title ?? section.name })}
+                  aria-label={t('provision_section_remove', { section: section.title ?? section.name })}
                   {...repeatedTestId(`${testId}-remove`, section.name)}
                 >
                   <Trash size={13} aria-hidden="true" />
@@ -179,8 +184,8 @@ const ConfigSectionCards = ({
                   className="config-section-action"
                   onClick={() => open(section)}
                   disabled={disabled}
-                  title={t('provision_section_edit', { section: section.name })}
-                  aria-label={t('provision_section_edit', { section: section.name })}
+                  title={t('provision_section_edit', { section: section.title ?? section.name })}
+                  aria-label={t('provision_section_edit', { section: section.title ?? section.name })}
                   {...repeatedTestId(`${testId}-edit`, section.name)}
                 >
                   <Pencil size={13} aria-hidden="true" />
@@ -208,7 +213,7 @@ const ConfigSectionCards = ({
             {...repeatedTestId(`${testId}-add`, section.name)}
           >
             <PlusLg size={15} aria-hidden="true" />
-            {t('provision_section_add', { section: section.name })}
+            {t('provision_section_add', { section: section.title ?? section.name })}
           </button>
         ))}
       </div>
@@ -217,7 +222,7 @@ const ConfigSectionCards = ({
         testId={`${testId}-dialog`}
         show={!!edited}
         danger={false}
-        title={t(isNew ? 'provision_section_add' : 'provision_section_edit', { section: edited?.name })}
+        title={t(isNew ? 'provision_section_add' : 'provision_section_edit', { section: edited?.title ?? edited?.name })}
         confirmLabel={t('provision_section_save')}
         cancelLabel={t('provision_section_cancel')}
         confirmDisabled={!draftValid}
@@ -231,7 +236,7 @@ const ConfigSectionCards = ({
               save();
             }}
           >
-            {(edited?.fields || []).map(input)}
+            {visibleFields.map(input)}
             {/* Enter saves. */}
             <button type="submit" hidden />
           </Form>

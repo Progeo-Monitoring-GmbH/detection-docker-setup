@@ -2952,6 +2952,10 @@ i18n
           provision_config_format_m5: 'M5Stack (platform_config.h)',
           provision_threshold_mv: 'Start threshold (mV)',
           provision_poll_sec: 'Poll interval (s)',
+          provision_rs485_title: 'RS485 climate sensors',
+          provision_rs485_enabled: 'Send RS485 climate sensors',
+          provision_rs485_project_id: 'Climate project number',
+          provision_rs485_interval_sec: 'RS485 interval (s)',
           provision_threshold_invalid: 'The threshold must be between 1 and 999 mV.',
           provision_threshold_location: 'Location alarm threshold: {{value}} mV',
           provision_threshold_mismatch:
@@ -6575,6 +6579,10 @@ i18n
           provision_config_format_m5: 'M5Stack (platform_config.h)',
           provision_threshold_mv: 'Start-Schwelle (mV)',
           provision_poll_sec: 'Abfrage-Intervall (s)',
+          provision_rs485_title: 'RS485-Klimasensoren',
+          provision_rs485_enabled: 'RS485-Klimasensoren senden',
+          provision_rs485_project_id: 'Projektnummer der Klima-Sensoren',
+          provision_rs485_interval_sec: 'RS485-Intervall (s)',
           provision_threshold_invalid: 'Die Schwelle muss zwischen 1 und 999 mV liegen.',
           provision_threshold_location: 'Alarmschwelle der Location: {{value}} mV',
           provision_threshold_mismatch:
