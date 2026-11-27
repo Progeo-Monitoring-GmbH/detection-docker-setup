@@ -370,7 +370,7 @@ def _run_one_off(client, settings, *, command, volumes, timeout_seconds, on_line
 # created by the backend before (helper/screen_review.new_run_dir).
 _E2E_RUN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
 _E2E_ACTION = re.compile(r"^[a-z0-9][a-z0-9-]{0,120}$")
-E2E_DEVICES = ("pc", "mobile")
+E2E_DEVICES = ("pc", "mobile", "tablet", "tabletwide")
 E2E_ROLES = ("user", "staff")
 E2E_LANGUAGES = ("de", "en")
 E2E_TIMEOUT_RANGE = (60, 3 * 3600)

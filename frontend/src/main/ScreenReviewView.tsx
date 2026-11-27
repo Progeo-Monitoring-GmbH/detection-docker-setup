@@ -1474,6 +1474,8 @@ const ScreenReviewView = () => {
                 { value: 'all', label: t('screens_device_all') },
                 { value: 'pc', label: t('screens_device_pc') },
                 { value: 'mobile', label: t('screens_device_mobile') },
+                { value: 'tablet', label: t('screens_device_tablet') },
+                { value: 'tabletwide', label: t('screens_device_tabletwide') },
               ]}
               value={filter.device}
               onChange={(value) =>

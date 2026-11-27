@@ -472,8 +472,9 @@ save_check_dir(EXPORT_DIR)
 if os.getenv("SECURE_PROXY_SSL_HEADER"):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Same as progeo/settings.py: the legacy GPRS controllers speak plain http.
-SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+(_h)?\.php$"]
+# Same as progeo/settings.py: the legacy GPRS controllers and the health
+# probe inside the container speak plain http.
+SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+(_h)?\.php$", r"^api/health/$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

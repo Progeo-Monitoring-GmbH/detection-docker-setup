@@ -32,11 +32,20 @@ import { useMeasurementRangeState } from './useMeasurementRange';
 
 /**
  * New data while the page is open (every controller sample, and whatever
- * came while the socket was down): the range, the history, the
- * Verdachtsstellen and the KPIs reload quietly on the returned revision,
- * the picked view, range and sensor stay - a toast tells new measurements.
+ * came while the socket was down): a toast tells it, `onNewData` runs (the
+ * page jumps to "Letzte Messung") and the range, the history, the
+ * Verdachtsstellen and the KPIs reload quietly on the returned revision.
+ *
+ * Without `canSeeMeasurements` only the toast: the socket announces the
+ * location's measurements to everyone who may see the location, but its
+ * measurement data would be refused (403 - an error toast per measurement).
  */
-export const useStatusLiveRevision = (locationId: number, enabled: boolean) => {
+export const useStatusLiveRevision = (
+  locationId: number,
+  enabled: boolean,
+  canSeeMeasurements: boolean,
+  onNewData?: () => void,
+) => {
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const onLiveMeasurements = useCallback(
@@ -46,10 +55,14 @@ export const useStatusLiveRevision = (locationId: number, enabled: boolean) => {
         ? t(toast.key, toast.options)
         : t(toast.key);
       enqueueSnackbar(message, { variant: toast.variant });
+      if (canSeeMeasurements) {
+        onNewData?.();
+      }
     },
-    [enqueueSnackbar, t],
+    [canSeeMeasurements, enqueueSnackbar, onNewData, t],
   );
-  return useLocationLiveRevision(locationId, enabled, onLiveMeasurements);
+  const revision = useLocationLiveRevision(locationId, enabled, onLiveMeasurements);
+  return canSeeMeasurements ? revision : 0;
 };
 
 /**

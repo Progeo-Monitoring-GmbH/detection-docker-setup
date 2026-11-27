@@ -1,5 +1,7 @@
+import { useCallback } from 'react';
 import type { LocationDetail } from './locationTypes';
 import { isSmartexIoProject } from './projectType';
+import { LATEST_RANGE } from './timeRanges';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationStatusBody from './LocationStatusBody';
 import LocationStatusHeader from './LocationStatusHeader';
@@ -28,21 +30,29 @@ type LocationStatusViewProps = {
  * request header, the KPIs and the roof view / Zeitreihe
  * (LocationStatusBody) - smartex io objects show climate charts instead.
  * Its settings come from the URL and are kept for an escalation
- * (useStatusViewSettings); new measurements reload the data quietly
- * (useStatusLiveRevision).
+ * (useStatusViewSettings); new measurements jump to "Letzte Messung" and
+ * reload the data quietly (useStatusLiveRevision).
  */
 const LocationStatusView = ({
   location,
   locationId,
   demo = false,
 }: LocationStatusViewProps) => {
-  const { readOnlyDemo, isStaff } = useStatusAccess(demo);
+  const { readOnlyDemo, isStaff, canSeeMeasurements } = useStatusAccess(demo);
   const settings = useStatusViewSettings(isStaff);
+  const { selectRange } = settings;
+  // New measurements: the page shows them - "Letzte Messung".
+  const showLatest = useCallback(() => selectRange(LATEST_RANGE), [selectRange]);
 
   // smartex io objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
   const isSmartexIo = isSmartexIoProject(location?.project_type);
-  const liveRevision = useStatusLiveRevision(locationId, !demo && !isSmartexIo);
+  const liveRevision = useStatusLiveRevision(
+    locationId,
+    !demo && !isSmartexIo,
+    canSeeMeasurements,
+    showLatest,
+  );
   const ranges = useStatusRange({
     locationId,
     demo,

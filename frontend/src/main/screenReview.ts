@@ -8,7 +8,16 @@ import { internalPath } from '../internalPath';
 
 export const SCREEN_REVIEW_URL = '/v1/screen-review/';
 
-export type ScreenDevice = 'pc' | 'mobile';
+/** tablet: an iPad held upright, tabletwide: on its side (capture.mjs VIEWPORTS). */
+export type ScreenDevice = 'pc' | 'mobile' | 'tablet' | 'tabletwide';
+
+/** Each device's window height - a screenshot's slice when its manifest has no viewport. */
+const WINDOW_HEIGHT: Record<ScreenDevice, number> = {
+  pc: 900,
+  mobile: 844,
+  tablet: 1180,
+  tabletwide: 820,
+};
 export type ScreenRole = 'user' | 'staff';
 export type NoteKind = 'arrow' | 'area' | 'note';
 export type NoteAction =
@@ -215,7 +224,7 @@ export const defaultAction = (kind: NoteKind): NoteAction =>
 /** The height of one part of a screenshot: its window's height (a screen at a time). */
 export const sliceHeightOf = (
   image: Pick<ScreenImage, 'viewport' | 'device'>,
-) => image.viewport?.[1] ?? (image.device === 'mobile' ? 844 : 900);
+) => image.viewport?.[1] ?? WINDOW_HEIGHT[image.device] ?? WINDOW_HEIGHT.pc;
 
 export type Slice = { index: number; top: number; height: number };
 

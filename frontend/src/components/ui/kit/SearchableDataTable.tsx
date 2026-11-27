@@ -207,6 +207,9 @@ export type SearchableDataTableProps<T, K> = Omit<
    * its columns and scrolls sideways in its panel.
    */
   mobileColumns?: string[];
+  /** The phone layout of `mobileColumns` on any screen - for a table in a
+   * narrow panel (e.g. the status page's side column on a tablet). */
+  compact?: boolean;
   /**
    * The user can drag the header edges to resize the columns (DataTable's
    * `resizable`); the widths are kept in this browser under this name
@@ -269,6 +272,7 @@ const SearchableDataTable = <T, K = string | number>({
   conditionalRowStyles,
   testId,
   mobileColumns,
+  compact = false,
   columnWidthsKey,
   ...tableProps
 }: SearchableDataTableProps<T, K>) => {
@@ -322,6 +326,7 @@ const SearchableDataTable = <T, K = string | number>({
   const phone = useMobileColumns(
     tableColumns,
     mobileColumns && ['__selected', ...mobileColumns],
+    compact,
   );
 
   const rowStyles = useMemo(() => {

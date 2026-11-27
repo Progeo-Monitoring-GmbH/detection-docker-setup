@@ -14,6 +14,11 @@ export const useStatusAccess = (demo: boolean) => {
     readOnlyDemo,
     // Battery charts are device maintenance - staff (and superusers) only.
     isStaff: !demo && isStaffOrSuperuser,
+    // The page needs module_locations_enabled, its measurement data (history,
+    // range, Verdachtsstellen) module_measurements_enabled - staff and
+    // superusers pass without it, as in the backend (require_module_permissions).
+    canSeeMeasurements:
+      demo || isStaffOrSuperuser || hasPermission('module_measurements_enabled'),
     canEditInDjango:
       djangoAdmin && hasPermission('module_locations_django_edit'),
     canDeleteInDjango:

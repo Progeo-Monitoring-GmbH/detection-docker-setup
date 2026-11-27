@@ -123,7 +123,7 @@ const byTestId = (id: string, key?: string) =>
   );
 
 describe('ComputedSuspicionPanel', () => {
-  it('letters the points like their rings on the plan and lists their sensors', () => {
+  it('letters the points like their rings on the plan, with their peak', () => {
     renderPanel();
 
     const rows = container.querySelectorAll(
@@ -132,10 +132,33 @@ describe('ComputedSuspicionPanel', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('A');
     expect(rows[0].textContent).toContain('suspicion_computed_point:3');
-    expect(rows[0].textContent).toContain('Sensor 3, Sensor 4, Sensor 5');
+    expect(byTestId('computed-suspicion-peak', 'computed-3')?.textContent).toBe('250 mV');
     expect(
       rows[1].querySelector('.computed-suspicion-letter--geloest')?.textContent,
     ).toBe('B');
+  });
+
+  it('opens a point in place of the list - with its sensors - and goes back to it', () => {
+    renderPanel();
+
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+    const details = byTestId('computed-suspicion-details', 'computed-3');
+    expect(details?.textContent).toContain('Sensor 3, Sensor 4, Sensor 5');
+    expect(byTestId('computed-suspicion-list')).toBeNull();
+
+    act(() => byTestId('computed-suspicion-back')!.click());
+    expect(byTestId('computed-suspicion-details', 'computed-3')).toBeNull();
+    expect(byTestId('computed-suspicion-list')).not.toBeNull();
+  });
+
+  it('shows how the points are computed behind the info button', () => {
+    renderPanel();
+    expect(byTestId('computed-suspicion-hint')).toBeNull();
+
+    act(() => byTestId('computed-suspicion-hint-toggle')!.click());
+    expect(byTestId('computed-suspicion-hint')?.textContent).toBe(
+      'suspicion_computed_hint',
+    );
   });
 
   it('acknowledges a point from its details - after the confirmation, which counts its alarms', () => {
@@ -204,7 +227,10 @@ describe('ComputedSuspicionPanel', () => {
 
     const row = byTestId('computed-suspicion-row', 'computed-9');
     expect(row?.textContent).toContain('Sensor 9');
-    expect(row?.textContent).toContain('suspicion_unplaced');
+    act(() => byTestId('computed-suspicion-toggle', 'computed-9')!.click());
+    expect(
+      byTestId('computed-suspicion-details', 'computed-9')?.textContent,
+    ).toContain('suspicion_unplaced');
   });
 
   it('shows the header actions (the staff switch) in the panel header', () => {
@@ -231,21 +257,115 @@ describe('ComputedSuspicionPanel', () => {
     expect(onSensorHover).toHaveBeenLastCalledWith(null);
   });
 
-  it('jumps to the event from the row - also in the demo', () => {
+  it('keeps a tapped sensor marked on the plan until it is tapped again or the point closes', () => {
+    const onSensorHover = vi.fn();
+    renderPanel({ onSensorHover });
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+
+    const chip = () => byTestId('computed-suspicion-sensor', '4')!;
+    act(() => chip().click());
+    expect(onSensorHover).toHaveBeenLastCalledWith(4);
+    expect(chip().getAttribute('aria-pressed')).toBe('true');
+    // Leaving it (the mouse, or the focus) keeps the mark.
+    act(() => {
+      chip().dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+    expect(onSensorHover).toHaveBeenLastCalledWith(4);
+
+    act(() => chip().click());
+    expect(onSensorHover).toHaveBeenLastCalledWith(null);
+    expect(chip().getAttribute('aria-pressed')).toBe('false');
+
+    act(() => chip().click());
+    act(() => byTestId('computed-suspicion-back')!.click());
+    expect(onSensorHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it('jumps to the event from the details - also in the demo', () => {
     const onShowMoment = vi.fn();
     renderPanel({
       readOnly: true,
       onShowMoment,
       points: [point('computed-3', { first_seen: '2026-11-02T08:00:00Z' }), point('computed-9')],
     });
-    // Beside the row, without expanding it - and not toggling it.
+    act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
     act(() => byTestId('computed-suspicion-jump', 'computed-3')!.click());
-    // On the point's plan.
+    // On the point's plan - beside it, the details stay open.
     expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z', 5);
-    expect(byTestId('computed-suspicion-details', 'computed-3')).toBeNull();
+    expect(byTestId('computed-suspicion-details', 'computed-3')).not.toBeNull();
 
     // Without a detection there is nothing to jump to.
+    act(() => byTestId('computed-suspicion-back')!.click());
+    act(() => byTestId('computed-suspicion-toggle', 'computed-9')!.click());
     expect(byTestId('computed-suspicion-jump', 'computed-9')).toBeNull();
+  });
+
+  describe('in a wide panel (a tablet held upright)', () => {
+    let originalObserver: typeof ResizeObserver;
+
+    beforeEach(() => {
+      originalObserver = globalThis.ResizeObserver;
+      // Every observed element reports its size at once.
+      globalThis.ResizeObserver = class {
+        constructor(private readonly callback: ResizeObserverCallback) {}
+        observe(target: Element) {
+          this.callback(
+            [{ target, contentRect: { width: 800, height: 400 } } as ResizeObserverEntry],
+            this as unknown as ResizeObserver,
+          );
+        }
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver;
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get: () => 800,
+      });
+    });
+
+    afterEach(() => {
+      globalThis.ResizeObserver = originalObserver;
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    });
+
+    it('shows tiles and the details of the tapped one in a sheet below, the tiles staying', () => {
+      renderPanel();
+
+      expect(container.querySelector('.computed-suspicion-tiles')).not.toBeNull();
+      act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+
+      const details = document.querySelector(
+        '[data-testid="computed-suspicion-details"][data-test-key="computed-3"]',
+      );
+      expect(details?.closest('.computed-suspicion-sheet')).not.toBeNull();
+      // No way back needed - the tiles stay.
+      expect(details?.querySelector('[data-testid="computed-suspicion-back"]')).toBeNull();
+      expect(byTestId('computed-suspicion-list')).not.toBeNull();
+      expect(
+        byTestId('computed-suspicion-toggle', 'computed-3')?.getAttribute('aria-expanded'),
+      ).toBe('true');
+    });
+
+    it('closes the sheet to show the event on the plan', () => {
+      const onShowMoment = vi.fn();
+      renderPanel({
+        onShowMoment,
+        points: [point('computed-3', { first_seen: '2026-11-02T08:00:00Z' })],
+      });
+      act(() => byTestId('computed-suspicion-toggle', 'computed-3')!.click());
+
+      act(() =>
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="computed-suspicion-jump"][data-test-key="computed-3"]',
+          )!
+          .click(),
+      );
+      expect(onShowMoment).toHaveBeenCalledWith('2026-11-02T08:00:00Z', 5);
+      expect(
+        byTestId('computed-suspicion-toggle', 'computed-3')?.getAttribute('aria-expanded'),
+      ).toBe('false');
+    });
   });
 
   it('says so when there is nothing or no access', () => {

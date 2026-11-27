@@ -69,12 +69,12 @@ def staff(api_client):
     return user
 
 
-def test_a_new_run_gets_its_dated_folder_with_pc_and_mobile(uploads):
+def test_a_new_run_gets_its_dated_folder_with_one_per_device(uploads):
     folder = review.new_run_dir()
 
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{6}", folder.name)
     assert folder.parent == (uploads / "e2e").resolve()
-    assert {child.name for child in folder.iterdir()} == {"pc", "mobile"}
+    assert {child.name for child in folder.iterdir()} == {"pc", "mobile", "tablet", "tabletwide"}
 
 
 @pytest.mark.parametrize("name, parsed", [
@@ -83,6 +83,8 @@ def test_a_new_run_gets_its_dated_folder_with_pc_and_mobile(uploads):
     ("pc-user-de-location-overview--user-profile.png", ("pc", "user", "de", "location-overview", "user-profile")),
     ("mobile-staff-en-staff-admin--staff-user-reset-two-factor-dialog.png",
      ("mobile", "staff", "en", "staff-admin", "staff-user-reset-two-factor-dialog")),
+    ("tablet-staff-de-location-status.png", ("tablet", "staff", "de", "location-status", None)),
+    ("tabletwide-user-en-location-status.png", ("tabletwide", "user", "en", "location-status", None)),
     ("pc-user-de-login--.png", None),
     ("pc-user-de---x.png", None),
 ])

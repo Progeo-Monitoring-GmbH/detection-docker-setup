@@ -1,5 +1,8 @@
 /* smartex® mx-PEEL: the computed suspicion points (ComputedSuspicionPanel.tsx).
-   The rows reuse the Verdachtsstellen styles (VerdachtsstellenPanel.css). */
+   Narrow panel: a list whose details replace it. Wide panel (TILE_MIN_WIDTH,
+   a tablet held upright): tiles, the details in a sheet from below. Touch
+   targets are 36-44px high. Shared bits (empty, denied, the acknowledge and
+   jump buttons): VerdachtsstellenPanel.css. */
 
 /* The staff's Berechnet / Je Sensor switch, in the panel's header - an
    extra row above the panel pushed it below the plan's top edge. */
@@ -8,10 +11,41 @@
   justify-content: flex-end;
 }
 
+.computed-suspicion-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The ⓘ beside the title: shows how the points are computed. */
+.computed-suspicion-hint-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #8b8383;
+  cursor: pointer;
+}
+
+.computed-suspicion-hint-toggle:hover,
+.computed-suspicion-hint-toggle[aria-expanded='true'] {
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+}
+
 .computed-suspicion-hint {
   font-size: 12.5px;
   color: #8b8383;
-  margin-bottom: 8px;
+  background: var(--progeo-surface);
+  border: 1px solid var(--progeo-track-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
 }
 
 /* The letter of the point - the same as its ring on the plan. */
@@ -20,10 +54,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
   background: #dc2626;
@@ -37,64 +71,316 @@
   background: #8b8383;
 }
 
-.computed-suspicion-facts {
+.computed-suspicion-label {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.computed-suspicion-meta {
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+.computed-suspicion-peak {
+  font-weight: 700;
+  color: var(--progeo-orange);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- narrow panel: the list --------------------------------------------------- */
+
+.computed-suspicion-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.computed-suspicion-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px 6px;
+  border: none;
+  border-bottom: 1px solid var(--progeo-track-soft);
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.computed-suspicion-item:hover {
+  background: var(--progeo-surface);
+}
+
+.computed-suspicion-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.computed-suspicion-item .computed-suspicion-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The state as a dot in the list row (the badge's colour). */
+.computed-suspicion-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: #9a7208;
+}
+
+.computed-suspicion-dot--quittiert {
+  background: #6e6868;
+}
+
+.computed-suspicion-dot--geloest {
+  background: #3f7a1c;
+}
+
+.computed-suspicion-chevron {
+  flex: none;
+  color: #b8b0b0;
+}
+
+/* -- wide panel: the tiles ----------------------------------------------------- */
+
+.computed-suspicion-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.computed-suspicion-tiles > div {
+  display: flex;
+}
+
+.computed-suspicion-tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 134px;
+  padding: 12px;
+  border: 1px solid #e9e5e5;
+  border-radius: 14px;
+  background: #ffffff;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.computed-suspicion-tile:hover {
+  border-color: #cac4c4;
+}
+
+.computed-suspicion-tile.is-selected {
+  border-color: var(--progeo-orange);
+  box-shadow: 0 0 0 2px rgba(235, 99, 59, 0.2);
+}
+
+.computed-suspicion-tile-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.computed-suspicion-tile .computed-suspicion-peak {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.computed-suspicion-tile .computed-suspicion-peak small {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.computed-suspicion-tile .computed-suspicion-label {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+/* -- the details (in place of the list, or in the sheet) --------------------- */
+
+.computed-suspicion-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.computed-suspicion-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-bottom: 4px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.computed-suspicion-details-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.computed-suspicion-details-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.computed-suspicion-details-title .computed-suspicion-label {
+  font-size: 15px;
+}
+
+.computed-suspicion-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  font-size: 12.5px;
-  color: #5f5757;
-  margin-bottom: 8px;
+  gap: 5px;
+}
+
+.computed-suspicion-details-peak {
+  flex: none;
+  text-align: right;
+}
+
+.computed-suspicion-details-peak b {
+  display: block;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--progeo-orange);
+  font-variant-numeric: tabular-nums;
+}
+
+.computed-suspicion-details-peak small {
+  font-size: 11px;
+  color: #8b8383;
+  white-space: nowrap;
+}
+
+/* "Ereignis" and "Quittieren" side by side, each half the width. */
+.computed-suspicion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.computed-suspicion-actions > button {
+  flex: 1 1 0;
+  justify-content: center;
+  height: auto;
+  min-height: 44px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.computed-suspicion-caption {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #8b8383;
+}
+
+.computed-suspicion-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.computed-suspicion-fact {
+  padding: 7px 10px;
+  border: 1px solid var(--progeo-track-soft);
+  border-radius: 10px;
+  background: var(--progeo-surface);
+}
+
+.computed-suspicion-fact span {
+  display: block;
+  font-size: 11.5px;
+  color: #8b8383;
+}
+
+.computed-suspicion-fact b {
+  font-size: 14px;
 }
 
 .computed-suspicion-sensors {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 8px;
 }
 
+/* Hovering a sensor points it out on the plan (highlightedSensor); a tap
+   keeps it marked (is-pinned). */
 .computed-suspicion-sensor {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #e6e2e2;
+  border-radius: 999px;
   background: var(--progeo-surface);
-  border-radius: 10px;
-  padding: 2px 9px;
-  font-size: 12px;
-}
-
-/* Hovering a sensor points it out on the plan (highlightedSensor). */
-.computed-suspicion-sensor {
-  cursor: default;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .computed-suspicion-sensor:hover,
 .computed-suspicion-sensor:focus-visible {
-  background: var(--progeo-orange);
-  color: #fff;
+  border-color: var(--progeo-orange);
   outline: none;
 }
 
-/* A row: the toggle and beside it "Jump to Event". */
-.computed-suspicion-row-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.computed-suspicion-sensor.is-pinned {
+  border-color: var(--progeo-orange);
+  background: var(--progeo-orange);
+  color: #ffffff;
 }
 
-.computed-suspicion-row-line > .verdachtsstellen-row-toggle {
-  flex: 1;
-  min-width: 0;
+.computed-suspicion-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #8b8383;
 }
 
-.verdachtsstellen-jump.computed-suspicion-jump {
-  flex: none;
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12.5px;
-  white-space: nowrap;
+/* -- the sheet (wide panel) ---------------------------------------------------- */
+
+/* Its content's height, at most 80% of the screen; centred and no wider
+   than a tablet held upright. */
+.offcanvas.computed-suspicion-sheet {
+  --bs-offcanvas-height: auto;
+  max-height: 80vh;
+  max-width: 900px;
+  margin-inline: auto;
+  border-radius: 18px 18px 0 0;
 }
 
-/* Phones: the icon only (the label stays its title). */
-@media (max-width: 640px) {
-  .computed-suspicion-jump-label {
-    display: none;
-  }
+.computed-suspicion-sheet .computed-suspicion-sheet-head {
+  justify-content: flex-end;
+  padding: 10px 14px 0;
+}
+
+.computed-suspicion-sheet .computed-suspicion-sheet-body {
+  padding: 0 20px calc(20px + env(safe-area-inset-bottom, 0px));
 }

@@ -98,7 +98,34 @@ vi.mock('./access', () => ({
     hasPermission: (key: string) => hooks.permissions.has(key),
   }),
 }));
-vi.mock('./useLocationLiveRevision', () => ({ useLocationLiveRevision: () => 0 }));
+// The socket: `arrive` announces new measurements as useLocationLiveRevision
+// does - its revision goes up and the page's callback runs.
+const live = vi.hoisted(() => ({
+  revision: 0,
+  onMeasurements: null as null | ((m: { count: number | null; alarm: boolean }) => void),
+}));
+vi.mock('./useLocationLiveRevision', () => ({
+  useLocationLiveRevision: (
+    _locationId: number,
+    _enabled: boolean,
+    onMeasurements?: (m: { count: number | null; alarm: boolean }) => void,
+  ) => {
+    live.onMeasurements = onMeasurements ?? null;
+    return live.revision;
+  },
+}));
+// The page last rendered - rendered again when the (mocked) revision goes up,
+// as the real hook's state update does.
+let rendered: (() => React.ReactElement) | null = null;
+const arrive = async (count: number | null = 1, alarm = false) => {
+  await act(async () => {
+    live.revision += 1;
+    live.onMeasurements?.({ count, alarm });
+    if (rendered) {
+      root.render(rendered());
+    }
+  });
+};
 // The panels have their own specs - here only what the page hands them.
 vi.mock('./LocationPlanPanel', () => ({
   default: (props: Record<string, unknown>) => {
@@ -141,16 +168,15 @@ const render = async (
   path = '/location/4/status',
   props: { location?: LocationDetail; demo?: boolean } = {},
 ) => {
+  const shown = props.location ?? location();
+  rendered = () => (
+    <MemoryRouter initialEntries={[path]}>
+      <LocationStatusView location={shown} locationId={4} demo={props.demo} />
+    </MemoryRouter>
+  );
+  const page = rendered();
   await act(async () => {
-    root.render(
-      <MemoryRouter initialEntries={[path]}>
-        <LocationStatusView
-          location={props.location ?? location()}
-          locationId={4}
-          demo={props.demo}
-        />
-      </MemoryRouter>,
-    );
+    root.render(page);
   });
 };
 
@@ -167,6 +193,9 @@ beforeEach(() => {
   hooks.staff = false;
   hooks.permissions = new Set();
   hooks.auth = { user: { is_demo: false } };
+  live.revision = 0;
+  live.onMeasurements = null;
+  rendered = null;
   api.devices = [];
   api.clusters = [];
   api.points = [];
@@ -240,6 +269,51 @@ describe('LocationStatusView', () => {
     expect((byTestId('status-range') as HTMLSelectElement).value).toBe('latest');
     expect(byTestId('status-step')).toBeNull();
     expect(api.get.mock.calls.some(([url]) => String(url).includes('latest=1'))).toBe(true);
+  });
+
+  it('jumps to "Letzte Messung" when new measurements arrive and reloads them', async () => {
+    hooks.permissions = new Set(['module_locations_enabled', 'module_measurements_enabled']);
+    await render('/location/4/status?view=zeitreihe&range=30d');
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('30d');
+    api.get.mockClear();
+
+    await arrive(2);
+
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('latest');
+    expect(api.get.mock.calls.some(([url]) => String(url).includes('latest=1'))).toBe(true);
+    expect(api.get.mock.calls.some(([url]) => String(url).includes('/measurement-range/'))).toBe(true);
+    expect(hooks.snackbar.enqueueSnackbar).toHaveBeenCalledWith(
+      'status_live_measurement:{"count":2}',
+      { variant: 'info' },
+    );
+  });
+
+  it('staff jump to "Letzte Messung" without the module permission (the backend lets them in)', async () => {
+    hooks.staff = true;
+    await render();
+
+    await arrive();
+
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('latest');
+  });
+
+  it('only tells new measurements to a user who may not see them - no reload, no 403 toast', async () => {
+    // The status page needs module_locations_enabled, its measurement data
+    // module_measurements_enabled: a reload would be refused (an error toast
+    // per measurement).
+    hooks.permissions = new Set(['module_locations_enabled']);
+    await render();
+    api.get.mockClear();
+
+    await arrive(1, true);
+
+    expect(api.get).not.toHaveBeenCalled();
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('7d');
+    expect(hooks.snackbar.enqueueSnackbar).toHaveBeenCalledTimes(1);
+    expect(hooks.snackbar.enqueueSnackbar).toHaveBeenCalledWith(
+      'status_live_measurement_alarm:{"count":1}',
+      { variant: 'warning' },
+    );
   });
 
   it('offers the measurement request with a device choice - the admin links are in the portal header', async () => {

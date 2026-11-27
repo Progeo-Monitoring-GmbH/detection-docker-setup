@@ -19,6 +19,8 @@ type AlarmHistoryTableProps = {
   /** data-testid of the table; each row's date cell is "<rowTestId>" keyed by the entry id. */
   testId: string;
   rowTestId: string;
+  /** In a narrow panel: date and value in the row, the rest in its expander. */
+  compact?: boolean;
 };
 
 /**
@@ -31,6 +33,7 @@ const AlarmHistoryTable = ({
   sensorLabel,
   testId,
   rowTestId,
+  compact = false,
 }: AlarmHistoryTableProps) => {
   const { t } = useTranslation();
   const columns = useMemo<SearchableColumn<AlarmHistoryEntry>[]>(
@@ -110,6 +113,7 @@ const AlarmHistoryTable = ({
           </div>
         }
         mobileColumns={['date', 'value']}
+        compact={compact}
         testId={testId}
       />
     </div>

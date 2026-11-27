@@ -49,16 +49,26 @@ const MEASUREMENTS_JSON = JSON.stringify({ models: ['ProgeoMeasurement'], count:
  * Opens the first row of a repeated toggle whose `action` (same data-test-key)
  * is enabled once expanded - returns that action or null.
  */
-const expandUntilEnabled = async (page: Page, toggleId: string, actionId: string) => {
+const expandUntilEnabled = async (
+  page: Page,
+  toggleId: string,
+  actionId: string,
+  /** Details that replace the list (the computed points in a narrow panel): their way back. */
+  backId?: string,
+) => {
   const toggles = page.getByTestId(toggleId);
-  const count = await toggles.count();
-  for (let index = 0; index < count; index += 1) {
-    const toggle = toggles.nth(index);
-    const key = await toggle.getAttribute('data-test-key');
-    await toggle.click();
+  const keys = await Promise.all(
+    (await toggles.all()).map((toggle) => toggle.getAttribute('data-test-key')),
+  );
+  for (const key of keys) {
+    await page.getByTestId(toggleId).and(page.locator(`[data-test-key="${key}"]`)).click();
     const action = page.getByTestId(actionId).and(page.locator(`[data-test-key="${key}"]`));
     if ((await action.isVisible()) && (await action.isEnabled())) {
       return action;
+    }
+    const back = backId ? page.getByTestId(backId) : null;
+    if (back && (await back.isVisible())) {
+      await back.click();
     }
   }
   return null;
@@ -109,7 +119,12 @@ test.describe('location pages', () => {
   test('acknowledging the alarms of a computed suspicion point asks first (#51)', async ({ page }) => {
     await openPage(page, `/location/${locationId}/status`, 'page-location-status');
     test.skip(!(await present(page.getByTestId('computed-suspicion-toggle'))), 'No computed suspicion points');
-    const trigger = await expandUntilEnabled(page, 'computed-suspicion-toggle', 'computed-suspicion-acknowledge');
+    const trigger = await expandUntilEnabled(
+      page,
+      'computed-suspicion-toggle',
+      'computed-suspicion-acknowledge',
+      'computed-suspicion-back',
+    );
     test.skip(!trigger, 'No suspicion point with pending alarms');
     await expectConfirmGuard(page, {
       trigger: trigger!,

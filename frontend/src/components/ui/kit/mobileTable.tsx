@@ -39,8 +39,14 @@ const MobileRowDetails = <T,>({ row, columns }: { row: T; columns: TableColumn<T
  *   const { columns, expandable } = useMobileColumns(allColumns, ['object', 'status']);
  *   <DataTable columns={columns} {...expandable} ... />
  */
-export const useMobileColumns = <T,>(columns: TableColumn<T>[], keep?: string[]) => {
-  const mobile = useIsMobile();
+export const useMobileColumns = <T,>(
+  columns: TableColumn<T>[],
+  keep?: string[],
+  /** The phone layout on any screen - the table sits in a narrow panel. */
+  compact = false,
+) => {
+  const phone = useIsMobile();
+  const mobile = phone || compact;
   // Without `keep` the table stays as it is (and scrolls sideways in its panel).
   if (!mobile || !keep) {
     return { mobile, columns, expandable: {} };

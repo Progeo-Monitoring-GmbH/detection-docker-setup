@@ -292,7 +292,7 @@ def test_valid_screenshot_arguments_pass():
     {"run": "2026-11-18_235532/../../etc"},
     {"run": "latest"},
     {"devices": []},
-    {"devices": ["tablet"]},
+    {"devices": ["watch"]},
     {"devices": "pc"},
     {"roles": ["admin"]},
     {"languages": ["fr"]},

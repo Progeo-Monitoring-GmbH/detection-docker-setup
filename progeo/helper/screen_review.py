@@ -44,7 +44,7 @@ from django.utils import timezone
 
 RUN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}$")
 IMAGE_RE = re.compile(
-    r"^(pc|mobile)-(user|staff)-(?:(de|en)-)?"
+    r"^(pc|mobile|tablet|tabletwide)-(user|staff)-(?:(de|en)-)?"
     # The action and the dialog: kebab-case words, joined by "--".
     r"([a-z0-9]+(?:-[a-z0-9]+)*)(?:--([a-z0-9]+(?:-[a-z0-9]+)*))?\.png$"
 )
@@ -57,7 +57,8 @@ RESERVED_RUN_NAMES = ("fetch",)
 LOOSE_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 # ScreenReviewNote.image holds 200 characters.
 MAX_IMAGE_NAME = 200
-DEVICES = ("pc", "mobile")
+# tablet: an iPad held upright (820 x 1180), tabletwide: on its side (1180 x 820).
+DEVICES = ("pc", "mobile", "tablet", "tabletwide")
 ROLES = ("user", "staff")
 LANGUAGES = ("de", "en")
 # Runs before the languages were captured in German.
@@ -80,7 +81,7 @@ SCOPE_TEXT = {
     "device": "every {device} screen - fix it everywhere it shows there",
     "all": "everywhere (every device and page) - fix it everywhere it shows",
 }
-DEVICE_TEXT = {"pc": "desktop", "mobile": "phone"}
+DEVICE_TEXT = {"pc": "desktop", "mobile": "phone", "tablet": "upright tablet", "tabletwide": "landscape tablet"}
 # Actions that are nothing without their text.
 COMMENT_REQUIRED = ("move", "question", "general")
 # The colour of each action - the same as the review page's (screenReview.ts).

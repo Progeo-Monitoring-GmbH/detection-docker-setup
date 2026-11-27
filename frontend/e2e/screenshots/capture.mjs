@@ -7,7 +7,8 @@
 //   SCREENS_RUN          its name
 //   SCREENS_BASE         the frontend, e.g. http://127.0.0.1:3299
 //   SCREENS_MOCK_ORIGIN  the API origin the frontend was started with (VITE_BACKEND_URL)
-//   SCREENS_DEVICES      pc,mobile     SCREENS_ROLES  user,staff     SCREENS_LANGUAGES  de,en
+//   SCREENS_DEVICES      pc,mobile (also tablet, tabletwide)
+//   SCREENS_ROLES        user,staff    SCREENS_LANGUAGES  de,en
 //   SCREENS_ONLY         actions (optional): "action" = the page and its dialogs,
 //                        "action--dialog" = only that dialog
 //   SCREENS_MODALS       0: pages only, no dialogs
@@ -58,6 +59,19 @@ const VIEWPORTS = {
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 1,
     isMobile: true,
+    hasTouch: true,
+  },
+  // A tablet (iPad Air size) held upright and on its side - wider than the
+  // phone layout (useIsMobile, 640px), touch only. Not in the default run:
+  // SCREENS_DEVICES / --devices tablet,tabletwide.
+  tablet: {
+    viewport: { width: 820, height: 1180 },
+    deviceScaleFactor: 1,
+    hasTouch: true,
+  },
+  tabletwide: {
+    viewport: { width: 1180, height: 820 },
+    deviceScaleFactor: 1,
     hasTouch: true,
   },
 };

@@ -25,7 +25,7 @@
 //                 { press: 'Escape' }   { wait: 500 }
 //               `key` is the element's data-test-key (repeated elements);
 //               `position: { x, y }` clicks that point of the element (a plot);
-//               `device: 'mobile' | 'pc'` - a step on that device only (e.g. a
+//               `device: 'mobile' | 'pc' | 'tablet' | 'tabletwide'` - a step on that device only (e.g. a
 //               phone table's row expander); `role: 'user' | 'staff'` - for
 //               that role only (e.g. a switch only staff have).
 //     name      the file name's dialog part (a-z, 0-9, -) - default: testId

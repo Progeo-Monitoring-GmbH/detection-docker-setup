@@ -6,8 +6,9 @@ normal user and as staff, with mocked API answers (no backend, no database):
     python manage.py e2e_screenshots --base-url http://127.0.0.1:3000   # a running frontend dev server
     python manage.py e2e_screenshots --only staff-admin--staff-user-create   # one dialog of a page
     python manage.py e2e_screenshots --no-modals                         # the pages without their dialogs
+    python manage.py e2e_screenshots --devices tablet,tabletwide --only location-status   # tablets
 
-Into media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/{pc,mobile}/{pc|mobile}-{user|staff}-{de|en}-{action}.png,
+Into media/uploads/e2e/<YYYY-MM-DD_HHMMSS>/{pc,mobile,...}/{device}-{user|staff}-{de|en}-{action}.png,
 each dialog of a page (routes.mjs `modals`) {...}-{action}--{dialog}.png, with a manifest.json
 (the URL of every screenshot, how its dialog opens, the dialogs that did not) - reviewed at
 /review/screens/ (helper/screen_review.py).
@@ -48,7 +49,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--base-url", help="A running frontend (dev server built against the mock origin).")
         parser.add_argument("--port", type=int, default=3299, help="Port of the Vite dev server started (default 3299).")
-        parser.add_argument("--devices", default="pc,mobile", help="pc, mobile or both (default).")
+        parser.add_argument("--devices", default="pc,mobile",
+                            help="pc, mobile, tablet (upright), tabletwide (on its side) - comma-separated "
+                                 "(default: pc,mobile).")
         parser.add_argument("--roles", default="user,staff", help="user, staff or both (default).")
         parser.add_argument("--languages", default="de,en", help="de, en or both (default).")
         parser.add_argument("--only", default="",
