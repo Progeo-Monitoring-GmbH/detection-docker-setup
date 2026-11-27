@@ -229,6 +229,8 @@ type ProvisionTestMeasurementsProps = {
   locationId: number;
   deviceId: number;
   deviceHash: string;
+  /** M5 AIN4: no firmware update, fewer set_params values in the commands dialog. */
+  isM5?: boolean;
   /** Shows a close button (the device overview hides the panel). */
   onClose?: () => void;
 };
@@ -246,6 +248,7 @@ const ProvisionTestMeasurements = ({
   locationId,
   deviceId,
   deviceHash,
+  isM5 = false,
   onClose,
 }: ProvisionTestMeasurementsProps) => {
   const auth = useAuth();
@@ -725,6 +728,7 @@ const ProvisionTestMeasurements = ({
           device={{ id: deviceId, location: locationId, raw_hash: deviceHash }}
           isSuperuser={isSuperuser}
           canEdit={canCommands}
+          isM5={isM5}
           onClose={() => setShowCommands(false)}
           testId="provision-test-commands-dialog"
         />

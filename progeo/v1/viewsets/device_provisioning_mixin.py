@@ -143,6 +143,16 @@ class DeviceProvisioningMixin:
         finally:
             release_connection(db_name)
 
+    @staticmethod
+    def _m5_refusal(request, settings):
+        """A reason if `settings` (or a signed plan) provisions an M5 for a
+        user who is not staff: its model unlocks the paid device SMS route."""
+        if (settings.get("config_format") == "m5" or settings.get("model") == M5_MODEL) and not is_staff_admin(
+            request.user
+        ):
+            return f"Provisioning {M5_MODEL} needs staff access"
+        return None
+
     @require_module_permissions("module_devices_provision")
     @action(detail=False, url_path="provision/preview", methods=["POST"])
     def provision_preview(self, request, *args, **kwargs):
@@ -151,7 +161,10 @@ class DeviceProvisioningMixin:
         db_name = None
         try:
             location, db_name = self._provision_location(request, request.data.get("location"))
-            plan = provisioning.build_plan(location, db_name, provisioning.parse_settings(request.data))
+            settings = provisioning.parse_settings(request.data)
+            if reason := self._m5_refusal(request, settings):
+                return RequestFailed({"reason": reason})
+            plan = provisioning.build_plan(location, db_name, settings)
         except provisioning.ProvisionError as exc:
             return RequestFailed({"reason": str(exc)})
         finally:
@@ -192,6 +205,8 @@ class DeviceProvisioningMixin:
         db_name = None
         try:
             plan = provisioning.unsign_plan(request.data.get("signed"))
+            if reason := self._m5_refusal(request, plan):
+                return RequestFailed({"reason": reason})
             # Checked again: the user may have lost access since the preview.
             location, db_name = self._provision_location(request, plan["location"])
             device, token = provisioning.create_device(plan, location, db_name, request.account, request.user)

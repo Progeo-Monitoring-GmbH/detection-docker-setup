@@ -550,7 +550,7 @@ const DeviceListView = () => {
               type="button"
               title={t('devices_action_test_measurements')}
               aria-label={t('devices_action_test_measurements')}
-              onClick={() => setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash })}
+              onClick={() => setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash, is_m5: device.is_m5 })}
               className="progeo-icon-button"
               {...repeatedTestId('device-list-test-measurements', device.id)}
             >
@@ -646,6 +646,7 @@ const DeviceListView = () => {
           locationId={testDevice.location}
           deviceId={testDevice.id}
           deviceHash={testDevice.raw_hash}
+          isM5={testDevice.is_m5 === true}
           onClose={() => setTestDevice(null)}
         />
       )}

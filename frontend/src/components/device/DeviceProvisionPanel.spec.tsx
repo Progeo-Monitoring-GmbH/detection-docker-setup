@@ -60,7 +60,7 @@ vi.mock('../../axiosConfig', () => ({
   },
 }));
 const hooks = vi.hoisted(() => ({
-  auth: {},
+  auth: { user: { is_staff: true } } as { user: { is_staff?: boolean; is_superuser?: boolean } },
   snackbar: { enqueueSnackbar: () => undefined },
   translation: {
     t: (key: string, options?: { section?: string }) => (options?.section ? `${key}:${options.section}` : key),
@@ -99,6 +99,7 @@ const type = (id: string, value: string) => {
 const save = () => click(one('device-provision-sections-dialog-confirm'));
 
 beforeEach(() => {
+  hooks.auth = { user: { is_staff: true } };
   api.previews.length = 0;
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -260,6 +261,50 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       click(one('device-provision-generate'));
 
       expect(api.previews[1]).toMatchObject({ config_format: 'lua', model: 'smartex mx' });
+    });
+
+    it('Lua after M5 sends the location defaults again, not the M5 ones', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'device'));
+      selectValue('device-provision-config-format-select', 'lua');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({
+        config_format: 'lua',
+        model: 'smartex mx',
+        sensors: 32,
+        interval_sec: 1800,
+        pulldown_resistance: 136,
+        protective_earth: 0,
+        rpi: false,
+      });
+    });
+
+    it('Lua after M5 by model keeps the location defaults too', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'device'));
+      selectValue('device-provision-model', 'smartex vt');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ config_format: 'lua', model: 'smartex vt', sensors: 32, interval_sec: 1800 });
+    });
+
+    it('offers the M5 to staff only', () => {
+      click(one('device-provision-sections-edit', 'device'));
+      expect([...(one('device-provision-model') as HTMLSelectElement).options].map((o) => o.value)).toContain('M5 AIN4');
+      expect([...(one('device-provision-config-format-select') as HTMLSelectElement).options].map((o) => o.value)).toContain('m5');
+      click(one('device-provision-sections-dialog-cancel'));
+
+      act(() => root.unmount());
+      hooks.auth = { user: { is_staff: false } };
+      root = createRoot(container);
+      act(() => root.render(<DeviceProvisionPanel locationId={7} onCreated={() => undefined} onClose={() => undefined} />));
+      click(one('device-provision-sections-edit', 'device'));
+
+      expect([...(one('device-provision-model') as HTMLSelectElement).options].map((o) => o.value)).not.toContain('M5 AIN4');
+      expect([...(one('device-provision-config-format-select') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['lua']);
     });
 
     it('blocks generate for an empty or out-of-range threshold', () => {

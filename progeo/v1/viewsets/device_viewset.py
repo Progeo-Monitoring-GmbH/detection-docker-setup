@@ -458,11 +458,19 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
 
     def handle_exception(self, exc):
         # Every refusal of the device SMS route answers 403 with the contract body.
-        if getattr(self, "action", None) == "device_sms" and isinstance(
-            exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed, exceptions.PermissionDenied)
-        ):
-            return Response({"success": False, "sent": False, "reason": "device token required"}, status=403)
+        if getattr(self, "action", None) == "device_sms":
+            if isinstance(exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed,
+                                exceptions.PermissionDenied)):
+                self._log_sms_refusal("device token required")
+                return Response({"success": False, "sent": False, "reason": "device token required"}, status=403)
+            if isinstance(exc, ParseError):
+                return Response({"success": False, "sent": False, "reason": "invalid json"}, status=400)
         return super().handle_exception(exc)
+
+    def _log_sms_refusal(self, reason):
+        """A refused /sms/ request: the token's pk (if any) and why - never the token itself."""
+        token = getattr(getattr(self, "request", None), "auth", None)
+        elog(f"SMS refused (token {getattr(token, 'pk', None)}): {reason}", tag="[DEVICE-SMS]")
 
     @action(detail=True, url_path="sms", authentication_classes=[TransferTokenAuthentication],
             permission_classes=[IsDeviceTransferToken], methods=["POST"])
@@ -470,6 +478,7 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         """An M5 sends an SMS through the backend (helper/device_sms.py). The
         device is the one of its transfer token, never the body's."""
         def refuse(reason):
+            self._log_sms_refusal(reason)
             return Response({"success": False, "sent": False, "reason": reason}, status=403)
 
         body = request.data if isinstance(request.data, dict) else {}
@@ -479,7 +488,7 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             ProgeoDevice.objects.using(db_name).select_related("location").filter(raw_hash=raw_hash).first()
             if db_name else None
         )
-        if device is None or not is_provisioned_m5(device):
+        if device is None or device.location is None or not is_provisioned_m5(device):
             return refuse("not an M5 device")
         if str(body.get("device_hash") or "").strip() != raw_hash or str(device.location.project_id) != str(pk):
             return refuse("device mismatch")

@@ -53,7 +53,7 @@ def send_device_sms(device, data: dict) -> tuple[int, dict]:
     Returns (HTTP status, body without the "success" key). The `ref` is reserved before sending; only 200
     results stay stored, a failed attempt releases it for the next retry.
     """
-    from progeo.v1.models import DeviceSms
+    from progeo.v1.models import DeviceSms, OutboundMessage
 
     checked = _validate(data)
     if isinstance(checked[0], int):
@@ -69,6 +69,10 @@ def send_device_sms(device, data: dict) -> tuple[int, dict]:
     sent_last_hour = rows.filter(device_hash=device.raw_hash, sent=True, created__gt=now - timedelta(hours=1)).count()
     if sent_last_hour >= outbound.limits()["sms_device_hour"]:
         elog(f"Device {device.raw_hash}: SMS limit reached", tag="[DEVICE-SMS]")
+        outbound.log(
+            "sms", OutboundMessage.Status.RATE_LIMITED, to, category=f"device_{kind}",
+            location=device.location, error="device limit",
+        )
         return 429, {"sent": False, "reason": "device limit"}
 
     # Reserve the ref before sending, so parallel requests cannot send twice.
