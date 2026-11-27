@@ -118,3 +118,43 @@ def test_limit_counts_only_sent(esendex_api, device):
     _rows(device, 30, sent=False)
     assert _send(device)[0] == 200
     assert len(calls) == 1
+
+
+def _pending(device, age):
+    DeviceSms.objects.using(f.DB).create(
+        device_hash=device.raw_hash, ref="A1-17", kind="alarm", to="+491701234567", status_code=0,
+        created=timezone.now() - age)
+
+
+def test_pending_ref_returns_503_in_progress(esendex_api, device):
+    calls, _reply = esendex_api
+    _pending(device, timedelta(seconds=10))
+    assert _send(device) == (503, {"sent": False, "reason": "in progress"})
+    assert calls == []
+
+
+def test_stale_pending_ref_is_taken_over(esendex_api, device):
+    calls, _reply = esendex_api
+    _pending(device, timedelta(minutes=3))
+    assert _send(device)[0] == 200
+    assert len(calls) == 1
+    row = DeviceSms.objects.using(f.DB).get()
+    assert (row.status_code, row.sent) == (200, True)
+
+
+def test_502_releases_ref_so_retry_sends(esendex_api, device):
+    calls, reply = esendex_api
+    reply["response"] = FakeResponse(status=500, text="boom")
+    assert _send(device)[0] == 502
+    assert DeviceSms.objects.using(f.DB).count() == 0
+    reply["response"] = FakeResponse(json_data={"batchid": "B-1", "messageids": ["m1"]})
+    assert _send(device)[0] == 200
+    assert len(calls) == 2
+
+
+def test_empty_esendex_error_reason_falls_back_to_class_name(esendex_api, device, monkeypatch):
+    def _boom(*args, **kwargs):
+        raise device_sms.esendex.EsendexError("")
+
+    monkeypatch.setattr(device_sms.esendex, "send_sms", _boom)
+    assert _send(device) == (502, {"sent": False, "reason": "EsendexError"})

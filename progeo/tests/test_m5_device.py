@@ -23,6 +23,8 @@ from progeo.v1.models import (
     ProgeoMeasurement,
 )
 
+pytestmark = pytest.mark.usefixtures("isolated_config")
+
 _project_ids = itertools.count(951001)
 
 
