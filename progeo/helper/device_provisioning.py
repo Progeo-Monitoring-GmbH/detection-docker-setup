@@ -173,6 +173,8 @@ def parse_settings(data) -> dict:
     if config_format not in CONFIG_FORMATS:
         raise ProvisionError(f"config_format must be one of {CONFIG_FORMATS}")
     m5 = config_format == "m5"
+    if m5 and model != M5_MODEL:
+        raise ProvisionError(f"config_format m5 needs model {M5_MODEL}")
     extra = {}
     if m5:
         if pulldown not in _PULLDOWN_OHM:
@@ -337,7 +339,7 @@ def render_platform_config(plan) -> str:
         _define("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
         "",
         "// control: https://<HOST><PATH>, Authorization: Token <TOKEN>",
-        _define("PLATFORM_HOST", c_string(url.hostname or "")),
+        _define("PLATFORM_HOST", c_string(url.netloc)),
         _define("PLATFORM_PATH", c_string(url.path)),
         _define("PLATFORM_TOKEN", c_string(plan["token"])),
         "",
@@ -354,13 +356,16 @@ def render_device_config(plan) -> tuple[str, str]:
 def build_plan(location, db_name, settings) -> dict:
     """Everything the config and the device need - not saved."""
     project_id = location.project_id
+    url = sample_url(project_id)
+    if settings.get("config_format") == "m5" and urlsplit(url).scheme != "https":
+        raise ProvisionError("The M5 needs an https sample URL (DEVICE_SAMPLE_BASE_URL)")
     return {
         **settings,
         "location": location.pk,
         "project_id": project_id,
         "device_hash": next_device_hash(project_id, db_name),
         "token": generate_token(),
-        "url": sample_url(project_id),
+        "url": url,
     }
 
 

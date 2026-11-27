@@ -528,3 +528,31 @@ def test_locations_report_alarm_threshold_and_m5_defaults(staff_client, location
         "threshold_mv": {"136": 891, "72": 450, "40": 76, "24": 8},
     }
     assert body["m5_model"] == "M5 AIN4"
+
+
+def test_render_platform_config_escapes_newlines():
+    plan = {"project_id": 1, "device_hash": "1-01", "token": "a\nb\rc", "threshold_mv": 5,
+            "url": "https://x.example/v1/device/1/sample/"}
+    text = provisioning.render_platform_config(plan)
+    assert r'#define PLATFORM_TOKEN        "a\nb\rc"' in text
+    assert "\r" not in text
+
+
+def test_render_platform_config_keeps_port_and_prefix(staff_client, location, settings):
+    settings.DEVICE_SAMPLE_BASE_URL = "https://api.example.com:8443/base"
+    body = _preview(staff_client, location, model="M5 AIN4")
+    assert '#define PLATFORM_HOST         "api.example.com:8443"' in body["config"]
+    assert f'#define PLATFORM_PATH         "/base/v1/device/{location.project_id}/sample/"' in body["config"]
+
+
+def test_m5_preview_refuses_http_base_url(staff_client, location, settings):
+    settings.DEVICE_SAMPLE_BASE_URL = "http://api.example.com"
+    response = staff_client.post(
+        "/v1/device/provision/preview/", {"location": location.pk, "model": "M5 AIN4"}, format="json")
+    assert response.status_code == 400
+    assert "https sample URL" in response.json()["reason"]
+
+
+def test_m5_format_needs_the_m5_model():
+    with pytest.raises(provisioning.ProvisionError, match="needs model M5 AIN4"):
+        provisioning.parse_settings({"config_format": "m5", "model": "smartex mx"})
