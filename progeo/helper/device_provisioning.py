@@ -12,6 +12,7 @@ import re
 import secrets
 import string
 import unicodedata
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core import signing
@@ -42,6 +43,17 @@ SENSORS_RANGE = (1, None)
 INTERVAL_RANGE = (10, 86400)
 DEFAULT_SENSORS = 32
 DEFAULT_INTERVAL_SEC = 1800
+
+# "lua": config.lua of the smartex box; "m5": include/platform_config.h of the M5 AIN4.
+CONFIG_FORMATS = ("lua", "m5")
+M5_DEFAULTS = {"sensors": 4, "interval_sec": 300, "poll_sec": 300}
+M5_THRESHOLD_DEFAULTS = {136: 891, 72: 450, 40: 76, 24: 8}
+# Pulldown value -> resistance in ohm (136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R).
+_PULLDOWN_OHM = {136: 100000, 72: 10000, 40: 1000, 24: 100}
+# Factory threshold 22 V / 1.8 mA = 12.222 kOhm in series with the pulldown.
+_SERIES_OHM = 12222
+THRESHOLD_MV_RANGE = (1, 999)
+POLL_SEC_RANGE = (60, 86400)
 
 TOKEN_ALPHABET = string.ascii_letters + string.digits
 TOKEN_LENGTH = 16
@@ -142,6 +154,12 @@ def _bool_field(data, key, default=False) -> bool:
     raise ProvisionError(f"{key} must be true or false")
 
 
+def default_threshold_mv(pulldown: int) -> int:
+    """The start threshold (mV) of an M5 for a pulldown value."""
+    ohm = _PULLDOWN_OHM[pulldown]
+    return round(1000 * ohm / (_SERIES_OHM + ohm))
+
+
 def parse_settings(data) -> dict:
     """The settings of the request data, validated (ProvisionError)."""
     pulldown = _int_field(data, "pulldown_resistance", ProgeoDevice.Resistance.DEFAULT_100K)
@@ -151,10 +169,26 @@ def parse_settings(data) -> dict:
     model = ascii_model(data.get("model")) or DEVICE_MODEL
     if model not in MODELS:
         raise ProvisionError(f"model must be one of {MODELS}")
+    config_format = str(data.get("config_format") or "").strip() or ("m5" if model == M5_MODEL else "lua")
+    if config_format not in CONFIG_FORMATS:
+        raise ProvisionError(f"config_format must be one of {CONFIG_FORMATS}")
+    m5 = config_format == "m5"
+    extra = {}
+    if m5:
+        if pulldown not in _PULLDOWN_OHM:
+            raise ProvisionError(f"pulldown_resistance must be one of {tuple(_PULLDOWN_OHM)} for m5")
+        extra = {
+            "threshold_mv": _int_field(data, "threshold_mv", default_threshold_mv(pulldown), THRESHOLD_MV_RANGE),
+            "poll_sec": _int_field(data, "poll_sec", M5_DEFAULTS["poll_sec"], POLL_SEC_RANGE),
+        }
     return {
         "model": model,
-        "sensors": _int_field(data, "sensors", DEFAULT_SENSORS, SENSORS_RANGE),
-        "interval_sec": _int_field(data, "interval_sec", DEFAULT_INTERVAL_SEC, INTERVAL_RANGE),
+        "config_format": config_format,
+        "sensors": _int_field(data, "sensors", M5_DEFAULTS["sensors"] if m5 else DEFAULT_SENSORS, SENSORS_RANGE),
+        "interval_sec": _int_field(
+            data, "interval_sec", M5_DEFAULTS["interval_sec"] if m5 else DEFAULT_INTERVAL_SEC, INTERVAL_RANGE
+        ),
+        **extra,
         "pulldown_resistance": pulldown,
         "protective_earth": _int_field(data, "protective_earth", 0, (0, 1)),
         # control.rpi of the config: the controller runs on a Raspberry Pi.
@@ -266,6 +300,55 @@ def render_config(plan) -> str:
         "}",
         "",
     ])
+
+
+def c_string(value) -> str:
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    return f'"{escaped}"'
+
+
+def _define(name, value, comment="") -> str:
+    line = f"#define {name:<21} {value}"
+    return f"{line}  // {comment}" if comment else line
+
+
+def render_platform_config(plan) -> str:
+    """The M5's include/platform_config.h (plan: build_plan)."""
+    url = urlsplit(plan["url"])
+    return "\n".join([
+        "// Geraete-Konfiguration fuer include/platform_config.h -- vom Backend (Geraete-Einrichtung)",
+        "// erzeugt. Datei als include/platform_config.h ablegen und die Firmware bauen. Sie enthaelt",
+        "// den Geraete-Token und steht deshalb in .gitignore.",
+        "#pragma once",
+        "",
+        "// device",
+        _define("PLATFORM_MODEL", c_string(plan_model(plan))),
+        _define("PLATFORM_DEVICE_VER", c_string(CONFIG_VERSION)),
+        _define("PLATFORM_PROJECT_ID", c_string(plan["project_id"])),
+        _define("PLATFORM_DEVICE_HASH", c_string(plan["device_hash"])),
+        "",
+        "// measurement",
+        _define("PLATFORM_PULLDOWN", plan.get("pulldown_resistance", 136),
+                "136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R"),
+        _define("PLATFORM_INTERVAL_SEC", plan.get("interval_sec", M5_DEFAULTS["interval_sec"])),
+        _define("PLATFORM_SENSORS", plan.get("sensors", M5_DEFAULTS["sensors"]), "gemeldete Sensoren"),
+        _define("PLATFORM_PE", plan.get("protective_earth", 0), "protective_earth"),
+        _define("PLATFORM_POLL_SEC", plan.get("poll_sec", M5_DEFAULTS["poll_sec"]), "Abfrage der Befehle (s)"),
+        _define("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
+        "",
+        "// control: https://<HOST><PATH>, Authorization: Token <TOKEN>",
+        _define("PLATFORM_HOST", c_string(url.hostname or "")),
+        _define("PLATFORM_PATH", c_string(url.path)),
+        _define("PLATFORM_TOKEN", c_string(plan["token"])),
+        "",
+    ])
+
+
+def render_device_config(plan) -> tuple[str, str]:
+    """(text, filename) of the plan's config: config.lua or platform_config.h."""
+    if plan.get("config_format") == "m5":
+        return render_platform_config(plan), "platform_config.h"
+    return render_config(plan), "config.lua"
 
 
 def build_plan(location, db_name, settings) -> dict:

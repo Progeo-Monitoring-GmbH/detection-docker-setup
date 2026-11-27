@@ -65,6 +65,7 @@ def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
         "model": "smartex mx", "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
         "rpi": False, "wifi_ssid": "", "wifi_pwd": "", "router_user": "", "router_pwd": "",
+        "config_format": "lua",
         # No bundle on the server: the built-in firmware version.
         "firmware_bundle": None, "firmware_version": provisioning.FIRMWARE_VERSION,
     }
@@ -426,3 +427,104 @@ def test_users_need_the_permission_and_only_get_their_locations(api_client, loca
     other = api_client.post("/v1/device/provision/preview/", {"location": location.pk}, format="json")
     assert other.status_code != 200
     assert _preview(api_client, own)["device_hash"] == f"{own.project_id}-01"
+
+
+# ------------------------------------------------------------------ M5 (platform_config.h)
+
+def test_default_threshold_mv_matches_factory():
+    assert provisioning.default_threshold_mv(136) == 891
+    assert provisioning.default_threshold_mv(72) == 450
+    assert provisioning.default_threshold_mv(40) == 76
+    assert provisioning.default_threshold_mv(24) == 8
+    assert {p: provisioning.default_threshold_mv(p) for p in (136, 72, 40, 24)} == provisioning.M5_THRESHOLD_DEFAULTS
+
+
+def test_m5_model_defaults_to_m5_format():
+    settings = provisioning.parse_settings({"model": "M5 AIN4"})
+    assert settings["config_format"] == "m5"
+    assert settings["sensors"] == 4
+    assert settings["interval_sec"] == 300
+    assert settings["threshold_mv"] == 891
+    assert settings["poll_sec"] == 300
+    assert provisioning.parse_settings({"model": "M5 AIN4", "pulldown_resistance": 72})["threshold_mv"] == 450
+
+
+def test_m5_format_refuses_pulldown_off():
+    with pytest.raises(provisioning.ProvisionError):
+        provisioning.parse_settings({"model": "M5 AIN4", "pulldown_resistance": 8})
+
+
+def test_m5_threshold_and_poll_ranges():
+    for bad in ({"threshold_mv": 0}, {"threshold_mv": 1000}, {"poll_sec": 59}, {"poll_sec": 86401}):
+        with pytest.raises(provisioning.ProvisionError):
+            provisioning.parse_settings({"model": "M5 AIN4", **bad})
+
+
+def test_render_platform_config():
+    plan = {"project_id": 1312, "device_hash": "1312-01", "token": "abcDEF123", "threshold_mv": 891,
+            "model": "M5 AIN4", "config_format": "m5", "sensors": 4, "interval_sec": 300, "poll_sec": 300,
+            "pulldown_resistance": 136, "protective_earth": 0,
+            "url": "https://api.progeo.com/v1/device/1312/sample/"}
+    text = provisioning.render_platform_config(plan)
+    for line in (
+        '#define PLATFORM_DEVICE_HASH  "1312-01"',
+        '#define PLATFORM_HOST         "api.progeo.com"',
+        '#define PLATFORM_PATH         "/v1/device/1312/sample/"',
+        '#define PLATFORM_TOKEN        "abcDEF123"',
+        "#define PLATFORM_THRESHOLD_MV 891",
+        "#define PLATFORM_POLL_SEC     300",
+        '#define PLATFORM_MODEL        "M5 AIN4"',
+    ):
+        assert line in text
+    head, _, _ = text.partition("#pragma once")
+    assert head.startswith("//") and "#define" not in head
+    assert provisioning.render_device_config(plan) == (text, "platform_config.h")
+
+
+def test_render_platform_config_escapes_c_strings():
+    plan = {"project_id": 1, "device_hash": "1-01", "token": r'a"b\c', "threshold_mv": 5,
+            "url": "https://x.example/v1/device/1/sample/"}
+    assert r'#define PLATFORM_TOKEN        "a\"b\\c"' in provisioning.render_platform_config(plan)
+
+
+def test_preview_m5_has_header_and_no_qr(staff_client, location):
+    body = _preview(staff_client, location, model="M5 AIN4")
+    assert body["config_format"] == "m5"
+    assert body["config_filename"] == "platform_config.h"
+    assert "config_qr" not in body and "portal" not in body
+    assert "#define PLATFORM_THRESHOLD_MV 891" in body["config"]
+
+
+def test_confirm_m5_creates_device(staff_client, location):
+    preview = _preview(staff_client, location, model="M5 AIN4")
+    response = staff_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
+    assert response.status_code == 200, response.content
+    assert response.json()["config_filename"] == "platform_config.h"
+    assert response.json()["config"] == preview["config"]
+    device = ProgeoDevice.objects.using(f.DB).get(raw_hash=preview["device_hash"])
+    assert device.hardware == "M5 AIN4"
+    assert device.type == "smartbox"
+    assert device.data_interval == 300
+    token = LimitedToken.objects.using(f.DB).get(raw_hash=preview["token"])
+    assert token.raw_data["device"] == preview["device_hash"]
+
+
+def test_lua_preview_unchanged(staff_client, location):
+    body = _preview(staff_client, location)
+    assert body["config_format"] == "lua"
+    assert body["config_filename"] == "config.lua"
+    assert body["config_qr"].startswith("data:image/png;base64,")
+    assert "portal" in body
+    confirm = staff_client.post("/v1/device/provision/confirm/", {"signed": body["signed"]}, format="json")
+    assert confirm.json()["config_filename"] == "config.lua"
+
+
+def test_locations_report_alarm_threshold_and_m5_defaults(staff_client, location):
+    body = staff_client.get("/v1/device/provision/locations/").json()
+    row = next(r for r in body["locations"] if r["id"] == location.pk)
+    assert row["alarm_threshold"] == 100
+    assert body["defaults"]["m5"] == {
+        "sensors": 4, "interval_sec": 300, "poll_sec": 300,
+        "threshold_mv": {"136": 891, "72": 450, "40": 76, "24": 8},
+    }
+    assert body["m5_model"] == "M5 AIN4"

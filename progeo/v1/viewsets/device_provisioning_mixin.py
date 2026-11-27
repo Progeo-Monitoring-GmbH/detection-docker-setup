@@ -21,6 +21,7 @@ from progeo.helper.location_access import (
     resolve_request_accounts,
     visible_location_filters,
 )
+from progeo.helper.m5_device import M5_MODEL
 from progeo.helper.project_dbs import location_db, release_connection
 from progeo.v1.models import (
     ProgeoDevice,
@@ -76,7 +77,8 @@ class DeviceProvisioningMixin:
                  "project_type": location.get_project_type_display(),
                  "address": location.address, "plz": location.plz, "city": location.city,
                  "country": location.country, "manager": location.manager,
-                 "model": provisioning.default_model(location)}
+                 "model": provisioning.default_model(location),
+                 "alarm_threshold": location.alarm_threshold}
                 for location, _ in self._provision_locations(request)
             ],
             # device.model choices (ASCII only - the controller shows and logs it).
@@ -87,7 +89,9 @@ class DeviceProvisioningMixin:
                 "pulldown_resistance": ProgeoDevice.Resistance.DEFAULT_100K,
                 "protective_earth": 0,
                 "firmware": default_bundle["id"] if default_bundle else None,
+                "m5": {**provisioning.M5_DEFAULTS, "threshold_mv": provisioning.M5_THRESHOLD_DEFAULTS},
             },
+            "m5_model": M5_MODEL,
             # The flash bundles the server holds (/firmware/versions/<channel>),
             # newest first; empty: the config gets FIRMWARE_VERSION.
             "firmware_bundles": bundles,
@@ -152,12 +156,21 @@ class DeviceProvisioningMixin:
             return RequestFailed({"reason": str(exc)})
         finally:
             release_connection(db_name)
+        config, config_filename = provisioning.render_device_config(plan)
+        if plan["config_format"] == "m5":
+            # No setup portal and no QR code: the file goes into the firmware build.
+            return RequestSuccess({
+                **plan,
+                "config": config,
+                "config_filename": config_filename,
+                "signed": provisioning.sign_plan(plan),
+            })
         # QR codes for the setup portal: join its network, then open the controller.
         portal_wifi = build_wifi_payload(provisioning.PORTAL["ssid"], provisioning.PORTAL["pwd"])
-        config = provisioning.render_config(plan)
         return RequestSuccess({
             **plan,
             "config": config,
+            "config_filename": config_filename,
             # The whole config.lua as a QR code (~1 KB - fits into one code).
             "config_qr": qr_code_data_uri(config),
             "signed": provisioning.sign_plan(plan),
@@ -189,10 +202,12 @@ class DeviceProvisioningMixin:
             release_connection(db_name)
         create_MfS_log(request)
         ilog(f"Provisioned device {device.raw_hash} (location {location.pk}, token {token.pk})", tag="[PROVISION]")
+        config, config_filename = provisioning.render_device_config(plan)
         return RequestSuccess({
             "device": device_data,
             "token_id": token.pk,
-            "config": provisioning.render_config(plan),
+            "config": config,
+            "config_filename": config_filename,
         })
 
     # ------------------------------------------------------------------ test measurements (helper/device_commands.py)
