@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Spinner } from 'react-bootstrap';
-import { CheckCircle, Clipboard, FileEarmarkCode, QrCode as QrCodeIcon } from 'react-bootstrap-icons';
+import { CheckCircle, Clipboard, Download, FileEarmarkCode, QrCode as QrCodeIcon } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -19,7 +19,19 @@ type ProvisionLocation = {
   name: string | null;
   project_type: string;
   model: string;
+  /** Alarm threshold of the location in mV (M5: compared with the device's). */
+  alarm_threshold?: number | null;
 };
+
+/** defaults.m5 of the locations endpoint (JSON object keys are strings). */
+type M5Defaults = {
+  sensors: number;
+  interval_sec: number;
+  poll_sec: number;
+  threshold_mv: Record<string, number>;
+};
+
+const DEFAULT_M5_MODEL = 'M5 AIN4';
 
 type Option = { value: number; label: string };
 
@@ -39,6 +51,11 @@ type ProvisionSettings = {
   router: boolean;
   router_user: string;
   router_pwd: string;
+  /** M5 only: threshold in mV (1..999, -1 = sensor off) and the command poll interval. */
+  threshold_mv: string;
+  /** The threshold was typed by hand: a new pulldown no longer resets it. */
+  threshold_touched: boolean;
+  poll_sec: string;
 };
 
 type QrCode = { payload: string; image: string };
@@ -52,10 +69,14 @@ type ProvisionPreview = {
   token: string;
   url: string;
   config: string;
-  /** The config as a PNG QR code (data URI). */
-  config_qr: string;
+  /** 'lua' (default) or 'm5' (platform_config.h). */
+  config_format?: 'lua' | 'm5';
+  config_filename?: string;
+  /** The config as a PNG QR code (data URI); Lua only. */
+  config_qr?: string;
   signed: string;
-  portal: {
+  /** Lua only. */
+  portal?: {
     wifi: QrCode & { ssid: string };
     frontend: QrCode & { url: string };
   };
@@ -76,6 +97,9 @@ const EMPTY_SETTINGS: ProvisionSettings = {
   router: false,
   router_user: '',
   router_pwd: '',
+  threshold_mv: '',
+  threshold_touched: false,
+  poll_sec: '300',
 };
 
 /** ASCII only, like the backend's ascii_model: "smartex® mx-va" -> "smartex mx-va". */
@@ -112,6 +136,8 @@ const DeviceProvisionPanel = ({
   const [resistances, setResistances] = useState<Option[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [bundles, setBundles] = useState<FirmwareBundle[]>([]);
+  const [m5Model, setM5Model] = useState(DEFAULT_M5_MODEL);
+  const [m5Defaults, setM5Defaults] = useState<M5Defaults | null>(null);
   const [firmwareFallback, setFirmwareFallback] = useState('');
   const [settings, setSettings] = useState<ProvisionSettings>(EMPTY_SETTINGS);
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
@@ -134,6 +160,8 @@ const DeviceProvisionPanel = ({
         setModels(((data.models || []) as string[]).map(asciiModel));
         setBundles((data.firmware_bundles || []) as FirmwareBundle[]);
         setFirmwareFallback(String(data.firmware_fallback || ''));
+        setM5Model(asciiModel(String(data.m5_model || DEFAULT_M5_MODEL)));
+        setM5Defaults((data.defaults?.m5 || null) as M5Defaults | null);
         const defaults = data.defaults || {};
         setSettings((current) => ({
           ...current,
@@ -153,25 +181,61 @@ const DeviceProvisionPanel = ({
   }, []);
 
   const location = locations?.find((entry) => entry.id === locationId) ?? null;
+  const isM5 = settings.model !== '' && settings.model === m5Model;
+
+  /** M5: the factory threshold of a pulldown (defaults.m5.threshold_mv has string keys). */
+  const defaultThreshold = (pulldown: string) => {
+    const value = m5Defaults?.threshold_mv?.[pulldown];
+    return value == null ? '' : String(value);
+  };
+
+  /** A change of model or pulldown: the M5 starts from its own defaults. */
+  const withM5Defaults = (previous: ProvisionSettings, next: ProvisionSettings): ProvisionSettings => {
+    if (next.model === '' || next.model !== m5Model || !m5Defaults) {
+      return next;
+    }
+    const result = { ...next };
+    if (previous.model !== next.model) {
+      result.sensors = String(m5Defaults.sensors);
+      result.interval_sec = String(m5Defaults.interval_sec);
+      result.poll_sec = String(m5Defaults.poll_sec);
+      result.protective_earth = false;
+      result.rpi = false;
+      result.router = false;
+      result.threshold_touched = false;
+      if (result.pulldown_resistance === '8' || !(result.pulldown_resistance in m5Defaults.threshold_mv)) {
+        result.pulldown_resistance = '136';
+      }
+    }
+    if (!result.threshold_touched) {
+      result.threshold_mv = defaultThreshold(result.pulldown_resistance);
+    }
+    return result;
+  };
 
   // Another location: its own default model, and the old preview is stale.
   useEffect(() => {
     setPreview(null);
     setConfirmed(false);
     if (location) {
-      setSettings((current) => ({ ...current, model: asciiModel(location.model || '') }));
+      setSettings((current) =>
+        withM5Defaults(current, { ...current, model: asciiModel(location.model || '') }),
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, location?.model]);
+  }, [locationId, location?.model, m5Defaults]);
 
   const generate = (next: ProvisionSettings = settings) => {
     setLoading(true);
     setPreview(null);
     setConfirmed(false);
+    const nextIsM5 = next.model !== '' && next.model === m5Model;
     void axiosConfig.perform_post(
       auth,
       '/v1/device/provision/preview/',
       {
+        config_format: nextIsM5 ? 'm5' : 'lua',
+        ...(nextIsM5 ? { threshold_mv: Number(next.threshold_mv), poll_sec: Number(next.poll_sec) } : {}),
         location: locationId,
         model: asciiModel(next.model),
         // '': the backend's default bundle (or its fallback version without any).
@@ -179,12 +243,12 @@ const DeviceProvisionPanel = ({
         sensors: Number(next.sensors),
         interval_sec: Number(next.interval_sec),
         pulldown_resistance: Number(next.pulldown_resistance),
-        protective_earth: next.protective_earth ? 1 : 0,
-        rpi: next.rpi,
-        wifi_ssid: next.wifi_ssid,
-        wifi_pwd: next.wifi_pwd,
-        router_user: next.router ? next.router_user : '',
-        router_pwd: next.router ? next.router_pwd : '',
+        protective_earth: next.protective_earth && !nextIsM5 ? 1 : 0,
+        rpi: nextIsM5 ? false : next.rpi,
+        wifi_ssid: nextIsM5 ? '' : next.wifi_ssid,
+        wifi_pwd: nextIsM5 ? '' : next.wifi_pwd,
+        router_user: next.router && !nextIsM5 ? next.router_user : '',
+        router_pwd: next.router && !nextIsM5 ? next.router_pwd : '',
       },
       (response) => {
         setPreview((response?.data || null) as ProvisionPreview | null);
@@ -201,7 +265,7 @@ const DeviceProvisionPanel = ({
    * generated again - unless its device is already created (the next
    * "Generate config" starts a new one). */
   const applySettings = (patch: Partial<ProvisionSettings>) => {
-    const next = { ...settings, ...patch };
+    const next = withM5Defaults(settings, { ...settings, ...patch });
     setSettings(next);
     if (preview && !confirmed) {
       generate(next);
@@ -248,6 +312,21 @@ const DeviceProvisionPanel = ({
       .writeText(preview.config)
       .then(() => showSuccessBar(enqueueSnackbar, 'Config copied.'))
       .catch(() => showErrorBar(enqueueSnackbar, 'Could not copy the config.'));
+  };
+
+  /** The M5 config is a file (platform_config.h) for the firmware build. */
+  const downloadConfig = () => {
+    if (!preview) {
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([preview.config], { type: 'text/plain' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = preview.config_filename || 'platform_config.h';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
@@ -303,8 +382,12 @@ const DeviceProvisionPanel = ({
     onRemove: () => applySettings({ router: false, router_user: '', router_pwd: '' }),
   };
 
-  const sections: ConfigSection[] = [
-    {
+  const m5Resistances = resistances.filter((option) => option.value !== 8);
+  const locationThreshold = location?.alarm_threshold ?? null;
+  const thresholdMismatch =
+    isM5 && locationThreshold != null && settings.threshold_mv !== '' && Number(settings.threshold_mv) !== locationThreshold;
+
+  const wifiSection: ConfigSection = {
       name: 'wifi',
       tone: 'blue',
       rows: [
@@ -317,83 +400,9 @@ const DeviceProvisionPanel = ({
       ],
       values: { ssid: settings.wifi_ssid, pwd: settings.wifi_pwd },
       onSave: (values) => applySettings({ wifi_ssid: String(values.ssid).trim(), wifi_pwd: String(values.pwd) }),
-    },
-    ...(settings.router ? [routerSection] : []),
-    {
-      name: 'device',
-      tone: 'teal',
-      rows: [
-        { key: 'model', value: settings.model },
-        { key: 'project_id', value: location ? String(location.project_id) : '' },
-        { key: 'device_hash', value: generated(preview?.device_hash, 'device-provision-hash') },
-      ],
-      fields: [
-        {
-          key: 'model',
-          kind: 'select',
-          testId: 'device-provision-model',
-          // A default the list lacks stays selectable.
-          options: [...(settings.model && !models.includes(settings.model) ? [settings.model] : []), ...models].map(
-            (model) => ({ value: model, label: model }),
-          ),
-        },
-      ],
-      values: { model: settings.model },
-      onSave: (values) => applySettings({ model: String(values.model) }),
-    },
-    {
-      name: 'measurement',
-      tone: 'purple',
-      rows: [
-        {
-          key: 'pulldown_resistance',
-          value: resistanceLabel ? `${resistanceLabel} (${settings.pulldown_resistance})` : settings.pulldown_resistance,
-        },
-        { key: 'interval_sec', value: settings.interval_sec },
-        { key: 'sensors', value: settings.sensors },
-        { key: 'protective_earth', value: settings.protective_earth ? '1' : '0' },
-      ],
-      fields: [
-        {
-          key: 'pulldown_resistance',
-          kind: 'select',
-          testId: 'device-provision-resistance',
-          options: resistances.map((option) => ({
-            value: String(option.value),
-            label: `${option.label} (${option.value})`,
-          })),
-        },
-        { key: 'interval_sec', kind: 'number', min: 10, max: 86400, testId: 'device-provision-interval' },
-        { key: 'sensors', kind: 'number', min: 1, testId: 'device-provision-sensors' },
-        { key: 'protective_earth', kind: 'switch', testId: 'device-provision-protective-earth' },
-      ],
-      values: {
-        pulldown_resistance: settings.pulldown_resistance,
-        interval_sec: settings.interval_sec,
-        sensors: settings.sensors,
-        protective_earth: settings.protective_earth,
-      },
-      onSave: (values) =>
-        applySettings({
-          pulldown_resistance: String(values.pulldown_resistance),
-          interval_sec: String(values.interval_sec).trim(),
-          sensors: String(values.sensors).trim(),
-          protective_earth: values.protective_earth === true,
-        }),
-    },
-    {
-      name: 'control',
-      tone: 'amber',
-      rows: [
-        { key: 'url', value: generated(preview?.url) },
-        { key: 'token', value: generated(preview?.token, 'device-provision-token') },
-        { key: 'rpi', value: settings.rpi ? 'true' : 'false' },
-      ],
-      fields: [{ key: 'rpi', kind: 'switch', testId: 'device-provision-rpi' }],
-      values: { rpi: settings.rpi },
-      onSave: (values) => applySettings({ rpi: values.rpi === true }),
-    },
-    {
+  };
+
+  const firmwareSection: ConfigSection = {
       name: 'firmware',
       tone: 'green',
       rows: [
@@ -419,9 +428,125 @@ const DeviceProvisionPanel = ({
         : [],
       values: { bundle: settings.firmware },
       onSave: (values) => applySettings({ firmware: String(values.bundle) }),
+  };
+
+  const sections: ConfigSection[] = [
+    ...(isM5 ? [] : [wifiSection]),
+    ...(settings.router && !isM5 ? [routerSection] : []),
+    {
+      name: 'device',
+      tone: 'teal',
+      rows: [
+        { key: 'model', value: settings.model },
+        { key: 'project_id', value: location ? String(location.project_id) : '' },
+        { key: 'device_hash', value: generated(preview?.device_hash, 'device-provision-hash') },
+        {
+          key: 'config_format',
+          value: (
+            <span data-testid="device-provision-config-format">
+              {t(isM5 ? 'provision_config_format_m5' : 'provision_config_format_lua')}
+            </span>
+          ),
+        },
+      ],
+      fields: [
+        {
+          key: 'model',
+          kind: 'select',
+          testId: 'device-provision-model',
+          // A default the list lacks stays selectable.
+          options: [...(settings.model && !models.includes(settings.model) ? [settings.model] : []), ...models].map(
+            (model) => ({ value: model, label: model }),
+          ),
+        },
+      ],
+      values: { model: settings.model },
+      onSave: (values) => applySettings({ model: String(values.model) }),
     },
+    {
+      name: 'measurement',
+      tone: 'purple',
+      rows: [
+        {
+          key: 'pulldown_resistance',
+          value: resistanceLabel ? `${resistanceLabel} (${settings.pulldown_resistance})` : settings.pulldown_resistance,
+        },
+        { key: 'interval_sec', value: settings.interval_sec },
+        ...(isM5
+          ? [
+              {
+                key: 'threshold_mv',
+                value: <span data-testid="device-provision-threshold">{settings.threshold_mv}</span>,
+              },
+              { key: 'poll_sec', value: settings.poll_sec },
+            ]
+          : [
+              { key: 'sensors', value: settings.sensors },
+              { key: 'protective_earth', value: settings.protective_earth ? '1' : '0' },
+            ]),
+      ],
+      fields: [
+        {
+          key: 'pulldown_resistance',
+          kind: 'select',
+          testId: 'device-provision-resistance',
+          options: (isM5 ? m5Resistances : resistances).map((option) => ({
+            value: String(option.value),
+            label: `${option.label} (${option.value})`,
+          })),
+        },
+        { key: 'interval_sec', kind: 'number', min: 10, max: 86400, testId: 'device-provision-interval' },
+        ...(isM5
+          ? [
+              { key: 'threshold_mv', kind: 'number' as const, min: -1, max: 999, testId: 'device-provision-threshold-input' },
+              { key: 'poll_sec', kind: 'number' as const, min: 60, max: 86400, testId: 'device-provision-poll' },
+            ]
+          : [
+              { key: 'sensors', kind: 'number' as const, min: 1, testId: 'device-provision-sensors' },
+              { key: 'protective_earth', kind: 'switch' as const, testId: 'device-provision-protective-earth' },
+            ]),
+      ],
+      values: {
+        pulldown_resistance: settings.pulldown_resistance,
+        interval_sec: settings.interval_sec,
+        sensors: settings.sensors,
+        protective_earth: settings.protective_earth,
+        threshold_mv: settings.threshold_mv,
+        poll_sec: settings.poll_sec,
+      },
+      onSave: (values) =>
+        applySettings({
+          pulldown_resistance: String(values.pulldown_resistance),
+          interval_sec: String(values.interval_sec).trim(),
+          ...(isM5
+            ? {
+                poll_sec: String(values.poll_sec).trim(),
+                // A value changed by hand is kept when the pulldown changes.
+                ...(String(values.threshold_mv).trim() !== settings.threshold_mv
+                  ? { threshold_mv: String(values.threshold_mv).trim(), threshold_touched: true }
+                  : {}),
+              }
+            : {
+                sensors: String(values.sensors).trim(),
+                protective_earth: values.protective_earth === true,
+              }),
+        }),
+    },
+    {
+      name: 'control',
+      tone: 'amber',
+      rows: [
+        { key: 'url', value: generated(preview?.url) },
+        { key: 'token', value: generated(preview?.token, 'device-provision-token') },
+        ...(isM5 ? [] : [{ key: 'rpi', value: settings.rpi ? 'true' : 'false' }]),
+      ],
+      fields: isM5 ? [] : [{ key: 'rpi', kind: 'switch', testId: 'device-provision-rpi' }],
+      values: { rpi: settings.rpi },
+      onSave: (values) => applySettings({ rpi: values.rpi === true }),
+    },
+    ...(isM5 ? [] : [firmwareSection]),
     // The controller's setup network - the same for every device.
-    ...(preview
+    ...(preview?.portal
       ? [
           {
             name: 'portal',
@@ -465,9 +590,20 @@ const DeviceProvisionPanel = ({
           <ConfigSectionCards
             testId="device-provision-sections"
             sections={sections}
-            addable={settings.router ? [] : [routerSection]}
+            addable={settings.router || isM5 ? [] : [routerSection]}
             disabled={loading}
           />
+
+          {isM5 && locationThreshold != null && (
+            <div className="small text-muted mt-2" data-testid="device-provision-threshold-location">
+              {t('provision_threshold_location', { value: locationThreshold })}
+            </div>
+          )}
+          {thresholdMismatch && (
+            <Alert variant="warning" className="mt-2 mb-0 py-1 small" data-testid="device-provision-threshold-mismatch">
+              {t('provision_threshold_mismatch', { threshold: settings.threshold_mv, location: locationThreshold })}
+            </Alert>
+          )}
 
           <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
             <Button
@@ -499,16 +635,29 @@ const DeviceProvisionPanel = ({
                   <FileEarmarkCode className="me-2" />
                   {t(showConfig ? 'provision_config_hide' : 'provision_config_show')}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline-secondary"
-                  onClick={() => setShowConfigQr(true)}
-                  disabled={showConfigQr}
-                  data-testid="device-provision-show-config-qr"
-                >
-                  <QrCodeIcon className="me-2" />
-                  Generate QR-Code
-                </Button>
+                {preview.config_format === 'm5' && (
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    onClick={downloadConfig}
+                    data-testid="device-provision-download-config"
+                  >
+                    <Download className="me-2" />
+                    {t('provision_download_config')}
+                  </Button>
+                )}
+                {preview.config_qr && (
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    onClick={() => setShowConfigQr(true)}
+                    disabled={showConfigQr}
+                    data-testid="device-provision-show-config-qr"
+                  >
+                    <QrCodeIcon className="me-2" />
+                    Generate QR-Code
+                  </Button>
+                )}
                 <Button size="sm" variant="success" onClick={confirm} disabled={loading || confirmed} data-testid="device-provision-confirm">
                   {loading ? (
                     <Spinner size="sm" animation="border" className="me-2" />
@@ -540,7 +689,7 @@ const DeviceProvisionPanel = ({
                 </pre>
               )}
 
-              {showConfigQr && (
+              {showConfigQr && preview.config_qr && (
                 <figure className="mt-3 mb-0 text-center" data-testid="device-provision-config-qr">
                   <img
                     src={preview.config_qr}

@@ -59,6 +59,8 @@ type OverviewDevice = {
   ping: boolean | null;
   /** Staff get one mail when the device's next measurement arrives; cleared by the server then. */
   notify_on_measurements?: boolean;
+  /** M5 AIN4 controller (its own config format and command set). */
+  is_m5?: boolean;
 };
 
 type OverviewStats = {
@@ -705,6 +707,7 @@ const DeviceListView = () => {
           device={commandsTarget}
           isSuperuser={isSuperuser}
           canEdit={canCommands}
+          isM5={commandsTarget.is_m5 === true}
           onClose={() => setCommandsTarget(null)}
         />
       )}

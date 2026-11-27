@@ -12,7 +12,7 @@ import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import PillButton from '../ui/kit/PillButton';
 import DeviceFirmwareUpdate from './DeviceFirmwareUpdate';
-import { type ParamOption, SET_PARAMS } from './deviceParams';
+import { type ParamOption, paramOptionsFor, SET_PARAMS } from './deviceParams';
 import { childTestId, repeatedTestId } from '../../testIds';
 import './DeviceCommandsDialog.css';
 
@@ -127,12 +127,15 @@ const DeviceCommandsDialog = ({
   device,
   isSuperuser,
   canEdit,
+  isM5 = false,
   onClose,
   testId = 'device-commands',
 }: {
   device: CommandDevice;
   isSuperuser: boolean;
   canEdit: boolean;
+  /** M5 devices: no firmware update panel, fewer set_params values. */
+  isM5?: boolean;
   onClose: () => void;
   /** data-testid of the dialog; its parts are "<testId>-close", "-command", "-history-row", ... */
   testId?: string;
@@ -536,7 +539,7 @@ const DeviceCommandsDialog = ({
                 </div>
               )}
 
-              {canEdit && isStaff && (
+              {canEdit && isStaff && !isM5 && (
                 <DeviceFirmwareUpdate
                   deviceId={device.id}
                   deviceName={deviceName}
@@ -651,7 +654,7 @@ const DeviceCommandsDialog = ({
                           data-testid={childTestId(testId, 'param-value')}
                           data-test-key={row.key}
                         >
-                          {paramSpec(row.key).options.map((option) => (
+                          {paramOptionsFor(row.key, isM5).map((option) => (
                             <option key={option.value} value={option.value}>
                               {optionLabel(option)}
                             </option>

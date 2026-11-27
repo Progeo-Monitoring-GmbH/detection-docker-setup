@@ -69,3 +69,21 @@ export const SET_PARAMS: {
     options: POLL_OPTIONS,
   },
 ];
+
+/**
+ * The options of a set_params parameter. The M5 firmware has no 8 pulldown
+ * (the input stays on) and always polls (no poll_sec 0).
+ */
+export const paramOptionsFor = (key: string, isM5: boolean): ParamOption[] => {
+  const options = (SET_PARAMS.find((spec) => spec.key === key) ?? SET_PARAMS[0]).options;
+  if (!isM5) {
+    return options;
+  }
+  if (key === 'pulldown_resistance') {
+    return options.filter((option) => option.value !== 8);
+  }
+  if (key === 'poll_sec') {
+    return options.filter((option) => option.value !== 0);
+  }
+  return options;
+};

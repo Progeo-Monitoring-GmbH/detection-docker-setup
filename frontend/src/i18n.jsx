@@ -2947,6 +2947,14 @@ i18n
           provision_section_save: 'Save',
           provision_section_cancel: 'Cancel',
           provision_generated_later: 'on generate',
+          provision_config_format: 'Config type',
+          provision_config_format_lua: 'lua (config.lua)',
+          provision_config_format_m5: 'm5 (platform_config.h)',
+          provision_threshold_mv: 'Alarm threshold (mV)',
+          provision_threshold_location: 'Location alarm threshold: {{value}} mV',
+          provision_threshold_mismatch:
+            'The device threshold ({{threshold}} mV) differs from the location threshold ({{location}} mV).',
+          provision_download_config: 'Download config',
           provision_generate_hint:
             'Device hash, token and URL are filled in when the config is generated.',
           provision_config_show: 'Show config',
@@ -6560,6 +6568,14 @@ i18n
           provision_section_save: 'Speichern',
           provision_section_cancel: 'Abbrechen',
           provision_generated_later: 'wird erzeugt',
+          provision_config_format: 'Config-Typ',
+          provision_config_format_lua: 'lua (config.lua)',
+          provision_config_format_m5: 'm5 (platform_config.h)',
+          provision_threshold_mv: 'Alarmschwelle (mV)',
+          provision_threshold_location: 'Alarmschwelle der Location: {{value}} mV',
+          provision_threshold_mismatch:
+            'Die Geräte-Schwelle ({{threshold}} mV) weicht von der Schwelle der Location ({{location}} mV) ab.',
+          provision_download_config: 'Konfiguration herunterladen',
           provision_generate_hint:
             'Device-Hash, Token und URL werden beim Erzeugen der Konfiguration eingetragen.',
           provision_config_show: 'Konfiguration anzeigen',

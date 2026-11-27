@@ -14,14 +14,22 @@ vi.mock('../../axiosConfig', () => ({
     perform_get: (_auth: unknown, _url: string, ok: (response: unknown) => void) => {
       ok({
         data: {
-          locations: [{ id: 7, project_id: 1312, name: 'Halle', project_type: 'smartex mx', model: 'smartex mx' }],
-          models: ['smartex mx', 'smartex vt'],
-          defaults: { sensors: 32, interval_sec: 1800, pulldown_resistance: 136, firmware: null },
+          locations: [{ id: 7, project_id: 1312, name: 'Halle', project_type: 'smartex mx', model: 'smartex mx', alarm_threshold: 100 }],
+          models: ['smartex mx', 'smartex vt', 'M5 AIN4'],
+          defaults: {
+            sensors: 32,
+            interval_sec: 1800,
+            pulldown_resistance: 136,
+            firmware: null,
+            m5: { sensors: 4, interval_sec: 300, poll_sec: 300, threshold_mv: { '136': 891, '72': 450, '40': 76, '24': 8 } },
+          },
+          m5_model: 'M5 AIN4',
           firmware_bundles: [],
           firmware_fallback: 'v1.6.1',
           pulldown_resistances: [
             { value: 136, label: '100k' },
-            { value: 8, label: '10k' },
+            { value: 72, label: '10k' },
+            { value: 8, label: 'off' },
           ],
         },
       });
@@ -30,8 +38,12 @@ vi.mock('../../axiosConfig', () => ({
     perform_post: (_auth: unknown, _url: string, data: Record<string, unknown>, ok: (response: unknown) => void) => {
       api.previews.push(data);
       const code = { payload: 'x', image: 'data:image/png;base64,QQ==' };
+      const m5 = data.config_format === 'm5';
       ok({
         data: {
+          ...(m5
+            ? { config_format: 'm5', config_filename: 'platform_config.h' }
+            : { config_format: 'lua', config_filename: 'config.lua', config_qr: code.image, portal: { wifi: { ...code, ssid: 'Helper' }, frontend: { ...code, url: 'http://192.168.16.1' } } }),
           device_hash: '1312-01',
           project_id: 1312,
           model: data.model,
@@ -40,9 +52,7 @@ vi.mock('../../axiosConfig', () => ({
           token: `token${api.previews.length}`,
           url: 'https://api.progeo.com/v1/device/1312/sample/',
           config: 'return {}',
-          config_qr: code.image,
           signed: 'signed',
-          portal: { wifi: { ...code, ssid: 'Helper' }, frontend: { ...code, url: 'http://192.168.16.1' } },
         },
       });
       return Promise.resolve();
@@ -181,5 +191,72 @@ describe('the config sections of "Gerät hinzufügen"', () => {
     click(one('device-provision-show-config'));
 
     expect(one('device-provision-config')?.textContent).toBe('return {}');
+  });
+
+  describe('M5 AIN4', () => {
+    const pickM5 = () => {
+      click(one('device-provision-sections-edit', 'device'));
+      const select = one('device-provision-model') as HTMLSelectElement;
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+        setter.call(select, 'M5 AIN4');
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      save();
+    };
+
+    it('shows the m5 config type, sends threshold and poll, hides wifi/portal/firmware/qr', () => {
+      pickM5();
+
+      expect(one('device-provision-config-format')?.textContent).toContain('m5');
+      expect(card('wifi')).toBeNull();
+      expect(card('firmware')).toBeNull();
+      expect(one('device-provision-threshold')).not.toBeNull();
+      expect(one('device-provision-threshold-mismatch')?.textContent).toContain('provision_threshold_mismatch');
+
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({
+        config_format: 'm5',
+        threshold_mv: 891,
+        poll_sec: 300,
+        model: 'M5 AIN4',
+      });
+      expect(card('portal')).toBeNull();
+      expect(one('device-provision-show-config-qr')).toBeNull();
+    });
+
+    it('follows the pulldown default threshold until edited by hand', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'measurement'));
+      const select = one('device-provision-resistance') as HTMLSelectElement;
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+        setter.call(select, '72');
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ pulldown_resistance: 72, threshold_mv: 450 });
+    });
+
+    it('offers the config as a download named platform_config.h', () => {
+      pickM5();
+      click(one('device-provision-generate'));
+      const create = vi.fn(() => 'blob:x');
+      const revoke = vi.fn();
+      Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke });
+      const names: string[] = [];
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+
+      click(one('device-provision-download-config'));
+
+      expect(create).toHaveBeenCalled();
+      expect(names).toEqual(['platform_config.h']);
+      clickSpy.mockRestore();
+    });
   });
 });
