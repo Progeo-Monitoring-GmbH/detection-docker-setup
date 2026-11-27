@@ -13,6 +13,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
 from progeo.helper.device_overview import device_model, hash_kind
 from progeo.helper.firmware import list_bundles as list_firmware_bundles
 from progeo.helper.location_access import is_staff_admin
+from progeo.helper.m5_device import UNSUPPORTED_COMMANDS, is_m5
 
 # Controller commands and the config file without staff (mobile app installers).
 COMMANDS_PERMISSION = "module_devices_commands"
@@ -45,15 +46,19 @@ class DeviceCommandsMixin:
         return device, error
 
     @staticmethod
-    def _command_choices(user):
-        return [
-            {
+    def _command_choices(user, device=None):
+        m5 = device is not None and is_m5(device)
+        choices = []
+        for command in device_commands.COMMANDS:
+            choice = {
                 "command": command,
                 "superuser_only": command in device_commands.SUPERUSER_COMMANDS,
                 "allowed": command not in device_commands.SUPERUSER_COMMANDS or bool(user.is_superuser),
             }
-            for command in device_commands.COMMANDS
-        ]
+            if m5 and command in UNSUPPORTED_COMMANDS:
+                choice["allowed"], choice["reason"] = False, "not supported by M5"
+            choices.append(choice)
+        return choices
 
     @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
     @action(detail=True, url_path="commands", methods=["GET"])
@@ -66,7 +71,7 @@ class DeviceCommandsMixin:
         db_name = device._state.db
         return RequestSuccess({
             "commands": device_commands.command_history(device, db_name),
-            "available": self._command_choices(request.user),
+            "available": self._command_choices(request.user, device),
             "pending_ttl_hours": device_commands.PENDING_TTL.total_seconds() / 3600,
             "result_ttl_days": device_commands.RESULT_TTL.days,
             **self._command_state(device, db_name),

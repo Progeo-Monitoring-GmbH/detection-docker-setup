@@ -70,6 +70,7 @@ from progeo.helper.location_access import (
     resolve_request_accounts,
     visible_locations_by_db,
 )
+from progeo.helper.m5_device import is_m5
 from progeo.helper.project_dbs import (
     existing_project_aliases,
     location_db,
@@ -2195,6 +2196,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 "online": is_online(last_seen, device.data_interval, now),
                 "hash_kind": hash_kind(device.raw_hash),
                 "model": device_model(device.hardware),
+                "is_m5": is_m5(device),
                 "ip": address(device),
                 "ping": pings.get(device.pk),
             })

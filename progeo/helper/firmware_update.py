@@ -276,6 +276,10 @@ def start_update(device, db_name, target, user=None):
     """Start taking the device to `target` (a bundle the server holds):
     queues the first step - "get_config" when the config needs a
     migration, else "upgrade". Returns the queued command."""
+    from progeo.helper.m5_device import is_m5
+
+    if is_m5(device):
+        raise UpdateError("Remote firmware update is not supported by M5")
     if not device.firmware_bundle:
         raise UpdateError(
             "The device does not report its bundle - it needs a release that can update itself, flashed on site once"

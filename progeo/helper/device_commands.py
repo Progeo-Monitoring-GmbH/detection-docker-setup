@@ -246,10 +246,28 @@ def clean_payload(command, payload):
 
 # ---------------------------------------------------------------------------- queue
 
+def check_m5_command(device, command, payload):
+    """Refuse what an M5 cannot do: update/upgrade/logs, set_params with the
+    pulldown off (8) or poll_sec 0 (never poll). `payload` is the cleaned one."""
+    from progeo.helper.m5_device import UNSUPPORTED_COMMANDS
+
+    if command in UNSUPPORTED_COMMANDS:
+        raise CommandError(f"{command} is not supported by M5")
+    if command == Command.SET_PARAMS and isinstance(payload, dict):
+        if payload.get("pulldown_resistance") == 8:
+            raise CommandError("pulldown_resistance 8 (off) is not supported by M5")
+        if payload.get("poll_sec") == 0:
+            raise CommandError("poll_sec 0 (never poll) is not supported by M5")
+
+
 def queue_command(device, db_name, command, payload=None, user=None):
     """Queue `command` for the device's next poll and return it. A pending
     command of IDEMPOTENT_COMMANDS is not queued twice (it runs once)."""
     payload, summary = clean_payload(command, payload)
+    from progeo.helper.m5_device import is_m5
+
+    if is_m5(device):
+        check_m5_command(device, command, payload)
     with transaction.atomic(using=db_name):
         # Locked: two clicks at once still queue one "measure".
         ProgeoDevice.objects.using(db_name).select_for_update().filter(pk=device.pk).first()
@@ -437,12 +455,29 @@ def record_results(device, db_name, results, now=None, identity=None):
             elif not command.error:
                 command.error = f"Result over {RESULT_MAX_BYTES // 1024} KB - not stored"
         command.save(using=db_name, update_fields=["status", "finished_at", "error", "result_encrypted"])
+        if ok and command.command == Command.SET_PARAMS:
+            _apply_set_params(device, db_name, command)
         recorded.append(command)
     # A firmware update goes on with the config it read / the step that finished.
     from progeo.helper import firmware_update
 
     firmware_update.after_results(device, db_name, recorded)
     return len(recorded)
+
+
+def _apply_set_params(device, db_name, command):
+    """The device runs the values of a successful set_params now: take them
+    into the DB (the summary holds them - the payload is gone). poll_sec is
+    not stored."""
+    params = (command.summary or {}).get("params") or {}
+    changes = {}
+    interval, resistance = params.get("interval_sec"), params.get("pulldown_resistance")
+    if isinstance(interval, int) and not isinstance(interval, bool):
+        changes["data_interval"] = interval
+    if isinstance(resistance, int) and not isinstance(resistance, bool):
+        changes["pull_resistance"] = resistance
+    if changes:
+        ProgeoDevice.objects.using(db_name).filter(pk=device.pk).update(**changes)
 
 
 def take_commands(raw_hash, results=None, message=None):

@@ -4,7 +4,13 @@ import itertools
 
 import pytest
 
-from progeo.helper import device_provisioning, device_thresholds, m5_device
+from progeo.helper import (
+    device_commands,
+    device_provisioning,
+    device_thresholds,
+    firmware_update,
+    m5_device,
+)
 from progeo.tests import factories as f
 from progeo.v1.models import (
     Account,
@@ -117,3 +123,121 @@ def test_sample_keeps_m5_fields_in_raw_data(api_client, provisioned):
     assert measurement.raw_data["pulldown_resistance"] == 136
     assert measurement.raw_data["firmware"] == "4.0.0"
     assert measurement.raw_data["thresholds"] == {"project": 891}
+
+
+# -- command gating ---------------------------------------------------------
+
+def _m5_and_lua_box():
+    account = Account.objects.using(f.DB).get(pk=1)
+    location = f.make_location(account, project_id=next(_project_ids))
+    m5 = f.make_device(location, hardware="M5 AIN4", firmware_bundle="m5-ain4-4.0.0")
+    lua = f.make_device(location, hardware="smartex mx", firmware_bundle="v1.0.5_fw-v1.6.1-tls-lua53")
+    return location, m5, lua
+
+
+@pytest.mark.parametrize("command, payload", [
+    ("update", {"content": "return {}"}),
+    ("logs", {"hour": 3}),
+])
+def test_queue_unsupported_command_refused_for_m5(command, payload):
+    _location, m5, _lua = _m5_and_lua_box()
+
+    with pytest.raises(device_commands.CommandError, match="M5"):
+        device_commands.queue_command(m5, f.DB, command, payload)
+
+
+def test_check_m5_command_refuses_upgrade():
+    _location, m5, _lua = _m5_and_lua_box()
+
+    # "upgrade" is queued by firmware_update only, never through queue_command.
+    with pytest.raises(device_commands.CommandError, match="M5"):
+        device_commands.check_m5_command(m5, "upgrade", None)
+
+
+def test_set_params_pulldown_off_refused_for_m5():
+    _location, m5, _lua = _m5_and_lua_box()
+
+    with pytest.raises(device_commands.CommandError):
+        device_commands.queue_command(m5, f.DB, "set_params", {"pulldown_resistance": 8})
+
+
+def test_set_params_poll_never_refused_for_m5():
+    _location, m5, _lua = _m5_and_lua_box()
+
+    with pytest.raises(device_commands.CommandError):
+        device_commands.queue_command(m5, f.DB, "set_params", {"poll_sec": 0})
+
+
+def test_set_params_unchanged_for_lua_box():
+    _location, _m5, lua = _m5_and_lua_box()
+
+    command = device_commands.queue_command(lua, f.DB, "set_params", {"poll_sec": 0})
+
+    assert command.status == ProgeoDeviceCommand.Status.PENDING
+
+
+def test_firmware_update_refused_for_m5():
+    _location, m5, _lua = _m5_and_lua_box()
+
+    with pytest.raises(firmware_update.UpdateError, match="M5"):
+        firmware_update.start_update(m5, f.DB, "x")
+
+
+def test_command_choices_mark_m5_unsupported(api_client, provisioned):
+    location, device, _preview = provisioned
+
+    response = api_client.get(f"/v1/device/{device.pk}/commands/?location={location.pk}")
+
+    assert response.status_code == 200, response.content
+    allowed = {row["command"]: row["allowed"] for row in response.json()["available"]}
+    assert allowed["update"] is False
+    assert allowed["logs"] is False
+    assert allowed["restart"] is True
+    reasons = {row["command"]: row.get("reason") for row in response.json()["available"]}
+    assert reasons["update"] == "not supported by M5"
+
+
+def _set_params_round_trip(api_client, device, location, preview, ok):
+    command = device_commands.queue_command(
+        device, f.DB, "set_params", {"interval_sec": 600, "pulldown_resistance": 72}
+    )
+    _as_controller(api_client, preview)
+    url = f"/v1/device/{location.project_id}/sample/cc/"
+    handed = api_client.get(url).json()["commands"]
+    assert [entry["id"] for entry in handed] == [command.pk]
+    result = {"id": command.pk, "ok": ok}
+    if not ok:
+        result["error"] = "out of range interval_sec"
+    assert api_client.post(url, {"results": [result]}, format="json").status_code == 200
+    device.refresh_from_db(using=f.DB)
+
+
+def test_successful_set_params_updates_device(api_client, provisioned):
+    location, device, preview = provisioned
+
+    _set_params_round_trip(api_client, device, location, preview, ok=True)
+
+    assert device.data_interval == 600
+    assert device.pull_resistance == 72
+
+
+def test_failed_set_params_leaves_device(api_client, provisioned):
+    location, device, preview = provisioned
+    before = (device.data_interval, device.pull_resistance)
+
+    _set_params_round_trip(api_client, device, location, preview, ok=False)
+
+    assert (device.data_interval, device.pull_resistance) == before
+
+
+def test_location_devices_reports_is_m5(api_client):
+    location, m5, lua = _m5_and_lua_box()
+    user = f.make_user(perms=("module_devices_enabled",))
+    f.make_access(location, user)
+    api_client.force_authenticate(user=user)
+
+    body = api_client.get("/v1/status/location_devices/", {"location": location.pk}).json()
+
+    rows = {row["id"]: row for row in body["devices"]}
+    assert rows[m5.id]["is_m5"] is True
+    assert rows[lua.id]["is_m5"] is False
