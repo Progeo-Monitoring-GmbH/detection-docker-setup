@@ -121,7 +121,7 @@ test.describe('location pages', () => {
   test('deleting all measurements (climate panels) asks first (#16)', async ({ page }) => {
     await openPage(page, `/location/${locationId}/analysis`, 'page-location-analyse');
     const trigger = page.getByTestId(/^(analyse-)?climate-panels-clean$/);
-    test.skip(!(await present(trigger)), 'No climate panels (LoRaWAN only) or not a superuser');
+    test.skip(!(await present(trigger)), 'No climate panels (smartex io only) or not a superuser');
     const dialog = (await trigger.first().getAttribute('data-testid'))!.replace(/-clean$/, '-clean-dialog');
     await expectConfirmGuard(page, {
       trigger: trigger.first(),
@@ -133,7 +133,7 @@ test.describe('location pages', () => {
   test('importing measurements (climate panels) asks before the upload (#45)', async ({ page }) => {
     await openPage(page, `/location/${locationId}/analysis`, 'page-location-analyse');
     const trigger = page.getByTestId(/^(analyse-)?climate-panels-import$/);
-    test.skip(!(await present(trigger)), 'No climate panels (LoRaWAN only) or not a superuser');
+    test.skip(!(await present(trigger)), 'No climate panels (smartex io only) or not a superuser');
     const dialog = (await trigger.first().getAttribute('data-testid'))!.replace(/-import$/, '-import-dialog');
     answerFileChooser(page, 'measurements.json', 'application/json', MEASUREMENTS_JSON);
     await expectConfirmGuard(page, {
@@ -146,7 +146,7 @@ test.describe('location pages', () => {
   test('deleting a noise profile asks first (#27)', async ({ page }) => {
     await openPage(page, `/location/${locationId}/analysis`, 'page-location-analyse');
     const toggle = page.getByTestId('noise-profile-toggle');
-    test.skip(!(await present(toggle)), 'No noise profiles here (staff, not LoRaWAN)');
+    test.skip(!(await present(toggle)), 'No noise profiles here (staff, not smartex io)');
     await toggle.click();
     const select = page.getByTestId('noise-profile-select');
     test.skip((await select.locator('option').count()) < 2, 'The shown device has no noise profile');
@@ -163,7 +163,7 @@ test.describe('location pages', () => {
   test('archiving the measurements of a span asks first (#30)', async ({ page }) => {
     await openPage(page, `/location/${locationId}/analysis`, 'page-location-analyse');
     const toggle = page.getByTestId('noise-profile-toggle');
-    test.skip(!(await present(toggle)), 'No archive here (staff, not LoRaWAN)');
+    test.skip(!(await present(toggle)), 'No archive here (staff, not smartex io)');
     await toggle.click();
     // The span to archive: the last 7 days.
     await page.getByTestId('noise-profile-range-last-7').click();

@@ -72,7 +72,7 @@ export type PlanPointAlignment = {
  *   physical run of sensors) - smartex® dm.
  * - segments: one filled area per group around its sensors - smartex® is,
  *   mx-va, mx-al.
- * - points: every sensor a dot with its name - smartex® io, vt.
+ * - points: every sensor a dot with its name - smartex® vt.
  */
 export type LageplanOverlayMode = 'lines' | 'segments' | 'points';
 

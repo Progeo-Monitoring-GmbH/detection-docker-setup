@@ -76,7 +76,7 @@ def test_command_creates_one_location_per_device_type(demo):
         .filter(account=demo.account)
         .values_list("project_type", flat=True)
     )
-    assert types == {1, 3, 6, 7, 8, 9, 10, 11}
+    assert types == {1, 3, 7, 8, 9, 10, 11}
 
 
 def test_demo_rows_stay_out_of_default(demo):
@@ -109,7 +109,7 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     _login(api_client, demo)
 
     locations = api_client.get("/v1/demo/").json()["locations"]
-    assert {loc["project_type"] for loc in locations} == {1, 3, 6, 7, 8, 9, 10, 11}
+    assert {loc["project_type"] for loc in locations} == {1, 3, 7, 8, 9, 10, 11}
     by_type = {loc["project_type"]: loc["id"] for loc in locations}
 
     heatmap = api_client.get(f"/v1/demo/{by_type[1]}/heatmap/")
@@ -124,22 +124,11 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     assert {p["name"] for p in smartex_is["sensor_points"]} == {"Hauptdach", "Anbau", "Garage"}
     assert len(smartex_is["sensor_points"]) == 14
 
-    # smartex® io: two floors (views), the sensors on their own floor, named
-    # (optionally - the corridor sensors aren't).
-    smartex_io = api_client.get(f"/v1/demo/{by_type[10]}/heatmap/").json()
-    plans = smartex_io["location"]["lageplans"]
-    assert [plan["name"] for plan in plans] == ["EG", "OG"]  # the first view first
-    per_view = {plan["id"]: [p for p in smartex_io["sensor_points"] if p["lageplan"] == plan["id"]] for plan in plans}
-    assert [len(points) for points in per_view.values()] == [10, 9]
-    assert "Bad Dusche" in {p["name"] for p in per_view[plans[1]["id"]]}
-    assert None in {p["name"] for p in smartex_io["sensor_points"]}
-    assert all(p["x_m"] is not None for p in smartex_io["sensor_points"])
-
     # smartex® dm: the bands lie in rows (grid_y) of two columns (grid_x).
     assert {p["grid_x"] for p in dm_points} == {0, 1}
     assert len({p["grid_y"] for p in dm_points}) == len({band[4] for band in DM_BANDS})
 
-    climate = api_client.get(f"/v1/demo/{by_type[6]}/climate/")
+    climate = api_client.get(f"/v1/demo/{by_type[10]}/climate/")
     assert climate.status_code == 200, climate.content
     assert len(climate.json()["devices"]) == 4
 
@@ -163,12 +152,12 @@ def test_demo_user_reads_the_regular_portal_endpoints(api_client, demo):
     assert api_client.get("/v1/user/profile/").json()["username"] == "demo"
 
 
-def test_lorawan_demo_has_one_point_per_device_and_a_climate_heatmap(api_client, demo):
+def test_smartex_io_demo_has_one_point_per_device_and_a_climate_heatmap(api_client, demo):
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
 
     _login(api_client, demo)
     db = settings.DEMO_DATABASE
-    location = ProgeoLocation.objects.using(db).get(account=demo.account, project_type=6)
+    location = ProgeoLocation.objects.using(db).get(account=demo.account, project_type=10)
     points = list(ProgeoMeasurePoint.objects.using(db).filter(location=location).order_by("sensor_order"))
     devices = ProgeoDevice.objects.using(db).filter(location=location)
     # Each room's sensor on its room, like placed by hand in the Lageplan wizard.
@@ -339,12 +328,12 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         project_type: ProgeoMeasurePoint.objects.using(db).filter(location=loc).count()
         for project_type, loc in locations.items()
     }
-    assert point_counts == {1: len(DM_BANDS), 3: 14, 6: 4, 7: 32, 8: 47, 9: 24, 10: 19, 11: 11}
+    assert point_counts == {1: len(DM_BANDS), 3: 14, 7: 32, 8: 47, 9: 24, 10: 4, 11: 11}
 
     for loc in locations.values():
         plans = list(ProgeoLageplan.objects.using(db).filter(location=loc))
-        # Several views (all active) for the parking levels and the floors.
-        assert len(plans) == (2 if loc.project_type in (8, 10) else 1)
+        # Several views (all active) for the parking levels.
+        assert len(plans) == (2 if loc.project_type == 8 else 1)
         assert all(plan.meters_per_pixel and plan.lageplan and plan.is_active for plan in plans)
         points = ProgeoMeasurePoint.objects.using(db).filter(location=loc)
         assert all(0 < p.nx < 1 and 0 < p.ny < 1 and p.lageplan_id in {plan.pk for plan in plans} for p in points)
@@ -385,18 +374,18 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
     from progeo.management.commands.demo_account import LOCATIONS
 
     for spec in LOCATIONS:
-        if spec["project_type"] in (1, 3, 6):
+        if spec["project_type"] in (1, 3, 10):
             continue
         leak = spec["leak"]
         alarm = ProgeoAlarm.objects.using(db).get(measurement__device__location=locations[spec["project_type"]])
         assert alarm.sensor_id == leak["sensor"] and alarm.status == leak["status"]
         assert (alarm.normalized_at is not None) == (leak["settle"] < 1)
 
-    # LoRaWAN: uplinks every 20 minutes, some of them lost.
-    lorawan = ProgeoMeasurement.objects.using(db).filter(device__location=locations[6])
-    per_sensor = lorawan.count() / 4
+    # smartex io: uplinks every 20 minutes, some of them lost.
+    climate = ProgeoMeasurement.objects.using(db).filter(device__location=locations[10])
+    per_sensor = climate.count() / 4
     assert 0.9 * 90 * 72 < per_sensor < 90 * 72
-    humidity = list(lorawan.values_list("humidity", flat=True))
+    humidity = list(climate.values_list("humidity", flat=True))
     assert min(humidity) >= 5 and max(humidity) < 100
 
 
@@ -422,7 +411,7 @@ def test_measurement_maintenance_is_superuser_only(api_client, demo):
 
     from progeo.v1.models import ProgeoMeasurement
 
-    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=6).first()
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=10).first()
     base = f"/v1/location/{location.pk}/measurements"
 
     _login(api_client, demo)
@@ -452,7 +441,7 @@ def test_device_rename_sends_only_changes(api_client, demo):
 
     from progeo.v1.models import ProgeoDevice
 
-    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=6).first()
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=10).first()
     url = f"/v1/location/{location.pk}/devices/names/"
 
     _login(api_client, demo)

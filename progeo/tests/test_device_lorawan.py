@@ -1,4 +1,5 @@
-"""LoRaWAN uplink endpoint: POST /v1/device/lorawan/<project_id>/?token=<token>"""
+"""smartex io uplink endpoint (LoRaWAN radio and RS485 sensors of an M5):
+POST /v1/device/lorawan/<project_id>/?token=<token>"""
 import pytest
 
 from progeo.tests.factories import make_account, make_user, unique
@@ -89,9 +90,9 @@ def test_catch_lorawan_data_creates_location_for_unknown_project(api_client):
     assert stored.device.raw_hash == devEui.upper()
     assert stored.device.hardware.startswith("7002_S")
     assert stored.device.project_id == 7002
-    assert stored.device.type == ProgeoDevice.DeviceType.LORAWAN
+    assert stored.device.type == ProgeoDevice.DeviceType.SMARTEX_IO
     assert stored.device.location.project_id == 7002
-    assert stored.device.location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN
+    assert stored.device.location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO
 
     # A second uplink reuses the device and its location.
     response = api_client.post(f"/v1/device/lorawan/7002/?token={_make_token()}",
@@ -223,3 +224,71 @@ def test_catch_lorawan_data_event_up_is_an_uplink(api_client):
 
     assert response.status_code == 200, response.content
     assert response.json()["temperature"] == 22.65
+
+
+# ------------------------------------------------------------------ smartex io (LoRaWAN radio + RS485 at an M5)
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_rs485_reading_of_an_m5_is_a_smartex_io_sensor_with_model_rs485(api_client):
+    """An M5 posts its XY-MD04 readings like ChirpStack, devEui "<M5 hash>-RS<address>"."""
+    from progeo.helper.device_overview import device_label, device_model_of
+
+    dev_eui = f"{unique('7069')}-01-rs2"
+    response = api_client.post(f"/v1/device/lorawan/7069/?token={_make_token()}", _chirpstack_uplink(dev_eui),
+                               format="json")
+
+    assert response.status_code == 200, response.content
+    device = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"]).device
+    assert device.raw_hash == dev_eui.upper()
+    assert device.type == ProgeoDevice.DeviceType.SMARTEX_IO == "smartex io"
+    assert device.location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO
+    assert device_model_of(device) == "RS485"
+    assert device_label(device) == f"RS485 · {device.raw_hash}"
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_lorawan_radio_sensor_is_a_smartex_io_sensor_without_model(api_client):
+    from progeo.helper.device_overview import device_model_of
+
+    response = api_client.post(f"/v1/device/lorawan/7070/?token={_make_token()}",
+                               _chirpstack_uplink(unique("2CF7F1C0")), format="json")
+
+    assert response.status_code == 200, response.content
+    device = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"]).device
+    assert device.type == ProgeoDevice.DeviceType.SMARTEX_IO
+    # The device lists show the type then: "smartex io".
+    assert device_model_of(device) is None
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_migration_turns_lorawan_projects_and_devices_into_smartex_io():
+    import importlib
+    from types import SimpleNamespace
+
+    from django.apps import apps
+
+    from progeo.tests import factories as f
+
+    migration = importlib.import_module("progeo.migrations.0089_smartex_io")
+    account = make_account()
+    lorawan = f.make_location(account, project_id=7071, project_type=6)
+    dm = f.make_location(account, project_id=7072, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM)
+    sensor = f.make_device(lorawan, raw_hash=unique("EUI"), type="lorawan")
+    controller = f.make_device(dm, raw_hash=unique("box"), type=ProgeoDevice.DeviceType.SMARTBOX)
+    schema_editor = SimpleNamespace(connection=SimpleNamespace(alias=f.DB))
+
+    migration.lorawan_to_smartex_io(apps, schema_editor)
+
+    for row in (lorawan, dm, sensor, controller):
+        row.refresh_from_db(using=f.DB)
+    assert lorawan.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO
+    assert dm.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM
+    assert sensor.type == "smartex io"
+    assert controller.type == ProgeoDevice.DeviceType.SMARTBOX
+
+    # Back: the devices only - which io projects were LoRaWan is not known.
+    migration.smartex_io_to_lorawan(apps, schema_editor)
+    sensor.refresh_from_db(using=f.DB)
+    lorawan.refresh_from_db(using=f.DB)
+    assert sensor.type == "lorawan"
+    assert lorawan.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO

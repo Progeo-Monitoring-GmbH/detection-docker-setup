@@ -1,5 +1,5 @@
 import type { LocationDetail } from './locationTypes';
-import { isLorawanProject } from './projectType';
+import { isSmartexIoProject } from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationStatusBody from './LocationStatusBody';
 import LocationStatusHeader from './LocationStatusHeader';
@@ -26,7 +26,7 @@ type LocationStatusViewProps = {
 /**
  * The status page of a location (/location/:id/status): the measurement
  * request header, the KPIs and the roof view / Zeitreihe
- * (LocationStatusBody) - LoRaWAN objects show climate charts instead.
+ * (LocationStatusBody) - smartex io objects show climate charts instead.
  * Its settings come from the URL and are kept for an escalation
  * (useStatusViewSettings); new measurements reload the data quietly
  * (useStatusLiveRevision).
@@ -39,14 +39,14 @@ const LocationStatusView = ({
   const { readOnlyDemo, isStaff } = useStatusAccess(demo);
   const settings = useStatusViewSettings(isStaff);
 
-  // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
+  // smartex io objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
-  const isLorawan = isLorawanProject(location?.project_type);
-  const liveRevision = useStatusLiveRevision(locationId, !demo && !isLorawan);
+  const isSmartexIo = isSmartexIoProject(location?.project_type);
+  const liveRevision = useStatusLiveRevision(locationId, !demo && !isSmartexIo);
   const ranges = useStatusRange({
     locationId,
     demo,
-    isLorawan,
+    isSmartexIo,
     isStaff,
     selectedRange: settings.selectedRange,
     liveRevision,
@@ -64,7 +64,7 @@ const LocationStatusView = ({
   const shown = useStatusHistory({
     locationId,
     demo,
-    isLorawan,
+    isSmartexIo,
     isLatest: ranges.isLatest,
     rangeDays: ranges.rangeDays,
     measurementRange: ranges.measurementRange,
@@ -78,7 +78,7 @@ const LocationStatusView = ({
   const suspicions = useStatusSuspicions({
     locationId,
     demo,
-    isLorawan,
+    isSmartexIo,
     isStaff,
     rangeDays: ranges.rangeDays,
     liveRevision,
@@ -88,10 +88,10 @@ const LocationStatusView = ({
     <div className="status-view" data-testid="page-location-status">
       <LocationStatusHeader
         locationId={locationId}
-        canRequestMeasurement={!isLorawan && !readOnlyDemo}
+        canRequestMeasurement={!isSmartexIo && !readOnlyDemo}
       />
 
-      {isLorawan ? (
+      {isSmartexIo ? (
         <LocationClimatePanels
           locationId={locationId}
           demo={demo}

@@ -1,6 +1,6 @@
 // Mirrors ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
 // Django IntegerChoices enum, safe to hardcode client-side for display.
-// Brand/product names (smartex® dm/is/..., geologger, LoRaWan) stay literal; the generic
+// Brand/product names (smartex® dm/is/..., geologger) stay literal; the generic
 // terms go through i18n. Shared by LocationObjektTab (editable dropdown,
 // backed by GET /v1/location/project-types/) and LocationStatusView (a
 // read-only label in the page header).
@@ -15,7 +15,6 @@ export const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
   1: 'smartex® dm',
   2: 'geologger',
   3: 'smartex® is',
-  6: 'LoRaWan',
   7: 'smartex® mx-PEEL',
   8: 'smartex® mx-va',
   9: 'smartex® mx-al',
@@ -23,12 +22,13 @@ export const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
   11: 'smartex® vt',
 };
 
-// LoRaWAN objects report humidity/temperature per device instead of
-// samples, so they get climate charts instead of the heatmap.
-const PROJECT_TYPE_LORAWAN = 6;
+// smartex io objects (LoRaWAN radio and RS485 climate sensors - formerly the
+// project type 6 "LoRaWan") report humidity/temperature per device instead
+// of samples, so they get climate charts instead of the heatmap.
+const PROJECT_TYPE_SMARTEX_IO = 10;
 
-export const isLorawanProject = (value: number | null | undefined): boolean =>
-  value === PROJECT_TYPE_LORAWAN;
+export const isSmartexIoProject = (value: number | null | undefined): boolean =>
+  value === PROJECT_TYPE_SMARTEX_IO;
 
 /**
  * How the Status tab draws a product's sensors on the Lageplan: the
@@ -46,15 +46,15 @@ const PLAN_VISUALIZATIONS: Record<number, PlanVisualization> = {
   7: 'heatmap', // smartex® mx-PEEL
   8: 'segments', // smartex® mx-va
   9: 'segments', // smartex® mx-al
-  10: 'points', // smartex® io
   11: 'points', // smartex® vt
+  // smartex® io has no samples - its climate panels draw the plan themselves.
 };
 
 export const planVisualization = (value: number | null | undefined): PlanVisualization =>
   (value != null && PLAN_VISUALIZATIONS[value]) || 'heatmap';
 
 // Products listing every sensor (with its optional name) below the plan.
-const SENSOR_TABLE_TYPES = new Set([1, 10, 11]);
+const SENSOR_TABLE_TYPES = new Set([1, 11]);
 
 export const showsSensorTable = (value: number | null | undefined): boolean =>
   value != null && SENSOR_TABLE_TYPES.has(value);

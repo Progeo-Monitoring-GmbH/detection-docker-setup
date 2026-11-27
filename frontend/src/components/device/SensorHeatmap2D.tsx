@@ -75,7 +75,7 @@ type SensorHeatmap2DProps = {
   /** Alarm periods, marked on the timestamp slider. */
   alarms?: AlarmSpan[];
   /**
-   * Field mode, for readings that don't add up (LoRaWAN humidity and
+   * Field mode, for readings that don't add up (smartex io humidity and
    * temperature): instead of summed heat around each sensor, the readings
    * are interpolated between the sensors (buildFieldGrid) on a min-max
    * colour scale over all frames, labelled with `unit`.

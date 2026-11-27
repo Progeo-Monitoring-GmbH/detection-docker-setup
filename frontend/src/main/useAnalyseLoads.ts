@@ -34,7 +34,7 @@ export type AnalyseDevice = { id: number; display_name: string };
 
 type HeatmapOptions = {
   locationId: number;
-  /** LoRaWAN objects have no heatmap of their own. */
+  /** smartex io objects have no heatmap of their own. */
   enabled: boolean;
   days: number;
   resolution: number;
@@ -140,7 +140,7 @@ export const useAnalyseHeatmap = ({
 
 type MeasurementsOptions = {
   locationId: number;
-  /** LoRaWAN objects have their climate charts instead. */
+  /** smartex io objects have their climate charts instead. */
   enabled: boolean;
   days: number;
   resolution: number;

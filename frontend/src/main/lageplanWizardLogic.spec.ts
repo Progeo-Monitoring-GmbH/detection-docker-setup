@@ -365,8 +365,8 @@ describe('location start', () => {
     name: 'Halle 7',
     project_type,
   });
-  it('sets the points of a LoRaWAN project by hand, others by CAD', () => {
-    expect(pointSourceFor(location(6))).toBe('manual');
+  it('sets the points of a smartex io project by hand, others by CAD', () => {
+    expect(pointSourceFor(location(10))).toBe('manual');
     expect(pointSourceFor(location(1))).toBe('cad');
     expect(pointSourceFor(null)).toBe('cad');
   });

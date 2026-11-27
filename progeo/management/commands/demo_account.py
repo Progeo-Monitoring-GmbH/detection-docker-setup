@@ -49,7 +49,7 @@ BASE_LEVEL = 500  # eigenpotenzial; wirkpotenzial = eigen + sensor value
 # Over-threshold measurements closer than this belong to one alarm (the demo
 # noise must not split a moisture event into several alarms).
 ALARM_MERGE_GAP = datetime.timedelta(hours=6)
-LORAWAN_INTERVAL_MIN = 20  # uplink interval of the LoRaWAN climate sensors
+IO_INTERVAL_MIN = 20  # uplink interval of the smartex io climate sensors
 
 PLAN_SIZE = (1600, 1200)
 TYPES = ProgeoLocation.PROJECT_TYPE_CHOICES
@@ -200,26 +200,6 @@ AL_ZONES = {
     for index in range(AL_AXES - 1)
 }
 
-IO_FLOORS = {  # view (floor): its rooms (name: rectangle) and sensors (name or None, x, y)
-    "EG": (
-        {"Empfang": (160, 160, 560, 520), "Büro 1": (560, 160, 960, 520), "Büro 2": (960, 160, 1440, 520),
-         "Flur": (160, 520, 1440, 620), "Teeküche": (160, 620, 560, 920), "WC": (560, 620, 800, 920),
-         "Technik": (800, 620, 1440, 920)},
-        [("Empfang", 360, 360), ("Büro 1", 760, 360), ("Büro 2", 1200, 360), (None, 600, 570), (None, 1100, 570),
-         ("Teeküche Spüle", 300, 740), ("Teeküche Geschirrspüler", 300, 860), ("WC", 680, 770),
-         ("Heizung", 1000, 720), ("Hausanschluss Wasser", 1250, 840)],
-    ),
-    "OG": (
-        {"Besprechung": (160, 160, 760, 520), "Büro 3": (760, 160, 1100, 520), "Büro 4": (1100, 160, 1440, 520),
-         "Flur": (160, 520, 1440, 620), "Bad": (160, 620, 520, 920), "Archiv": (520, 620, 1100, 920),
-         "Dachterrasse": (1100, 620, 1440, 920)},
-        [("Besprechung", 460, 360), ("Büro 3", 930, 360), ("Büro 4", 1270, 360), (None, 800, 570),
-         ("Bad Dusche", 260, 720), ("Bad WC", 260, 850), ("Archiv", 810, 770),
-         ("Terrassentür", 1170, 700), ("Dachterrasse Ablauf", 1300, 850)],
-    ),
-}
-IO_METERS_PER_PIXEL = 0.02
-
 VT_HOUSES = {"Haus A": (160, 220, 700, 760), "Haus B": (900, 220, 1440, 760)}
 VT_SENSORS = [  # balconies on the south side, roof terraces, the walkway between the houses
     ("Haus A Balkon West", 250, 815), ("Haus A Balkon Mitte", 430, 815), ("Haus A Balkon Ost", 610, 815),
@@ -230,10 +210,10 @@ VT_SENSORS = [  # balconies on the south side, roof terraces, the walkway betwee
 ]
 VT_METERS_PER_PIXEL = 0.03
 
-LORAWAN_BUILDING = (200, 460, 1100, 960)  # EG + KG, the roof sits on top
-LORAWAN_GROUND_Y = 760
-LORAWAN_METERS = 12.0
-LORAWAN_ROOMS = {  # sensor label: centre of the room (pixels)
+IO_BUILDING = (200, 460, 1100, 960)  # EG + KG, the roof sits on top
+IO_GROUND_Y = 760
+IO_METERS = 12.0
+IO_ROOMS = {  # sensor label: centre of the room (pixels)
     "Keller": (650, 870),
     "Wohnzimmer": (475, 620),
     "Dachboden": (650, 365),
@@ -260,14 +240,12 @@ VA_LEAK = {"sensor": 42, "start_days_ago": 1, "rise_h": 6, "peak": 2.8, "settle"
            "status": ProgeoAlarm.Status.NEU}
 AL_LEAK = {"sensor": 9, "start_days_ago": 12, "rise_h": 2, "peak": 1.7, "settle": 0.55, "decay_h": 18,
            "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 4, "duration": 10, "amount": 26.3}}
-IO_LEAK = {"sensor": "Bad Dusche", "start_days_ago": 1, "rise_h": 1, "peak": 1.35, "settle": 1.2, "decay_h": 12,
-           "status": ProgeoAlarm.Status.NEU}
 VT_LEAK = {"sensor": "Haus B Balkon Mitte", "start_days_ago": 7, "rise_h": 3, "peak": 2.1, "settle": 0.5,
            "decay_h": 30, "status": ProgeoAlarm.Status.GELOEST, "rain": {"before_h": 6, "duration": 12, "amount": 31.0}}
 
-# LoRaWAN climate sensors: share of uplinks lost on the radio link, battery
+# smartex io climate sensors: share of uplinks lost on the radio link, battery
 # percent used up over 90 days, calibration offset (degrees C, % RH).
-LORAWAN_SENSORS = {
+IO_SENSORS = {
     "Keller": {"loss": 0.06, "drain": 9, "offset": (0.2, 1.5)},  # underground: weakest link
     "Wohnzimmer": {"loss": 0.01, "drain": 11, "offset": (-0.1, -0.8)},
     "Dachboden": {"loss": 0.02, "drain": 24, "offset": (0.3, 0.4)},  # heat drains the battery
@@ -290,7 +268,7 @@ DEMO_PEOPLE = [
     ("max.mustermann", "Max", "Mustermann", "+49 151 23456782", "member", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
     ("jonas.weber", "Jonas", "Weber", "+49 160 9876541", "single:smartex_dm", ProgeoAccess.NotifiTrans.SMS, _ALARM),
     ("sabine.krueger", "Sabine", "Krüger", "+49 160 9876542", "single:smartex_is", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
-    ("lukas.hoffmann", "Lukas", "Hoffmann", None, "single:lorawan", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
+    ("lukas.hoffmann", "Lukas", "Hoffmann", None, "single:smartex_io", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
     ("laura.fischer", "Laura", "Fischer", "+49 171 5550101", "member", None, None),
     ("paul.wagner", "Paul", "Wagner", None, "member", None, None),
     ("mia.becker", "Mia", "Becker", "+49 171 5550103", "member", None, None),
@@ -373,20 +351,20 @@ LOCATIONS = [_location(spec) for spec in (
         "leak": IS_LEAK,
     },
     {
-        "kind": "lorawan",
-        "name": "Gebaeude (LoRaWAN)",
-        "project_type": TYPES.LORAWAN,
+        "kind": "smartex_io",
+        "name": "Gebaeude (smartex® io)",
+        "project_type": TYPES.SMARTEX_IO,
         "project_id": 9003,
         "address": "Sensorallee 3",
         "city": "Funkstadt",
         "coordinates": (52.5163, 13.4542),
         "plans": [{
-            "draw": lambda plan: _draw_lorawan(plan),
+            "draw": lambda plan: _draw_io(plan),
             "areas": [_area("Gebaeude", [
                 (160, 460), (650, 150), (1140, 460), (1100, 960), (200, 960),
             ])],
             "points": [
-                (label, x, y, index, 0) for index, (label, (x, y)) in enumerate(LORAWAN_ROOMS.items())
+                (label, x, y, index, 0) for index, (label, (x, y)) in enumerate(IO_ROOMS.items())
             ],
         }],
     },
@@ -437,22 +415,6 @@ LOCATIONS = [_location(spec) for spec in (
         "leak": AL_LEAK,
     },
     {
-        "kind": "smartex_io",
-        "name": "Bürogebäude (smartex® io)",
-        "project_type": TYPES.SMARTEX_IO,
-        "project_id": 9007,
-        "address": "Kontorweg 7",
-        "city": "Bürostadt",
-        "coordinates": (52.5204, 13.4049),
-        "plans": [
-            {"suffix": floor.lower(), "name": floor, "draw": lambda plan, floor=floor: _draw_io(plan, floor),
-             "areas": [_rect_area("Buerogebaeude", (150, 150, 1450, 930))],
-             "points": _named_points(sensors, view)}
-            for view, (floor, (_rooms, sensors)) in enumerate(IO_FLOORS.items())
-        ],
-        "leak": IO_LEAK,
-    },
-    {
         "kind": "smartex_vt",
         "name": "Wohnanlage (smartex® vt)",
         "project_type": TYPES.SMARTEX_VT,
@@ -483,8 +445,8 @@ class Command(BaseCommand):
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
         "(read-only portal permissions, see helper/demo.py), a LimitedToken for the demo link and one "
         f"demo location per device type (smartex® dm: {len(DM_BANDS)} band sensors, smartex® is: 14 sensors in 3 roof zones, "
-        "LoRaWAN: 4 climate sensors, smartex® mx-PEEL: 32 sensors, mx-va: 47 sensors in 7 fields on two "
-        "parking levels, mx-al: 24 sensors in 4 bays, io: 19 named sensors on two floors, vt: 11 sensors), "
+        "smartex® io: 4 climate sensors, smartex® mx-PEEL: 32 sensors, mx-va: 47 sensors in 7 fields on two "
+        "parking levels, mx-al: 24 sensors in 4 bays, vt: 11 sensors), "
         "each with drawn Lageplans (one per view), measure points on them, measurements of the "
         "last 3 months and the alarms they raise, plus a few demo people (account members, "
         "single-access users). The locations live in a separate database "
@@ -878,7 +840,7 @@ class Command(BaseCommand):
             for plan, plan_spec, first in self._create_lageplans(location, db, spec)
             for point in self._create_points(location, plan, db, plan_spec["points"], first)
         ]
-        if spec["project_type"] == TYPES.LORAWAN:
+        if spec["project_type"] == TYPES.SMARTEX_IO:
             devices = self._create_climate_data(location, db, spec, rng, now, hours)
             # One sensor per point, as the Lageplan wizard places them by hand
             # ("Manually set sensors") - the climate heatmap reads them so.
@@ -1057,8 +1019,8 @@ class Command(BaseCommand):
     # ------------------------------------------------------------ climate data
 
     def _create_climate_data(self, location, db, spec, rng, now, hours):
-        """LoRaWAN climate sensors as they really report: an uplink every
-        LORAWAN_INTERVAL_MIN minutes (own phase, some jitter), lost packets
+        """smartex io climate sensors (LoRaWAN radio) as they really report: an uplink every
+        IO_INTERVAL_MIN minutes (own phase, some jitter), lost packets
         and two gateway outages, sensor noise, calibration offsets, 0.1
         resolution and a slowly draining battery. The rooms follow the
         weather (_Weather) with their own inertia, see _Room. Returns the
@@ -1066,12 +1028,12 @@ class Command(BaseCommand):
         devices = []
         for number, (label, *_position) in enumerate(spec["points"], start=1):
             device = self._create_device(
-                location, db, f"DEMO{location.project_id}{number:04d}", label, ProgeoDevice.DeviceType.LORAWAN
+                location, db, f"DEMO{location.project_id}{number:04d}", label, ProgeoDevice.DeviceType.SMARTEX_IO
             )
             device.hardware = f"{location.project_id}_S{number}"
             device.save(using=db)
-            sensor = LORAWAN_SENSORS[label]
-            devices.append((device, _Room(label, rng), sensor, rng.uniform(0, LORAWAN_INTERVAL_MIN)))
+            sensor = IO_SENSORS[label]
+            devices.append((device, _Room(label, rng), sensor, rng.uniform(0, IO_INTERVAL_MIN)))
 
         start = now - datetime.timedelta(hours=hours)
         weather = _Weather(start, hours, rng)
@@ -1079,14 +1041,14 @@ class Command(BaseCommand):
             (start + datetime.timedelta(hours=rng.uniform(0, hours - 12)), datetime.timedelta(hours=rng.uniform(2, 8)))
             for _ in range(2)
         ]
-        step = datetime.timedelta(minutes=LORAWAN_INTERVAL_MIN)
-        steps = hours * 60 // LORAWAN_INTERVAL_MIN
+        step = datetime.timedelta(minutes=IO_INTERVAL_MIN)
+        steps = hours * 60 // IO_INTERVAL_MIN
         measurements = []
         for index in range(steps):
             at = start + index * step
             conditions = weather.at(at)
             for device, room, sensor, phase in devices:
-                temperature, humidity = room.step(at, conditions, LORAWAN_INTERVAL_MIN / 60)
+                temperature, humidity = room.step(at, conditions, IO_INTERVAL_MIN / 60)
                 fetched = at + datetime.timedelta(minutes=phase, seconds=rng.gauss(0, 25))
                 if rng.random() < sensor["loss"] or any(begin <= fetched < begin + length for begin, length in outages):
                     continue
@@ -1146,7 +1108,7 @@ class Command(BaseCommand):
                 if end:  # smartex® dm: the band, labelled at its feed end
                     plan.band((px, py), end[0], name)
                 else:
-                    plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
+                    plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'smartex_io' else 'MP '}{order}")
             buffer = BytesIO()
             plan.image.save(buffer, format="PNG", optimize=True)
             _PLAN_IMAGES[key] = (buffer.getvalue(), reference, meters_per_pixel)
@@ -1610,22 +1572,6 @@ def _draw_mx_al(plan):
     return (x1, y2), meters_per_pixel
 
 
-def _draw_io(plan, floor):
-    """One floor of an office building: its rooms and the staircase."""
-    draw = plan.draw
-    rooms, _sensors = IO_FLOORS[floor]
-    draw.rectangle([150, 150, 1450, 930], outline=INK, width=6, fill=ROOF_FILL)
-    for name, (x1, y1, x2, y2) in rooms.items():
-        draw.rectangle([x1, y1, x2, y2], outline=INK, width=3)
-        plan.text(x1 + 14, y1 + 12, _ascii(name), size=18)
-    for step in range(8):  # Treppe at the end of the corridor
-        draw.line([1340 + step * 12, 528, 1340 + step * 12, 612], fill=INK_SOFT, width=2)
-    plan.text(160, 92, f"Buerogebaeude - {floor}", size=20)
-    plan.dimension((150, 990), (1450, 990), _meters(1300, IO_METERS_PER_PIXEL))
-    plan.north_arrow(1520, 76)
-    return (150, 930), IO_METERS_PER_PIXEL
-
-
 def _draw_vt(plan):
     """Two apartment houses seen from above: roof terraces, the balconies on
     the south side and the walkway between the houses."""
@@ -1647,11 +1593,11 @@ def _draw_vt(plan):
     return (160, 870), VT_METERS_PER_PIXEL
 
 
-def _draw_lorawan(plan):
+def _draw_io(plan):
     """Section of a house: cellar, ground floor (living room, bathroom), attic."""
     draw = plan.draw
-    x1, y1, x2, y2 = LORAWAN_BUILDING
-    ground = LORAWAN_GROUND_Y
+    x1, y1, x2, y2 = IO_BUILDING
+    ground = IO_GROUND_Y
     plan.hatch((80, ground, x2 + 300, y2 + 40), color=LINE_SOFT, spacing=18)  # soil
     draw.rectangle([x1, ground, x2, y2], fill=ROOF_FILL)
     draw.line([60, ground, x2 + 320, ground], fill=INK, width=3)
@@ -1662,14 +1608,14 @@ def _draw_lorawan(plan):
     draw.line([x1, ground, x2, ground], fill=INK, width=4)  # ceiling of the cellar
     draw.line([750, y1, 750, ground], fill=INK, width=3)  # wall living room | bathroom
     draw.rectangle([600, ground - 110, 640, ground], fill=ROOF_FILL, outline=INK, width=2)  # door
-    for label, (x, y) in LORAWAN_ROOMS.items():
+    for label, (x, y) in IO_ROOMS.items():
         plan.text(x, y - 46, label, size=20, center=True)
     for level, y in (("DG", 380), ("EG", 610), ("KG", 860)):
         plan.text(x1 - 110, y, level, size=22, fill=INK_SOFT, center=True)
-    meters_per_pixel = LORAWAN_METERS / (x2 - x1)
+    meters_per_pixel = IO_METERS / (x2 - x1)
     plan.dimension((x1, y2 + 70), (x2, y2 + 70), _meters(x2 - x1, meters_per_pixel))
     plan.text(1280, 300, "Gebaeudeschnitt", size=22)
-    plan.text(1280, 332, "LoRaWAN-Klimasensoren S1-S4", size=15, fill=INK_SOFT)
+    plan.text(1280, 332, "smartex io Klimasensoren S1-S4", size=15, fill=INK_SOFT)
     return (x1, y2), meters_per_pixel
 
 

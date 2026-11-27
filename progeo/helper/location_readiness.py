@@ -195,7 +195,7 @@ def device_ranges(devices) -> list:
 
 def check_sensor_devices(facts):
     """Every measure point belongs to exactly one device: connected to it
-    (device_id, e.g. LoRaWAN), else by its number in one device's range
+    (device_id, e.g. smartex io), else by its number in one device's range
     (first_sensor_order / sensor_count) - in none it measures nothing, in
     two it's ambiguous. With every sensor_count configured, they add up to
     the number of points."""

@@ -1536,7 +1536,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         "display_name": device.display_name,
                         # Which device a name is for: its precise model and hash
                         # (several "lht65" of one location look alike otherwise).
-                        "model": device_overview.device_model(device.hardware),
+                        "model": device_overview.device_model_of(device),
                         "raw_hash": device.raw_hash,
                     }
                     for device in queryset
@@ -3149,8 +3149,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="climate", methods=["GET"])
     def get_climate_data(self, request, pk=None, *args, **kwargs):
-        """Humidity/temperature/battery series per device - the LoRaWAN
-        counterpart of `heatmap`. LoRaWAN measurements carry no samples, only
+        """Humidity/temperature/battery series per device - the smartex io
+        counterpart of `heatmap`. smartex io measurements carry no samples, only
         ProgeoMeasurement.humidity/temperature/battery, and a location has several
         devices, so every device gets its own series (oldest first). Also the
         battery voltage (battery_v) of IMEI devices, shown below their Zeitreihe,
@@ -3252,7 +3252,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="climate-heatmap", methods=["GET"])
     def climate_heatmap(self, request, pk=None, *args, **kwargs):
-        """Heatmap of a LoRaWAN location: ?metric=humidity|temperature of the
+        """Heatmap of a smartex io location: ?metric=humidity|temperature of the
         devices placed on the plan (ProgeoMeasurePoint.device, Lageplan
         wizard) over the last ?days=, in frames of `step` seconds (see
         helper/climate_heatmap.py). Same shape as `heatmap` - data is keyed by

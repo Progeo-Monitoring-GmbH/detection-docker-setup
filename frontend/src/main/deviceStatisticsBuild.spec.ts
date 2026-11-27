@@ -20,13 +20,13 @@ describe('mergeTypeCounts', () => {
       ],
       [
         { type: '3', label: 'smartex® is', count: 4 },
-        { type: '6', label: 'LoRaWan', count: 2 },
+        { type: '10', label: 'smartex® io', count: 2 },
       ],
     );
     expect(merged).toEqual([
       { type: '3', label: 'smartex® is', count: 5 },
       { type: '1', label: 'smartex® dm', count: 2 },
-      { type: '6', label: 'LoRaWan', count: 2 },
+      { type: '10', label: 'smartex® io', count: 2 },
     ]);
   });
 

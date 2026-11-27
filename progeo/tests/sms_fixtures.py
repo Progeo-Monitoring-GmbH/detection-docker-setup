@@ -4,15 +4,16 @@ Nothing here is autouse: a test opts in by requesting `esendex_api` /
 `esendex_configured` (both pull in `isolated_config`), a module that needs
 the isolation for every test uses
 ``pytestmark = pytest.mark.usefixtures("isolated_config")``.
+
+The root conftest loads this module before Django is set up (and also with
+minimal settings without the progeo apps, see
+test_image_root_pytest_configuration_initializes_django_before_conftest), so
+everything that touches models is imported inside the fixtures.
 """
 import json
 
 import pytest
 import requests
-
-from progeo.helper import emailhelper, esendex, interface_config
-from progeo.tests import factories as f
-from progeo.v1.models import SystemConfig
 
 ESENDEX = {"account_reference": "EX0001", "username": "sms-user", "password": "sms-pw", "from": "Progeo"}
 
@@ -32,6 +33,10 @@ class FakeResponse:
 
 @pytest.fixture
 def isolated_config(monkeypatch, settings, db):
+    from progeo.helper import emailhelper, interface_config
+    from progeo.tests import factories as f
+    from progeo.v1.models import SystemConfig
+
     # The real send path - the dry run is tested in test_outbound.py.
     settings.SMS_DRY_RUN = False
     for name in [*interface_config._SMTP_ENV.values(), *interface_config._ESENDEX_ENV.values()]:
@@ -48,6 +53,8 @@ def isolated_config(monkeypatch, settings, db):
 
 @pytest.fixture
 def esendex_api(monkeypatch, isolated_config):
+    from progeo.helper import esendex
+
     calls = []
     reply = {"response": FakeResponse(json_data={"batchid": "B-1", "messageids": ["m1"]})}
 
@@ -63,4 +70,7 @@ def esendex_api(monkeypatch, isolated_config):
 
 @pytest.fixture
 def esendex_configured(isolated_config):
+    from progeo.tests import factories as f
+    from progeo.v1.models import SystemConfig
+
     SystemConfig.objects.using(f.DB).create(key="esendex", value=dict(ESENDEX))

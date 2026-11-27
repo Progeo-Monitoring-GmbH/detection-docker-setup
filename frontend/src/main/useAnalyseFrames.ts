@@ -9,15 +9,15 @@ import { chartFramesOf, frameSecondsOf } from './analysePageHelp';
  * measurement) - the heatmap and the measurements show the frame holding
  * it. Its frames are the heatmap's - the measurements (sampled a little
  * differently) show the one nearest to it; without a heatmap theirs.
- * LoRaWAN: the climate heatmap's, without one the climate charts' readings
+ * smartex io: the climate heatmap's, without one the climate charts' readings
  * (reported by them).
  */
 const useAnalyseFrames = ({
-  isLorawan,
+  isSmartexIo,
   heatmap,
   measurements,
 }: {
-  isLorawan: boolean;
+  isSmartexIo: boolean;
   heatmap: SensorHeatmapResponse | null;
   measurements: MeasurementCompareRow[];
 }) => {
@@ -34,7 +34,7 @@ const useAnalyseFrames = ({
     [],
   );
   const [climateChartFrames, setClimateChartFrames] = useState<number[]>([]);
-  const frameSeconds = isLorawan
+  const frameSeconds = isSmartexIo
     ? frameSecondsOf(climateHeatmapFrames, climateChartFrames)
     : frameSecondsOf(heatmapFrames, chartFrames);
   const frameIndex =

@@ -695,7 +695,11 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
     @action(detail=False, url_path=r"lorawan/(?P<project_id>\d+)",
             authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_lorawan_data(self, request, project_id=None, token=None, *args, **kwargs):
-        """Store a LoRaWAN uplink forwarded by the network server.
+        """Store a smartex io uplink: a LoRaWAN uplink forwarded by the network
+        server, or an RS485 reading an M5 posts in the same (ChirpStack) format
+        (devEui "<M5 hash>-RS<address>", see device_provisioning). The device
+        is a smartex io sensor, a new project a smartex io project. The URL
+        keeps "lorawan" - ChirpStack and the M5 firmware are configured on it.
 
         project_id and the LimitedToken come from the URL, the decoded uplink
         from request.data["object"]. Its messages are mapped onto measurement
@@ -760,8 +764,8 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             # The token's account lives in the DB the device data is written to;
             # the controller account may not (it's in DJANGO_DATABASES[0]).
             account=request.auth.account,
-            device_type=ProgeoDevice.DeviceType.LORAWAN,
-            project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN,
+            device_type=ProgeoDevice.DeviceType.SMARTEX_IO,
+            project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO,
         )
 
         return RequestSuccess({

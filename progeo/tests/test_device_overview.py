@@ -44,6 +44,20 @@ def test_device_model_names_only_known_models(hardware, model):
     assert device_overview.device_model(hardware) == model
 
 
+@pytest.mark.parametrize("raw_hash, hardware, model", [
+    ("1312-01-RS1", "1400_S1", "RS485"),  # RS485 sensor of the M5 1312-01
+    ("1312-01-rs12", None, "RS485"),
+    ("2CF7F1C04430019B", "1400_S2", None),  # LoRaWAN radio sensor: the type ("smartex io") is shown
+    ("1312-01", "smartex dm", "smartex dm"),
+    ("1312-01-RSX", None, None),
+    ("RS1", None, None),
+    (None, None, None),
+])
+def test_device_model_of_tells_rs485_sensors_by_their_hash(raw_hash, hardware, model):
+    device = ProgeoDevice(raw_hash=raw_hash, hardware=hardware, type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    assert device_overview.device_model_of(device) == model
+
+
 def test_is_online_allows_two_intervals_and_the_grace():
     now = timezone.now()
     limit = timedelta(seconds=2 * 600) + device_overview.ONLINE_GRACE
@@ -84,7 +98,7 @@ def overview_world():
     other = f.make_location(account, project_id=940002)
     now = timezone.now()
     fresh = f.make_device(location, raw_hash="940001-01", type="imei", data_interval=600, device_ip="10.0.0.5")
-    stale = f.make_device(location, raw_hash="legacyhash", type="lorawan", data_interval=600)
+    stale = f.make_device(location, raw_hash="legacyhash", type="smartex io", data_interval=600)
     silent = f.make_device(location, raw_hash="mac:aa:bb", device_ip="8.8.8.8")
     f.make_measurement(fresh, pairs=[1], fetched_at=now - timedelta(hours=3))
     f.make_measurement(fresh, pairs=[2], fetched_at=now - timedelta(minutes=5))

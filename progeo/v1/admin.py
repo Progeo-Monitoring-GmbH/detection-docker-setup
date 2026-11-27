@@ -698,9 +698,9 @@ class ProgeoDeviceAdmin(LocationColumnMixin, MultiDBModelAdmin):
 
     @admin.display(description="Model", ordering="hardware")
     def model(self, obj):
-        from progeo.helper.device_overview import device_model
+        from progeo.helper.device_overview import device_model_of
 
-        return device_model(obj.hardware) or obj.type or "-"
+        return device_model_of(obj) or obj.type or "-"
 
     @admin.display(description="Related data")
     def related_links(self, obj):

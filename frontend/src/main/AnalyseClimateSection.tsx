@@ -18,7 +18,7 @@ type AnalyseClimateSectionProps = {
 };
 
 /**
- * LoRaWAN objects on the Analyse page: a humidity/temperature heatmap of
+ * smartex io objects on the Analyse page: a humidity/temperature heatmap of
  * the placed sensors and their charts. The device hovered on the heatmap or
  * in a chart is highlighted in both.
  */

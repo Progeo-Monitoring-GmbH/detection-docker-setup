@@ -42,7 +42,7 @@ type OverviewDevice = {
   location: number | null;
   raw_hash: string;
   display_name?: string;
-  /** Technical class (smartbox, node, lorawan, ...). */
+  /** Technical class (smartbox, node, smartex io, ...). */
   type?: string | null;
   /** The precise model ("smartex dm") - null if hardware names no known one. */
   model: string | null;

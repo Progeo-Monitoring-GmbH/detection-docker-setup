@@ -51,7 +51,7 @@ def _small_demo():
     command = Command()
     account = command._ensure_account(None, db)
     command._ensure_user(account)
-    kinds = ("smartex_dm", "smartex_is", "lorawan")
+    kinds = ("smartex_dm", "smartex_is", "smartex_io")
     locations = {
         spec["kind"]: ProgeoLocation.objects.using(db).create(
             account=account, name=spec["name"], project_id=spec["project_id"], project_type=spec["project_type"]

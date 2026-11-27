@@ -42,7 +42,7 @@ const MOBILE_WIDTH = 860;
  * devices over the selected period (last 24 h / 7 / 30 days; staff also the
  * last quarter, half year and year) - only periods the data reaches into.
  * Reuses the existing heatmap + measurement endpoints and components; the
- * state lives in the useAnalyse* hooks, LoRaWAN objects get their climate
+ * state lives in the useAnalyse* hooks, smartex io objects get their climate
  * heatmap and charts (AnalyseClimateSection), all others the heatmap and
  * samples (AnalyseDeviceSection).
  */
@@ -50,7 +50,7 @@ const LocationAnalyseTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
   const { t } = useTranslation();
   const access = useAnalyseAccess(location);
-  const { isLorawan, isStaff, offerNoiseProfiles, rawQuery } = access;
+  const { isSmartexIo, isStaff, offerNoiseProfiles, rawQuery } = access;
   const period = useAnalysePeriod(locationId, isStaff);
   const { range, days, resolution, meanWindow, heatProfile } = period;
   // The heatmap on the whole screen (phones: the only way to read it).
@@ -81,7 +81,7 @@ const LocationAnalyseTab = () => {
     locationId,
   );
   const exports = useAnalyseExports(locationId, location?.project_id);
-  const loadOptions = { locationId, enabled: !isLorawan, days, resolution };
+  const loadOptions = { locationId, enabled: !isSmartexIo, days, resolution };
   const loads = useAnalyseMeasurements({ ...loadOptions, deviceId, rawQuery });
   const { measurements, devices, shownDevice } = loads;
   const noise = useNoiseProfileState({
@@ -113,7 +113,7 @@ const LocationAnalyseTab = () => {
     meanWindow,
   });
 
-  const frames = useAnalyseFrames({ isLorawan, heatmap, measurements });
+  const frames = useAnalyseFrames({ isSmartexIo, heatmap, measurements });
   const { frameTime, setFrameTime, frameSeconds } = frames;
 
   const comparison = useAnalyseCompare({
@@ -170,7 +170,7 @@ const LocationAnalyseTab = () => {
   });
 
   // Keys 1-9 pick the heatmap's Lageplan - while there is more than one.
-  const planHotkeys = !isLorawan && plans.length > 1;
+  const planHotkeys = !isSmartexIo && plans.length > 1;
   useAnalyseHotkeys({
     frameSeconds,
     frameTime,
@@ -220,7 +220,7 @@ const LocationAnalyseTab = () => {
         mobile={
           typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH
         }
-        isLorawan={isLorawan}
+        isSmartexIo={isSmartexIo}
         rangeOptions={period.rangeOptions}
         range={range}
         onRangeChange={(value) => {
@@ -257,7 +257,7 @@ const LocationAnalyseTab = () => {
         })}
       />
 
-      {isLorawan ? (
+      {isSmartexIo ? (
         <AnalyseClimateSection
           locationId={locationId}
           range={range}

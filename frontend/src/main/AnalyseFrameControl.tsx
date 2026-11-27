@@ -18,7 +18,7 @@ const STICKY_TOP_MOBILE = 60;
 
 type AnalyseFrameControlProps = {
   mobile: boolean;
-  isLorawan: boolean;
+  isSmartexIo: boolean;
   rangeOptions: TimeRange[];
   range: TimeRange;
   onRangeChange: (range: TimeRange) => void;
@@ -44,7 +44,7 @@ type AnalyseFrameControlProps = {
 
 const AnalyseFrameControl = ({
   mobile,
-  isLorawan,
+  isSmartexIo,
   rangeOptions,
   range,
   onRangeChange,
@@ -76,7 +76,7 @@ const AnalyseFrameControl = ({
         value={range}
         onChange={onRangeChange}
       />
-      {!isLorawan && (
+      {!isSmartexIo && (
         <>
           <PillSelect
             testId="analyse-resolution"
@@ -135,7 +135,7 @@ const AnalyseFrameControl = ({
           )}
         </>
       )}
-      {!isLorawan && loading && hasLoadedData && (
+      {!isSmartexIo && loading && hasLoadedData && (
         <Spinner
           size="sm"
           animation="border"
@@ -168,7 +168,7 @@ const AnalyseFrameControl = ({
           timestamps={frameSeconds}
           index={frameIndex}
           onChange={(index) => onTimeChange(frameSeconds[index] * 1000)}
-          visibleRange={isLorawan ? null : chartZoom}
+          visibleRange={isSmartexIo ? null : chartZoom}
           toolbar={rangeToolbar}
           selection={selection}
           onSelectionChange={

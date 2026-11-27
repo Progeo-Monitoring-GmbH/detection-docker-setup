@@ -54,7 +54,7 @@ type LocationClimatePanelsProps = {
 };
 
 /**
- * LoRaWAN objects (ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN): no samples,
+ * smartex io objects (ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO): no samples,
  * so no heatmap - instead humidity, temperature and battery per device, from
  * GET /v1/location/<pk>/climate/.
  */

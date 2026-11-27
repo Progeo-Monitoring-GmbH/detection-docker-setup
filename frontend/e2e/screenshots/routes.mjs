@@ -84,7 +84,7 @@ const OPEN_COMMANDS = [
   { click: 'device-list-commands', key: '1' },
 ];
 
-/** The climate panels' dialogs of a LoRaWAN project (`prefix`: the panels' test id). */
+/** The climate panels' dialogs of a smartex io project (`prefix`: the panels' test id). */
 const climateModals = (prefix) =>
   [
     { testId: 'device-rename-modal', open: [`${prefix}-rename-devices`] },
@@ -106,7 +106,7 @@ const climateModals = (prefix) =>
         },
       ],
     },
-  ].map((modal) => ({ ...modal, roles: ['staff'], scenario: 'lorawan' }));
+  ].map((modal) => ({ ...modal, roles: ['staff'], scenario: 'smartexIo' }));
 
 /**
  * A notification case opened by a click on its row: DataTable takes a row
@@ -190,7 +190,7 @@ export const ROUTES = [
         roles: ['staff'],
         open: ['location-group-dissolve'],
       },
-      // A LoRaWAN project: climate panels with their own dialogs (superuser).
+      // A smartex io project: climate panels with their own dialogs (superuser).
       ...climateModals('climate-panels'),
       {
         // The per-sensor list: staff only, after switching from the computed points.

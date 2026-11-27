@@ -53,7 +53,7 @@ M5_DEFAULTS = {
     "sensors": 4, "interval_sec": 300, "poll_sec": 300,
     "rs485_enabled": False, "rs485_interval_sec": 900,
 }
-# RS485 climate sensors (XY-MD04) send to the LoRaWAN ingest every 30..86400 s.
+# RS485 climate sensors (XY-MD04) send to the smartex io ingest (RS485_PATH) every 30..86400 s.
 RS485_INTERVAL_RANGE = (30, 86400)
 M5_THRESHOLD_DEFAULTS = {136: 891, 72: 450, 40: 76, 24: 8}
 # Pulldown value -> resistance in ohm (136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R).
@@ -266,7 +266,7 @@ def sample_url(project_id) -> str:
 
 
 def rs485_path(plan) -> str:
-    """The LoRaWAN ingest path of the RS485 climate project, below the same prefix as PLATFORM_PATH."""
+    """The smartex io ingest path (/v1/device/lorawan/...) of the RS485 climate project, below the same prefix as PLATFORM_PATH."""
     # sample_url(): <base><SAMPLE_PATH>; everything before "/v1/device/" is the base prefix.
     path = urlsplit(plan["url"]).path
     prefix = path[:path.index("/v1/device/")] if "/v1/device/" in path else ""
@@ -376,8 +376,8 @@ def render_platform_config(plan) -> str:
         _define("PLATFORM_PATH", c_string(url.path)),
         _define("PLATFORM_TOKEN", c_string(plan["token"])),
         "",
-        "// rs485: XY-MD04 Temperatur/Feuchte (Adressen 1..2) als eigene Sensoren, die",
-        "// sich im Backend wie LoRaWAN-Sensoren verhalten (ChirpStack-Format):",
+        "// rs485: XY-MD04 Temperatur/Feuchte (Adressen 1..2) als eigene smartex-io-",
+        "// Sensoren (Modell RS485) im Backend (ChirpStack-Format):",
         "//   POST https://<RS485_HOST><RS485_PATH>, Authorization: Token <RS485_TOKEN>",
         '//   {"deviceInfo":{"devEui":"<RS485_EUI_PREFIX><adresse>"},',
         '//    "object":{"messages":[{"measurementId":4097,"measurementValue":<Grad C>},',
@@ -385,7 +385,7 @@ def render_platform_config(plan) -> str:
         '// Jede Adresse ist ein eigenes Geraet im Backend (devEui = raw_hash, wird gross',
         '// geschrieben; Name automatisch "<projekt>_S<n>"). Antwort 200 mit',
         '// "measurement_id", 400 ohne gueltige Messwerte. Keine Alarme fuer Klimawerte.',
-        "// Eigenes Projekt verwenden: ein neues Projekt legt das Backend als LoRaWAN-",
+        "// Eigenes Projekt verwenden: ein neues Projekt legt das Backend als smartex-io-",
         "// Objekt an (Klima-Ansicht). Mit der Projektnummer der Leckage-Sensoren landen",
         "// die Werte im Leckage-Objekt und werden dort nicht angezeigt.",
         _define_rs485("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0,

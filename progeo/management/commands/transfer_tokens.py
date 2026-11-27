@@ -38,7 +38,7 @@ class Command(BaseCommand):
         parser.add_argument("--device", default="", help="--create: the device (hash/IMEI/devEui) it belongs to.")
         parser.add_argument("--valid-days", type=int, default=0, help="--create: expiry in days (0 = none).")
         parser.add_argument("--account", type=int, default=DEFAULT_ACCOUNT_ID,
-                            help=f"--create: account (default {DEFAULT_ACCOUNT_ID}, LoRaWAN data goes to it).")
+                            help=f"--create: account (default {DEFAULT_ACCOUNT_ID}, smartex io data goes to it).")
 
     def handle(self, *args, **options):
         if options["list"]:

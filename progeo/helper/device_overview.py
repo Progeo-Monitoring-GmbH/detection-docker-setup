@@ -31,19 +31,34 @@ def hash_kind(raw_hash) -> str:
 def device_model(hardware):
     """The precise model of a device ("smartex dm"): provisioning stores it
     in device.hardware. None if hardware names no known model (e.g. the
-    "7067_S1" of a LoRaWAN sensor) - the overview then shows device.type."""
+    "7067_S1" of a smartex io sensor) - the overview then shows device.type."""
     from progeo.helper.device_provisioning import MODELS, ascii_model
 
     model = ascii_model(hardware).lower()
     return next((known for known in MODELS if known.lower() == model), None) if model else None
 
 
+# devEui of an RS485 climate sensor at an M5: "<M5 hash>-RS<address>"
+# (PLATFORM_RS485_EUI_PREFIX in device_provisioning), stored upper-case as raw_hash.
+RS485_HASH_RE = re.compile(r"-RS\d+$", re.IGNORECASE)
+RS485_MODEL = "RS485"
+
+
+def device_model_of(device):
+    """device_model of a device row: "RS485" for an RS485 sensor of an M5 (a
+    smartex io sensor, told apart from the LoRaWAN radio ones by its hash),
+    else the model its hardware names."""
+    if RS485_HASH_RE.search((device.raw_hash or "").strip()):
+        return RS485_MODEL
+    return device_model(device.hardware)
+
+
 def device_label(device) -> str:
     """The full name of a device for pickers: its custom name (mac) if set,
-    its model (device_model, else the hardware name) and its hash - e.g.
+    its model (device_model_of, else the hardware name) and its hash - e.g.
     "Dach Nord · smartex dm · 1312-01" or "smartex dm · 1312-01". Parts that
     repeat one another are left out."""
-    model = device_model(device.hardware) or (device.hardware or "").strip() or None
+    model = device_model_of(device) or (device.hardware or "").strip() or None
     parts = []
     for part in ((device.mac or "").strip(), model, (device.raw_hash or "").strip()):
         if part and part.lower() not in (seen.lower() for seen in parts):

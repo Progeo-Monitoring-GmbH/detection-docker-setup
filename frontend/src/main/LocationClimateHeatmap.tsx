@@ -29,7 +29,7 @@ const METRIC_LABEL_KEYS: Record<ClimateMetric, string> = {
 };
 
 /**
- * Heatmap of a LoRaWAN location (Analyse tab): humidity or temperature of
+ * Heatmap of a smartex io location (Analyse tab): humidity or temperature of
  * the sensors placed on the Lageplan (Lageplan wizard, "Manually set
  * sensors"), interpolated between them over the Analyse tab's range - one
  * frame per hour (24 h, 7 days) or per 4 hours (30 days).

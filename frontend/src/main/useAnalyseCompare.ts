@@ -183,7 +183,7 @@ const useCompareLoads = (
 };
 
 type CompareOptions = CompareQuery & {
-  /** LoRaWAN objects compare nothing. */
+  /** smartex io objects compare nothing. */
   enabled: boolean;
   /** The location's measured span - offsets reach back to its oldest one. */
   measurementRange: MeasurementRange | null;

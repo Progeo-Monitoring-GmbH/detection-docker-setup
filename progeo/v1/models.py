@@ -348,10 +348,13 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
         SMARTEX_IS = 3, "smartex® is"  # formerly "DFH"
         DEVELOPMENT = 4, "Development"
         VERSUCH = 5, "Versuchsprojekte"
-        LORAWAN = 6, "LoRaWan"
+        # 6 was "LoRaWan" - those projects are smartex io now (migration 0089).
         SMARTEX_MX_PEEL = 7, "smartex® mx-PEEL"
         SMARTEX_MX_VA = 8, "smartex® mx-va"
         SMARTEX_MX_AL = 9, "smartex® mx-al"
+        # Climate sensors (humidity/temperature per device, no samples): the
+        # LoRaWAN radio sensors and the RS485 sensors of an M5, both through
+        # the ingest /v1/device/lorawan/<project_id>/.
         SMARTEX_IO = 10, "smartex® io"
         SMARTEX_VT = 11, "smartex® vt"
         SONSTIGE = 99, "Sonstige"
@@ -623,7 +626,10 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
         RELAY = "relay", "relay"
         ROOT = "root", "root"
         LEGACY = "legacy", "legacy"
-        LORAWAN = "lorawan", "lorawan"
+        # A smartex io climate sensor (formerly "lorawan"): LoRaWAN radio or
+        # RS485 at an M5 (model "RS485", see device_overview.device_model_of).
+        # The value is shown as is in the device lists.
+        SMARTEX_IO = "smartex io", "smartex io"
 
     class Resistance(models.IntegerChoices):
         DEFAULT_100K = 136  # 100K = 0x88
@@ -693,7 +699,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     @property
     def display_name(self):
         """Name shown in the frontend: the custom name (mac) if set, else the
-        hardware name (e.g. "7067_S1" of a LoRaWAN sensor), else raw_hash."""
+        hardware name (e.g. "7067_S1" of a smartex io sensor), else raw_hash."""
         return self.mac or self.hardware or self.raw_hash or str(self.pk)
 
     def __str__(self):
@@ -1102,7 +1108,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="points", null=True, blank=True)
     lageplan = models.ForeignKey(ProgeoLageplan, on_delete=models.CASCADE, related_name="lageplaene", null=True, blank=True)
     # The device measuring at this point - set when the sensors are placed by
-    # hand (Lageplan wizard), e.g. one LoRaWAN sensor per point. CAD points
+    # hand (Lageplan wizard), e.g. one smartex io sensor per point. CAD points
     # (sensor_order indexes the pairs of one device) are all connected to that
     # device if it was picked at the import, else null. No
     # database constraint: a device can move to another location (and

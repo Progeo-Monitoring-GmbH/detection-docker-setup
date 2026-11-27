@@ -175,7 +175,7 @@ const FIELD_OPAQUE = 0.3;
 
 /**
  * Interpolated field of readings that don't add up - e.g. humidity or
- * temperature (LoRaWAN), where two sensors side by side are not "hotter"
+ * temperature (smartex io), where two sensors side by side are not "hotter"
  * than one: every cell holds the Gaussian-weighted mean of the sensors
  *
  *   value(x) = sum_i k_i(x) * v_i / sum_i k_i(x),  k_i = exp(-d^2 / (2 sigma^2))

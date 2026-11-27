@@ -54,20 +54,20 @@ export const useStatusLiveRevision = (locationId: number, enabled: boolean) => {
 
 /**
  * The location's measurement range - the history to load, and the long
- * ranges once the data reaches that far back (LoRaWAN: LocationClimatePanels
+ * ranges once the data reaches that far back (smartex io: LocationClimatePanels
  * does its own) - and the range shown of the picked one.
  */
 export const useStatusRange = ({
   locationId,
   demo,
-  isLorawan,
+  isSmartexIo,
   isStaff,
   selectedRange,
   liveRevision,
 }: {
   locationId: number;
   demo: boolean;
-  isLorawan: boolean;
+  isSmartexIo: boolean;
   isStaff: boolean;
   selectedRange: StatusRange;
   liveRevision: number;
@@ -78,7 +78,7 @@ export const useStatusRange = ({
     // The history follows once the range of the new data is there (its
     // window ends at the newest measurement).
     revision: rangeRevision,
-  } = useMeasurementRangeState(locationId, demo, !isLorawan, liveRevision);
+  } = useMeasurementRangeState(locationId, demo, !isSmartexIo, liveRevision);
   const rangeOptions = useMemo(
     () =>
       availableTimeRanges(
@@ -105,7 +105,7 @@ export const useStatusRange = ({
 type HistoryArgs = {
   locationId: number;
   demo: boolean;
-  isLorawan: boolean;
+  isSmartexIo: boolean;
   isLatest: boolean;
   rangeDays: number;
   measurementRange: MeasurementRange | null;
@@ -127,7 +127,7 @@ const useHistorySources = (
   {
     locationId,
     demo,
-    isLorawan,
+    isSmartexIo,
     isLatest,
     heatProfile,
     rangeRevision,
@@ -136,7 +136,7 @@ const useHistorySources = (
   historySpec: HeatmapWindow | null,
 ) => {
   const periodSpec = isLatest ? null : historySpec;
-  const latestSpec = isLatest && !isLorawan ? 'latest' : null;
+  const latestSpec = isLatest && !isSmartexIo ? 'latest' : null;
   const withProfile = heatProfile !== 'diff';
   const period = useLocationHistory(
     locationId,
@@ -183,7 +183,7 @@ const useHistorySources = (
  */
 export const useStatusHistory = (args: HistoryArgs) => {
   const {
-    isLorawan,
+    isSmartexIo,
     isLatest,
     rangeDays,
     measurementRange,
@@ -193,10 +193,10 @@ export const useStatusHistory = (args: HistoryArgs) => {
   } = args;
   const historySpec = useMemo(
     () =>
-      isLorawan
+      isSmartexIo
         ? null
         : historySpecFor(measurementRange, measurementRangeFailed, openedAt),
-    [isLorawan, measurementRange, measurementRangeFailed, openedAt],
+    [isSmartexIo, measurementRange, measurementRangeFailed, openedAt],
   );
   const { period, shown, profileHistory, profileLoading } = useHistorySources(
     args,

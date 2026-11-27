@@ -147,11 +147,11 @@ def test_the_report_counts_the_devices_left_without_a_sensor_count(location):
     filled = _device(location)
     _sample(filled, {"sensors": 4})
     _device(location)  # no source at all
-    f.make_device(location, project_id=1312, type=ProgeoDevice.DeviceType.LORAWAN)
+    f.make_device(location, project_id=1312, type=ProgeoDevice.DeviceType.SMARTEX_IO)
 
     dry = sensor_count_from_samples(apply=False)
     applied = sensor_count_from_samples(apply=True)
 
     assert dry["remaining"] == applied["remaining"]
-    assert applied["remaining_by_type"]["lorawan"] >= 1
+    assert applied["remaining_by_type"]["smartex io"] >= 1
     assert applied["remaining"] == ProgeoDevice.objects.using(f.DB).filter(sensor_count__isnull=True).count()

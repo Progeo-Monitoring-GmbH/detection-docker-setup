@@ -175,7 +175,7 @@ const mean = (values: Array<number | null>): number | null => {
 
 /**
  * Time series of one climate metric (humidity, temperature, battery or battery voltage), one line per
- * device of the location - a LoRaWAN object has several sensors. The mean over all devices is drawn as
+ * device of the location - a smartex io object has several sensors. The mean over all devices is drawn as
  * a gray dashed line, a device's own mean only while it is hovered; clicking a point makes its time the
  * reference the tooltips compare against.
  */

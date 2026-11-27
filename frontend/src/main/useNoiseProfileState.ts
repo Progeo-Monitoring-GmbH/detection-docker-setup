@@ -18,7 +18,7 @@ import {
  * Staff: the Störungsprofile of the location's devices (noiseProfiles.ts)
  * and what the shown values are cleaned with (analyseNoiseView.ts) - the
  * active profile, the one tried out ("Anwenden") or the draft being edited.
- * Only while `offer` (staff, not LoRaWAN).
+ * Only while `offer` (staff, not smartex io).
  */
 const useNoiseProfileState = ({
   locationId,

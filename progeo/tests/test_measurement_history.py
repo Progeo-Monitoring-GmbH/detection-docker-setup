@@ -149,8 +149,8 @@ def test_samples_are_not_kept_twice_in_raw_data():
 @pytest.fixture
 def climate_location(api_client):
     account = f.make_account()
-    location = f.make_location(account, project_id=4344, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN)
-    sensor = f.make_device(location, raw_hash=f.unique("EUI"), mac="keller", type=ProgeoDevice.DeviceType.LORAWAN)
+    location = f.make_location(account, project_id=4344, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO)
+    sensor = f.make_device(location, raw_hash=f.unique("EUI"), mac="keller", type=ProgeoDevice.DeviceType.SMARTEX_IO)
     noon = timezone.localtime().replace(hour=12, minute=0, second=0, microsecond=0)
     day = noon - timedelta(days=200)
     f.make_measurement(sensor, humidity=40.0, temperature=10.0, fetched_at=day - timedelta(hours=2))

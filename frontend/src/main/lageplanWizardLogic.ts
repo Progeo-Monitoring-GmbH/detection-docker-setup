@@ -4,7 +4,7 @@
  * request payloads and the messages shown. No React, no requests.
  */
 import { getBackendUrl } from '../backendUrl';
-import { isLorawanProject } from './projectType';
+import { isSmartexIoProject } from './projectType';
 import {
   type DeviceRange,
   type MeasurePoint,
@@ -302,9 +302,9 @@ export const locationSearch = (search: string, locationId: number | null) => {
   return params.toString() ? `?${params}` : '';
 };
 
-/** How a location's points are set at first: by hand for LoRaWAN projects. */
+/** How a location's points are set at first: by hand for smartex io projects. */
 export const pointSourceFor = (location: WizardLocation | null): PointSource =>
-  location && isLorawanProject(location.project_type) ? 'manual' : 'cad';
+  location && isSmartexIoProject(location.project_type) ? 'manual' : 'cad';
 
 /** The plan ?plan=<lageplan id> asks for (e.g. from /analyse), or null. */
 export const requestedPlanId = (searchParams: URLSearchParams) =>

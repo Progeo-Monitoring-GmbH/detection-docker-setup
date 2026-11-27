@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
 import type { LocationDetail } from './locationTypes';
-import { isLorawanProject } from './projectType';
+import { isSmartexIoProject } from './projectType';
 import { staffFlags } from './access';
 import {
   availableTimeRanges,
@@ -17,7 +17,7 @@ import useMeasurementRange from './useMeasurementRange';
 const DEFAULT_RESOLUTION = 300;
 
 /**
- * What the Analyse page offers whom. LoRaWAN objects have no samples - a
+ * What the Analyse page offers whom. smartex io objects have no samples - a
  * humidity/temperature heatmap of the placed sensors and their charts
  * replace the heatmap and samples chart. Staff (and superusers): battery
  * charts and the Störungsprofile - their measurements are loaded raw
@@ -27,20 +27,20 @@ const DEFAULT_RESOLUTION = 300;
 export const useAnalyseAccess = (location: LocationDetail | null) => {
   const auth = useAuth();
   const { hasPermission } = usePermissions();
-  const isLorawan = isLorawanProject(location?.project_type);
+  const isSmartexIo = isSmartexIoProject(location?.project_type);
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
-  const offerNoiseProfiles = isStaff && !isLorawan;
+  const offerNoiseProfiles = isStaff && !isSmartexIo;
   return {
-    isLorawan,
+    isSmartexIo,
     isStaff,
-    canSwitchSensors: hasPermission('module_locations_edit') && !isLorawan,
+    canSwitchSensors: hasPermission('module_locations_edit') && !isSmartexIo,
     offerNoiseProfiles,
     rawQuery: offerNoiseProfiles ? '&raw=1' : '',
   };
 };
 
 /**
- * One period for the heatmap and the charts (also LoRaWAN's) - only periods
+ * One period for the heatmap and the charts (also smartex io) - only periods
  * the data reaches into; an unavailable selection falls back to the longest
  * offered one. With it: how many measurements a period is loaded with, over
  * how many neighbouring ones every value is averaged (1: not - less noise)

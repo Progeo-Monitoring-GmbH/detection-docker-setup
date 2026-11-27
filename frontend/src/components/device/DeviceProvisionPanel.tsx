@@ -59,7 +59,7 @@ type ProvisionSettings = {
   /** The threshold was typed by hand: a new pulldown no longer resets it. */
   threshold_touched: boolean;
   poll_sec: string;
-  /** M5 only: the RS485 climate sensors (XY-MD04) report to a LoRaWAN project of their own. */
+  /** M5 only: the RS485 climate sensors (XY-MD04) report to a smartex io project of their own. */
   rs485_enabled: boolean;
   rs485_project_id: string;
   rs485_interval_sec: string;

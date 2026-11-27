@@ -610,8 +610,8 @@ export const SCENARIOS = {
       reason: 'sms_per_hour',
     },
   },
-  /** Location #1 as a LoRaWAN project (climate panels instead of sensors). */
-  lorawan: { projectType: 6 },
+  /** Location #1 as a smartex io project (climate panels instead of sensors). */
+  smartexIo: { projectType: 10 },
   /** Location #1 as an mx-PEEL project (computed suspicion points). */
   'mx-peel': { projectType: 7 },
   /** The controller has a command waiting to be fetched (cancel dialog). */
@@ -677,14 +677,14 @@ export const mockAnswer = (
           id: 1,
           name: 'Fühler Nord',
           hardware: 'lht65',
-          type: 'lorawan',
+          type: 'smartex io',
           display_name: 'Fühler Nord',
         },
         {
           id: 2,
           name: '',
           hardware: 'lht65',
-          type: 'lorawan',
+          type: 'smartex io',
           display_name: 'a84041000181c2b3',
         },
       ],

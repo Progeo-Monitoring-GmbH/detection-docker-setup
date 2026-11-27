@@ -12,19 +12,19 @@ import { useComputedSuspicion } from './useComputedSuspicion';
  * The status page's Verdachtsstellen: one per sensor (the alarm clusters -
  * also the KPIs' source) and the computed suspicion points of the range
  * instead (every product) - staff can switch (computedSuspicion.ts).
- * LoRaWAN climate objects have neither.
+ * smartex io climate objects have neither.
  */
 export const useStatusSuspicions = ({
   locationId,
   demo,
-  isLorawan,
+  isSmartexIo,
   isStaff,
   rangeDays,
   liveRevision,
 }: {
   locationId: number;
   demo: boolean;
-  isLorawan: boolean;
+  isSmartexIo: boolean;
   isStaff: boolean;
   rangeDays: number;
   liveRevision: number;
@@ -32,7 +32,7 @@ export const useStatusSuspicions = ({
   const alarmClusters = useAlarmClusters(
     locationId,
     demo,
-    !isLorawan,
+    !isSmartexIo,
     liveRevision,
   );
   const [pickedMode, setSuspicionMode] = useState<SuspicionMode>('computed');
@@ -42,7 +42,7 @@ export const useStatusSuspicions = ({
     locationId,
     rangeDays,
     demo,
-    isComputed && !isLorawan,
+    isComputed && !isSmartexIo,
     liveRevision,
   );
   const suspicionMarkers = useMemo(

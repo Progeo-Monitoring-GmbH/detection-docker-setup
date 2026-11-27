@@ -52,7 +52,7 @@ from progeo.helper.device_inventory import (
     statistics_snapshot,
 )
 from progeo.helper.device_overview import (
-    device_model,
+    device_model_of,
     device_stats,
     hash_kind,
     is_online,
@@ -2195,7 +2195,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 "last_seen_at": last_seen,
                 "online": is_online(last_seen, device.data_interval, now),
                 "hash_kind": hash_kind(device.raw_hash),
-                "model": device_model(device.hardware),
+                "model": device_model_of(device),
                 "is_m5": is_m5(device),
                 "ip": address(device),
                 "ping": pings.get(device.pk),

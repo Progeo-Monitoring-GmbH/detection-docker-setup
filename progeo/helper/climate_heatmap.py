@@ -1,6 +1,6 @@
-"""Heatmap frames of LoRaWAN climate readings (LocationViewSet.climate_heatmap).
+"""Heatmap frames of smartex io climate readings (LocationViewSet.climate_heatmap).
 
-A LoRaWAN location has one device per measure point (placed by hand in the
+A smartex io location has one device per measure point (placed by hand in the
 Lageplan wizard, ProgeoMeasurePoint.device), each reporting on its own
 schedule - so unlike the samples heatmap there are no common measurements to
 use as frames. The window is cut into frames of `step` seconds instead; a

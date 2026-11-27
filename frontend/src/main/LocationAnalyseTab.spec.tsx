@@ -230,9 +230,9 @@ describe('LocationAnalyseTab', () => {
     ).toContain('range-clear');
   });
 
-  it('shows the climate heatmap and charts of LoRaWAN objects', () => {
+  it('shows the climate heatmap and charts of smartex io objects', () => {
     outlet.value = {
-      location: { project_id: 7002, project_type: 6, lageplans: [] },
+      location: { project_id: 7002, project_type: 10, lageplans: [] },
       locationId: 6,
     };
     render();

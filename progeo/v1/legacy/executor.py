@@ -267,7 +267,7 @@ def _forget_deleted_device(sender, instance, using, **kwargs):
 
 def _next_sensor_name(project_id, db_name):
     """The project's next free "<project_id>_S<n>" - the hardware name of a
-    new numbered sensor (LoRaWAN)."""
+    new numbered sensor (smartex io)."""
     taken = set(
         ProgeoDevice.objects.using(db_name)
         .filter(hardware__startswith=f"{project_id}_S")
@@ -433,7 +433,7 @@ def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, devic
 def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, numbered_sensor=False,
                                       device_type=None, battery_V: int | None = None,
                                       last_battery_percentage: int | None = None, account=None, project_type=None):
-    """Store a legacy/IMEI/LoRaWAN measurement for its device (see
+    """Store a legacy/IMEI/smartex io measurement for its device (see
     get_or_create_device for project_id/raw_hash/numbered_sensor/account/
     project_type). device_type defaults to get_device_type. The device is
     resolved through the cache (get_device_id), so a known device costs no

@@ -288,13 +288,13 @@ describe('LocationStatusView', () => {
     expect(api.get.mock.calls.some(([url]) => String(url).includes('request-measurement'))).toBe(false);
   });
 
-  it('shows the climate panels of a LoRaWAN object instead', async () => {
-    await render('/location/4/status', { location: location({ project_type: 6 }) });
+  it('shows the climate panels of a smartex io object instead', async () => {
+    await render('/location/4/status', { location: location({ project_type: 10 }) });
 
     expect(byTestId('stub-climate')).not.toBeNull();
     expect(byTestId('status-kpis')).toBeNull();
     expect(byTestId('status-switches')).toBeNull();
-    // LoRaWAN has no samples - no history, clusters or measurement range.
+    // smartex io has no samples - no history, clusters or measurement range.
     expect(api.get.mock.calls.map(([url]) => String(url))).toEqual([]);
   });
 

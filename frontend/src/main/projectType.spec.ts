@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   getProjectTypeLabel,
-  isLorawanProject,
+  isSmartexIoProject,
   planVisualization,
   PROJECT_TYPE_BRAND_LABELS,
   PROJECT_TYPE_LABEL_KEYS,
@@ -22,7 +22,7 @@ describe('getProjectTypeLabel', () => {
     expect(getProjectTypeLabel(spy, 1)).toBe('smartex® dm');
     expect(getProjectTypeLabel(spy, 2)).toBe('geologger');
     expect(getProjectTypeLabel(spy, 3)).toBe('smartex® is');
-    expect(getProjectTypeLabel(spy, 6)).toBe('LoRaWan');
+    expect(getProjectTypeLabel(spy, 10)).toBe('smartex® io');
     expect(getProjectTypeLabel(spy, 7)).toBe('smartex® mx-PEEL');
     expect(getProjectTypeLabel(spy, 11)).toBe('smartex® vt');
     expect(spy).not.toHaveBeenCalled();
@@ -51,11 +51,11 @@ describe('getProjectTypeLabel', () => {
   });
 });
 
-describe('isLorawanProject', () => {
-  it('is true only for the LoRaWan project type', () => {
-    expect(isLorawanProject(6)).toBe(true);
-    [0, 1, 2, 3, 4, 5, 7, 11, 99, null, undefined].forEach((value) =>
-      expect(isLorawanProject(value)).toBe(false),
+describe('isSmartexIoProject', () => {
+  it('is true only for the smartex io project type (no more LoRaWan type 6)', () => {
+    expect(isSmartexIoProject(10)).toBe(true);
+    [0, 1, 2, 3, 4, 5, 6, 7, 11, 99, null, undefined].forEach((value) =>
+      expect(isSmartexIoProject(value)).toBe(false),
     );
   });
 });
@@ -66,18 +66,18 @@ describe('planVisualization', () => {
     expect(planVisualization(3)).toBe('tiles'); // is: the Sensoransicht
     [8, 9].forEach((value) => expect(planVisualization(value)).toBe('segments')); // mx-va, mx-al
     expect(planVisualization(1)).toBe('lines'); // dm
-    [10, 11].forEach((value) => expect(planVisualization(value)).toBe('points')); // io, vt
+    expect(planVisualization(11)).toBe('points'); // vt
   });
 
   it('falls back to the heatmap for every other type', () => {
-    [0, 2, 4, 5, 99, 42, null, undefined].forEach((value) =>
+    [0, 2, 4, 5, 10, 99, 42, null, undefined].forEach((value) =>
       expect(planVisualization(value)).toBe('heatmap'),
     );
   });
 
-  it('lists the sensors below the plan for dm, io and vt only', () => {
-    [1, 10, 11].forEach((value) => expect(showsSensorTable(value)).toBe(true));
-    [0, 2, 3, 6, 7, 8, 9, 99, null, undefined].forEach((value) =>
+  it('lists the sensors below the plan for dm and vt only', () => {
+    [1, 11].forEach((value) => expect(showsSensorTable(value)).toBe(true));
+    [0, 2, 3, 6, 7, 8, 9, 10, 99, null, undefined].forEach((value) =>
       expect(showsSensorTable(value)).toBe(false),
     );
   });

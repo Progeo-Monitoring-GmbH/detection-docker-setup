@@ -87,7 +87,7 @@ const StatusZeitreihe = ({
 );
 
 /**
- * The status page of an object with samples (not LoRaWAN): the KPIs, the
+ * The status page of an object with samples (not smartex io): the KPIs, the
  * view and range switches and the roof view (plan and Verdachtsstellen) or
  * the Zeitreihe (staff: with the battery chart). The data comes from
  * LocationStatusView's hooks.
