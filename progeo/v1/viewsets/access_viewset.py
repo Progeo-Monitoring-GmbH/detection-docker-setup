@@ -78,6 +78,12 @@ class PasswordResetThrottle(_IpThrottle):
 
 
 def _token_pair(user) -> dict:
+    """The JWTs of a login by link (login link, invite, migration, password
+    reset, verified access request) - the favorites are loaded in the
+    background like after /api/token/ (helper/login_warmup.py)."""
+    from progeo.helper import login_warmup
+
+    login_warmup.schedule(user)
     refresh = ProgeoTokenObtainPairSerializer.get_token(user)
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
 

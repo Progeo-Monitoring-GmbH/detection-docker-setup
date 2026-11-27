@@ -183,6 +183,8 @@ INSTALLED_APPS = [
     "progeo.werk",
 ]
 WERK_ENABLED = True
+# No background warm-up after the logins of the tests (test_login_warmup.py switches it on).
+LOGIN_WARMUP_ENABLED = False
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

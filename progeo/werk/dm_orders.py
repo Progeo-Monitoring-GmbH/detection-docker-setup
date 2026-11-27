@@ -123,9 +123,24 @@ def cache_key(key):
     return f"manusensor:dm_orders:{quote(key, safe='')}"
 
 
-def _cached(key, load, factor=1):
-    """load() - kept `cache_seconds()` (times `factor`) in the cache (0: not cached)."""
-    seconds = cache_seconds() * factor
+def overview_cache_seconds():
+    """How long the staff overview (GET /v1/werk/produktion/) keeps what it
+    read from Airtable: PRODUCTION_OVERVIEW_CACHE_SECONDS (5 min), never
+    shorter than the general cache_seconds(); 0 there switches it off too."""
+    general = cache_seconds()
+    if general <= 0:
+        return 0
+    return max(general, int(getattr(settings, "PRODUCTION_OVERVIEW_CACHE_SECONDS", 300)))
+
+
+def _cached(key, load, factor=1, seconds=None):
+    """load() - kept `cache_seconds()` (times `factor`) in the cache (0: not
+    cached). An explicit `seconds` keeps it in an entry of its own: a copy
+    kept longer must not serve the callers of the short cache."""
+    if seconds is None:
+        seconds = cache_seconds() * factor
+    else:
+        key = f"{key}@{seconds}s"
     if seconds <= 0:
         return load()
     key = cache_key(key)
@@ -238,9 +253,10 @@ def produced_row(record):
     }
 
 
-def produced_sensors(since, order_record_id=None):
+def produced_sensors(since, order_record_id=None, seconds=None):
     """The "dm Sensoren" produced on `since` (a date) or later - in the app or
-    the old way (scanned protocol) - of one order or all; cached a little while."""
+    the old way (scanned protocol) - of one order or all; cached a little while
+    (`seconds`: see _cached)."""
 
     def load():
         parts = [f"{{Produktionsstatus}}={formula_text(STATUS_PRODUCED)}",
@@ -251,7 +267,7 @@ def produced_sensors(since, order_record_id=None):
                        fields=list(_PRODUCED_FIELDS))
         return [produced_row(record) for record in records]
 
-    return _cached(f"produced:{since.isoformat()}:{order_record_id or ''}", load)
+    return _cached(f"produced:{since.isoformat()}:{order_record_id or ''}", load, seconds=seconds)
 
 
 # Orders per Airtable formula: keeps the formula short.
@@ -277,13 +293,14 @@ def fetch_produced_sensor_ids(order_record_ids):
     return {order: sorted(ids) for order, ids in result.items()}
 
 
-def produced_sensor_ids(order_record_ids):
-    """fetch_produced_sensor_ids, cached a little while (the order list)."""
+def produced_sensor_ids(order_record_ids, seconds=None):
+    """fetch_produced_sensor_ids, cached a little while (the order list;
+    `seconds`: see _cached)."""
     ids = sorted(order_record_ids)
     if not ids:
         return {}
     digest = hashlib.sha1(",".join(ids).encode()).hexdigest()
-    return _cached(f"produced-ids:{digest}", lambda: fetch_produced_sensor_ids(ids))
+    return _cached(f"produced-ids:{digest}", lambda: fetch_produced_sensor_ids(ids), seconds=seconds)
 
 
 def _with_factory_values(order, sensors):
@@ -313,9 +330,10 @@ def parse_status(value):
     return text
 
 
-def orders(status=STATUS_TO_PRODUCE):
-    """GET /v1/werk/auftraege/: {"status", "anzahl", "auftraege"}."""
-    rows = _cached(f"list:{status}", lambda: fetch_orders(status))
+def orders(status=STATUS_TO_PRODUCE, seconds=None):
+    """GET /v1/werk/auftraege/: {"status", "anzahl", "auftraege"}
+    (`seconds`: see _cached)."""
+    rows = _cached(f"list:{status}", lambda: fetch_orders(status), seconds=seconds)
     return {"status": status, "anzahl": len(rows), "auftraege": rows}
 
 
@@ -366,6 +384,8 @@ def resolve_order(key):
 def forget(*keys):
     """Drops the cached answers of an order (its ID and record id) and the lists."""
     names = [f"list:{status}" for status in (STATUS_TO_PRODUCE, STATUS_PRODUCED, STATUS_ALL)]
+    # The staff overview's own copy of the list (overview_cache_seconds).
+    names.append(f"list:{STATUS_ALL}@{overview_cache_seconds()}s")
     for key in keys:
         if key:
             names += [f"detail:{key}", f"order:{key}"]

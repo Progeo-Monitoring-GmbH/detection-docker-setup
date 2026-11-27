@@ -197,6 +197,10 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
 
         if not is_pending_user(user):
             login(request, user)
+            # Favorites loaded in the background - the first one opened is fast.
+            from progeo.helper import login_warmup
+
+            login_warmup.schedule(user)
 
         create_MfS_log(request)
 

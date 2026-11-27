@@ -331,3 +331,57 @@ def test_overview_reads_no_order_with_all_its_sensors(api_client, worker, manage
 
     assert (order["auftrag_id"], order["erfasst"], order["gesamt"]) == (ORDER_ID, 1, 45)
 
+
+
+def test_overview_keeps_its_airtable_reads_five_minutes(api_client, worker, manager, airtable, settings, monkeypatch):
+    """/staff/production/ asks Airtable at most every 5 minutes - in entries
+    of its own, so the tablets' order list keeps its short cache."""
+    from progeo.werk import dm_orders
+
+    class RecordingCache:
+        def __init__(self):
+            self.store, self.timeouts = {}, {}
+
+        def get(self, key):
+            return self.store.get(key)
+
+        def set(self, key, value, timeout):
+            self.store[key], self.timeouts[key] = value, timeout
+
+        def delete_many(self, keys):
+            for key in keys:
+                self.store.pop(key, None)
+
+    settings.MANUSENSOR_ORDERS_CACHE_SECONDS = 60
+    cache = RecordingCache()
+    monkeypatch.setattr(dm_orders, "cache", cache)
+    reads = []
+    table = airtable.table
+    monkeypatch.setattr(airtable, "table", lambda name: (reads.append(name), table(name))[1])
+    put_entries(api_client, [entry(1)])
+    api_client.force_authenticate(user=manager)
+
+    assert api_client.get(OVERVIEW).status_code == 200
+    first = len(reads)
+    assert first > 0
+    overview_entries = [key for key in cache.timeouts if key.endswith("%40300s")]
+    assert overview_entries and {cache.timeouts[key] for key in overview_entries} == {300}
+
+    # A minute later the short entries (the tablets' order list) have expired - the page still has its own.
+    for key in [key for key in cache.store if key not in overview_entries]:
+        del cache.store[key]
+    assert api_client.get(OVERVIEW).status_code == 200
+    assert len(reads) == first
+
+    dm_orders.orders(dm_orders.STATUS_ALL)  # the tablets' list asks Airtable again
+    assert len(reads) == first + 1
+
+
+def test_overview_cache_follows_a_longer_general_setting_and_the_off_switch(settings):
+    from progeo.werk import dm_orders
+
+    settings.PRODUCTION_OVERVIEW_CACHE_SECONDS = 300
+    settings.MANUSENSOR_ORDERS_CACHE_SECONDS = 900
+    assert dm_orders.overview_cache_seconds() == 900
+    settings.MANUSENSOR_ORDERS_CACHE_SECONDS = 0  # caching off (tests, debugging)
+    assert dm_orders.overview_cache_seconds() == 0

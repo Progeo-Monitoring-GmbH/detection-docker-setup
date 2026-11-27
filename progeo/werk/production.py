@@ -157,16 +157,17 @@ def complete_ids(order_record_ids):
     return result
 
 
-def paper_produced(rows, done):
+def paper_produced(rows, done, seconds=None):
     """{order record id: sensors "Produziert" in Airtable without a complete
     app entry} of the order `rows` - the old paper protocol. A produced order:
     all its sensors, no need to read thousands of them; the others asked in
-    Airtable (cached). None when Airtable cannot tell. `done`: complete_ids()
-    of at least the orders not produced yet."""
+    Airtable (cached; `seconds`: see dm_orders._cached). None when Airtable
+    cannot tell. `done`: complete_ids() of at least the orders not produced yet."""
     produced_orders = {row["id"] for row in rows if row.get("produktionsstatus") == dm_orders.STATUS_PRODUCED}
     result = {row["id"]: set(row.get("sensor_record_ids") or []) for row in rows if row["id"] in produced_orders}
     try:
-        result.update(dm_orders.produced_sensor_ids([row["id"] for row in rows if row["id"] not in produced_orders]))
+        result.update(dm_orders.produced_sensor_ids([row["id"] for row in rows if row["id"] not in produced_orders],
+                                                    seconds=seconds))
     except Exception as error:  # noqa: BLE001 - the list must not fail for a count
         elog(f"Could not count the paper-produced sensors: {error}", tag="[PRODUKTION]")
         return None

@@ -976,3 +976,12 @@ def refresh_legacy_gprs_state():
     from progeo.v1.legacy.gprs_state import refresh
 
     return len(refresh()["projects"])
+
+
+@shared_task(time_limit=10 * 60, soft_time_limit=9 * 60, ignore_result=True)
+def warm_favorite_locations(user_id: int):
+    """After a login: the user's favorite locations loaded in the background,
+    so opening one is fast (helper/login_warmup.py)."""
+    from progeo.helper.login_warmup import warm
+
+    return warm(user_id)

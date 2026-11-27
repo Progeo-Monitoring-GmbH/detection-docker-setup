@@ -235,6 +235,14 @@ MANUSENSOR_TOLERANCE_PERCENT = float(os.getenv("MANUSENSOR_TOLERANCE_PERCENT") o
 # werk/dm_orders.py: how long (s) the answers from AIRTABLE_DM_ORDERS_TABLE
 # are cached (Airtable allows 5 requests/s per base; 0 = not cached).
 MANUSENSOR_ORDERS_CACHE_SECONDS = int(os.getenv("MANUSENSOR_ORDERS_CACHE_SECONDS") or 60)
+# The staff overview /staff/production/ keeps its Airtable reads this long
+# (s), never shorter than the value above (dm_orders.overview_cache_seconds).
+PRODUCTION_OVERVIEW_CACHE_SECONDS = int(os.getenv("PRODUCTION_OVERVIEW_CACHE_SECONDS") or 300)
+
+# helper/login_warmup.py: after a login the user's favorite locations are
+# loaded in the background (Celery), at most once per interval per user.
+LOGIN_WARMUP_ENABLED = parse_boolean(os.getenv("LOGIN_WARMUP_ENABLED", "1"))
+LOGIN_WARMUP_INTERVAL_SECONDS = int(os.getenv("LOGIN_WARMUP_INTERVAL_SECONDS") or 600)
 # werk/werk_users.py: the factory workers' table and its "gets an account" box.
 AIRTABLE_RESOURCES_TABLE = (os.getenv("AIRTABLE_RESOURCES_TABLE") or "Ressourcen").strip()
 AIRTABLE_RESOURCES_WERK_FIELD = (os.getenv("AIRTABLE_RESOURCES_WERK_FIELD") or "Werk-App").strip()

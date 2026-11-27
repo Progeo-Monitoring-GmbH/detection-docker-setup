@@ -279,12 +279,14 @@ def flagged_json(entry, initials):
 
 
 class _Airtable:
-    """What the page reads from Airtable (cached in werk/dm_orders.py) -
-    nothing, and `failed`, when Airtable doesn't answer: the page then shows
-    the app's entries only."""
+    """What the page reads from Airtable - nothing, and `failed`, when
+    Airtable doesn't answer: the page then shows the app's entries only.
+    Cached `seconds` (at least 5 min, dm_orders.overview_cache_seconds) in
+    entries of the page's own: reloading it never waits for Airtable again."""
 
     def __init__(self):
         self.failed = False
+        self.seconds = dm_orders.overview_cache_seconds()
 
     def read(self, load, default):
         try:
@@ -307,7 +309,7 @@ def _orders(entries, flagged, order_key, airtable, app_ids):
     if order_key:
         progress, sheets = progress.filter(order_record_id=order_key), sheets.filter(order_record_id=order_key)
     listed = {order["id"]: order for order in airtable.read(
-        lambda: dm_orders.orders(dm_orders.STATUS_ALL)["auftraege"], [])}
+        lambda: dm_orders.orders(dm_orders.STATUS_ALL, seconds=airtable.seconds)["auftraege"], [])}
     open_ids = set() if order_key else {
         record_id for record_id, order in listed.items()
         if order.get("produktionsstatus") == dm_orders.STATUS_TO_PRODUCE}
@@ -315,7 +317,8 @@ def _orders(entries, flagged, order_key, airtable, app_ids):
     released = {row["order_record_id"]: row for row in sheets.values("order_record_id").annotate(
         freigegeben=Count("pk"), gesamt=Max("blaetter_gesamt"))}
     record_ids = set(stats) | set(reports) | open_ids
-    paper = production.paper_produced([listed[i] for i in record_ids if i in listed], app_ids)
+    paper = production.paper_produced([listed[i] for i in record_ids if i in listed], app_ids,
+                                      seconds=airtable.seconds)
     if paper is None:
         airtable.failed, paper = True, {}
     flagged_of = {}
@@ -371,7 +374,8 @@ def overview(params):
     flagged = [flagged_json(entry, initials) for entry in entries.filter(_flagged_q()).select_related(
         "erfasst_von__werk_user", "sheet", "qs_von").order_by("-erfasst_am", "-pk")[:MAX_ROWS]]
     airtable = _Airtable()
-    produced = airtable.read(lambda: dm_orders.produced_sensors(_first_day(days), order_key), [])
+    produced = airtable.read(
+        lambda: dm_orders.produced_sensors(_first_day(days), order_key, seconds=airtable.seconds), [])
     # The complete app entries, scanned once: per order and all together.
     app_ids = {}
     for record_id, sensor_id in entries.filter(complete_q()).values_list("order_record_id", "sensor_record_id"):
