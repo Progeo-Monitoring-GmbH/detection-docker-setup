@@ -1,0 +1,120 @@
+"""device_sms.send_device_sms: validation, ref de-duplication, device limit, Esendex errors."""
+from datetime import timedelta
+
+import pytest
+from django.utils import timezone
+
+from progeo.helper import device_sms, outbound
+from progeo.tests import factories as f
+from progeo.tests.sms_fixtures import FakeResponse
+from progeo.v1.models import SMS, DeviceSms
+
+pytestmark = pytest.mark.usefixtures("esendex_configured")
+
+
+@pytest.fixture
+def device(db):
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+    return f.make_device(location, hardware="M5 AIN4")
+
+
+def _data(**overrides):
+    return {"to": "+491701234567", "text": "Alarm Projekt 1500", "kind": "alarm", "ref": "A1-17", **overrides}
+
+
+def _send(device, **overrides):
+    return device_sms.send_device_sms(device, f.DB, _data(**overrides))
+
+
+def _rows(device, count, sent):
+    for index in range(count):
+        DeviceSms.objects.using(f.DB).create(
+            device_hash=device.raw_hash, ref=f"old-{index}", kind="alarm", to="+49170", status_code=200,
+            sent=sent, response={})
+
+
+def test_sends_and_confirms(esendex_api, device):
+    calls, _reply = esendex_api
+    status, body = _send(device)
+    assert status == 200
+    assert body.pop("sent_at").endswith("Z")
+    assert body == {"sent": True, "dry_run": False, "batch_id": "B-1"}
+    assert calls[0]["json"]["messages"][0]["to"] == "+491701234567"
+    row = DeviceSms.objects.using(f.DB).get()
+    assert (row.sent, row.device_hash, row.ref, row.kind) == (True, device.raw_hash, "A1-17", "alarm")
+    sms = SMS.objects.using(f.DB).get()
+    assert sms.location_id == device.location_id
+
+
+def test_sends_although_location_notifications_disabled(esendex_api, device):
+    calls, _reply = esendex_api
+    assert device.location.notifications_disabled is True
+    assert _send(device)[1]["sent"] is True
+    assert len(calls) == 1
+
+
+def test_dry_run_confirms_not_sent(esendex_api, device, settings):
+    calls, _reply = esendex_api
+    settings.SMS_DRY_RUN = True
+    status, body = _send(device)
+    assert (status, body["sent"], body["dry_run"], body["batch_id"]) == (200, False, True, None)
+    assert body["sent_at"]
+    assert calls == []
+
+
+def test_invalid_number(esendex_api, device):
+    calls, _reply = esendex_api
+    assert _send(device, to="0170123") == (400, {"sent": False, "reason": "invalid number"})
+    assert calls == []
+
+
+@pytest.mark.parametrize("overrides, reason", [
+    ({"kind": "boom"}, "invalid kind"),
+    ({"text": "  "}, "empty text"),
+    ({"ref": ""}, "missing ref"),
+])
+def test_invalid_fields(esendex_api, device, overrides, reason):
+    calls, _reply = esendex_api
+    assert _send(device, **overrides) == (400, {"sent": False, "reason": reason})
+    assert calls == []
+
+
+def test_esendex_error_is_502(esendex_api, device):
+    _calls, reply = esendex_api
+    reply["response"] = FakeResponse(status=500, text="boom")
+    status, body = _send(device)
+    assert status == 502
+    assert body["sent"] is False and 0 < len(body["reason"]) <= 60
+
+
+def test_same_ref_returns_stored_result_without_sending(esendex_api, device):
+    calls, _reply = esendex_api
+    first = _send(device)
+    assert _send(device) == first
+    assert len(calls) == 1
+    assert DeviceSms.objects.using(f.DB).count() == 1
+
+
+def test_same_ref_after_ttl_sends_again(esendex_api, device):
+    calls, _reply = esendex_api
+    _send(device)
+    DeviceSms.objects.using(f.DB).update(created=timezone.now() - timedelta(hours=25))
+    assert _send(device)[0] == 200
+    assert len(calls) == 2
+    row = DeviceSms.objects.using(f.DB).get()
+    assert timezone.now() - row.created < timedelta(minutes=1)
+
+
+def test_device_limit(esendex_api, device):
+    calls, _reply = esendex_api
+    _rows(device, outbound.limits()["sms_device_hour"], sent=True)
+    assert _send(device) == (429, {"sent": False, "reason": "device limit"})
+    assert calls == []
+    assert not outbound.breaker_tripped()
+
+
+def test_limit_counts_only_sent(esendex_api, device):
+    calls, _reply = esendex_api
+    _rows(device, 30, sent=False)
+    assert _send(device)[0] == 200
+    assert len(calls) == 1

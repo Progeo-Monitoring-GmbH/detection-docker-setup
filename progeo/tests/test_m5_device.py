@@ -1,6 +1,5 @@
 """M5 AIN4 devices: detection, threshold capability, extra sample fields
 (helper/m5_device.py; device_thresholds, DeviceViewSet sample and sample/cc)."""
-# ruff: noqa: F811 - the imported fixtures are re-used as test arguments
 import itertools
 
 import pytest
@@ -16,11 +15,6 @@ from progeo.helper import (
     outbound,
 )
 from progeo.tests import factories as f
-from progeo.tests.test_email_and_sms_helpers import (  # noqa: F401 - fixtures
-    ESENDEX,
-    esendex_api,
-    isolated_config,
-)
 from progeo.v1.models import (
     Account,
     OutboundMessage,
@@ -254,13 +248,6 @@ def test_location_devices_reports_is_m5(api_client):
 
 
 # -- Geraete-SMS: Versand ohne Limits ----------------------------------------
-
-@pytest.fixture
-def esendex_configured(db):
-    from progeo.v1.models import SystemConfig
-
-    SystemConfig.objects.using(f.DB).create(key="esendex", value=dict(ESENDEX))
-
 
 def _outbound_rows(count, category, recipient="+4915100", status=OutboundMessage.Status.SENT):
     for _ in range(count):

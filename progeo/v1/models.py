@@ -1666,6 +1666,29 @@ class OutboundMessage(models.Model):
         return f"{'📧' if self.channel == self.Channel.MAIL else '📱'} {self.status} {self.created:%d.%m.%y %H:%M} => {self.recipient}"
 
 
+class DeviceSms(models.Model):
+    """SMS a M5 device handed to the backend (helper/device_sms.py). Lives in
+    "default": it makes a repeated `ref` idempotent for REF_TTL and the device
+    limit counts its `sent` rows."""
+
+    device_hash = models.CharField(max_length=64, db_index=True)
+    # Device-chosen id of the SMS; a retry with the same ref gets the stored result.
+    ref = models.CharField(max_length=64)
+    created = models.DateTimeField(default=timezone.now, db_index=True)
+    kind = models.CharField(max_length=8)
+    to = models.CharField(max_length=32)
+    status_code = models.PositiveSmallIntegerField()
+    # Whether the SMS was handed to Esendex (not for dry run / errors).
+    sent = models.BooleanField(default=False)
+    response = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["device_hash", "ref"], name="unique_devicesms_device_ref")]
+
+    def __str__(self):
+        return f"{self.device_hash} {self.kind} {self.ref} => {self.to} ({self.status_code})"
+
+
 class EmailSuppression(models.Model):
     """Address that bounced (hard, or soft too often): nothing is sent there
     any more until staff remove the row (helper/bounces.py)."""

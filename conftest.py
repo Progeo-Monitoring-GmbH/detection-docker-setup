@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 
 from progeo.helper.basics import elog, ilog
 
-pytest_plugins = ("progeo.tests.pytest_selection",)
+pytest_plugins = ("progeo.tests.pytest_selection", "progeo.tests.sms_fixtures")
 
 _FAILED_TESTS = []
 
