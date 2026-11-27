@@ -416,6 +416,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
                 **{key: payload.get(key) for key in ("event", "sensors", "chip_id", "heap", "ip", "mac")},
                 **({"mux_faults": mux_faults} if mux_faults is not None else {}),
                 **({"alarm": int(alarm)} if reported_alarm not in (None, "") else {}),
+                # The M5 reports its settings with every sample.
+                **{key: payload[key] for key in ("interval_sec", "pulldown_resistance", "firmware", "thresholds")
+                   if payload.get(key) is not None},
             },
             project_id=project_id,
             raw_hash=raw_hash,

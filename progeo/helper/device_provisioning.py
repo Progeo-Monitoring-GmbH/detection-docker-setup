@@ -19,6 +19,7 @@ from django.db import DEFAULT_DB_ALIAS, transaction
 
 from progeo.authentication import TRANSFER_TOKEN_PURPOSE
 from progeo.helper.firmware import list_bundles
+from progeo.helper.m5_device import M5_MODEL
 from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation
 
 # Below settings.DEVICE_SAMPLE_BASE_URL (default DEFAULT_SAMPLE_BASE_URL).
@@ -67,7 +68,7 @@ _NO_MODEL_TYPES = {_LOCATION_TYPES.UNKNOWN, _LOCATION_TYPES.DEVELOPMENT, _LOCATI
                    _LOCATION_TYPES.SONSTIGE}
 # device.model choices: the device types of the locations, plus DEVICE_MODEL.
 MODELS = list(dict.fromkeys(
-    [DEVICE_MODEL]
+    [DEVICE_MODEL, M5_MODEL]
     + [ascii_model(label) for value, label in _LOCATION_TYPES.choices if value not in _NO_MODEL_TYPES]
 ))
 

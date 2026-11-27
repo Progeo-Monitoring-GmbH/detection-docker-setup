@@ -26,6 +26,7 @@ import re
 from django.db import DEFAULT_DB_ALIAS, transaction
 
 from progeo.helper import device_commands
+from progeo.helper.m5_device import is_m5
 from progeo.v1.models import ProgeoDevice, ProgeoDeviceCommand
 
 logger = logging.getLogger(__name__)
@@ -117,9 +118,11 @@ def threshold_payload(location, device, sensors, devices=()):
 
 
 def capable_devices(db_name, location_id):
-    """The location's devices that take set_thresholds."""
-    devices = ProgeoDevice.objects.using(db_name).filter(location_id=location_id).exclude(firmware_bundle=None)
-    return [device for device in devices.order_by("pk") if supports_thresholds(device.firmware_bundle)]
+    """The location's devices that take set_thresholds: the M5s and the Lua
+    boxes with a capable bundle."""
+    devices = ProgeoDevice.objects.using(db_name).filter(location_id=location_id)
+    return [device for device in devices.order_by("pk")
+            if is_m5(device) or supports_thresholds(device.firmware_bundle)]
 
 
 def queue_thresholds(device, db_name, payload, user=None):
