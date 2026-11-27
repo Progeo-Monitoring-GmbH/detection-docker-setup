@@ -60,11 +60,9 @@ def test_a_password_login_queues_the_warm_up_once(warmup, customer):
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_no_warm_up_for_the_demo_or_when_switched_off(warmup, customer, settings):
-    from django.contrib.auth.models import User
+    from progeo.helper.demo import DEMO_PERMISSION
 
-    from progeo.helper.demo import DEMO_USERNAME
-
-    demo = User.objects.using(f.DB).get(username=DEMO_USERNAME)
+    demo = f.make_user(perms=(DEMO_PERMISSION,), implied=False)  # the read-only demo user
     assert login_warmup.schedule(demo) is False
     settings.LOGIN_WARMUP_ENABLED = False
     assert login_warmup.schedule(customer[0]) is False

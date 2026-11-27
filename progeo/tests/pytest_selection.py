@@ -39,7 +39,7 @@ AREA_MODULES = {
         matrix_account_sync modbus_tcp
     """,
     "locations": """
-        auto_lageplans customer_project_nr drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
+        auto_lageplans customer_project_nr drop_is_plans favorites_api login_warmup koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api dm_transfer plan_meters plan_ocr
         location_language_abroad location_readiness plan_cables auto_repair readiness_qa screen_review screen_review_elements screen_review_fetch rain_events status_api location_status_live auto_heat_limits plan_resolution objekt_tab verwaltung_overview_perf project_portal
     """,
