@@ -320,10 +320,10 @@ def _disable(location):
 
 
 def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site, live):
-    """notifications_disabled: cases, stages and the EMail/SMS/OutboundMessage
+    """notifications_disabled: cases, stages and the EMail/OutboundMessage
     rows are created as usual - only nothing leaves (fake_smtp also fails the
     test on any network post), and the stage is not "unreachable"."""
-    from progeo.v1.models import SMS, UserProfile
+    from progeo.v1.models import UserProfile
 
     location, device = site
     _disable(location)
@@ -347,7 +347,7 @@ def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site,
     assert {"halle@progeo.com", "rudi.radau@progeo.com", "sms@progeo.com", "+491701234567"} <= set(
         rows.values_list("recipient", flat=True))
     assert EMail.objects.using(f.DB).filter(location=location, withheld=True, sent=False).count() >= 3
-    assert SMS.objects.using(f.DB).filter(location=location, withheld=True).exists()
+    assert rows.filter(channel=OutboundMessage.Channel.SMS).exists()
     for kind in ("offline", "alarm"):
         case = _case(location, kind)
         assert case.stage == 1 and case.unreachable_since is None

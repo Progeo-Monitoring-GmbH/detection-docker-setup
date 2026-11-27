@@ -29,7 +29,7 @@ AREA_MODULES = {
     "demo": "demo_account_areas demo_view e2e_accounts",
     "devices": """
         controller_qrcodes controller_wifi device_commands device_thresholds device_legacy_query
-        device_lorawan device_overview device_provisioning device_statistics_api
+        device_lorawan device_overview device_provisioning device_statistics_api device_sms m5_device
         firmware_update firmware_upload manusensor dm_orders production production_overview server_time werk_app
     """,
     "exports": "exports lageplan_export",

@@ -47,7 +47,7 @@ def _validate(data: dict) -> tuple[str, str, str, str] | tuple[int, dict]:
     return to, kind, text, ref
 
 
-def send_device_sms(device, db_name: str, data: dict) -> tuple[int, dict]:
+def send_device_sms(device, data: dict) -> tuple[int, dict]:
     """Validate and send the SMS `data` (to, text, kind, ref) of `device`.
 
     Returns (HTTP status, body without the "success" key). The `ref` is reserved before sending; only 200
@@ -93,7 +93,7 @@ def send_device_sms(device, db_name: str, data: dict) -> tuple[int, dict]:
 
     try:
         result = esendex.send_sms(
-            to, text, location=device.location, db=db_name, category=f"device_{kind}",
+            to, text, location=device.location, category=f"device_{kind}",
             bypass_location_switch=True, bypass_limits=True, max_segments=MAX_SEGMENTS,
         )
     except esendex.EsendexError as exc:

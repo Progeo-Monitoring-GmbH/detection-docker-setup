@@ -23,8 +23,8 @@ API used (classic ReST dispatcher):
 Credentials may also be passed inline (account reference / username / password
 / from) via ``cfg`` so unsaved form values can be tested first.
 
-Every send attempt - accepted or failed - is stored as an SMS row (the SMS
-log, shown in the location's Benachrichtigungen timeline).
+Every send attempt - accepted or failed - is stored as an OutboundMessage row
+(helper/outbound.py; shown in the location's Benachrichtigungen timeline).
 """
 import base64
 import os
@@ -77,36 +77,11 @@ def _dig(data, *path):
     return node
 
 
-def _log_sms(to: str, body: str, sender: str | None, location, db: str, sent: bool,
-             batch_id: str | None = None, error: str | None = None, withheld: bool = False) -> None:
-    """Store the send attempt as an SMS row. Logging must never break or
-    mask the send itself, so failures here are only reported - inside a
-    savepoint, so a failed insert doesn't abort the caller's transaction."""
-    from django.db import transaction
-
-    from progeo.v1.models import SMS
-
-    try:
-        with transaction.atomic(using=db):
-            SMS.objects.using(db).create(
-                location=location,
-                sent_to=str(to).strip()[:64],
-                sender=(sender or None) and str(sender)[:64],
-                message=str(body),
-                sent=sent,
-                batch_id=(batch_id or None) and str(batch_id)[:64],
-                error=error,
-                withheld=withheld,
-            )
-    except Exception as exc:  # noqa: BLE001 - see docstring
-        elog(f"Could not log the SMS to {to}: {exc}", tag="[ESENDEX]")
-
-
 def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = None,
-             location=None, db: str = "default", category: str = "system",
+             location=None, category: str = "system",
              bypass_location_switch: bool = False, bypass_limits: bool = False,
              max_segments: int | None = None) -> dict:
-    """Send one SMS through Esendex and log the attempt as an SMS row.
+    """Send one SMS through Esendex and log the attempt as an OutboundMessage.
 
     The outbound guard runs first (helper/outbound.py): a `location` whose
     notifications are disabled holds the SMS back (``"withheld": True``,
@@ -123,7 +98,6 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
             omitted fields fall back to the stored/env config.
         sender: optional sender id override for this single message.
         location: optional location (project) the SMS belongs to.
-        db: database the SMS row is stored in (the location's account db).
         category: kind of message for the outbound log (alarm, test, ...).
         bypass_limits: skip the per-recipient / global limits and the circuit
             breaker (device SMS; the dry run still applies).
@@ -151,7 +125,6 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         ilog(f"SMS to {to} withheld: notifications of location {location.pk} disabled", tag="[ESENDEX]")
         outbound.log(channel, status.WITHHELD, recipient, category=category, subject=body,
                      location=location, error=outbound.WITHHELD_ERROR)
-        _log_sms(to, body, effective_sender, location, db, sent=False, error=outbound.WITHHELD_ERROR, withheld=True)
         return {"success": False, "withheld": True, "to": str(to).strip(), "from": effective_sender,
                 "batch_id": None, "message_ids": []}
 
@@ -161,14 +134,11 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         elog(f"SMS to {to} not sent: {error}", tag="[ESENDEX]")
         outbound.log(channel, reject_status, recipient, category=category, subject=body,
                      location=location, error=error)
-        _log_sms(to, body, effective_sender, location, db, sent=False, error=error)
         raise SmsBlocked(error)
 
     if outbound.sms_dry_run():
         ilog(f"SMS_DRY_RUN: SMS to {to} logged, not sent", tag="[ESENDEX]")
         outbound.log(channel, status.DRY_RUN, recipient, category=category, subject=body, location=location)
-        _log_sms(to, body, effective_sender, location, db, sent=False,
-                 error="Testmodus (SMS_DRY_RUN): nicht an Esendex übergeben")
         return {"success": True, "dry_run": True, "to": str(to).strip(), "from": effective_sender,
                 "batch_id": None, "message_ids": []}
 
@@ -178,12 +148,10 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         elog(f"SMS to {to} failed: {exc}", tag="[ESENDEX]")
         outbound.log(channel, status.FAILED, recipient, actual_recipient=recipient, category=category,
                      subject=body, location=location, error=str(exc))
-        _log_sms(to, body, effective_sender, location, db, sent=False, error=str(exc))
         raise
     ilog(f"SMS sent to {result['to']} (batch {result.get('batch_id')})", tag="[ESENDEX]")
     outbound.log(channel, status.SENT, recipient, actual_recipient=recipient, category=category,
                  subject=body, message_id=result.get("batch_id") or "", location=location)
-    _log_sms(to, body, result.get("from"), location, db, sent=True, batch_id=result.get("batch_id"))
     return result
 
 

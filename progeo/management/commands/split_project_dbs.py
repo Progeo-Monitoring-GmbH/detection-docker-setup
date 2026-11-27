@@ -87,7 +87,7 @@ class Command(BaseCommand):
     help = (
         "Split the 'default' database into one database per project "
         "(ProgeoLocation.project_id). Everything hanging off a location - "
-        "lageplans, devices, measure points, access rules, mails, SMS, "
+        "lageplans, devices, measure points, access rules, mails, "
         "measurements, alarms - moves to '<PROJECT_DB_PREFIX><project_id>', or to "
         "'<PROJECT_DB_PREFIX>unknown' for locations without project_id and devices "
         "without location. Users, accounts and the locations stay in 'default' "

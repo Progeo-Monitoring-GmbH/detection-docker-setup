@@ -19,8 +19,8 @@ from progeo.helper.airtable import AirtableHelper
 from progeo.tests import factories as f
 from progeo.v1.admin_tools import EstimatedCountPaginator
 from progeo.v1.models import (
-    SMS,
     AccessRequest,
+    DeviceSms,
     EMail,
     EmailSuppression,
     LoginLink,
@@ -123,7 +123,9 @@ def rows(staff):
             location=location, raw_hash=f.unique("mail"), sent_to="row-user@progeo.com", subject="Alarm",
             message="Text", files="", sent=True,
         ),
-        "sms": SMS.objects.using(f.DB).create(location=location, sent_to="+49170000000", message="Alarm"),
+        "devicesms": DeviceSms.objects.using(f.DB).create(
+            device_hash=device.raw_hash, ref="A1", kind="alarm", to="+49170000000", status_code=200, sent=True,
+        ),
         "progeorainevent": ProgeoRainEvent.objects.using(f.DB).create(
             location=location, start=now - datetime.timedelta(hours=2), end=now, amount=3.5,
         ),
@@ -179,7 +181,7 @@ def test_every_list_loads_also_with_a_search(admin_client, rows, model_name):
 
 @pytest.mark.parametrize("model_name", [
     "progeolocation", "progeodevice", "progeoalarm", "progeomeasurement", "progeolageplan", "progeomeasurepoint",
-    "progeoaccess", "progeoaccessindex", "email", "sms", "progeorainevent", "progeonoiseprofile",
+    "progeoaccess", "progeoaccessindex", "email", "devicesms", "progeorainevent", "progeonoiseprofile",
     "progeosensormapping", "progeodevicecommand", "progeoescalation", "outboundmessage", "emailsuppression",
     "loginlink", "twofactordevice", "accessrequest", "notificationcase", "notificationtoken", "factorysensor",
     "sitemeasurement", "userprofile", "screenreviewnote", "screenreviewmark", "systemconfig", "account",
@@ -263,8 +265,6 @@ def _more(kind, staff, count):
         elif kind == "email":
             EMail.objects.using(f.DB).create(location=location, raw_hash=f.unique("m"), sent_to="x@progeo.com",
                                              message="m", files="")
-        elif kind == "sms":
-            SMS.objects.using(f.DB).create(location=location, sent_to="+49", message="m")
         elif kind == "progeomeasurepoint":
             plan = ProgeoLageplan.objects.using(f.DB).create(location=location)
             f.make_measure_point(location, 1, lageplan=plan, device=device)
@@ -299,7 +299,7 @@ def _list_queries(client, model_name):
 
 
 @pytest.mark.parametrize("model_name", [
-    "progeolocation", "progeodevice", "progeomeasurement", "progeoalarm", "progeoaccess", "email", "sms",
+    "progeolocation", "progeodevice", "progeomeasurement", "progeoalarm", "progeoaccess", "email",
     "progeomeasurepoint",
     "progeolageplan", "progeorainevent", "progeonoiseprofile", "progeosensormapping", "progeodevicecommand",
     "progeoaccessindex", "progeoescalation", "sitemeasurement", "loginlink",

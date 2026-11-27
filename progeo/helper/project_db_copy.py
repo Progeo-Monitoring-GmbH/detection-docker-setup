@@ -95,10 +95,9 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
     """{model: (WHERE clause, params)} selecting a project's project_models()
     rows. Everything follows its location; Measurement its device, Alarm its
     measurement. The unknown project also takes the rows without any
-    location (devices, measure points) - except mails/SMS without location,
+    location (devices, measure points) - except mails without location,
     which are system logs and stay in "default"."""
     from progeo.v1.models import (
-        SMS,
         EMail,
         ProgeoAccess,
         ProgeoAlarm,
@@ -162,7 +161,6 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
         ),
         ProgeoAccess: by_location(ProgeoAccess),
         EMail: by_location(EMail),
-        SMS: by_location(SMS),
         ProgeoMeasurement: (
             sql.SQL("{} IN ({})").format(_column(ProgeoMeasurement, "device"), devices), [ids, orphans]
         ),
@@ -792,7 +790,6 @@ def find_conflicts(source=DEFAULT_DB_ALIAS):
     from django.db.models import F, Q
 
     from progeo.v1.models import (
-        SMS,
         EMail,
         ProgeoDevice,
         ProgeoMeasurement,
@@ -808,9 +805,8 @@ def find_conflicts(source=DEFAULT_DB_ALIAS):
             ProgeoDevice.objects.using(source).filter(location__isnull=True).count(),
         "measurements of locations without project_id (-> unknown)":
             measurements.filter(device__location__isnull=False, device__location__project_id__isnull=True).count(),
-        "mails/SMS without location (system logs, stay in default)":
-            EMail.objects.using(source).filter(location__isnull=True).count()
-            + SMS.objects.using(source).filter(location__isnull=True).count(),
+        "mails without location (system logs, stay in default)":
+            EMail.objects.using(source).filter(location__isnull=True).count(),
         "measure points whose Lageplan belongs to another project (stay in default)":
             ProgeoMeasurePoint.objects.using(source).filter(lageplan__isnull=False, location__isnull=False)
             .exclude(same_project).count(),

@@ -54,7 +54,6 @@ from progeo.router import ProjectRouter
 from progeo.tests import factories as f
 from progeo.v1.helper import parse_split_str
 from progeo.v1.models import (
-    SMS,
     Account,
     Backup,
     EMail,
@@ -197,7 +196,7 @@ def test_router_is_inactive_until_split_is_enabled():
     with use_project_db(PROJECT):
         assert router.db_for_read(ProgeoDevice) is None
         with override_settings(PROJECT_DB_SPLIT=True):
-            for model in (ProgeoDevice, ProgeoLageplan, ProgeoAccess, EMail, SMS, ProgeoMeasurement, ProgeoAlarm):
+            for model in (ProgeoDevice, ProgeoLageplan, ProgeoAccess, EMail, ProgeoMeasurement, ProgeoAlarm):
                 assert router.db_for_read(model) == ALIAS, model.__name__
             # Shared models always stay with the other routers.
             assert router.db_for_read(ProgeoLocation) is None
@@ -235,7 +234,7 @@ def test_router_follows_a_project_instance_even_with_the_split_off():
 def test_location_stays_in_default_and_everything_hanging_off_it_moves():
     moved = set(project_models())
     assert ProgeoLocation not in moved
-    assert {ProgeoLageplan, ProgeoDevice, ProgeoMeasurePoint, ProgeoAccess, EMail, SMS} <= moved
+    assert {ProgeoLageplan, ProgeoDevice, ProgeoMeasurePoint, ProgeoAccess, EMail} <= moved
 
 
 def test_every_foreign_key_of_a_project_db_row_is_available_there():
@@ -306,7 +305,6 @@ def _scenario():
     email = EMail.objects.using(f.DB).create(location=location, raw_hash=f.unique("mail"), sent_to="a@b.c",
                                              message="m", files="")
     system_mail = EMail.objects.using(f.DB).create(raw_hash=f.unique("mail"), sent_to="a@b.c", message="m", files="")
-    sms = SMS.objects.using(f.DB).create(location=location, sent_to="+49", message="m")
 
     # Stored newest-first on purpose: the copy numbers them by measurement time.
     measurements = [
@@ -324,7 +322,7 @@ def _scenario():
         "device": device, "created": created, "other_device": other_device,
         "orphan_device": orphan_device, "no_project_device": no_project_device,
         "lageplan": lageplan, "point": point, "access": access, "email": email, "system_mail": system_mail,
-        "sms": sms, "measurements": measurements, "alarms": alarms,
+        "measurements": measurements, "alarms": alarms,
     }
 
 
@@ -360,7 +358,6 @@ def test_copy_moves_everything_hanging_off_the_projects_locations(project_dbs):
     assert not ProgeoDevice.objects.using(ALIAS).filter(pk__in=[s["other_device"].pk, s["orphan_device"].pk]).exists()
     assert ProgeoMeasurePoint.objects.using(ALIAS).filter(pk=s["point"].pk, lageplan=s["lageplan"].pk).exists()
     assert list(EMail.objects.using(ALIAS).values_list("pk", flat=True)) == [s["email"].pk]
-    assert list(SMS.objects.using(ALIAS).values_list("pk", flat=True)) == [s["sms"].pk]
 
     # Access rules resolve the user and its SMS number inside the project db.
     access = ProgeoAccess.objects.using(ALIAS).get(pk=s["access"].pk)

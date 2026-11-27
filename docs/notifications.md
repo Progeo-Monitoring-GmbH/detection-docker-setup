@@ -168,7 +168,7 @@ Also available:
 
 1. **Apply the migration.** Run `makemigrations --check` and then `migrate` (0057_notification_cases). Deploy backend and frontend.
 2. **Let the baseline run.** The **first run** of `detect_offline_devices` is the baseline. Every location that is already offline gets a case that is **muted until released**, so nobody gets mail about old outages. Staff release the cases they want to pursue (Staff → Benachrichtigungen → *Freigeben*). The first offline stage then goes out at the next 09:00.
-3. **Switch the locations on one by one.** Every location starts with `notifications_disabled = True`: its cases, stages and EMail/SMS rows are created, but nothing is sent (see *Location switch*). Staff switch locations on under *Device statistics → Notifications per location*. `CELERY_DISABLED_TASKS=detect_offline_devices,process_notification_cases` switches the whole system off on a server.
+3. **Switch the locations on one by one.** Every location starts with `notifications_disabled = True`: its cases, stages and EMail/OutboundMessage rows are created, but nothing is sent (see *Location switch*). Staff switch locations on under *Device statistics → Notifications per location*. `CELERY_DISABLED_TASKS=detect_offline_devices,process_notification_cases` switches the whole system off on a server.
 4. **Check deliverability before going live.** SPF, DKIM and DMARC of the sending domain matter now that reminders go out regularly.
 
 ## Settings (`django.env`)

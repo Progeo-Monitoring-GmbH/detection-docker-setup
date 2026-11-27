@@ -39,12 +39,12 @@ from progeo.v1.admin_tools import (
 )
 from progeo.v1.models import (
     MODULE_PERMISSION_CODES,
-    SMS,
     AccessRequest,
     Account,
     AlarmDailyReport,
     Backup,
     DemoSession,
+    DeviceSms,
     EMail,
     EmailSuppression,
     LimitedToken,
@@ -632,7 +632,7 @@ class ProgeoLocationAdmin(MultiDBModelAdmin):
             changelist_link(ProgeoMeasurePoint, "Measure points", **mine),
             changelist_link(ProgeoAccess, "Access rules", **mine),
             changelist_link(EMail, "E-Mails", **mine),
-            changelist_link(SMS, "SMS", **mine),
+            changelist_link(OutboundMessage, "SMS/messenger", location_id__exact=obj.pk, channel__in="sms,messenger"),
             changelist_link(ProgeoRainEvent, "Rain events", **mine),
             changelist_link(ProgeoLocation, "Merged parts", parent_location__id__exact=obj.pk),
             changelist_link(ProgeoEscalation, "Escalations", location__id__exact=obj.pk),
@@ -988,21 +988,14 @@ class EMailAdmin(ReadOnlyAdminMixin, LocationColumnMixin, MultiDBModelAdmin):
         return shorten(obj.error) or "-"
 
 
-class SMSAdmin(ReadOnlyAdminMixin, LocationColumnMixin, MultiDBModelAdmin):
-    """Log of the SMS and messenger messages (helper/esendex.py, messenger.py)."""
-    list_display = ("created", "channel", "sent", "withheld", "location_display", "sent_to", "sender", "batch_id",
-                    "error_short")
-    list_filter = ("channel", "sent", "withheld", ("created", admin.DateFieldListFilter), LocationTextFilter)
-    search_fields = ("sent_to", "message", "batch_id")
-    list_prefetch_related = ("location",)
+class DeviceSmsAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """SMS the M5 devices handed to the backend (helper/device_sms.py) - the
+    text itself is in OutboundMessage (category device_*)."""
+    list_display = ("created", "device_hash", "kind", "to", "status_code", "sent", "ref")
+    list_filter = ("kind", "sent", "status_code", ("created", admin.DateFieldListFilter))
+    search_fields = ("device_hash", "to", "ref")
     date_hierarchy = "created"
-    fields = ("created", "channel", "sent", "withheld", "error", "location", "sent_to", "sender", "batch_id", "message")
-    readonly_fields = fields
     ordering = ("-pk",)
-
-    @admin.display(description="Error")
-    def error_short(self, obj):
-        return shorten(obj.error) or "-"
 
 
 # ==============================================================================================
@@ -1582,7 +1575,7 @@ register_models = [
     {"model": ProgeoAccess, "admin": ProgeoAccessAdmin, "custom": True},
     {"model": ProgeoAccessIndex, "admin": ProgeoAccessIndexAdmin, "custom": True},
     {"model": EMail, "admin": EMailAdmin, "custom": True},
-    {"model": SMS, "admin": SMSAdmin, "custom": True},
+    {"model": DeviceSms, "admin": DeviceSmsAdmin, "custom": True},
     {"model": OutboundMessage, "admin": OutboundMessageAdmin, "custom": True},
     {"model": EmailSuppression, "admin": EmailSuppressionAdmin, "custom": True},
     {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},

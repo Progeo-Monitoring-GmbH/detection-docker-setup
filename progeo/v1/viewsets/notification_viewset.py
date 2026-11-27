@@ -376,7 +376,7 @@ def serialize_location(location, open_cases=0, withheld=0):
 class NotificationLocationViewSet(viewsets.ViewSet):
     """Staff switch the notifications of the locations on one after another
     (device statistics page). Disabled locations still get their cases,
-    stages and EMail/SMS rows - only nothing leaves (helper/outbound.py)."""
+    stages and EMail/OutboundMessage rows - only nothing leaves (helper/outbound.py)."""
 
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]

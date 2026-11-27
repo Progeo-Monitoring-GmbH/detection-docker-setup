@@ -400,14 +400,14 @@ def _send_short_messages(case, rows, bodies):
         sms_body, messenger_body = bodies[languages.get(row.get("user_id"), "de")]
         if row.get("mobile"):
             try:
-                result = esendex.send_sms(row["mobile"], sms_body, location=location, db=case.db, category="alarm")
+                result = esendex.send_sms(row["mobile"], sms_body, location=location, category="alarm")
                 sms += 0 if result.get("withheld") else 1
             except esendex.EsendexError as exc:
                 elog(f"[notification_cases] SMS to {row.get('name')} failed: {exc}")
         if row.get("messenger"):
             try:
                 result = messenger.send_message(row["messenger"]["service"], row["messenger"]["address"],
-                                                messenger_body, location=location, db=case.db, category="alarm")
+                                                messenger_body, location=location, category="alarm")
                 chats += 0 if result.get("withheld") else 1
             except messenger.MessengerError as exc:
                 elog(f"[notification_cases] Messenger message to {row.get('name')} failed: {exc}")

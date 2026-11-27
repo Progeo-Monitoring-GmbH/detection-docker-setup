@@ -1563,52 +1563,13 @@ class EMail(ProgeoModel, auto_prefetch.Model):
         return f"{_id} {status} 📧 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to[:50]}, Length={len(self.message)}, Files={self.files}"
 
 
-class SMS(ProgeoModel, auto_prefetch.Model):
-    """Log of every short text message send attempt - SMS through Esendex
-    (helper/esendex.py) and messenger messages (helper/messenger.py, see
-    `channel`) - one row per message, also when sending failed or was not
-    configured."""
-
-    class Channel(models.TextChoices):
-        SMS = "sms", "SMS"
-        SIGNAL = "signal", "Signal"
-        WHATSAPP = "whatsapp", "WhatsApp"
-        MATRIX = "matrix", "Matrix"
-
-    channel = models.CharField(max_length=16, choices=Channel.choices, default=Channel.SMS)
-    # Optional link to the location (project) the SMS belongs to, e.g. a
-    # Testleackage; system/test SMS are stored without a location.
-    location = models.ForeignKey(
-        ProgeoLocation,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="sms",
-    )
-    created = models.DateTimeField(auto_now_add=True)
-    sent_to = models.CharField(max_length=64)
-    sender = models.CharField(max_length=64, null=True, blank=True)
-    message = models.TextField()
-    # Send outcome: True = accepted by the gateway, False = failed (kept for the log).
-    sent = models.BooleanField(default=False)
-    # Not sent on purpose: the location's notifications are disabled.
-    withheld = models.BooleanField(default=False)
-    # Esendex batch id / messenger message id of an accepted message, for support requests.
-    batch_id = models.CharField(max_length=64, null=True, blank=True)
-    # Human-readable reason when the SMS could not be sent.
-    error = models.TextField(null=True, blank=True)
-
-    def __str__(self):
-        _id = f"[{self.pk}] " if settings.DEBUG else ""
-        status = "✅" if self.sent else "⚠️"
-        return f"{_id} {status} 📱 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to}, Length={len(self.message)}"
-
-
 class OutboundMessage(models.Model):
-    """Central log of every outbound mail/SMS, one row per original recipient
-    (helper/outbound.py). Lives in "default" only - unlike EMail/SMS, which
-    sit in the project databases and are de-duplicated by content - so the
-    rate limiter can count from it and bounces can be matched by Message-ID."""
+    """Central log of every outbound mail/SMS/messenger message, one row per
+    original recipient (helper/outbound.py). Lives in "default" only - unlike
+    EMail, which sits in the project databases and is de-duplicated by
+    content - so the rate limiter can count from it and bounces can be matched
+    by Message-ID. SMS and messenger messages are logged only here (the
+    location's Benachrichtigungen timeline reads them by location_id)."""
 
     class Channel(models.TextChoices):
         MAIL = "mail", "E-Mail"

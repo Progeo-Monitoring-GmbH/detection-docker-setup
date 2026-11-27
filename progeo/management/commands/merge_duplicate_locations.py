@@ -10,7 +10,6 @@ from progeo.helper.project_dbs import (
 )
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import (
-    SMS,
     EMail,
     ProgeoAccess,
     ProgeoDevice,
@@ -20,7 +19,7 @@ from progeo.v1.models import (
 )
 
 # Moved to the kept location in any case: the data hanging off a location.
-MOVED = (ProgeoDevice, EMail, SMS)
+MOVED = (ProgeoDevice, EMail)
 # The location's configuration - moved only if the kept location has none,
 # otherwise the project is a conflict and left alone (merge by hand).
 CONFIGURATION = (ProgeoLageplan, ProgeoMeasurePoint)
@@ -36,7 +35,7 @@ class Command(BaseCommand):
         "its device's first contact (fixed in legacy/executor.py).\n\n"
         "Per project: the kept location is the named one, then the one with more "
         "configuration (lageplans, measure points, access rules), then the "
-        "oldest. Devices (with their measurements and alarms), mails, SMS, child "
+        "oldest. Devices (with their measurements and alarms), mails, child "
         "locations and access rules (unless the user already has one there) move "
         "to it; lageplans and measure points only if it has none - both having "
         "some is a conflict and the project is skipped. Then the duplicates are "
@@ -139,7 +138,7 @@ class Command(BaseCommand):
             c = counts[location.pk]
             return (f"#{location.pk} {location.name or '(no name)'!r} account={location.account_id} - "
                     f"devices {c[ProgeoDevice]}, lageplans {c[ProgeoLageplan]}, points {c[ProgeoMeasurePoint]}, "
-                    f"access {c[ProgeoAccess]}, mails {c[EMail]}, sms {c[SMS]}, children {c['children']}")
+                    f"access {c[ProgeoAccess]}, mails {c[EMail]}, children {c['children']}")
 
         state = self.style.WARNING(f"CONFLICT ({', '.join(plan['conflict'])} on both)") if plan["conflict"] else "merge"
         self.stdout.write(f"project {project_id}: {state}")

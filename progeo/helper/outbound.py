@@ -4,7 +4,7 @@ passes here before anything leaves the box.
 
   - Location switch (ProgeoLocation.notifications_disabled, on by default):
     everything sent for a location whose notifications are disabled is
-    logged as WITHHELD (and as EMail/SMS row with withheld=True) but never
+    logged as WITHHELD (mails also as EMail row with withheld=True) but never
     sent - staff switch the locations on one after another.
   - Test modes (settings.SMS_DRY_RUN / MESSENGER_DRY_RUN): on unless the env
     switches them off explicitly - SMS and messenger messages are only logged.
@@ -217,8 +217,8 @@ def check(channel: str, recipients: list) -> tuple[list, dict]:
 def log(channel: str, status: str, recipient: str, *, actual_recipient: str = "", category: str = "system",
         subject: str = "", message_id: str = "", location=None, error: str | None = None,
         case_id: int | None = None) -> None:
-    """Store one OutboundMessage row. Like the EMail/SMS log it must never
-    break or mask the send, so failures are only reported (in a savepoint)."""
+    """Store one OutboundMessage row. Like the EMail log it must never break
+    or mask the send, so failures are only reported (in a savepoint)."""
     from django.core.cache import cache
 
     from progeo.v1.models import OutboundMessage

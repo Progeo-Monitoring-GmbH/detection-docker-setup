@@ -7,7 +7,6 @@ from progeo.helper import emailhelper, esendex, messenger, outbound
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import SMTP, FakeSMTP, body_of, fake_smtp  # noqa: F401
 from progeo.v1.models import (
-    SMS,
     EMail,
     EmailSuppression,
     OutboundMessage,
@@ -100,12 +99,10 @@ def test_bypass_sends_for_a_disabled_location():
 def test_sms_and_messenger_of_a_disabled_location_are_withheld_without_raising():
     location = f.make_location(f.make_account(), notifications_disabled=True)
 
-    sms = esendex.send_sms("+49 151 123", "Alarm", location=location, db=f.DB, category="alarm")
-    chat = messenger.send_message("signal", "+49 151 123", "Alarm", location=location, db=f.DB, category="alarm")
+    sms = esendex.send_sms("+49 151 123", "Alarm", location=location, category="alarm")
+    chat = messenger.send_message("signal", "+49 151 123", "Alarm", location=location, category="alarm")
 
     assert sms["withheld"] is True and chat["withheld"] is True
-    rows = SMS.objects.using(f.DB).filter(location=location)
-    assert {(row.channel, row.sent, row.withheld) for row in rows} == {("sms", False, True), ("signal", False, True)}
     assert {(r.channel, r.status) for r in _log(location_id=location.pk)} == {
         ("sms", "withheld"), ("messenger", "withheld")}
 
@@ -122,11 +119,9 @@ def test_system_mails_without_a_location_are_never_withheld():
 def test_sms_dry_run_logs_but_never_calls_esendex():
     location = f.make_location(f.make_account())
 
-    result = esendex.send_sms("+49 151 123", "Alarm", location=location, db=f.DB, category="alarm")
+    result = esendex.send_sms("+49 151 123", "Alarm", location=location, category="alarm")
 
     assert result["dry_run"] is True
-    [row] = SMS.objects.using(f.DB).filter(location=location)
-    assert row.sent is False and "SMS_DRY_RUN" in row.error
     [logged] = _log(channel="sms", location_id=location.pk)
     assert (logged.recipient, logged.status, logged.category) == ("+49151123", "dry_run", "alarm")
 

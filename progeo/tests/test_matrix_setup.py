@@ -16,7 +16,7 @@ from progeo.helper import emailhelper, login_links, matrix_accounts, notificatio
 from progeo.helper.matrix_accounts import MAS_PROVIDER_ID, QR_LOGIN_PREFIX
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, fake_smtp  # noqa: F401
-from progeo.v1.models import SMS, LoginLink, ProgeoAccess, UserProfile
+from progeo.v1.models import LoginLink, OutboundMessage, ProgeoAccess, UserProfile
 
 REDIRECT = f"https://auth.matrix.progeo.com/upstream/callback/{MAS_PROVIDER_ID}"
 
@@ -126,8 +126,8 @@ def test_test_message_needs_a_connected_app_and_goes_to_the_users_matrix_id(api_
     response = api_client.post("/v1/user/matrix/test/").json()
 
     assert response["user_id"] == "@kai.test:matrix.progeo.com" and response["dry_run"] is True
-    [row] = SMS.objects.using(f.DB).filter(channel="matrix", sent_to="@kai.test:matrix.progeo.com")
-    assert row.message.startswith("Hello Kai! This is a test message")
+    [row] = OutboundMessage.objects.using(f.DB).filter(channel="messenger", recipient="@kai.test:matrix.progeo.com")
+    assert row.subject.startswith("[Matrix] Hello Kai! This is a test message")
 
 
 def test_matrix_as_primary_switches_the_messenger_on_for_every_subscription(api_client):
@@ -236,5 +236,5 @@ def test_alarm_messenger_message_in_the_recipients_language():
 
     notifications.notify_alarm(f.make_alarm(device, value=180, triggered_ago=f.minutes(5)), location, f.DB)
 
-    [row] = SMS.objects.using(f.DB).filter(location=location)
-    assert row.message.startswith("ProGeo alarm - object 4711 Hall North\n")
+    [row] = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk, channel="messenger")
+    assert row.subject.startswith("[WhatsApp] ProGeo alarm - object 4711 Hall North\n")

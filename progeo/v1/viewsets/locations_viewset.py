@@ -79,6 +79,7 @@ from progeo.helper.location_access import (
     resolve_request_accounts,
     visible_location_filters,
 )
+from progeo.helper.messenger import messenger_service
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
 from progeo.helper.project_db_signals import ensure_users_in
 from progeo.helper.project_dbs import (
@@ -92,9 +93,9 @@ from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
     CUSTOMER_ADMIN_PERMISSION,
     HEAT_LIMITATION_MAX_POINTS,
-    SMS,
     Account,
     EMail,
+    OutboundMessage,
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
@@ -1946,8 +1947,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     def get_locations_timeline(self, request, pk=None, *args, **kwargs):
         """
         Benachrichtigungen (Ereignisverlauf): a chronological feed merging
-        sent e-mails (EMail), sent SMS and messenger messages (SMS, by
-        `channel`) and alarm lifecycle events
+        sent e-mails (EMail), SMS and messenger messages (OutboundMessage in
+        "default", by location_id) and alarm lifecycle events
         (triggered/acknowledged/resolved) for this location. Optional ?days=
         (default 30, capped at 365). Returns {"events": [...]}, most recent
         first.
@@ -1974,8 +1975,12 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             .order_by("-created")
         )
         sms = (
-            SMS.objects.using(db_name)
-            .filter(location=location, created__gte=cutoff)
+            OutboundMessage.objects.using("default")
+            .filter(
+                location_id=location.pk,
+                channel__in=(OutboundMessage.Channel.SMS, OutboundMessage.Channel.MESSENGER),
+                created__gte=cutoff,
+            )
             .order_by("-created")
         )
         alarms = (
@@ -2008,15 +2013,16 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             })
 
         for message in sms:
-            is_sms = message.channel in (None, "", SMS.Channel.SMS)
+            is_sms = message.channel == OutboundMessage.Channel.SMS
+            sent = message.status == OutboundMessage.Status.SENT
             events.append({
                 "kind": "sms" if is_sms else "messenger",
                 "at": message.created,
                 # The messenger service (signal/whatsapp/matrix).
-                "title": None if is_sms else message.channel,
-                "detail": message.sent_to,
-                "success": message.sent,
-                "error": message.error,
+                "title": None if is_sms else messenger_service(message.subject),
+                "detail": message.recipient,
+                "success": sent,
+                "error": None if sent else (message.error or message.get_status_display()),
             })
 
         for episode in LocationViewSet._group_alarm_episodes(alarms):
@@ -3405,7 +3411,6 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         recipient["mobile"],
                         f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
                         location=location,
-                        db=db_name,
                         category="test",
                         bypass_location_switch=True,
                     )
@@ -3420,7 +3425,6 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         recipient["messenger"]["address"],
                         f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
                         location=location,
-                        db=db_name,
                         category="test",
                         bypass_location_switch=True,
                     )

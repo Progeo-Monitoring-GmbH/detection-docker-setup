@@ -27,8 +27,9 @@ helper/interface_config.py), with django.env as fallback:
             as is. Messages are not end-to-end encrypted.
 
 Every send goes through the outbound guard (helper/outbound.py: limits,
-circuit breaker, MESSENGER_DRY_RUN) and is logged as an SMS row with the
-service as `channel` (the location's Benachrichtigungen timeline).
+circuit breaker, MESSENGER_DRY_RUN) and is logged as an OutboundMessage
+(channel "messenger", the service as "[Label] " prefix of the subject - the
+location's Benachrichtigungen timeline reads it from there).
 """
 import uuid
 from urllib.parse import quote
@@ -93,38 +94,22 @@ def normalize_recipient(service: str, address) -> str:
     return outbound.normalize_phone(address) or str(address or "").strip()
 
 
+def messenger_service(subject: str) -> str | None:
+    """The service of a logged messenger message, from the "[Label] " prefix
+    send_message puts in front of its OutboundMessage subject."""
+    for service, label in LABELS.items():
+        if str(subject or "").startswith(f"[{label}]"):
+            return service
+    return None
+
+
 def message_text(body: str) -> str:
     text = str(body or "").strip()
     return text if len(text) <= MAX_LENGTH else text[:MAX_LENGTH - 3].rstrip() + "..."
 
 
-def _log(service: str, to: str, body: str, sender, location, db: str, sent: bool,
-         message_id: str | None = None, error: str | None = None, withheld: bool = False) -> None:
-    """Store the attempt as an SMS row (channel = service). Like the SMS log
-    it must never break or mask the send - failures are only reported."""
-    from django.db import transaction
-
-    from progeo.v1.models import SMS
-
-    try:
-        with transaction.atomic(using=db):
-            SMS.objects.using(db).create(
-                channel=service,
-                location=location,
-                sent_to=str(to).strip()[:64],
-                sender=(sender or None) and str(sender)[:64],
-                message=str(body),
-                sent=sent,
-                batch_id=(message_id or None) and str(message_id)[:64],
-                error=error,
-                withheld=withheld,
-            )
-    except Exception as exc:  # noqa: BLE001 - see docstring
-        elog(f"Could not log the {LABELS[service]} message to {to}: {exc}", tag="[MESSENGER]")
-
-
 def send_message(service: str, to: str, body: str, cfg: dict | None = None, location=None,
-                 db: str = "default", category: str = "system", bypass_location_switch: bool = False) -> dict:
+                 category: str = "system", bypass_location_switch: bool = False) -> dict:
     """Send one messenger message and log the attempt.
 
     The outbound guard runs first: a `location` whose notifications are
@@ -152,7 +137,6 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
     if not recipient:
         raise MessengerError(f"No {LABELS[service]} address given.")
     effective = effective_config(service, cfg)
-    sender = None
     subject = f"[{LABELS[service]}] {body}"
 
     if not bypass_location_switch and outbound.notifications_withheld(location):
@@ -160,7 +144,6 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
              tag="[MESSENGER]")
         outbound.log(channel, status.WITHHELD, recipient, category=category, subject=subject,
                      location=location, error=outbound.WITHHELD_ERROR)
-        _log(service, recipient, body, sender, location, db, sent=False, error=outbound.WITHHELD_ERROR, withheld=True)
         return {"success": False, "withheld": True, "service": service, "to": recipient, "message_id": None}
 
     _allowed, rejected = outbound.check(channel, [recipient])
@@ -169,14 +152,11 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
         elog(f"{LABELS[service]} message to {recipient} not sent: {error}", tag="[MESSENGER]")
         outbound.log(channel, reject_status, recipient, category=category, subject=subject,
                      location=location, error=error)
-        _log(service, recipient, body, sender, location, db, sent=False, error=error)
         raise MessengerBlocked(error)
 
     if outbound.messenger_dry_run():
         ilog(f"MESSENGER_DRY_RUN: {LABELS[service]} message to {recipient} logged, not sent", tag="[MESSENGER]")
         outbound.log(channel, status.DRY_RUN, recipient, category=category, subject=subject, location=location)
-        _log(service, recipient, body, sender, location, db, sent=False,
-             error=f"Testmodus (MESSENGER_DRY_RUN): nicht an {LABELS[service]} übergeben")
         return {"success": True, "dry_run": True, "service": service, "to": recipient, "message_id": None}
 
     try:
@@ -185,12 +165,10 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
         elog(f"{LABELS[service]} message to {recipient} failed: {exc}", tag="[MESSENGER]")
         outbound.log(channel, status.FAILED, recipient, actual_recipient=recipient, category=category,
                      subject=subject, location=location, error=str(exc))
-        _log(service, recipient, body, sender, location, db, sent=False, error=str(exc))
         raise
     ilog(f"{LABELS[service]} message sent to {recipient} ({message_id})", tag="[MESSENGER]")
     outbound.log(channel, status.SENT, recipient, actual_recipient=recipient, category=category,
                  subject=subject, message_id=message_id or "", location=location)
-    _log(service, recipient, body, sender, location, db, sent=True, message_id=message_id)
     return {"success": True, "service": service, "to": recipient, "message_id": message_id}
 
 

@@ -483,7 +483,7 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             return refuse("not an M5 device")
         if str(body.get("device_hash") or "").strip() != raw_hash or str(device.location.project_id) != str(pk):
             return refuse("device mismatch")
-        status, result = device_sms.send_device_sms(device, db_name, body)
+        status, result = device_sms.send_device_sms(device, body)
         return Response({**result, "success": status == 200}, status=status)
 
     @action(detail=False, url_path="sample/debug", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])

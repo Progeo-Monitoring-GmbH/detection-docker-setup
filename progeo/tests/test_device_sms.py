@@ -8,7 +8,13 @@ from progeo.helper import device_sms, outbound
 from progeo.tests import factories as f
 from progeo.tests.device_fixtures import as_controller, project_ids, provision_device
 from progeo.tests.sms_fixtures import FakeResponse
-from progeo.v1.models import SMS, Account, DeviceSms, LimitedToken, ProgeoDevice
+from progeo.v1.models import (
+    Account,
+    DeviceSms,
+    LimitedToken,
+    OutboundMessage,
+    ProgeoDevice,
+)
 
 pytestmark = pytest.mark.usefixtures("esendex_configured")
 
@@ -24,7 +30,7 @@ def _data(**overrides):
 
 
 def _send(device, **overrides):
-    return device_sms.send_device_sms(device, f.DB, _data(**overrides))
+    return device_sms.send_device_sms(device, _data(**overrides))
 
 
 def _rows(device, count, sent):
@@ -43,8 +49,8 @@ def test_sends_and_confirms(esendex_api, device):
     assert calls[0]["json"]["messages"][0]["to"] == "+491701234567"
     row = DeviceSms.objects.using(f.DB).get()
     assert (row.sent, row.device_hash, row.ref, row.kind) == (True, device.raw_hash, "A1-17", "alarm")
-    sms = SMS.objects.using(f.DB).get()
-    assert sms.location_id == device.location_id
+    logged = OutboundMessage.objects.using(f.DB).get(channel="sms")
+    assert (logged.location_id, logged.category, logged.status) == (device.location_id, "device_alarm", "sent")
 
 
 def test_sends_although_location_notifications_disabled(esendex_api, device):

@@ -13,7 +13,6 @@ from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.helper.project_dbs import release_connection
 from progeo.v1.models import (
-    SMS,
     AlarmDailyReport,
     EMail,
     ProgeoAccess,
@@ -40,7 +39,6 @@ EXPORTABLE_MODELS = {
     "ProgeoAlarm": ProgeoAlarm,
     "ProgeoAccess": ProgeoAccess,
     "EMail": EMail,
-    "SMS": SMS,
     "AlarmDailyReport": AlarmDailyReport,
 }
 

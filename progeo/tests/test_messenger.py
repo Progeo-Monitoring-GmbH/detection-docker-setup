@@ -10,7 +10,6 @@ from django.utils import timezone
 from progeo.helper import interface_config, messenger, notifications
 from progeo.tests import factories as f
 from progeo.v1.models import (
-    SMS,
     OutboundMessage,
     ProgeoAccess,
     SystemConfig,
@@ -248,27 +247,24 @@ def test_configured_services_need_a_complete_config():
 def test_dry_run_only_logs(gateway):
     location = f.make_location(f.make_account())
 
-    result = messenger.send_message("signal", "+49 151 / 123", "Alarm", location=location, db=f.DB, category="alarm")
+    result = messenger.send_message("signal", "+49 151 / 123", "Alarm", location=location, category="alarm")
 
     assert result["dry_run"] is True and result["to"] == "+49151123"
     assert gateway.calls == []
-    [row] = SMS.objects.using(f.DB).filter(location=location)
-    assert (row.channel, row.sent, row.sent_to) == ("signal", False, "+49151123")
-    assert "MESSENGER_DRY_RUN" in row.error
-    outbound = OutboundMessage.objects.using(f.DB).get(recipient="+49151123")
-    assert (outbound.channel, outbound.status, outbound.subject) == ("messenger", "dry_run", "[Signal] Alarm")
+    [outbound] = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk)
+    assert (outbound.channel, outbound.status, outbound.recipient, outbound.subject) == (
+        "messenger", "dry_run", "+49151123", "[Signal] Alarm")
 
 
 def test_live_send_is_logged_as_sent(gateway, live):
     _store("whatsapp", WHATSAPP)
     gateway.answers = [FakeResponse(200, {"messages": [{"id": "wamid.42"}]})]
 
-    result = messenger.send_message("whatsapp", "+4915112345", "Alarm", db=f.DB)
+    result = messenger.send_message("whatsapp", "+4915112345", "Alarm")
 
     assert result == {"success": True, "service": "whatsapp", "to": "+4915112345", "message_id": "wamid.42"}
-    row = SMS.objects.using(f.DB).get(sent_to="+4915112345")
-    assert (row.channel, row.sent, row.batch_id) == ("whatsapp", True, "wamid.42")
-    assert OutboundMessage.objects.using(f.DB).get(recipient="+4915112345").status == "sent"
+    row = OutboundMessage.objects.using(f.DB).get(recipient="+4915112345")
+    assert (row.status, row.message_id, row.subject) == ("sent", "wamid.42", "[WhatsApp] Alarm")
 
 
 def test_failed_send_is_logged_and_raised(gateway, live):
@@ -276,18 +272,18 @@ def test_failed_send_is_logged_and_raised(gateway, live):
     gateway.answers = [FakeResponse(401, {"errcode": "M_UNKNOWN_TOKEN"})]
 
     with pytest.raises(messenger.MessengerError, match="HTTP 401"):
-        messenger.send_message("matrix", "!room:progeo.com", "Alarm", db=f.DB)
+        messenger.send_message("matrix", "!room:progeo.com", "Alarm")
 
-    assert OutboundMessage.objects.using(f.DB).get(recipient="!room:progeo.com").status == "failed"
-    assert SMS.objects.using(f.DB).get(sent_to="!room:progeo.com").channel == "matrix"
+    row = OutboundMessage.objects.using(f.DB).get(recipient="!room:progeo.com")
+    assert (row.status, row.subject) == ("failed", "[Matrix] Alarm")
 
 
 def test_per_recipient_limit_blocks(gateway, settings):
     settings.OUTBOUND_LIMITS = {**settings.OUTBOUND_LIMITS, "messenger_per_recipient_hour": 1}
-    messenger.send_message("signal", "+4915199", "1", db=f.DB)
+    messenger.send_message("signal", "+4915199", "1")
 
     with pytest.raises(messenger.MessengerBlocked, match="Stunde"):
-        messenger.send_message("signal", "+4915199", "2", db=f.DB)
+        messenger.send_message("signal", "+4915199", "2")
     assert OutboundMessage.objects.using(f.DB).filter(recipient="+4915199", status="rate_limited").count() == 1
 
 
@@ -336,20 +332,22 @@ def test_alarm_reaches_messenger_subscribers(site):
 
     assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 0, "sms": 0, "messenger": 1}
 
-    [row] = SMS.objects.using(f.DB).filter(location=location)
-    assert (row.channel, row.sent_to) == ("whatsapp", "+491602")
-    assert row.message.startswith("ProGeo Alarm - Objekt 4711 Halle Nord\n")
-    assert "/project/4711/status" in row.message
+    [row] = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk, channel="messenger")
+    assert row.recipient == "+491602"
+    assert row.subject.startswith("[WhatsApp] ProGeo Alarm - Objekt 4711 Halle Nord\n")
+    assert "/project/4711/status" in row.subject
 
 
 def test_timeline_shows_messenger_messages():
-    sms = SMS(channel="sms", sent_to="+491", message="x", sent=True)
-    chat = SMS(channel="matrix", sent_to="@kai:matrix.org", message="x", sent=False, error="HTTP 401")
+    sms = OutboundMessage(channel="sms", status="sent", recipient="+491", subject="x")
+    chat = OutboundMessage(channel="messenger", status="failed", recipient="@kai:matrix.org", subject="[Matrix] x",
+                           error="HTTP 401")
     sms.created = chat.created = timezone.now()
 
     events = LocationViewSet._build_timeline_events([], [], timezone.now() - f.minutes(60), sms=[sms, chat])
 
-    assert {(e["kind"], e["title"]) for e in events} == {("sms", None), ("messenger", "matrix")}
+    assert {(e["kind"], e["title"], e["success"], e["error"]) for e in events} == {
+        ("sms", None, True, None), ("messenger", "matrix", False, "HTTP 401")}
 
 
 # -- Schnittstelle -----------------------------------------------------------

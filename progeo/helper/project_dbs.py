@@ -3,7 +3,7 @@
 Layout
 ------
 - "default" keeps everything shared: users, accounts, the ProgeoLocations
-  themselves, tokens, config, backups, ... plus mails/SMS without a location.
+  themselves, tokens, config, backups, ... plus mails without a location.
 - Everything hanging off a location lives in the database of the location's
   project - the project_models() below. The database is named after the
   project: "<PROJECT_DB_PREFIX><project_id>", or "<PROJECT_DB_PREFIX>unknown"
@@ -65,7 +65,6 @@ def strict_enabled():
 def project_models():
     """Models whose rows live in the project database (parents before children)."""
     from progeo.v1.models import (
-        SMS,
         EMail,
         ProgeoAccess,
         ProgeoAlarm,
@@ -81,7 +80,7 @@ def project_models():
 
     return [
         ProgeoLageplan, ProgeoDevice, ProgeoDeviceCommand, ProgeoNoiseProfile, ProgeoSensorMapping,
-        ProgeoMeasurePoint, ProgeoAccess, EMail, SMS, ProgeoMeasurement, ProgeoAlarm, ProgeoRainEvent,
+        ProgeoMeasurePoint, ProgeoAccess, EMail, ProgeoMeasurement, ProgeoAlarm, ProgeoRainEvent,
     ]
 
 
@@ -532,7 +531,7 @@ def use_project_db(project):
     """Route project-model queries inside the block to a project database.
 
     `project` is a ProgeoLocation, a project id, a project alias, None
-    (= the "unknown" project) or "default" (system mails/SMS):
+    (= the "unknown" project) or "default" (system mails):
 
         with use_project_db(location):
             ProgeoMeasurement.objects.filter(device__location=location)
@@ -572,7 +571,7 @@ def project_db_for(project):
 
 def location_db(location, account=None):
     """Database holding a location's project rows (lageplans, devices,
-    measure points, access, mails, SMS, measurements, alarms) for the views:
+    measure points, access, mails, measurements, alarms) for the views:
     its project database once PROJECT_DB_SPLIT is on ("default" while the
     project has none yet), before that the account's database - so the views
     behave exactly as before until the switch. Accounts with their own

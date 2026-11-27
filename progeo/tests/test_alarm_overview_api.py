@@ -11,7 +11,7 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.v1.models import SMS, EMail, ProgeoAlarm
+from progeo.v1.models import EMail, OutboundMessage, ProgeoAlarm
 
 MEASURE = ("module_measurements_enabled",)
 NOTIFY = ("module_notifications_enabled",)
@@ -338,11 +338,10 @@ def _email(location, ago, subject="Mail", sent=True, error=None):
 
 
 def _sms(location, ago, sent=True, error=None):
-    message = SMS.objects.using(f.DB).create(
-        location=location, sent_to="+4915100", message="body", sent=sent, error=error,
+    return OutboundMessage.objects.using(f.DB).create(
+        channel="sms", status="sent" if sent else "failed", recipient="+4915100", subject="body",
+        location_id=location.pk, error=error, created=timezone.now() - ago,
     )
-    SMS.objects.using(f.DB).filter(pk=message.pk).update(created=timezone.now() - ago)
-    return message
 
 
 def _timeline(api_client, location, **params):

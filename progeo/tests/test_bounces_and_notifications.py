@@ -10,7 +10,6 @@ from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, fake_smtp  # noqa: F401
 from progeo.v1.models import (
-    SMS,
     EmailSuppression,
     OutboundMessage,
     ProgeoAccess,
@@ -185,9 +184,9 @@ def test_alarm_sms_goes_through_the_dry_run(site):
 
     assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 0, "sms": 1, "messenger": 0}
 
-    [row] = SMS.objects.using(f.DB).filter(location=location)
-    assert row.sent is False and len(row.message) <= 160
-    assert row.message.startswith("ProGeo Alarm Objekt 4711 Halle Nord: Messwert 180 > Schwelle 100.")
+    [row] = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk, channel="sms")
+    assert row.status == "dry_run" and len(row.subject) <= 160
+    assert row.subject.startswith("ProGeo Alarm Objekt 4711 Halle Nord: Messwert 180 > Schwelle 100.")
 
 
 def test_further_alarms_join_the_open_alarm_case(site):
