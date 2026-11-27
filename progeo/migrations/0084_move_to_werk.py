@@ -46,9 +46,11 @@ def drop_outside_default(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # No dependency on the Werk app: it is only installed with WERK_ENABLED, and
+    # progeo must migrate without it. werk 0001 changes no table (state only)
+    # and werk 0002 waits for this migration - the order between them is free.
     dependencies = [
         ('progeo', '0083_production_entry_qs'),
-        ('werk', '0001_initial'),
     ]
 
     operations = [
