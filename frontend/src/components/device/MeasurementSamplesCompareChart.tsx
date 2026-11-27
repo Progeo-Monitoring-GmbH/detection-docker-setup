@@ -375,7 +375,8 @@ const MeasurementSamplesCompareChart = (
     testId = 'measurement-compare',
   } = props;
   const { t } = useTranslation();
-  const currentYear = new Date().getFullYear();
+  // Read once on mount - the clock is impure during render.
+  const [currentYear] = React.useState(() => new Date().getFullYear());
 
   const frames: Frame[] = React.useMemo(() => {
     if (!frameSlider) {

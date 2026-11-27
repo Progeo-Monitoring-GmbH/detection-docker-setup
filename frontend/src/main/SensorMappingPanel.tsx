@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Badge, Form, Spinner } from 'react-bootstrap';
 import { ArrowCounterclockwise, Diagram3, Save } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
@@ -6,6 +6,7 @@ import type { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import PillButton from '../components/ui/kit/PillButton';
 import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { formatDate } from './dateFormat';
 import './SensorMappingPanel.css';
@@ -112,8 +113,7 @@ const SensorMappingPanel = ({
 }) => {
   const { enqueueSnackbar } = useSnackbar();
   // Read through a ref: loading must not depend on the snackbar function's identity.
-  const snackbar = useRef(enqueueSnackbar);
-  snackbar.current = enqueueSnackbar;
+  const snackbar = useLatestRef(enqueueSnackbar);
   const [deviceId, setDeviceId] = useState<number | null>(devices[0]?.id ?? null);
   const [answer, setAnswer] = useState<SensorMappingAnswer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,7 +125,6 @@ const SensorMappingPanel = ({
     if (deviceId == null) {
       return;
     }
-    setLoading(true);
     void axiosConfig.perform_get(
       auth,
       `${URL}?location_id=${locationId}&device_id=${deviceId}`,
@@ -139,7 +138,17 @@ const SensorMappingPanel = ({
         showRequestError(snackbar.current, 'The sensor mapping could not be read', error);
       },
     );
-  }, [auth, deviceId, locationId]);
+  }, [auth, deviceId, locationId, snackbar]);
+
+  // Loading from the render that (re)starts the read on, not after the effect
+  // ran - adjusted during render, so the effect itself sets no state.
+  const [requested, setRequested] = useState<{ load: typeof load; revision: number } | null>(null);
+  if (requested?.load !== load || requested.revision !== revision) {
+    setRequested({ load, revision });
+    if (deviceId != null) {
+      setLoading(true);
+    }
+  }
 
   useEffect(() => {
     load();

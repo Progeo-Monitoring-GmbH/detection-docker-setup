@@ -24,11 +24,14 @@ export const useWizardTargetStep = (selectedLocationId: number | null) => {
   const [targetStep, setTargetStep] = useState<string | null>(
     () => hash.slice(1) || null,
   );
-  useEffect(() => {
+  // A new #step is taken over while rendering (no effect needed).
+  const [prevHash, setPrevHash] = useState(hash);
+  if (hash !== prevHash) {
+    setPrevHash(hash);
     if (hash.length > 1) {
       setTargetStep(hash.slice(1));
     }
-  }, [hash]);
+  }
   useEffect(() => {
     const target = targetStep;
     if (!target || selectedLocationId === null) {

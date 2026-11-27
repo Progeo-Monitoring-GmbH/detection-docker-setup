@@ -217,19 +217,21 @@ export const usePlanScale = (sourceMeta: PlanMeta | undefined) => {
       : null,
   );
   const [calibrationPoints, setCalibrationPoints] = useState<ImagePoint[]>([]);
-  const [calibrationMeters, setCalibrationMeters] = useState('');
+  const [calibrationMeters, setCalibrationMetersText] = useState('');
   const [metersPerPixel, setMetersPerPixel] = useState(() =>
     sourceMeta?.meters_per_pixel ? String(sourceMeta.meters_per_pixel) : '',
   );
 
-  // Two picked points + their real distance -> meters per image pixel.
   const calibrationPixels = calibrationDistance(calibrationPoints);
-  useEffect(() => {
-    const meters = positiveNumber(calibrationMeters);
-    if (calibrationPixels && meters != null) {
-      setMetersPerPixel(String(meters / calibrationPixels));
+  /** Two picked points + their real distance -> meters per image pixel - set
+   * where one of them changes (not in an effect: no extra render). */
+  const deriveMetersPerPixel = (points: ImagePoint[], metersText: string) => {
+    const pixels = calibrationDistance(points);
+    const meters = positiveNumber(metersText);
+    if (pixels && meters != null) {
+      setMetersPerPixel(String(meters / pixels));
     }
-  }, [calibrationPixels, calibrationMeters]);
+  };
   const validMetersPerPixel = positiveNumber(metersPerPixel);
 
   return {
@@ -239,7 +241,10 @@ export const usePlanScale = (sourceMeta: PlanMeta | undefined) => {
     calibrationPoints,
     calibrationPixels,
     calibrationMeters,
-    setCalibrationMeters,
+    setCalibrationMeters: (text: string) => {
+      setCalibrationMetersText(text);
+      deriveMetersPerPixel(calibrationPoints, text);
+    },
     metersPerPixel,
     setMetersPerPixel,
     validMetersPerPixel,
@@ -260,7 +265,9 @@ export const usePlanScale = (sourceMeta: PlanMeta | undefined) => {
     /** M: a calibration point picked - a third starts a new measurement. */
     pickCalibration: (point: ImagePoint) => {
       setTool('calibrate');
-      setCalibrationPoints((current) => (current.length >= 2 ? [point] : [...current, point]));
+      const next = calibrationPoints.length >= 2 ? [point] : [...calibrationPoints, point];
+      setCalibrationPoints(next);
+      deriveMetersPerPixel(next, calibrationMeters);
     },
     toggleReferenceTool: () => setTool((current) => (current === 'reference' ? 'pan' : 'reference')),
     toggleCalibrateTool: () => {

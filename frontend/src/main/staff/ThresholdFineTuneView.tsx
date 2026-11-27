@@ -560,6 +560,19 @@ const ThresholdFineTuneView = () => {
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
+  // Another file drops the last apply result and starts loading its findings
+  // (adjusted during render; the effect below only fetches).
+  const [seenFile, setSeenFile] = useState(file);
+  if (seenFile !== file) {
+    setSeenFile(file);
+    setResult(null);
+    if (file) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setFindings(null);
+    }
+  }
 
   const get = useCallback(
     (url: string) =>
@@ -587,21 +600,47 @@ const ThresholdFineTuneView = () => {
     [],
   );
 
-  const loadFiles = useCallback(async () => {
-    try {
-      const data = await get(URL);
-      const list = (data.files ?? []) as FileInfo[];
-      setFiles(list);
-      setFile((current) =>
-        current && list.some((item) => item.file === current)
-          ? current
-          : (list[0]?.file ?? ''),
-      );
-    } catch (requestError) {
-      setFiles([]);
-      setError(reasonOf(requestError) || 'Unknown error');
-    }
-  }, [get]);
+  // State is only set in the promise callbacks, so the mount effect may call it.
+  const loadFiles = useCallback(
+    () =>
+      get(URL).then(
+        (data) => {
+          const list = (data.files ?? []) as FileInfo[];
+          setFiles(list);
+          setFile((current) =>
+            current && list.some((item) => item.file === current)
+              ? current
+              : (list[0]?.file ?? ''),
+          );
+        },
+        (requestError) => {
+          setFiles([]);
+          setError(reasonOf(requestError) || 'Unknown error');
+        },
+      ),
+    [get],
+  );
+
+  // The fetch part of loadFindings (state only set in the promise callbacks).
+  const fetchFindings = useCallback(
+    (name: string, keepChoices = false) =>
+      get(`${URL}${encodeURIComponent(name)}/`)
+        .then(
+          (data) => {
+            setFindings(data.findings as Findings);
+            if (!keepChoices) {
+              setChosen({});
+              setSelected(new Set());
+            }
+          },
+          (requestError) => {
+            setFindings(null);
+            setError(reasonOf(requestError) || 'Unknown error');
+          },
+        )
+        .finally(() => setLoading(false)),
+    [get],
+  );
 
   const loadFindings = useCallback(
     async (name: string, keepChoices = false) => {
@@ -611,30 +650,20 @@ const ThresholdFineTuneView = () => {
       }
       setLoading(true);
       setError(null);
-      try {
-        const data = await get(`${URL}${encodeURIComponent(name)}/`);
-        setFindings(data.findings as Findings);
-        if (!keepChoices) {
-          setChosen({});
-          setSelected(new Set());
-        }
-      } catch (requestError) {
-        setFindings(null);
-        setError(reasonOf(requestError) || 'Unknown error');
-      } finally {
-        setLoading(false);
-      }
+      await fetchFindings(name, keepChoices);
     },
-    [get],
+    [fetchFindings],
   );
 
   useEffect(() => {
     void loadFiles();
   }, [loadFiles]);
   useEffect(() => {
-    setResult(null);
-    void loadFindings(file);
-  }, [file, loadFindings]);
+    // Loading/reset for the new file happened during render (see seenFile).
+    if (file) {
+      void fetchFindings(file);
+    }
+  }, [file, fetchFindings]);
 
   const choose = useCallback((entry: FineTuneEntry, value: number) => {
     setChosen((current) => ({ ...current, [entry.key]: value }));

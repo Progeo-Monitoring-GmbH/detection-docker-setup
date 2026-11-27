@@ -25,7 +25,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from progeo.werk import dm_orders, production
-from progeo.werk.manusensor import ManuSensorError, _iso, invalid
+from progeo.werk.manusensor import ManuSensorError, _iso, invalid, now_aware
 from progeo.werk.production import BERLIN, DB, MEASURES, SHEET_SIZE
 
 # The value checks (SheetRules.kt).
@@ -195,7 +195,8 @@ def _meters(value):
 
 
 def _first_day(days):
-    today = timezone.localtime(timezone.now(), BERLIN).date()
+    # timezone.now() is naive on the servers (USE_TZ = False) - localtime() refuses it.
+    today = now_aware().astimezone(BERLIN).date()
     return today - datetime.timedelta(days=days - 1)
 
 
@@ -203,7 +204,7 @@ def _berlin_day(value):
     from progeo.werk.manusensor import _aware
 
     moment = _aware(value)
-    return timezone.localtime(moment, BERLIN).date() if moment else None
+    return moment.astimezone(BERLIN).date() if moment else None
 
 
 def _per_day(entries, days, produced, app_ids):

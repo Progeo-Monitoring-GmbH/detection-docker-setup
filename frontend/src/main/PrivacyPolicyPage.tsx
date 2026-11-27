@@ -111,6 +111,8 @@ const PrivacyPolicyPage = () => {
   const { openSettings } = useConsent();
   const language = currentLanguage(i18n.language);
   const text = PAGE_TEXT[language];
+  // Read once on mount - the clock is impure during render.
+  const [year] = useState(() => new Date().getFullYear());
 
   const sections = useMemo(() => {
     const options = {
@@ -248,7 +250,7 @@ const PrivacyPolicyPage = () => {
         </div>
 
         <footer className="privacy-footer" data-testid="privacy-policy-footer">
-          © {new Date().getFullYear()} {CONTROLLER.name}
+          © {year} {CONTROLLER.name}
         </footer>
       </div>
     </div>

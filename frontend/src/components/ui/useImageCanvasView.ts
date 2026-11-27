@@ -21,6 +21,7 @@ import {
   type PlanView,
 } from './imageCanvasGeometry';
 import { EDIT_KEYS, HELD_KEYS, VIEW_KEYS, type HeldKey, type ImageEdit } from './imageCanvasModes';
+import { useLatestRef } from './useLatestRef';
 import { isZoomWheel, useWheelHint } from './wheelZoom';
 
 /** The plan image: local previews (blob:/data:) load directly; backend media
@@ -28,9 +29,14 @@ import { isZoomWheel, useWheelHint } from './wheelZoom';
 export const usePlanImage = (auth: AuthContextType, imageUrl: string | undefined) => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [imageError, setImageError] = useState('');
-  useEffect(() => {
+  // Another URL: nothing shown until it loaded - reset while rendering, not in the effect.
+  const [shownUrl, setShownUrl] = useState(imageUrl);
+  if (imageUrl !== shownUrl) {
+    setShownUrl(imageUrl);
     setImage(null);
     setImageError('');
+  }
+  useEffect(() => {
     if (!imageUrl) {
       return undefined;
     }
@@ -41,11 +47,14 @@ export const usePlanImage = (auth: AuthContextType, imageUrl: string | undefined
       const nextImage = new Image();
       nextImage.onload = () => {
         if (!cancelled) {
+          // Image and error replace each other (a reload with a new auth keeps the old until then).
           setImage(nextImage);
+          setImageError('');
         }
       };
       nextImage.onerror = () => {
         if (!cancelled) {
+          setImage(null);
           setImageError('The Lageplan image could not be displayed.');
         }
       };
@@ -67,6 +76,7 @@ export const usePlanImage = (auth: AuthContextType, imageUrl: string | undefined
         },
         (loadError) => {
           if (!cancelled) {
+            setImage(null);
             setImageError(`Could not load the Lageplan image: ${(loadError as Error).message}`);
           }
         },
@@ -146,8 +156,7 @@ export const usePlanView = (logical: { width: number; height: number }, image: P
   const viewRef = useRef(view);
   const frame = useRef<number | null>(null);
   const animation = useRef<number | null>(null);
-  const bounds = useRef({ logical, image });
-  bounds.current = { logical, image };
+  const bounds = useLatestRef({ logical, image });
 
   const cancelFrame = () => {
     if (frame.current != null) {
@@ -240,8 +249,7 @@ export const useCanvasWheelZoom = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   zoomAround: (factor: number, at: ImagePoint) => void,
 ) => {
-  const zoomAroundRef = useRef(zoomAround);
-  zoomAroundRef.current = zoomAround;
+  const zoomAroundRef = useLatestRef(zoomAround);
   const [wheelHint, showWheelHint] = useWheelHint();
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -261,15 +269,14 @@ export const useCanvasWheelZoom = (
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [canvasRef, showWheelHint]);
+  }, [canvasRef, showWheelHint, zoomAroundRef]);
   return wheelHint;
 };
 
 /** The mouse anywhere on the page (a drag goes on off the canvas) - the
  * handlers of the last render are called. */
 export const useWindowPointer = (onMove: (event: MouseEvent) => void, onUp: () => void) => {
-  const handlers = useRef({ onMove, onUp });
-  handlers.current = { onMove, onUp };
+  const handlers = useLatestRef({ onMove, onUp });
   useEffect(() => {
     const handleMove = (event: MouseEvent) => handlers.current.onMove(event);
     const handleUp = () => handlers.current.onUp();
@@ -279,7 +286,7 @@ export const useWindowPointer = (onMove: (event: MouseEvent) => void, onUp: () =
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', handleUp);
     };
-  }, []);
+  }, [handlers]);
 };
 
 const isTyping = (target: EventTarget | null) =>
@@ -311,8 +318,7 @@ export const useHeldKey = (handlers: {
 }) => {
   const [heldKey, setHeldKey] = useState<HeldKey | null>(null);
   const heldRef = useRef<HeldKey | null>(null);
-  const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
+  const handlersRef = useLatestRef(handlers);
   const setHeld = (key: HeldKey | null) => {
     heldRef.current = key;
     setHeldKey(key);
@@ -366,7 +372,7 @@ export const useHeldKey = (handlers: {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', release);
     };
-  }, []);
+  }, [handlersRef]);
   return heldKey;
 };
 
@@ -375,8 +381,7 @@ export const useStageDrawing = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   scene: Omit<StageScene, 'image'> & { image: StageScene['image'] | null },
 ) => {
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
+  const sceneRef = useLatestRef(scene);
   // Redrawn when one of these changes (not on every render).
   useEffect(
     () => {
@@ -389,6 +394,7 @@ export const useStageDrawing = (
     },
     [
       canvasRef,
+      sceneRef,
       scene.image,
       scene.logical,
       scene.pixelRatio,

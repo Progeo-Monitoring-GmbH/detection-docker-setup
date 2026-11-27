@@ -287,6 +287,7 @@ const DatabaseUsageView = () => {
     [get],
   );
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- false positive: load() sets state only after its first await (data fetch on mount)
     void load(false);
   }, [load]);
 

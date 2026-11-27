@@ -36,6 +36,8 @@ export const AuthLinks = ({ children }) => (
  */
 const AuthPage = ({ title, intro, children, testId = 'page-auth' }) => {
   const { t } = useTranslation();
+  // Read once on mount - the clock is impure during render.
+  const [year] = React.useState(() => new Date().getFullYear());
 
   return (
     <div className="auth-page" data-testid={testId}>
@@ -88,7 +90,7 @@ const AuthPage = ({ title, intro, children, testId = 'page-auth' }) => {
 
       <footer className="auth-footer" data-testid="auth-footer">
         <span>
-          © {new Date().getFullYear()} {COMPANY.name}
+          © {year} {COMPANY.name}
         </span>
         <span className="auth-footer-separator" aria-hidden="true">·</span>
         <Link to={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" data-testid="auth-privacy-link">{t('consent_privacy_policy')}</Link>

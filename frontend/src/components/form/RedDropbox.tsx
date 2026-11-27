@@ -42,7 +42,7 @@ const RedDropbox = ({
   auth,
   url,
   accept = 'doc',
-  callBackProcessing = (_) => {},
+  callBackProcessing = (() => {}) as (data: any) => void,
   maxSizeMB = 5,
   withPreview = false,
   instantFileUpload = true,

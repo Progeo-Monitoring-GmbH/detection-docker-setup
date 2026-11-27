@@ -104,9 +104,12 @@ const SidebarShell = ({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  useEffect(() => {
+  // A route change closes the dropdown - while rendering, not in an effect.
+  const [menuPathname, setMenuPathname] = useState(routerLocation.pathname);
+  if (routerLocation.pathname !== menuPathname) {
+    setMenuPathname(routerLocation.pathname);
     setMenuOpen(false);
-  }, [routerLocation.pathname]);
+  }
 
   if (!mobile) {
     const foldLabel = collapsed ? expandLabel : collapseLabel;

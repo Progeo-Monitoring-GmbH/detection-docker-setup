@@ -318,8 +318,34 @@ const AlarmReportView = () => {
   } | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
 
-  const fetchReports = useCallback(() => {
-    setLoading(true);
+  // The effects below only send the requests; when their inputs change, the
+  // loading flags (and the comparison reset) are set here during render.
+  const [requested, setRequested] = useState({ auth, selectedDate, compareA, compareB });
+  if (
+    requested.auth !== auth ||
+    requested.selectedDate !== selectedDate ||
+    requested.compareA !== compareA ||
+    requested.compareB !== compareB
+  ) {
+    const authChanged = requested.auth !== auth;
+    setRequested({ auth, selectedDate, compareA, compareB });
+    if (authChanged) {
+      setLoading(true);
+    }
+    if (selectedDate && (authChanged || requested.selectedDate !== selectedDate)) {
+      setReportLoading(true);
+    }
+    if (authChanged || requested.compareA !== compareA || requested.compareB !== compareB) {
+      if (compareA && compareB) {
+        setCompareLoading(true);
+      } else {
+        setComparison(null);
+      }
+    }
+  }
+
+  // Sets state only in the request callbacks; loading is set by the caller.
+  const requestReports = useCallback(() => {
     void axiosConfig.perform_get(
       auth,
       '/v1/alarm-report/',
@@ -339,14 +365,18 @@ const AlarmReportView = () => {
     );
   }, [auth, enqueueSnackbar]);
 
-  useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+  const fetchReports = useCallback(() => {
+    setLoading(true);
+    requestReports();
+  }, [requestReports]);
 
-  const fetchReport = useCallback(
+  // Loading starts as true; on auth changes it is set during render (above).
+  useEffect(() => {
+    requestReports();
+  }, [requestReports]);
+
+  const requestReport = useCallback(
     (date: string) => {
-      if (!date) {return;}
-      setReportLoading(true);
       void axiosConfig.perform_get(
         auth,
         `/v1/alarm-report/?date=${date}`,
@@ -366,14 +396,12 @@ const AlarmReportView = () => {
 
   useEffect(() => {
     if (selectedDate) {
-      fetchReport(selectedDate);
+      requestReport(selectedDate);
     }
-  }, [selectedDate, fetchReport]);
+  }, [selectedDate, requestReport]);
 
-  const runCompare = useCallback(
+  const requestCompare = useCallback(
     (dateA: string, dateB: string) => {
-      if (!dateA || !dateB) {return;}
-      setCompareLoading(true);
       void axiosConfig.perform_get(
         auth,
         `/v1/alarm-report/compare/?date_a=${dateA}&date_b=${dateB}`,
@@ -395,11 +423,9 @@ const AlarmReportView = () => {
 
   useEffect(() => {
     if (compareA && compareB) {
-      runCompare(compareA, compareB);
-    } else {
-      setComparison(null);
+      requestCompare(compareA, compareB);
     }
-  }, [compareA, compareB, runCompare]);
+  }, [compareA, compareB, requestCompare]);
 
   const handleGenerate = () => {
     setGenerating(true);

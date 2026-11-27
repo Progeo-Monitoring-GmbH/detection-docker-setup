@@ -19,7 +19,7 @@ from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.db.models import F
 
-from progeo.werk.manusensor import ManuSensorError, _iso, invalid
+from progeo.werk.manusensor import ManuSensorError, _iso, as_aware, invalid
 from progeo.werk.production import _device, _meters, _text, _timestamp
 
 DB = DEFAULT_DB_ALIAS
@@ -187,7 +187,7 @@ def find_by_code(code):
 
 def _apply(roll, values, device, user_name, order_id, moment):
     """The state of a report - False (unchanged) when an older one than the last."""
-    if roll.zuletzt_am is not None and moment < roll.zuletzt_am:
+    if roll.zuletzt_am is not None and moment < as_aware(roll.zuletzt_am):
         return False
     for field, value in values.items():
         setattr(roll, field, value)

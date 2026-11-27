@@ -82,7 +82,7 @@ const BackupView = () => {
   const canDelete = hasPermission('module_backup_delete');
 
   const [backups, setBackups] = useState<BackupRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // A row's restore / delete, asked first: a restore overwrites a database.
@@ -105,7 +105,12 @@ const BackupView = () => {
   // Typed text of the project field - applied on Enter/blur or when it
   // matches a project, so half-typed ids don't trigger requests.
   const [projectInput, setProjectInput] = useState<string>(projectFilter);
-  useEffect(() => setProjectInput(projectFilter), [projectFilter]);
+  // A changed URL filter resets the typed text (adjusted during render, no effect).
+  const [inputFilter, setInputFilter] = useState(projectFilter);
+  if (inputFilter !== projectFilter) {
+    setInputFilter(projectFilter);
+    setProjectInput(projectFilter);
+  }
 
   const hasSelection = selectedRows.length > 0;
   const isBulkBusy = busyAction === 'delete-all' || busyAction === 'delete-selected';
@@ -157,8 +162,8 @@ const BackupView = () => {
     setBackups((response?.data?.elements || []) as BackupRow[]);
   };
 
-  const loadBackups = useCallback(() => {
-    setLoading(true);
+  // Sets state only in the request callbacks; loading is set by the caller.
+  const requestBackups = useCallback(() => {
     void axiosConfig.perform_get(
       auth,
       `/v1/${account}/backup/?${listQuery}`,
@@ -173,9 +178,22 @@ const BackupView = () => {
     );
   }, [auth, account, listQuery, enqueueSnackbar, t]);
 
+  const loadBackups = useCallback(() => {
+    setLoading(true);
+    requestBackups();
+  }, [requestBackups]);
+
+  // A new request callback (filters/account changed) reloads: loading is set
+  // here during render (and starts true), the effect only sends the request.
+  const [requestedWith, setRequestedWith] = useState(() => requestBackups);
+  if (requestedWith !== requestBackups) {
+    setRequestedWith(() => requestBackups);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    loadBackups();
-  }, [loadBackups]);
+    requestBackups();
+  }, [requestBackups]);
 
   useEffect(() => {
     void axiosConfig.perform_get(

@@ -251,8 +251,7 @@ const LocationRechteTab = () => {
     value: string;
   } | null>(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const fetchMembers = useCallback(() => {
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/access/`,
@@ -280,9 +279,23 @@ const LocationRechteTab = () => {
     );
   }, [auth, enqueueSnackbar, locationId, viewerIsStaff]);
 
+  // A reload after a change (invite, revoke).
+  const load = () => {
+    setLoading(true);
+    fetchMembers();
+  };
+
+  // Another object: loading from this render on - adjusted during render, so
+  // the effect below only fetches and sets no state itself.
+  const [requested, setRequested] = useState(() => fetchMembers);
+  if (requested !== fetchMembers) {
+    setRequested(() => fetchMembers);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    load();
-  }, [load]);
+    fetchMembers();
+  }, [fetchMembers]);
 
   const updateMember = (userId: number, patch: Partial<Member>) =>
     setMembers((prev) =>

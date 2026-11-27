@@ -132,6 +132,32 @@ def test_a_plan_without_cables_is_refused():
         pc.auto_order(np.full((300, 400, 3), 255, np.uint8), {}, lang="")
 
 
+@pytest.mark.parametrize("words, number", [
+    (["MPLE01"], "01"),
+    (["MPLE", "01"], "01"),
+    # Tesseract 5.5 (the servers): the L as "I!", the word split, the E as F.
+    (["MPI!", "E", "01"], "01"),
+    (["MPLF", "03"], "03"),
+    (["MPL", "07"], "07"),
+    (["MPLE-7"], "7"),
+    (["MP", "103"], None),   # may be a measuring point - not a cable label
+    (["P1", "01"], None),
+    (["MPLE"], None),
+])
+def test_label_words_as_tesseract_reads_them(monkeypatch, words, number):
+    """The label read the way different Tesseract versions split and misread it."""
+    import pytesseract
+
+    data = {"text": words, "conf": [90] * len(words), "left": [i * 60 for i in range(len(words))],
+            "top": [10] * len(words), "width": [50] * len(words), "height": [20] * len(words)}
+    monkeypatch.setattr(pytesseract, "image_to_data", lambda *args, **kwargs: data)
+    window = SimpleNamespace(image=np.full((40, 200), 255, np.uint8))
+
+    readings = pc._tesseract(window, 0, False, "deu")
+
+    assert [reading.number for reading in readings] == ([number] if number else [])
+
+
 @pytest.mark.skipif(not plan_ocr.ocr_languages(), reason="needs Tesseract")
 def test_the_labels_number_the_cables_and_mark_their_head(plan_rgb):
     alignment = {"offset_x": 0, "offset_y": 0, "scale_x": 1, "scale_y": 1, "flip_y": True}

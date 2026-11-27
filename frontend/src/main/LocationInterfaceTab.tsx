@@ -167,8 +167,7 @@ const useInterfaceConfig = <T extends object>(kind: InterfaceKind, label: string
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const fetchConfig = useCallback(() => {
     void axiosConfig.perform_get(
       auth,
       `/v1/interface/${kind}/`,
@@ -185,9 +184,23 @@ const useInterfaceConfig = <T extends object>(kind: InterfaceKind, label: string
     );
   }, [auth, enqueueSnackbar, kind, label]);
 
+  // A reload after saving.
+  const load = () => {
+    setLoading(true);
+    fetchConfig();
+  };
+
+  // Another interface: loading from this render on - adjusted during render,
+  // so the effect below only fetches and sets no state itself.
+  const [requested, setRequested] = useState(() => fetchConfig);
+  if (requested !== fetchConfig) {
+    setRequested(() => fetchConfig);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    load();
-  }, [load]);
+    fetchConfig();
+  }, [fetchConfig]);
 
   const save = () => {
     setSaving(true);

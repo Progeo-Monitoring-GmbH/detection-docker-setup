@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthContextType } from '../../../hooks/CoreAuthProvider';
 import { postReorder } from './imageCanvasApi';
+import { useLatestRef } from './useLatestRef';
 import type { AlignmentValues, ImagePoint, MarkerItem, PlanImage, PointTransform } from './imageCanvasGeometry';
 import {
   klemmlisteOf,
@@ -122,8 +123,7 @@ export const useSensorOrderRepair = (input: {
   };
 
   // The repair's keys while it is on.
-  const keyRef = useRef({ pickTool, undo, clearPending, hasPending: false });
-  keyRef.current = { pickTool, undo, clearPending, hasPending: lineStart != null || swapFirst != null };
+  const keyRef = useLatestRef({ pickTool, undo, clearPending, hasPending: lineStart != null || swapFirst != null });
   useEffect(() => {
     if (!active) {
       return undefined;
@@ -145,7 +145,7 @@ export const useSensorOrderRepair = (input: {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active]);
+  }, [active, keyRef]);
 
   const finishArea = () => {
     const drag = areaDragRef.current;

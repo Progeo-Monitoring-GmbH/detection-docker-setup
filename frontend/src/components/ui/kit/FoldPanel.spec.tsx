@@ -8,10 +8,12 @@ import FoldPanel from './FoldPanel';
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-let target: (value: boolean) => void = () => undefined;
+// The setters of every Targeted render - collected, not assigned during render.
+const setters: ((value: boolean) => void)[] = [];
+const target = (value: boolean) => setters[setters.length - 1](value);
 const Targeted = () => {
   const [targeted, setTargeted] = useState(false);
-  target = setTargeted;
+  setters.push(setTargeted);
   return (
     <FoldPanel title="Lageplan" testId="panel" openOn={targeted}>
       <input data-testid="panel-field" />

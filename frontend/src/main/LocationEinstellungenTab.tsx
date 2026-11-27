@@ -99,8 +99,7 @@ const LocationEinstellungenTab = () => {
     Boolean(location?.pe_geschaltet),
   );
 
-  useEffect(() => {
-    setDevicesLoading(true);
+  const loadDevices = useCallback(() => {
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/devices/`,
@@ -111,6 +110,18 @@ const LocationEinstellungenTab = () => {
       () => setDevicesLoading(false),
     );
   }, [auth, locationId]);
+
+  // Another object: loading from this render on - adjusted during render, so
+  // the effect below only fetches and sets no state itself.
+  const [devicesRequested, setDevicesRequested] = useState(() => loadDevices);
+  if (devicesRequested !== loadDevices) {
+    setDevicesRequested(() => loadDevices);
+    setDevicesLoading(true);
+  }
+
+  useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
 
   // Produkt = ProgeoLocation.project_type (PROJECT_TYPE_CHOICES), not a
   // device field; options come from the backend like on the Objekt tab.
@@ -229,7 +240,6 @@ const LocationEinstellungenTab = () => {
   const [removing, setRemoving] = useState(false);
 
   const loadStaffAccess = useCallback(() => {
-    setStaffLoading(true);
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/access/`,
@@ -244,6 +254,13 @@ const LocationEinstellungenTab = () => {
       () => setStaffLoading(false),
     );
   }, [auth, locationId]);
+
+  // Like the devices: loading set during render, not in the effect.
+  const [staffRequested, setStaffRequested] = useState(() => loadStaffAccess);
+  if (staffRequested !== loadStaffAccess) {
+    setStaffRequested(() => loadStaffAccess);
+    setStaffLoading(true);
+  }
 
   useEffect(() => {
     loadStaffAccess();

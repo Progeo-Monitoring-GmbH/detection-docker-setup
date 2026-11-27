@@ -60,16 +60,25 @@ const BadgePicker = <T,>({
   const selectedKeys = new Set(selected.map(keyOf));
   const shown = matches.filter((item) => !selectedKeys.has(keyOf(item)));
 
+  // A new text: searching while it has a query, no matches without one - set
+  // where the text changes (changeText), the request below.
+  const changeText = (value: string) => {
+    setText(value);
+    if (value.trim()) {
+      setSearching(true);
+    } else {
+      setMatches([]);
+      setSearching(false);
+    }
+  };
+
   // The matches of the text - answers for an older text are dropped.
   useEffect(() => {
     const query = text.trim();
     if (!query) {
-      setMatches([]);
-      setSearching(false);
       return undefined;
     }
     let current = true;
-    setSearching(true);
     const timer = window.setTimeout(() => {
       void Promise.resolve(searchRef.current(query))
         .then((found) => {
@@ -92,8 +101,7 @@ const BadgePicker = <T,>({
     if (fresh.length) {
       onChange([...selected, ...fresh]);
     }
-    setText('');
-    setMatches([]);
+    changeText('');
   };
 
   const remove = (key: string | number) => onChange(selected.filter((item) => keyOf(item) !== key));
@@ -163,7 +171,7 @@ const BadgePicker = <T,>({
           value={text}
           placeholder={selected.length ? undefined : placeholder}
           onChange={(event) => {
-            setText(event.target.value);
+            changeText(event.target.value);
             setOpen(true);
           }}
           onKeyDown={onKeyDown}

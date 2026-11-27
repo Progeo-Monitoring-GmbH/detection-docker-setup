@@ -148,9 +148,9 @@ const StorageSection = () => {
   const [info, setInfo] = useState<StorageInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(
+  // Sets state only in the request callbacks; loading is set by the caller.
+  const request = useCallback(
     (refresh: boolean) => {
-      setLoading(true);
       void axiosConfig.perform_get(
         auth,
         `/v1/status/admin/storage_info/${refresh ? '?refresh=true' : ''}`,
@@ -175,9 +175,25 @@ const StorageSection = () => {
     [auth, enqueueSnackbar, t],
   );
 
+  const load = useCallback(
+    (refresh: boolean) => {
+      setLoading(true);
+      request(refresh);
+    },
+    [request],
+  );
+
+  // A new request callback (auth/language changed) reloads: loading is set
+  // here during render, the effect only sends the request.
+  const [requestedWith, setRequestedWith] = useState(() => request);
+  if (requestedWith !== request) {
+    setRequestedWith(() => request);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    load(false);
-  }, [load]);
+    request(false);
+  }, [request]);
 
   const storage = info?.storage || {};
   const root = storage.root || {};

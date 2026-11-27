@@ -27,12 +27,15 @@ const useThresholdMixerData = (locationId: number | string, loadedSensors: Mixer
     () => (loadedSensors ? patchedSensors(loadedSensors, savedPatch) : fetched),
     [loadedSensors, savedPatch, fetched],
   );
-  useEffect(() => {
-    // The page reloaded its data: what it has now needs no patch any more.
+  // The page reloaded its data: what it has now needs no patch any more
+  // (adjusted while rendering, when loadedSensors changes).
+  const [prunedFor, setPrunedFor] = useState(loadedSensors);
+  if (loadedSensors !== prunedFor) {
+    setPrunedFor(loadedSensors);
     if (loadedSensors) {
       setSavedPatch((patch) => prunedPatch(patch, loadedSensors));
     }
-  }, [loadedSensors]);
+  }
 
   const requestRef = useRef(0);
   const load = useCallback(

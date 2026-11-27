@@ -92,7 +92,7 @@ const SegmentedControl = ({
     if (natural === null || natural.key !== labelsKey || Math.abs(natural.width - width) > 0.5) {
       setNatural({ key: labelsKey, width });
     }
-  });
+  }, [isPhone, collapsed, labelsKey, natural]);
 
   // Follow the room the control has (rotation, resizing, a sidebar).
   useLayoutEffect(() => {

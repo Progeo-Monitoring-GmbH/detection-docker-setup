@@ -28,6 +28,7 @@ from progeo.werk.manusensor import (
     ManuSensorError,
     _aware,
     _iso,
+    as_aware,
     invalid,
     normalize_sensor,
     parse_project,
@@ -320,6 +321,8 @@ def _same(entry, row):
     for field in VALUE_FIELDS:
         current = entry.erfasst_von_id if field == "erfasst_von" else getattr(entry, field)
         wanted = row["erfasst_von"].pk if field == "erfasst_von" else row[field]
+        if field == "erfasst_am":
+            current = as_aware(current)
         if current != wanted:
             return False
     return True
@@ -385,7 +388,7 @@ def _store_entries(rows, detail, device, record_id, project_id, sensors, sheet_o
             [row["sensor_record_id"] for row in rows], field_name="sensor_record_id")
         for row in rows:
             entry = existing.get(row["sensor_record_id"])
-            if entry is not None and row["erfasst_am"] < entry.erfasst_am:
+            if entry is not None and row["erfasst_am"] < as_aware(entry.erfasst_am):
                 results.append({"sensor_record_id": row["sensor_record_id"], "ergebnis": "veraltet"})
                 continue
             if entry is not None and _same(entry, row):
@@ -596,7 +599,7 @@ def _store_progress(order, cleaned, total):
             order_record_id=order["id"]).first()
         if progress is not None and progress.geraet_id != cleaned["geraet_id"]:
             other = progress_device(progress)
-        if progress is None or cleaned["zeitpunkt"] >= progress.zeitpunkt:
+        if progress is None or cleaned["zeitpunkt"] >= as_aware(progress.zeitpunkt):
             progress = progress or ProductionProgress(order_record_id=order["id"])
             progress.order_id = order["auftrag_id"] or ""
             progress.sensoren_gesamt = total
@@ -617,7 +620,7 @@ def _store_progress(order, cleaned, total):
 # ---------------------------------------------------------------------------- Airtable
 
 def _berlin(moment):
-    return moment.astimezone(BERLIN)
+    return as_aware(moment).astimezone(BERLIN)
 
 
 def sensor_fields(entry):

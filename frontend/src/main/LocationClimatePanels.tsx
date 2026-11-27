@@ -104,10 +104,8 @@ const LocationClimatePanels = ({
   // response must not overwrite the range picked after it.
   const latestRequest = useRef(0);
 
-  const loadClimate = useCallback(() => {
+  const fetchClimate = useCallback(() => {
     const request = ++latestRequest.current;
-    setLoading(true);
-    setDenied(false);
     void axiosConfig.perform_get(
       auth,
       `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${TIME_RANGE_DAYS[range]}`,
@@ -132,9 +130,28 @@ const LocationClimatePanels = ({
     );
   }, [auth, demo, enqueueSnackbar, locationId, range]);
 
+  // A reload after a change (clean, import, rename).
+  const loadClimate = useCallback(() => {
+    setLoading(true);
+    setDenied(false);
+    fetchClimate();
+  }, [fetchClimate]);
+
+  // Another object or range: loading from this render on - adjusted during
+  // render, so the effect below only fetches and sets no state itself. Keyed
+  // by fetchClimate's dependencies (comparing the function itself reads as a
+  // ref access during render to oxlint).
+  const requestKey = [auth, demo, enqueueSnackbar, locationId, range] as const;
+  const [requested, setRequested] = useState(requestKey);
+  if (requestKey.some((value, index) => value !== requested[index])) {
+    setRequested(requestKey);
+    setLoading(true);
+    setDenied(false);
+  }
+
   useEffect(() => {
-    loadClimate();
-  }, [loadClimate]);
+    fetchClimate();
+  }, [fetchClimate]);
 
   const devices = climate?.devices ?? [];
   const frames = useMemo(

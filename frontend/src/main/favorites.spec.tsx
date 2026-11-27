@@ -40,13 +40,14 @@ const jwt = (userId: number, jti: string) => {
 
 let container: HTMLDivElement;
 let root: Root;
-let shown: number[] = [];
+// The locations of every render - collected, not assigned during render.
 const history: number[][] = [];
+/** The last render's locations. */
+const shown = () => history[history.length - 1];
 
 const Probe = () => {
   const { favorites } = useFavorites();
-  shown = favorites.map((row) => row.location);
-  history.push(shown);
+  history.push(favorites.map((row) => row.location));
   return null;
 };
 
@@ -74,7 +75,7 @@ describe('useFavorites', () => {
   it('keeps the favorites when the token of the same user is renewed', async () => {
     state.favorites = [{ location: 1 }, { location: 2 }];
     await render(jwt(41, 'a'), 41);
-    expect(shown).toEqual([1, 2]);
+    expect(shown()).toEqual([1, 2]);
     const loaded = history.length;
 
     await render(jwt(41, 'b'), 41);
@@ -92,19 +93,19 @@ describe('useFavorites', () => {
     await render(jwt(43, 'a'), 43);
 
     expect(state.gets).toBe(2);
-    expect(shown).toEqual([3]);
+    expect(shown()).toEqual([3]);
   });
 
   it('loads them again after a logout and a new login of the same user', async () => {
     state.favorites = [{ location: 1 }];
     await render(jwt(44, 'a'), 44);
     await render('', null);
-    expect(shown).toEqual([]);
+    expect(shown()).toEqual([]);
     state.favorites = [{ location: 5 }];
 
     await render(jwt(44, 'b'), 44);
 
     expect(state.gets).toBe(2);
-    expect(shown).toEqual([5]);
+    expect(shown()).toEqual([5]);
   });
 });

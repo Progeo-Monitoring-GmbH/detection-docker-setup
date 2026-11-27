@@ -6,7 +6,7 @@
  * middle button and Space + drag pan in every mode, F + drag picks an area
  * to zoom to; the right button is the browser's.
  */
-import { useRef, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 import type { PinDrag } from './drawImageCanvas';
 import {
   canvasToFraction,
@@ -85,6 +85,8 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
   const { group, groupDrag } = groupAlign;
   // Panning: where the press started and the pan then.
   const dragRef = useRef<{ startX: number; startY: number; startOffsetX: number; startOffsetY: number } | null>(null);
+  // Whether a pan is going on - for the render (the cursor); the ref is for the handlers.
+  const [panning, setPanning] = useState(false);
   // Placement: the sensor being dragged, and where a press on the plan
   // started (a click places, a drag pans).
   const sensorDragRef = useRef<number | null>(null);
@@ -300,6 +302,7 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     () => {
       if (dragRef.current) {
         dragRef.current = null;
+        setPanning(false);
         input.endPan();
       }
       if (fitRef.current) {
@@ -325,11 +328,12 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
       startOffsetX: input.view.offsetX,
       startOffsetY: input.view.offsetY,
     };
+    setPanning(true);
   };
 
   return {
     /** Panning, or dragging a point onto its place. */
-    dragging: Boolean(dragRef.current || calibration.alignDrag || groupDrag),
+    dragging: Boolean(panning || calibration.alignDrag || groupDrag),
     onMouseDown: (event: CanvasMouseEvent) => {
       pressRef.current = null;
       if (event.button > 1) {

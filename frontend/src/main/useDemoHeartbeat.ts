@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import axiosConfig from '../axiosConfig';
 import { isDemoUser } from './demo';
@@ -24,11 +25,10 @@ const useDemoHeartbeat = () => {
   const { pathname } = useLocation();
   const { allows } = useConsent();
   const demo = isDemoUser(auth.user) && allows('statistics');
-  const lastActivity = useRef(Date.now());
-  const pageRef = useRef(pathname);
-  pageRef.current = pathname;
-  const authRef = useRef(auth);
-  authRef.current = auth;
+  // Set by the page-view effect below before the first heartbeat reads it.
+  const lastActivity = useRef(0);
+  const pageRef = useLatestRef(pathname);
+  const authRef = useLatestRef(auth);
 
   const send = useRef((page: string) => {
     if (document.visibilityState !== 'visible') {
@@ -60,7 +60,7 @@ const useDemoHeartbeat = () => {
       ACTIVITY_EVENTS.forEach((name) => window.removeEventListener(name, markActive));
       window.clearInterval(timer);
     };
-  }, [demo]);
+  }, [demo, pageRef]);
 
   // A page change is activity and a page view.
   useEffect(() => {

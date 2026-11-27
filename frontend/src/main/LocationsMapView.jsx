@@ -35,6 +35,7 @@ import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showInfoBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { KeyChip } from '../components/ui/KeyHints';
 import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
 import { useConsent } from '../components/privacy/ConsentProvider';
@@ -474,8 +475,7 @@ const LocationsMapView = () => {
   const { t } = useTranslation();
   const auth = useAuth();
   // The load runs once per mount - through a ref, a new auth object doesn't restart the chunks.
-  const authRef = useRef(auth);
-  authRef.current = auth;
+  const authRef = useLatestRef(auth);
   const { allows } = useConsent();
   const [baseLayer, setBaseLayer] = useMapBaseLayer();
   const { enqueueSnackbar } = useSnackbar();
@@ -486,7 +486,7 @@ const LocationsMapView = () => {
   const [searchText, setSearchText] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [flashMarkers, setFlashMarkers] = useState({});
-  const [flashTick, setFlashTick] = useState(Date.now());
+  const [flashTick, setFlashTick] = useState(() => Date.now());
   const [toastsMuted, setToastsMuted] = useState(readToastsMuted);
   // While the activity chunks load: {done, total} databases.
   const [activityProgress, setActivityProgress] = useState(null);
@@ -562,7 +562,7 @@ const LocationsMapView = () => {
     return () => {
       cancelled = true;
     };
-  }, [enqueueSnackbar]);
+  }, [authRef, enqueueSnackbar]);
 
   useEffect(() => {
     const ws = new WebSocket(`${getWsBaseUrl()}/ws/commands/list`);
@@ -668,11 +668,11 @@ const LocationsMapView = () => {
     return counts;
   }, [rows]);
 
-  useEffect(() => {
-    if (selectedId && !filteredRows.some((row) => row.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [filteredRows, selectedId]);
+  // A selection the filter hides is dropped (adjusted during render, not in
+  // an effect) - it doesn't come back when the filter shows the row again.
+  if (selectedId && !filteredRows.some((row) => row.id === selectedId)) {
+    setSelectedId(null);
+  }
 
   const selectedLocation = useMemo(
     () => filteredRows.find((row) => row.id === selectedId) || null,
@@ -714,7 +714,7 @@ const LocationsMapView = () => {
         },
       );
     },
-    [enqueueSnackbar, t],
+    [authRef, enqueueSnackbar, t],
   );
 
   const flashOf = (id) => {

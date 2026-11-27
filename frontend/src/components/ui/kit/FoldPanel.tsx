@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Collapse } from 'react-bootstrap';
 import { ChevronRight } from 'react-bootstrap-icons';
 import './kit.css';
@@ -51,11 +51,14 @@ const FoldPanel = ({
   const [open, setOpen] = useState(defaultOpen || openOn);
   const bodyId = useId();
 
-  useEffect(() => {
+  // Unfolds while rendering when openOn turns true (no effect, no extra paint).
+  const [prevOpenOn, setPrevOpenOn] = useState(openOn);
+  if (openOn !== prevOpenOn) {
+    setPrevOpenOn(openOn);
     if (openOn) {
       setOpen(true);
     }
-  }, [openOn]);
+  }
 
   return (
     <section

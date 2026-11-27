@@ -83,6 +83,9 @@ type TooltipState = {
   end: number;
   x: number;
   y: number;
+  // Body size measured in the mouse handler (refs must not be read during render).
+  containerWidth: number;
+  containerHeight: number;
 };
 
 type RainTooltipState = {
@@ -91,6 +94,8 @@ type RainTooltipState = {
   amount?: number | null;
   x: number;
   y: number;
+  containerWidth: number;
+  containerHeight: number;
 };
 
 const AlarmTimeline = ({
@@ -441,15 +446,19 @@ const AlarmTimeline = ({
   // component is opened") and cancels any pending close timer.
   const toBodyPosition = (
     event: React.MouseEvent<HTMLDivElement>,
-  ): { x: number; y: number } => {
+  ): { x: number; y: number; containerWidth: number; containerHeight: number } => {
     const body = bodyRef.current;
     const rect = body?.getBoundingClientRect();
+    const containerWidth = body?.clientWidth ?? 0;
+    const containerHeight = body?.clientHeight ?? 0;
     if (!rect) {
-      return { x: event.clientX, y: event.clientY };
+      return { x: event.clientX, y: event.clientY, containerWidth, containerHeight };
     }
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
+      containerWidth,
+      containerHeight,
     };
   };
 
@@ -458,13 +467,11 @@ const AlarmTimeline = ({
     event: React.MouseEvent<HTMLDivElement>,
   ) => {
     clearCloseTimer();
-    const { x, y } = toBodyPosition(event);
     setTooltip({
       alarm: span.alarm,
       start: span.start,
       end: span.end,
-      x,
-      y,
+      ...toBodyPosition(event),
     });
   };
 
@@ -473,8 +480,7 @@ const AlarmTimeline = ({
       if (!current) {
         return current;
       }
-      const { x, y } = toBodyPosition(event);
-      return { ...current, x, y };
+      return { ...current, ...toBodyPosition(event) };
     });
   };
 
@@ -492,8 +498,7 @@ const AlarmTimeline = ({
     clearRainCloseTimer();
     // A rain overlay hover shouldn't leave the alarm-bar tooltip lingering.
     scheduleTooltipClose();
-    const { x, y } = toBodyPosition(event);
-    setRainTooltip({ start: rain.start, end: rain.end, amount, x, y });
+    setRainTooltip({ start: rain.start, end: rain.end, amount, ...toBodyPosition(event) });
   };
 
   const handleRainMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -501,8 +506,7 @@ const AlarmTimeline = ({
       if (!current) {
         return current;
       }
-      const { x, y } = toBodyPosition(event);
-      return { ...current, x, y };
+      return { ...current, ...toBodyPosition(event) };
     });
   };
 
@@ -776,8 +780,8 @@ const AlarmTimeline = ({
             now={now}
             x={tooltip.x + 15}
             y={tooltip.y + 15}
-            containerWidth={bodyRef.current?.clientWidth ?? 0}
-            containerHeight={bodyRef.current?.clientHeight ?? 0}
+            containerWidth={tooltip.containerWidth}
+            containerHeight={tooltip.containerHeight}
             onMouseEnter={clearCloseTimer}
             onMouseLeave={scheduleTooltipClose}
           />
@@ -790,8 +794,8 @@ const AlarmTimeline = ({
             amount={rainTooltip.amount}
             x={rainTooltip.x + 15}
             y={rainTooltip.y + 15}
-            containerWidth={bodyRef.current?.clientWidth ?? 0}
-            containerHeight={bodyRef.current?.clientHeight ?? 0}
+            containerWidth={rainTooltip.containerWidth}
+            containerHeight={rainTooltip.containerHeight}
             onMouseEnter={clearRainCloseTimer}
             onMouseLeave={scheduleRainTooltipClose}
           />

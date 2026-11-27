@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Card, Container, Spinner } from 'react-bootstrap';
 import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
@@ -30,16 +30,21 @@ const RequireAccess = ({
   // The permissions are loaded once per session token: a role granted since
   // (e.g. the customer admin) wouldn't count before the token rotates. Before
   // refusing, ask the backend once more.
-  const [rechecked, setRechecked] = useState<'no' | 'running' | 'done'>('no');
+  const [rechecked, setRechecked] = useState<'no' | 'done'>('no');
+  // The recheck in flight - a ref, so starting it needs no extra render.
+  const recheckingRef = useRef(false);
   const settled = Boolean(auth.token && auth.user) && !isLoading;
   useEffect(() => {
-    if (!settled || allowed || rechecked !== 'no') {
+    if (!settled || allowed || rechecked !== 'no' || recheckingRef.current) {
       return;
     }
-    setRechecked('running');
+    recheckingRef.current = true;
     void refreshPermissions()
       .catch(() => undefined)
-      .finally(() => setRechecked('done'));
+      .finally(() => {
+        recheckingRef.current = false;
+        setRechecked('done');
+      });
   }, [settled, allowed, rechecked, refreshPermissions]);
 
   if (!auth.token) {

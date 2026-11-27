@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Button, Card, Collapse, Spinner } from 'react-bootstrap';
 import { XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -200,11 +200,14 @@ const NoiseProfilePanel = ({
   // The profile whose delete waits for the confirmation.
   const [deleting, setDeleting] = useState<NoiseProfile | null>(null);
   const editing = draftName != null;
-  useEffect(() => {
+  // Opened when editing starts - adjusted during render, not in an effect.
+  const [wasEditing, setWasEditing] = useState(false);
+  if (editing !== wasEditing) {
+    setWasEditing(editing);
     if (editing) {
       setOpen(true);
     }
-  }, [editing]);
+  }
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
   const active = profiles.find((profile) => profile.is_active) ?? null;
   const tested = profiles.find((profile) => profile.id === testedId) ?? null;

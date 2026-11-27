@@ -183,11 +183,26 @@ def store_factory_sensors(rows, user=None):
 
 # ---------------------------------------------------------------------------- staff page
 
+def as_aware(value):
+    """A datetime from the database as an aware one. With USE_TZ = False (the
+    servers) Django returns naive local times of TIME_ZONE (Berlin), with
+    USE_TZ = True (the tests) aware ones - comparing them with the aware
+    times of a request, or converting them, needs this in both. None stays None."""
+    if value is None or timezone.is_aware(value):
+        return value
+    return timezone.make_aware(value, timezone.get_default_timezone())
+
+
+def now_aware():
+    """Now as an aware datetime (timezone.now() is naive with USE_TZ = False)."""
+    return datetime.datetime.now(datetime.UTC)
+
+
 def _iso(value):
-    """An aware datetime as "2026-11-24T09:41:12Z" (UTC), None stays None."""
+    """A datetime as "2026-11-24T09:41:12Z" (UTC), None stays None."""
     if value is None:
         return None
-    return value.astimezone(datetime.UTC).isoformat().replace("+00:00", "Z")
+    return as_aware(value).astimezone(datetime.UTC).isoformat().replace("+00:00", "Z")
 
 
 def measurement_row(measurement):
@@ -582,7 +597,7 @@ def airtable_fields(measurement, dm_sensor_id):
         AIRTABLE_FIELDS["mess_id"]: str(measurement.mess_id),
         AIRTABLE_FIELDS["project"]: measurement.project_id,
         AIRTABLE_FIELDS["sensor"]: measurement.sensor,
-        AIRTABLE_FIELDS["time"]: measurement.measured_at.astimezone(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        AIRTABLE_FIELDS["time"]: _iso(measurement.measured_at),
         AIRTABLE_FIELDS["r_ohm"]: measurement.r_ohm,
         AIRTABLE_FIELDS["r_werk"]: measurement.r_werk_ohm,
         AIRTABLE_FIELDS["delta"]: measurement.delta_percent,

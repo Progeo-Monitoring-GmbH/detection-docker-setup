@@ -69,9 +69,13 @@ OCR_WORKERS = 8
 
 LABEL_WORD = "MPLE"
 _NUMBER = r"([0-9Oo][0-9OoIl]{0,2})"
-_JOINED = re.compile(rf"M?P[LI1]E[-_.]?{_NUMBER}\??", re.IGNORECASE)
-_WORD = re.compile(r"M?P[LI1]E|MPL", re.IGNORECASE)
-_DIGITS = re.compile(rf"{_NUMBER}\??")
+# "MPLE 01" as Tesseract reads it: the L also as I, 1, ! or | and the E as F
+# (5.5 reads "MPI! E 01", "MPLF 03" where 5.4 read "MPLE 01").
+# The L may come as two characters ("I!"). Without the E only as "MPL" - "MP 103"
+# may be a measuring point, "P1" + digits is no label.
+_JOINED = re.compile(rf"(?:M?P[LI1!|]{{1,2}}[EF]|MPL)[-_.]?{_NUMBER}\??", re.IGNORECASE)
+# A label read as up to this many words ("MPI!" "E" "01") - joined to match.
+LABEL_PARTS = 3
 # Template matching: the word, each digit at least this similar.
 WORD_MIN = 0.6
 DIGIT_MIN = 0.45
@@ -298,27 +302,39 @@ def _tesseract(window: _Window, index: int, turned: bool, lang: str) -> list[_Re
     data = pytesseract.image_to_data(Image.fromarray(image), lang=lang, config="--psm 11",
                                      output_type=pytesseract.Output.DICT)
     words = [i for i in range(len(data["text"])) if (data["text"][i] or "").strip()]
-    readings = []
+    readings, used = [], set()
     for position, i in enumerate(words):
-        text = data["text"][i].strip()
-        joined = _JOINED.fullmatch(text)
-        try:
-            confidence = max(0.0, float(data["conf"][i])) / 100
-        except (TypeError, ValueError):
-            confidence = 0.0
-        if joined:
-            readings.append(_Reading(index, turned, _digits(joined.group(1)),
-                                     (data["left"][i], data["top"][i], data["width"][i], data["height"][i]),
-                                     confidence))
-        elif _WORD.fullmatch(text) and position + 1 < len(words):
-            j = words[position + 1]
-            number = _DIGITS.fullmatch(data["text"][j].strip())
-            if number and abs(data["top"][j] - data["top"][i]) < data["height"][i]:
-                left = data["left"][i]
-                readings.append(_Reading(index, turned, _digits(number.group(1)),
-                                         (left, data["top"][i], data["left"][j] + data["width"][j] - left,
-                                          data["height"][i]), confidence))
+        if i in used:
+            continue
+        # The label in one word ("MPLE01") or split ("MPLE" "01", "MPI!" "E" "01"):
+        # the words on its line joined - the longest that is a label.
+        found, joined_text = None, ""
+        for count, j in enumerate(words[position:position + LABEL_PARTS]):
+            if count and abs(data["top"][j] - data["top"][i]) >= data["height"][i]:
+                break
+            joined_text += data["text"][j].strip()
+            match = _JOINED.fullmatch(joined_text)
+            if match:
+                found = (match, words[position:position + count + 1])
+        if found is None:
+            continue
+        match, parts = found
+        last = parts[-1]
+        left = data["left"][i]
+        readings.append(_Reading(index, turned, _digits(match.group(1)),
+                                 (left, data["top"][i], data["left"][last] + data["width"][last] - left,
+                                  data["height"][i]),
+                                 max(_confidence(data, part) for part in parts)))
+        used.update(parts)
     return readings
+
+
+def _confidence(data: dict, index: int) -> float:
+    """Tesseract's confidence of a word, 0-1."""
+    try:
+        return max(0.0, float(data["conf"][index])) / 100
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _glyphs(binary: np.ndarray, min_height: float) -> list:
