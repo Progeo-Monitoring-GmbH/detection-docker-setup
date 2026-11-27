@@ -226,6 +226,71 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       expect(one('device-provision-show-config-qr')).toBeNull();
     });
 
+    const selectValue = (id: string, value: string) => {
+      const select = one(id) as HTMLSelectElement;
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+        setter.call(select, value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    };
+
+    it('labels the M5 rows through t(), not raw keys', () => {
+      pickM5();
+
+      expect(card('device')?.textContent).toContain('provision_config_format');
+      expect(card('measurement')?.textContent).toContain('provision_threshold_mv');
+      expect(card('measurement')?.textContent).toContain('provision_poll_sec');
+      const labels = [...(card('measurement')?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent);
+      expect(labels).not.toContain('threshold_mv');
+      expect(labels).not.toContain('poll_sec');
+    });
+
+    it('switches the config type: m5 sets the M5 model, lua restores the location model', () => {
+      click(one('device-provision-sections-edit', 'device'));
+      selectValue('device-provision-config-format-select', 'm5');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ config_format: 'm5', model: 'M5 AIN4', threshold_mv: 891 });
+
+      click(one('device-provision-sections-edit', 'device'));
+      selectValue('device-provision-config-format-select', 'lua');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[1]).toMatchObject({ config_format: 'lua', model: 'smartex mx' });
+    });
+
+    it('blocks generate for an empty or out-of-range threshold', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'measurement'));
+      type('device-provision-threshold-input', '');
+
+      expect((one('device-provision-sections-dialog-confirm') as HTMLButtonElement).disabled).toBe(true);
+
+      type('device-provision-threshold-input', '0');
+
+      expect((one('device-provision-sections-dialog-confirm') as HTMLButtonElement).disabled).toBe(true);
+      click(one('device-provision-sections-dialog-cancel'));
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ threshold_mv: 891 });
+    });
+
+    it('keeps a hand-edited threshold when the pulldown changes', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'measurement'));
+      type('device-provision-threshold-input', '500');
+      save();
+      click(one('device-provision-sections-edit', 'measurement'));
+      selectValue('device-provision-resistance', '72');
+      save();
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ pulldown_resistance: 72, threshold_mv: 500 });
+    });
+
     it('follows the pulldown default threshold until edited by hand', () => {
       pickM5();
       click(one('device-provision-sections-edit', 'measurement'));

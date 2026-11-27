@@ -12,7 +12,8 @@ export type SectionTone = 'blue' | 'teal' | 'purple' | 'amber' | 'red' | 'cyan' 
 export type SectionValues = Record<string, string | boolean>;
 
 /** One input of a section's dialog; `key` is the value's name in the config. */
-export type SectionField = { key: string; testId?: string } & (
+/** `label`: the translated name shown instead of `key`. */
+export type SectionField = { key: string; label?: string; testId?: string } & (
   | { kind: 'text' | 'password' }
   | { kind: 'number'; min?: number; max?: number }
   | { kind: 'select'; options: { value: string; label: string; title?: string }[] }
@@ -24,7 +25,7 @@ export type ConfigSection = {
   name: string;
   tone: SectionTone;
   /** What the card shows: the config's values, in its order. */
-  rows: { key: string; value: ReactNode; testId?: string }[];
+  rows: { key: string; label?: string; value: ReactNode; testId?: string }[];
   /** More than values (QR codes). */
   body?: ReactNode;
   /** The inputs of its dialog - none: the card cannot be edited. */
@@ -106,7 +107,7 @@ const ConfigSectionCards = ({
           key={field.key}
           type="switch"
           id={id}
-          label={field.key}
+          label={field.label ?? field.key}
           checked={draft[field.key] === true}
           onChange={(event) => set(field.key, event.target.checked)}
           data-testid={fieldTestId}
@@ -115,7 +116,7 @@ const ConfigSectionCards = ({
     }
     return (
       <Form.Group key={field.key} controlId={id}>
-        <Form.Label className="config-section-label mb-0">{field.key}</Form.Label>
+        <Form.Label className="config-section-label mb-0">{field.label ?? field.key}</Form.Label>
         {field.kind === 'select' ? (
           <Form.Select
             size="sm"
@@ -189,7 +190,7 @@ const ConfigSectionCards = ({
             <dl className="config-section-rows">
               {section.rows.map((row) => (
                 <div key={row.key} className="config-section-row">
-                  <dt>{row.key}</dt>
+                  <dt>{row.label ?? row.key}</dt>
                   <dd data-testid={row.testId}>{row.value === '' || row.value == null ? '–' : row.value}</dd>
                 </div>
               ))}

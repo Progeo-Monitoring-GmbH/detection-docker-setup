@@ -183,6 +183,9 @@ const DeviceProvisionPanel = ({
   const location = locations?.find((entry) => entry.id === locationId) ?? null;
   const isM5 = settings.model !== '' && settings.model === m5Model;
 
+  /** M5: the threshold must be 1..999 mV - an empty field is never sent as 0. */
+  const thresholdValid = (value: string) => /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 999;
+
   /** M5: the factory threshold of a pulldown (defaults.m5.threshold_mv has string keys). */
   const defaultThreshold = (pulldown: string) => {
     const value = m5Defaults?.threshold_mv?.[pulldown];
@@ -226,6 +229,9 @@ const DeviceProvisionPanel = ({
   }, [locationId, location?.model, m5Defaults]);
 
   const generate = (next: ProvisionSettings = settings) => {
+    if (next.model !== '' && next.model === m5Model && !thresholdValid(next.threshold_mv)) {
+      return;
+    }
     setLoading(true);
     setPreview(null);
     setConfirmed(false);
@@ -326,7 +332,7 @@ const DeviceProvisionPanel = ({
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
@@ -384,8 +390,9 @@ const DeviceProvisionPanel = ({
 
   const m5Resistances = resistances.filter((option) => option.value !== 8);
   const locationThreshold = location?.alarm_threshold ?? null;
+  const thresholdInvalid = isM5 && !thresholdValid(settings.threshold_mv);
   const thresholdMismatch =
-    isM5 && locationThreshold != null && settings.threshold_mv !== '' && Number(settings.threshold_mv) !== locationThreshold;
+    isM5 && !thresholdInvalid && locationThreshold != null && Number(settings.threshold_mv) !== locationThreshold;
 
   const wifiSection: ConfigSection = {
       name: 'wifi',
@@ -442,6 +449,7 @@ const DeviceProvisionPanel = ({
         { key: 'device_hash', value: generated(preview?.device_hash, 'device-provision-hash') },
         {
           key: 'config_format',
+          label: t('provision_config_format'),
           value: (
             <span data-testid="device-provision-config-format">
               {t(isM5 ? 'provision_config_format_m5' : 'provision_config_format_lua')}
@@ -450,6 +458,16 @@ const DeviceProvisionPanel = ({
         },
       ],
       fields: [
+        {
+          key: 'config_format',
+          label: t('provision_config_format'),
+          kind: 'select',
+          testId: 'device-provision-config-format-select',
+          options: [
+            { value: 'lua', label: t('provision_config_format_lua') },
+            { value: 'm5', label: t('provision_config_format_m5') },
+          ],
+        },
         {
           key: 'model',
           kind: 'select',
@@ -460,8 +478,21 @@ const DeviceProvisionPanel = ({
           ),
         },
       ],
-      values: { model: settings.model },
-      onSave: (values) => applySettings({ model: String(values.model) }),
+      values: { model: settings.model, config_format: isM5 ? 'm5' : 'lua' },
+      onSave: (values) => {
+        let model = String(values.model);
+        const format = String(values.config_format);
+        // The model decides; only an unchanged model follows the chosen type.
+        if (model === settings.model && format !== (isM5 ? 'm5' : 'lua')) {
+          if (format === 'm5') {
+            model = m5Model;
+          } else {
+            const own = asciiModel(location?.model || '');
+            model = own && own !== m5Model ? own : (models.find((name) => name !== m5Model) ?? own);
+          }
+        }
+        applySettings({ model });
+      },
     },
     {
       name: 'measurement',
@@ -476,9 +507,10 @@ const DeviceProvisionPanel = ({
           ? [
               {
                 key: 'threshold_mv',
+                label: t('provision_threshold_mv'),
                 value: <span data-testid="device-provision-threshold">{settings.threshold_mv}</span>,
               },
-              { key: 'poll_sec', value: settings.poll_sec },
+              { key: 'poll_sec', label: t('provision_poll_sec'), value: settings.poll_sec },
             ]
           : [
               { key: 'sensors', value: settings.sensors },
@@ -498,8 +530,8 @@ const DeviceProvisionPanel = ({
         { key: 'interval_sec', kind: 'number', min: 10, max: 86400, testId: 'device-provision-interval' },
         ...(isM5
           ? [
-              { key: 'threshold_mv', kind: 'number' as const, min: -1, max: 999, testId: 'device-provision-threshold-input' },
-              { key: 'poll_sec', kind: 'number' as const, min: 60, max: 86400, testId: 'device-provision-poll' },
+              { key: 'threshold_mv', label: t('provision_threshold_mv'), kind: 'number' as const, min: 1, max: 999, testId: 'device-provision-threshold-input' },
+              { key: 'poll_sec', label: t('provision_poll_sec'), kind: 'number' as const, min: 60, max: 86400, testId: 'device-provision-poll' },
             ]
           : [
               { key: 'sensors', kind: 'number' as const, min: 1, testId: 'device-provision-sensors' },
@@ -599,6 +631,11 @@ const DeviceProvisionPanel = ({
               {t('provision_threshold_location', { value: locationThreshold })}
             </div>
           )}
+          {thresholdInvalid && (
+            <Alert variant="danger" className="mt-2 mb-0 py-1 small" data-testid="device-provision-threshold-invalid">
+              {t('provision_threshold_invalid')}
+            </Alert>
+          )}
           {thresholdMismatch && (
             <Alert variant="warning" className="mt-2 mb-0 py-1 small" data-testid="device-provision-threshold-mismatch">
               {t('provision_threshold_mismatch', { threshold: settings.threshold_mv, location: locationThreshold })}
@@ -610,7 +647,7 @@ const DeviceProvisionPanel = ({
               size="sm"
               variant={preview ? 'outline-secondary' : 'primary'}
               onClick={() => generate()}
-              disabled={loading || !settings.model}
+              disabled={loading || !settings.model || (isM5 && !thresholdValid(settings.threshold_mv))}
               data-testid="device-provision-generate"
             >
               {loading && !preview ? (
