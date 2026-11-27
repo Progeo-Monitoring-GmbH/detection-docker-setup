@@ -126,6 +126,10 @@ def test_cron_collector_reads_status_and_last_success():
     assert families["progeo_cron_job_last_success_duration_seconds"].samples[0].value == 100
     assert families["progeo_cron_job_running"].samples[0].value == 0
     assert families["progeo_cron_job_interval_seconds"].samples[0].value == 24 * 60 * 60
+    # Not "job": Prometheus sets that to the scrape job ("django") and moves the
+    # metric's own value to exported_job - every cron job showed as "django".
+    assert {sample.labels["cron_job"] for family in families.values() for sample in family.samples} == {"daily"}
+    assert not any("job" in sample.labels for family in families.values() for sample in family.samples)
 
 
 def test_outbound_collector_reads_the_shared_cache():

@@ -57,9 +57,9 @@
         },
         "enable": true,
         "iconColor": "blue",
-        "expr": "changes(progeo_cron_job_last_start_timestamp_seconds{job!=\"measure\"}[2m]) > 0",
+        "expr": "changes(progeo_cron_job_last_start_timestamp_seconds{cron_job!=\"measure\"}[2m]) > 0",
         "step": "60s",
-        "titleFormat": "cron {{job}} started",
+        "titleFormat": "cron {{cron_job}} started",
         "textFormat": "",
         "useValueForTime": false
       },
@@ -1039,7 +1039,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "cron {{job}}"
+          "legendFormat": "cron {{cron_job}}"
         }
       ],
       "fieldConfig": {

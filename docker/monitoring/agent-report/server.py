@@ -215,12 +215,16 @@ def section_warnings(hours):
 
 
 def section_client_errors(hours):
-    rows = loki(f"sum {BY} (count_over_time({CLIENT_ERRORS} {NORM} [{hours}h]))")
+    # Scanners probe hundreds of different paths: the full list exceeds Loki's
+    # 500 series per query, so only the top 20 and the count come back.
+    grouped = f"sum {BY} (count_over_time({CLIENT_ERRORS} {NORM} [{hours}h]))"
+    rows = loki(f"topk(20, {grouped})")
     rows.sort(key=lambda row: -row[1])
+    different = loki(f"count({grouped})")
     return {
         "note": "4xx answers and rejected Host headers from backend.err.log. Mostly scanners and expired "
                 "tokens; they are kept out of errors.jsonl on purpose.",
-        "different_messages": len(rows),
+        "different_messages": int(different[0][1]) if different else 0,
         "messages": [{"level": m.get("level"), "message": m.get("msg"), "lines": int(v)} for m, v in rows[:20]],
     }
 
@@ -269,11 +273,11 @@ def section_celery(hours):
 
 
 def section_cron(hours):
-    exit_codes = prom_by("progeo_cron_job_last_exit_code", "job", 0)
-    since_success = prom_by("time() - progeo_cron_job_last_success_timestamp_seconds", "job", 0)
-    duration = prom_by("progeo_cron_job_last_duration_seconds", "job", 1)
-    interval = prom_by("progeo_cron_job_interval_seconds", "job", 0)
-    running = prom_by("progeo_cron_job_running", "job", 0)
+    exit_codes = prom_by("progeo_cron_job_last_exit_code", "cron_job", 0)
+    since_success = prom_by("time() - progeo_cron_job_last_success_timestamp_seconds", "cron_job", 0)
+    duration = prom_by("progeo_cron_job_last_duration_seconds", "cron_job", 1)
+    interval = prom_by("progeo_cron_job_interval_seconds", "cron_job", 0)
+    running = prom_by("progeo_cron_job_running", "cron_job", 0)
     return [{
         "job": job,
         "last_exit_code": int(exit_codes[job]) if job in exit_codes else None,

@@ -114,37 +114,37 @@ class CronJobCollector:
 
         started = GaugeMetricFamily(
             "progeo_cron_job_last_start_timestamp_seconds",
-            "When the job last started", labels=["job"],
+            "When the job last started", labels=["cron_job"],
         )
         finished = GaugeMetricFamily(
             "progeo_cron_job_last_finish_timestamp_seconds",
-            "When the job last finished", labels=["job"],
+            "When the job last finished", labels=["cron_job"],
         )
         duration = GaugeMetricFamily(
             "progeo_cron_job_last_duration_seconds",
-            "Wall-clock duration of the last finished run", labels=["job"],
+            "Wall-clock duration of the last finished run", labels=["cron_job"],
         )
         exit_code = GaugeMetricFamily(
             "progeo_cron_job_last_exit_code",
-            "Exit code of the last run (-1 while running)", labels=["job"],
+            "Exit code of the last run (-1 while running)", labels=["cron_job"],
         )
         running = GaugeMetricFamily(
-            "progeo_cron_job_running", "1 while the job is running", labels=["job"],
+            "progeo_cron_job_running", "1 while the job is running", labels=["cron_job"],
         )
         last_ok = GaugeMetricFamily(
-            "progeo_cron_job_last_run_ok", "1 if the last finished run succeeded", labels=["job"],
+            "progeo_cron_job_last_run_ok", "1 if the last finished run succeeded", labels=["cron_job"],
         )
         last_success = GaugeMetricFamily(
             "progeo_cron_job_last_success_timestamp_seconds",
-            "When the job last succeeded", labels=["job"],
+            "When the job last succeeded", labels=["cron_job"],
         )
         last_success_duration = GaugeMetricFamily(
             "progeo_cron_job_last_success_duration_seconds",
-            "Duration of the last successful run", labels=["job"],
+            "Duration of the last successful run", labels=["cron_job"],
         )
         interval = GaugeMetricFamily(
             "progeo_cron_job_interval_seconds",
-            "Expected schedule interval of the job", labels=["job"],
+            "Expected schedule interval of the job", labels=["cron_job"],
         )
 
         for filename in sorted(os.listdir(directory)):

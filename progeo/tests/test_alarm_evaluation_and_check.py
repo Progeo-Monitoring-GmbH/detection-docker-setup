@@ -695,3 +695,72 @@ def test_instant_evaluation_never_raises(settings, monkeypatch, window, site):
 
     monkeypatch.setattr(type(measurement), "evaluate_all", boom)
     assert evaluate_measurement_instantly(measurement, f.DB) is False
+
+
+# -- check_existing_alarms: which databases a scheduled run visits -----------------
+
+@pytest.fixture
+def four_databases(monkeypatch, settings):
+    """A scheduled run over four databases that all receive measurements
+    (pg_stat_database changes everywhere, as in production): returns the
+    list of visited databases per run."""
+    from progeo import tasks
+    from progeo.helper import alarm_check, project_dbs
+
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    names = ["p1", "p2", "p3", "p4"]
+    writes = itertools.count(1)
+    monkeypatch.setattr(tasks, "_task_databases", lambda db=None, measurements=False: list(names))
+    monkeypatch.setattr(project_dbs, "database_write_counters", lambda aliases: {n: next(writes) for n in aliases})
+    monkeypatch.setattr(project_dbs, "release_connection", lambda alias: None)
+    visited = []
+
+    def check(db, silence_hours=24):
+        visited[-1].append(db)
+        return (1, 0) if db == "p2" else (0, 0)  # only p2 has an active alarm
+
+    monkeypatch.setattr(alarm_check, "check_existing_alarms_db", check)
+
+    def run():
+        visited.append([])
+        tasks.check_existing_alarms()
+        return visited[-1]
+
+    return run
+
+
+def test_between_full_sweeps_only_databases_with_alarms_are_visited(four_databases):
+    """Measurements alone never give check_existing_alarms work: a run visited
+    ~870 of ~1100 databases every 10 minutes for ~155 open alarms."""
+    from django.core.cache import cache
+
+    from progeo import tasks
+    from progeo.helper.alarm_check import flag_active_alarm
+
+    assert four_databases() == ["p1", "p2", "p3", "p4"]  # first run: full sweep
+    assert four_databases() == ["p2"]  # p2 still has its alarm
+    flag_active_alarm("p4")  # a new alarm in p4 (post_save of ProgeoAlarm)
+    assert four_databases() == ["p2", "p4"]
+    assert four_databases() == ["p2"]  # the flag is used up
+
+    cache.set(tasks._FULL_SWEEP_KEY, 0, None)  # the hour is over
+    assert four_databases() == ["p1", "p2", "p3", "p4"]
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_a_saved_active_alarm_flags_its_database(settings, site):
+    from django.core.cache import cache
+
+    from progeo.helper.alarm_check import pop_flagged_alarm_databases
+
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    cache.clear()
+    _location, device = site
+    measurement = f.make_measurement(device)
+
+    alarm = ProgeoAlarm.objects.using(f.DB).create(measurement=measurement, triggered_at=timezone.now())
+
+    assert pop_flagged_alarm_databases([f.DB, "other"]) == {f.DB}
+    alarm.normalized_at = timezone.now()
+    alarm.save(using=f.DB)
+    assert pop_flagged_alarm_databases([f.DB]) == set()  # a normalized alarm gives no work

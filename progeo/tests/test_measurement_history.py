@@ -69,6 +69,20 @@ def test_a_wrong_length_check_is_flagged_but_still_dropped():
     assert measurement.get_relevant_info()["length_check"] is False
 
 
+def test_a_failed_length_check_is_logged_without_the_values(monkeypatch):
+    """~2% of the transmissions fail it (thousands of warnings a day): the
+    values made up 80% of errors.jsonl and were truncated anyway ([SHORTED])."""
+    from progeo.v1.legacy import executor
+
+    warnings = []
+    monkeypatch.setattr(executor, "wlog", lambda *msg, **kwargs: warnings.append(" ".join(map(str, msg))))
+    values = [0, 10, 0, 20, 0, 30, 0, 40]
+
+    parse_legacy_data_measurement(_payload(4, values) + ",0,95", broadcast=False)
+
+    assert warnings == ["project 5709: length check failed - transmission may be truncated (10 values for 4 points)"]
+
+
 def test_a_chunk_ends_in_its_length_check_too():
     # 118 points declared, only 3 pairs in this chunk + the check value.
     payload = _with_length(_payload(118, [0, 10, 0, 20, 0, 30]))

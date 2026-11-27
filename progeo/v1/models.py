@@ -379,8 +379,10 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # opens the project's main location, see helper/project_portal.py). Not
     # unique: duplicates and locations without one exist (merge_duplicate_
     # locations, relink_locations, the "unknown" project database) - those
-    # are opened by pk (/location/<pk>/).
-    project_id = models.IntegerField(null=True, blank=True)
+    # are opened by pk (/location/<pk>/). Indexed: every legacy transmission
+    # looks its location up by it (executor.ingest_db) - without the index a
+    # full scan of the wide table each time.
+    project_id = models.IntegerField(null=True, blank=True, db_index=True)
     project_type = models.IntegerField(choices=PROJECT_TYPE_CHOICES, default=PROJECT_TYPE_CHOICES.UNKNOWN, null=True, blank=True)
     # The customer's own project number (free text, not ours - that is
     # project_id). Only staff and customer admins see and edit it
@@ -2375,6 +2377,16 @@ def _forget_cached_lageplans(sender, using, **kwargs):
     # a request in between cannot cache the old state again. QuerySet.update()
     # sends no signal - its callers forget the answers themselves.
     transaction.on_commit(forget_location_answers, using=using)
+
+
+@receiver(post_save, sender=ProgeoAlarm)
+def _flag_active_alarm(sender, instance, using, **kwargs):
+    # check_existing_alarms visits only the databases with active alarms
+    # between its hourly sweeps (helper/alarm_check.flag_active_alarm).
+    if instance.normalized_at is None:
+        from progeo.helper.alarm_check import flag_active_alarm
+
+        flag_active_alarm(using)
 
 
 # Signal receivers: mirroring users/accounts/locations/devices into the

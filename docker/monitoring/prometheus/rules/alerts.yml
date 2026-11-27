@@ -44,8 +44,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: 'Cron job {{ $labels.job }} failed'
-          description: 'The last finished run of cron job {{ $labels.job }} returned exit code {{ $value }}. Check logs/backend/cron.log and the "Cronjobs" dashboard.'
+          summary: 'Cron job {{ $labels.cron_job }} failed'
+          description: 'The last finished run of cron job {{ $labels.cron_job }} returned exit code {{ $value }}. Check logs/backend/cron.log and the "Cronjobs" dashboard.'
 
   - name: django
     rules:

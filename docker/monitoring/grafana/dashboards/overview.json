@@ -1464,7 +1464,7 @@
         {
           "id": "joinByField",
           "options": {
-            "byField": "job",
+            "byField": "cron_job",
             "mode": "outer"
           }
         },
@@ -1475,7 +1475,7 @@
               "Time": true
             },
             "renameByName": {
-              "job": "Name",
+              "cron_job": "Name",
               "Value #A": "Status",
               "Value #B": "Last run age",
               "Value #C": "Last success age",

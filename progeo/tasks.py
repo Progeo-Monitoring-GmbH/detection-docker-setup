@@ -1,3 +1,4 @@
+import time
 import zlib
 
 from celery import shared_task
@@ -295,6 +296,8 @@ def _task_databases(db=None, measurements=False):
 
 _WRITES_CACHE_KEY = "periodic-task-db-writes:{}"
 _ACTIVE_ALARMS_CACHE_KEY = "check-existing-alarms:dbs-with-active-alarms"
+_FULL_SWEEP_KEY = "check-existing-alarms:last-full-sweep"
+FULL_SWEEP_SECONDS = 60 * 60
 
 
 def _databases_with_writes(task, db_names, keep=()):
@@ -440,15 +443,26 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
     from progeo.helper.project_dbs import release_connection
 
     db_names = _task_databases(db, measurements=True)
-    # New alarms or measurements mean a write; but an alarm can also end
-    # without one (its device fell silent), so the databases that still had
-    # active alarms last time are always visited again.
+    # Only a database with an active alarm has work. Those of the last run are
+    # visited again (an alarm can end without a write: its device fell
+    # silent), plus those flagged with a new or reopened alarm since. Nearly
+    # every database gets measurements between two runs, so the write
+    # counters alone selected ~870 of ~1100 databases for ~155 open alarms;
+    # they still decide the hourly full sweep - the safety net for alarms
+    # written without the flag (raw SQL, a lost cache).
     scheduled = db is None and silence_hours == 24
+    counters = None
     if scheduled:
-        still_active = cache.get(_ACTIVE_ALARMS_CACHE_KEY) or ()
-        visit, counters = _databases_with_writes("check_existing_alarms", db_names, keep=still_active)
+        from progeo.helper.alarm_check import pop_flagged_alarm_databases
+
+        keep = set(cache.get(_ACTIVE_ALARMS_CACHE_KEY) or ()) | pop_flagged_alarm_databases(db_names)
+        if time.time() - (cache.get(_FULL_SWEEP_KEY) or 0) >= FULL_SWEEP_SECONDS:
+            visit, counters = _databases_with_writes("check_existing_alarms", db_names, keep=keep)
+        else:
+            known = cache.get(_WRITES_CACHE_KEY.format("check_existing_alarms")) or {}
+            visit = [name for name in db_names if name in keep or name not in known]
     else:
-        visit, counters = db_names, None
+        visit = db_names
 
     total_checked = 0
     total_normalized = 0
@@ -474,7 +488,10 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
 
     if counters is not None:
         _remember_writes("check_existing_alarms", counters, failed)
-        cache.set(_ACTIVE_ALARMS_CACHE_KEY, with_active_alarms, None)
+        cache.set(_FULL_SWEEP_KEY, time.time(), None)
+    if scheduled:
+        # Failed databases are tried again by the next run.
+        cache.set(_ACTIVE_ALARMS_CACHE_KEY, with_active_alarms + failed, None)
     ilog(f"[check_existing_alarms] visited {len(visit)} of {len(db_names)} databases, "
          f"total checked={total_checked} normalized={total_normalized}")
     return {
@@ -763,8 +780,6 @@ def process_notification_cases():
     """Send the due stages of the NotificationCases (alarms at any time,
     offline mails only inside NOTIFY_WINDOW_*), the "wieder online" mails
     and the daily staff digest. One run at a time (cache lock)."""
-    import time
-
     from django.core.cache import cache
 
     from progeo.helper import notification_cases

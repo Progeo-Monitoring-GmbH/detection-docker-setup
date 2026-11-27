@@ -7,6 +7,37 @@ from django.utils import timezone
 
 BULK_BATCH_SIZE = 500
 
+# A database that got an active alarm (new or reopened, post_save of
+# ProgeoAlarm in v1/models.py) - visited by the next check_existing_alarms
+# run, which otherwise only visits the databases that still had active
+# alarms (and all of them once an hour, tasks.FULL_SWEEP_SECONDS).
+_FLAG_KEY = "check-existing-alarms:active-alarm:{}"
+
+
+def flag_active_alarm(db: str):
+    from contextlib import suppress
+
+    from django.core.cache import cache
+
+    # Never break saving an alarm - the hourly sweep finds it.
+    with suppress(Exception):
+        cache.set(_FLAG_KEY.format(db), 1, None)
+
+
+def pop_flagged_alarm_databases(db_names) -> set:
+    """The flagged ones of `db_names`, flags cleared. Cache unavailable:
+    all of them - visiting too many is safe, missing one is not."""
+    from django.core.cache import cache
+
+    keys = {_FLAG_KEY.format(name): name for name in db_names}
+    try:
+        found = cache.get_many(list(keys))
+        if found:
+            cache.delete_many(list(found))
+    except Exception:  # noqa: BLE001
+        return set(db_names)
+    return {keys[key] for key in found}
+
 
 def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int]:
     """Check all unnormalized alarms of one database against the latest measurements."""

@@ -318,8 +318,11 @@ def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
     location_project_id = _as_project_id(project_id)
     project_location = None
     if location_project_id is not None:
+        # Runs on most transmissions (the cache outlives few send intervals):
+        # location_db only needs the project number, not the wide row.
         project_location = (
-            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(project_id=location_project_id).order_by("pk").first()
+            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(project_id=location_project_id)
+            .only("pk", "project_id").order_by("pk").first()
         )
     candidates = [location_db(project_location)] if project_location else []
     candidates = list(dict.fromkeys([*candidates, DEFAULT_DB_ALIAS]))
@@ -652,7 +655,9 @@ def parse_legacy_data_measurement(data, broadcast=True, log=True):
     if len(pair_values) > len(samples) or len(pair_values) % 2:
         checked = length_check(_legacy_tokens(data))
         if checked is False and log:
-            wlog(f"project {values[0]}: length check failed - transmission may be truncated |\n pair_values={pair_values}, \nsamples={samples}", tag="[LEGACY]")
+            # Counts only: the values made up most of errors.jsonl (thousands a day).
+            wlog(f"project {values[0]}: length check failed - transmission may be truncated "
+                 f"({len(pair_values)} values for {values[4]} points)", tag="[LEGACY]")
     measurement = DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],

@@ -199,3 +199,27 @@ def test_catch_lorawan_data_rejects_unusable_uplinks(api_client, uplink):
     assert response.status_code == 400, response.content
     assert response.json().get("success") is False
     assert ProgeoMeasurement.objects.using("default").count() == before_count
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+@pytest.mark.parametrize("event", ["status", "join", "ack", "txack", "log"])
+def test_catch_lorawan_data_acknowledges_other_chirpstack_events(api_client, event):
+    """ChirpStack's HTTP integration posts every event to the same URL
+    (?event=up|status|join|...). Only "up" carries measurements; the others
+    were refused with 400 ("No object provided", ~55 a day in production)."""
+    body = {"deviceInfo": {"devEui": unique("eui")}, "margin": 7, "batteryLevel": 95.5}
+    before = ProgeoMeasurement.objects.using("default").count()
+
+    response = api_client.post(f"/v1/device/lorawan/7001/?token={_make_token()}&event={event}", body, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json() == {"success": True, "ignored": event}
+    assert ProgeoMeasurement.objects.using("default").count() == before
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_lorawan_data_event_up_is_an_uplink(api_client):
+    response = api_client.post(f"/v1/device/lorawan/7001/?token={_make_token()}&event=up", LORAWAN_UPLINK, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["temperature"] == 22.65

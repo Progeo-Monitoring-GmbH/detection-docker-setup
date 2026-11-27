@@ -659,7 +659,14 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
         """
 
         #ilog("DeviceViewSet: catch_lorawan_data called | project_id:", project_id, "| request.data:", request.data, tag="[LORAWAN]")
-        
+
+        # ChirpStack's HTTP integration posts every event to this URL
+        # (?event=up|status|join|ack|txack|log); only "up" carries measurements.
+        # The others are acknowledged - a 400 shows as a failed delivery there.
+        event = request.query_params.get("event")
+        if event not in (None, "", "up"):
+            return RequestSuccess({"ignored": event})
+
         uplink = request.data.get("object")
         if not isinstance(uplink, dict):
             return RequestFailed({"reason": "No object provided"})

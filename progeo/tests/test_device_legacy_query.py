@@ -493,3 +493,39 @@ def test_catch_live_data_keeps_the_mux_faults_in_raw_data(api_client):
     assert response.status_code == 200, response.content
     saved = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
     assert saved.raw_data["mux_faults"] == [{"mux": 2, "missing_channels": 16}]
+
+
+# ---------------------------------------------------------------------------- cost of a transmission
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_location_project_id_is_indexed():
+    """ingest_db looks the location up by project_id on most legacy
+    transmissions (~2.5/s in production) - without an index a full scan of
+    the wide table each time (1.2 ms, the top statement in pg_stat_statements)."""
+    from django.db import connections
+
+    with connections["default"].cursor() as cursor:
+        constraints = connections["default"].introspection.get_constraints(cursor, "progeo_progeolocation")
+
+    assert any(info["index"] and info["columns"] == ["project_id"] for info in constraints.values())
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_ingest_db_reads_only_the_project_number_of_the_location(settings):
+    """The 60 s database cache outlives few send intervals, so the location
+    lookup runs on most transmissions: only id and project_id are read."""
+    from django.db import connections
+    from django.test.utils import CaptureQueriesContext
+
+    settings.PROJECT_DB_SPLIT = True
+    executor.ingest_legacy_query(LEGACY_SAMPLE_Y)  # device and location exist
+    executor.forget_ingest_db("5709")  # the cache expired between two transmissions
+
+    with CaptureQueriesContext(connections["default"]) as ctx:
+        executor.ingest_legacy_query(LEGACY_SAMPLE_Y)
+
+    lookups = [q["sql"] for q in ctx.captured_queries
+               if q["sql"].startswith('SELECT "progeo_progeolocation"."id"') and '"project_id" = 5709' in q["sql"]]
+    assert len(lookups) == 1
+    selected = lookups[0].split(" FROM ")[0]
+    assert selected == 'SELECT "progeo_progeolocation"."id", "progeo_progeolocation"."project_id"'

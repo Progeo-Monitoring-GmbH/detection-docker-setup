@@ -283,7 +283,7 @@
               "Time": true
             },
             "renameByName": {
-              "job": "Job",
+              "cron_job": "Job",
               "Value": "Value"
             }
           }
@@ -377,7 +377,7 @@
               "Time": true
             },
             "renameByName": {
-              "job": "Job",
+              "cron_job": "Job",
               "Value": "Value"
             }
           }
@@ -430,7 +430,7 @@
         {
           "refId": "A",
           "expr": "progeo_cron_job_last_duration_seconds",
-          "legendFormat": "{{job}}",
+          "legendFormat": "{{cron_job}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -478,7 +478,7 @@
         {
           "refId": "A",
           "expr": "progeo_cron_job_running",
-          "legendFormat": "{{job}}",
+          "legendFormat": "{{cron_job}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
