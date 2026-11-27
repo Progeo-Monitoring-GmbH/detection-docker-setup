@@ -140,6 +140,17 @@ class DeviceSerializer(ProgeoBaseSerializer):
     def get_clazz_name(_):
         return "ProgeoDevice"
 
+    def get_fields(self):
+        fields = super().get_fields()
+        # The model ("M5 AIN4") unlocks the paid device SMS route: only staff
+        # may set it, for a customer it is read-only (ignored on write).
+        request = self.context.get("request")
+        if request is not None and not (
+            getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False)
+        ):
+            fields["hardware"].read_only = True
+        return fields
+
     @staticmethod
     def get_legacy_gprs(device):
         from progeo.v1.legacy.gprs_config import legacy_role

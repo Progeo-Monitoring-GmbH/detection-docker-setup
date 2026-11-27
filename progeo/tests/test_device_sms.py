@@ -302,3 +302,67 @@ def test_route_passes_status_through(esendex_api, api_client, m5):
     assert response.status_code == 400
     assert response.json()["success"] is False
     assert calls == []
+
+
+def test_device_limit_is_logged_as_rate_limited(esendex_api, device):
+    from progeo.v1.models import OutboundMessage
+
+    _rows(device, outbound.limits()["sms_device_hour"], sent=True)
+    before = DeviceSms.objects.using(f.DB).count()
+
+    assert _send(device, to="+49 170 1234567", kind="clear")[0] == 429
+
+    row = OutboundMessage.objects.using(f.DB).get()
+    assert (row.status, row.category, row.recipient, row.location_id) == (
+        OutboundMessage.Status.RATE_LIMITED, "device_clear", "+491701234567", device.location_id)
+    assert DeviceSms.objects.using(f.DB).count() == before
+
+
+def test_route_answers_malformed_json_with_the_contract_body(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    response = api_client.generic(
+        "POST", f"/v1/device/{m5[0].project_id}/sms/", "{not json", content_type="application/json")
+    assert response.status_code == 400
+    assert response.json() == {"success": False, "sent": False, "reason": "invalid json"}
+    assert calls == []
+
+
+def test_route_refuses_malformed_json_without_a_token_as_403(esendex_api, api_client, m5):
+    api_client.credentials()
+    response = api_client.generic(
+        "POST", f"/v1/device/{m5[0].project_id}/sms/", "{not json", content_type="application/json")
+    assert (response.status_code, response.json()) == (403, REFUSED)
+
+
+def test_route_refuses_a_device_without_location(esendex_api, api_client, m5):
+    calls, _reply = esendex_api
+    ProgeoDevice.objects.using(f.DB).filter(location=m5[0]).update(location=None)
+    response = _post_own(api_client, m5)
+    assert response.status_code == 403
+    assert response.json()["reason"] == "not an M5 device"
+    assert calls == []
+
+
+def test_route_logs_refusals_with_the_token_pk(esendex_api, api_client, m5, monkeypatch):
+    from progeo.v1.viewsets import device_viewset
+
+    logged = []
+    monkeypatch.setattr(device_viewset, "elog", lambda *msg, **kw: logged.append(" ".join(map(str, msg))))
+    token = LimitedToken.objects.using(f.DB).get(raw_hash=m5[1]["token"])
+
+    response = _post(api_client, m5[0], {"device_hash": "other-1"})
+
+    assert response.status_code == 403
+    assert any(f"token {token.pk}" in line and "device mismatch" in line for line in logged)
+    assert not any(token.raw_hash in line for line in logged)
+
+
+def test_route_logs_a_refusal_without_token(esendex_api, api_client, m5, monkeypatch):
+    from progeo.v1.viewsets import device_viewset
+
+    logged = []
+    monkeypatch.setattr(device_viewset, "elog", lambda *msg, **kw: logged.append(" ".join(map(str, msg))))
+    api_client.credentials()
+
+    assert _post(api_client, m5[0]).status_code == 403
+    assert any("token None" in line and "device token required" in line for line in logged)

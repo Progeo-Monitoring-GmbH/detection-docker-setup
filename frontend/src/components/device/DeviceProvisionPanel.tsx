@@ -4,6 +4,7 @@ import { CheckCircle, Clipboard, Download, FileEarmarkCode, QrCode as QrCodeIcon
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { staffFlags } from '../../main/access';
 import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
@@ -82,7 +83,7 @@ type ProvisionPreview = {
   };
 };
 
-export type ProvisionedDevice = { id: number; location: number; raw_hash: string };
+export type ProvisionedDevice = { id: number; location: number; raw_hash: string; is_m5?: boolean };
 
 const EMPTY_SETTINGS: ProvisionSettings = {
   model: '',
@@ -138,6 +139,10 @@ const DeviceProvisionPanel = ({
   const [bundles, setBundles] = useState<FirmwareBundle[]>([]);
   const [m5Model, setM5Model] = useState(DEFAULT_M5_MODEL);
   const [m5Defaults, setM5Defaults] = useState<M5Defaults | null>(null);
+  /** The location defaults of the Lua box (provision/locations): what leaving the M5 restores. */
+  const [luaDefaults, setLuaDefaults] = useState<Partial<ProvisionSettings>>({});
+  // The M5 (model and config type) is for staff only - the backend refuses it for anyone else.
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   const [firmwareFallback, setFirmwareFallback] = useState('');
   const [settings, setSettings] = useState<ProvisionSettings>(EMPTY_SETTINGS);
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
@@ -163,6 +168,11 @@ const DeviceProvisionPanel = ({
         setM5Model(asciiModel(String(data.m5_model || DEFAULT_M5_MODEL)));
         setM5Defaults((data.defaults?.m5 || null) as M5Defaults | null);
         const defaults = data.defaults || {};
+        setLuaDefaults({
+          sensors: String(defaults.sensors ?? ''),
+          interval_sec: String(defaults.interval_sec ?? ''),
+          pulldown_resistance: String(defaults.pulldown_resistance ?? ''),
+        });
         setSettings((current) => ({
           ...current,
           firmware: String(defaults.firmware ?? ''),
@@ -194,6 +204,16 @@ const DeviceProvisionPanel = ({
 
   /** A change of model or pulldown: the M5 starts from its own defaults. */
   const withM5Defaults = (previous: ProvisionSettings, next: ProvisionSettings): ProvisionSettings => {
+    if (previous.model !== '' && previous.model === m5Model && next.model !== previous.model && next.model !== m5Model) {
+      // Leaving the M5: its 4 sensors / 300 s must not stay on a Lua box.
+      return {
+        ...next,
+        ...Object.fromEntries(Object.entries(luaDefaults).filter(([, value]) => value !== '')),
+        protective_earth: false,
+        rpi: false,
+        router: false,
+      };
+    }
     if (next.model === '' || next.model !== m5Model || !m5Defaults) {
       return next;
     }
@@ -300,6 +320,7 @@ const DeviceProvisionPanel = ({
             id: Number(device.id),
             location: locationId,
             raw_hash: String(device.raw_hash ?? preview.device_hash),
+            is_m5: preview.config_format === 'm5',
           });
         }
       },
@@ -465,7 +486,7 @@ const DeviceProvisionPanel = ({
           testId: 'device-provision-config-format-select',
           options: [
             { value: 'lua', label: t('provision_config_format_lua') },
-            { value: 'm5', label: t('provision_config_format_m5') },
+            ...(isStaff ? [{ value: 'm5', label: t('provision_config_format_m5') }] : []),
           ],
         },
         {
@@ -473,7 +494,10 @@ const DeviceProvisionPanel = ({
           kind: 'select',
           testId: 'device-provision-model',
           // A default the list lacks stays selectable.
-          options: [...(settings.model && !models.includes(settings.model) ? [settings.model] : []), ...models].map(
+          options: [
+            ...(settings.model && !models.includes(settings.model) ? [settings.model] : []),
+            ...models.filter((model) => isStaff || model !== m5Model),
+          ].map(
             (model) => ({ value: model, label: model }),
           ),
         },

@@ -311,3 +311,173 @@ def test_is_provisioned_m5_ignores_a_self_reported_bundle():
     assert m5_device.is_provisioned_m5(ProgeoDevice(hardware="M5 AIN4"))
     assert not m5_device.is_provisioned_m5(ProgeoDevice(hardware="", firmware_bundle="m5-ain4-4.0.0"))
     assert not m5_device.is_provisioned_m5(ProgeoDevice(hardware="smartex mx"))
+
+
+# ------------------------------------------------------------------ final review fixes
+
+def test_threshold_payload_of_an_m5_ends_at_input_16():
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids), alarm_threshold=450)
+    m5 = f.make_device(location, hardware="M5 AIN4", firmware_bundle=None)
+    f.make_measure_point(location, 16, threshold=70)
+    f.make_measure_point(location, 17, threshold=60)
+    f.make_measure_point(location, 99, threshold=60, disabled=True)
+
+    [command] = device_thresholds.sync_location(location, f.DB)
+
+    assert device_commands.decrypt(command.payload_encrypted) == {"project": 450, "16": 70}
+    assert command.device_id == m5.pk
+
+
+def test_threshold_payload_of_a_lua_box_keeps_inputs_beyond_16():
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids), alarm_threshold=450)
+    f.make_device(location, hardware="smartex mx", firmware_bundle="v1.0.5_fw-v1.6.1-tls-lua53")
+    f.make_measure_point(location, 17, threshold=60)
+
+    [command] = device_thresholds.sync_location(location, f.DB)
+
+    assert device_commands.decrypt(command.payload_encrypted) == {"project": 450, "17": 60}
+
+
+@pytest.mark.parametrize("params", [{"pulldown_resistance": "8"}, {"poll_sec": "0"}, {"poll_sec": " 0 "}])
+def test_check_m5_command_catches_string_values(params):
+    with pytest.raises(device_commands.CommandError):
+        device_commands.check_m5_command(_device(hardware="M5 AIN4"), "set_params", params)
+
+
+def test_check_m5_command_lets_other_strings_pass():
+    device_commands.check_m5_command(_device(hardware="M5 AIN4"), "set_params", {"poll_sec": "300"})
+
+
+@pytest.mark.parametrize("params", [
+    {"interval_sec": 29}, {"interval_sec": 86401}, {"pulldown_resistance": 99}, {"pulldown_resistance": 0},
+])
+def test_applied_set_params_outside_the_ranges_are_not_stored(params):
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))
+    device = f.make_device(location, hardware="M5 AIN4", data_interval=600, pull_resistance=72)
+    command = ProgeoDeviceCommand(summary={"params": params})
+
+    device_commands._apply_set_params(device, f.DB, command)
+
+    device.refresh_from_db(using=f.DB)
+    assert (device.data_interval, device.pull_resistance) == (600, 72)
+
+
+def test_applied_set_params_inside_the_ranges_are_stored():
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))
+    device = f.make_device(location, hardware="M5 AIN4", data_interval=600, pull_resistance=72)
+    command = ProgeoDeviceCommand(summary={"params": {"interval_sec": 30, "pulldown_resistance": 40}})
+
+    device_commands._apply_set_params(device, f.DB, command)
+
+    device.refresh_from_db(using=f.DB)
+    assert (device.data_interval, device.pull_resistance) == (30, 40)
+
+
+def test_provisioned_m5_gets_its_sensor_count(api_client):
+    from progeo.tests.device_fixtures import provision_device
+
+    location, _preview = provision_device(api_client, "M5 AIN4")
+    assert ProgeoDevice.objects.using(f.DB).get(location=location).sensor_count == 4
+
+
+def test_provisioned_lua_box_has_no_sensor_count(api_client):
+    from progeo.tests.device_fixtures import provision_device
+
+    location, _preview = provision_device(api_client, "smartex mx")
+    assert ProgeoDevice.objects.using(f.DB).get(location=location).sensor_count is None
+
+
+def test_m5_interval_minimum_is_30_seconds_lua_stays_10():
+    assert device_provisioning.parse_settings({"model": "M5 AIN4", "interval_sec": 30})["interval_sec"] == 30
+    with pytest.raises(device_provisioning.ProvisionError):
+        device_provisioning.parse_settings({"model": "M5 AIN4", "interval_sec": 29})
+    assert device_provisioning.parse_settings({"model": "smartex mx", "interval_sec": 10})["interval_sec"] == 10
+
+
+# --- who may make a device an M5 (staff only)
+
+def _customer(perms):
+    account = Account.objects.using(f.DB).get(pk=1)
+    return account, f.make_user(accounts=[account], perms=perms)
+
+
+def test_customer_cannot_change_hardware_of_a_device(api_client):
+    account, user = _customer(["module_devices_enabled", "module_devices_edit"])
+    location = f.make_location(account, project_id=next(_project_ids))
+    device = f.make_device(location, hardware="smartex mx", type="smartbox")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.patch(f"/v1/device/{device.pk}/", {"hardware": "M5 AIN4"}, format="json")
+
+    assert response.status_code == 200, response.content
+    device.refresh_from_db(using=f.DB)
+    assert device.hardware == "smartex mx"
+    assert response.json()["hardware"] == "smartex mx"
+
+
+def test_customer_cannot_put_hardware_with_a_full_update(api_client):
+    account, user = _customer(["module_devices_enabled", "module_devices_edit"])
+    location = f.make_location(account, project_id=next(_project_ids))
+    device = f.make_device(location, hardware="smartex mx", type="smartbox")
+    api_client.force_authenticate(user=user)
+
+    api_client.put(f"/v1/device/{device.pk}/", {"location": location.pk, "raw_hash": device.raw_hash,
+                                                "hardware": "M5 AIN4"}, format="json")
+
+    device.refresh_from_db(using=f.DB)
+    assert device.hardware == "smartex mx"
+
+
+def test_staff_can_change_hardware_of_a_device(api_client):
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))
+    device = f.make_device(location, hardware="smartex mx", type="smartbox")
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.patch(f"/v1/device/{device.pk}/", {"hardware": "M5 AIN4"}, format="json")
+
+    assert response.status_code == 200, response.content
+    device.refresh_from_db(using=f.DB)
+    assert device.hardware == "M5 AIN4"
+
+
+def test_customer_cannot_provision_an_m5(api_client):
+    account, user = _customer(["module_devices_enabled", "module_devices_provision"])
+    location = f.make_location(account, project_id=next(_project_ids))
+    api_client.force_authenticate(user=user)
+
+    for settings in ({"model": "M5 AIN4"}, {"model": "M5 AIN4", "config_format": "lua"}):
+        response = api_client.post("/v1/device/provision/preview/", {"location": location.pk, **settings},
+                                   format="json")
+        assert response.status_code == 400, response.content
+        assert "staff" in response.json()["reason"]
+
+    # Lua stays open to them.
+    ok = api_client.post("/v1/device/provision/preview/", {"location": location.pk, "model": "smartex mx"},
+                         format="json")
+    assert ok.status_code == 200, ok.content
+
+
+def test_customer_cannot_confirm_an_m5_preview(api_client):
+    account, user = _customer(["module_devices_enabled", "module_devices_provision"])
+    location = f.make_location(account, project_id=next(_project_ids))
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    signed = api_client.post("/v1/device/provision/preview/", {"location": location.pk, "model": "M5 AIN4"},
+                             format="json").json()["signed"]
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post("/v1/device/provision/confirm/", {"signed": signed}, format="json")
+
+    assert response.status_code == 400, response.content
+    assert "staff" in response.json()["reason"]
+    assert not ProgeoDevice.objects.using(f.DB).filter(location=location).exists()
+
+
+def test_staff_can_provision_an_m5(api_client):
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/device/provision/preview/", {"location": location.pk, "model": "M5 AIN4"},
+                               format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["config_format"] == "m5"

@@ -246,6 +246,16 @@ def clean_payload(command, payload):
 
 # ---------------------------------------------------------------------------- queue
 
+def _number_is(value, number) -> bool:
+    """Whether `value` is `number` - as 8 or as the string "8"."""
+    if isinstance(value, bool):
+        return False
+    try:
+        return int(str(value).strip()) == number
+    except ValueError:
+        return False
+
+
 def check_m5_command(device, command, payload):
     """Refuse what an M5 cannot do: update/upgrade/logs, set_params with the
     pulldown off (8) or poll_sec 0 (never poll). `payload` is the cleaned one."""
@@ -254,9 +264,9 @@ def check_m5_command(device, command, payload):
     if command in UNSUPPORTED_COMMANDS:
         raise CommandError(f"{command} is not supported by M5")
     if command == Command.SET_PARAMS and isinstance(payload, dict):
-        if payload.get("pulldown_resistance") == 8:
+        if _number_is(payload.get("pulldown_resistance"), 8):
             raise CommandError("pulldown_resistance 8 (off) is not supported by M5")
-        if payload.get("poll_sec") == 0:
+        if _number_is(payload.get("poll_sec"), 0):
             raise CommandError("poll_sec 0 (never poll) is not supported by M5")
 
 
@@ -472,9 +482,10 @@ def _apply_set_params(device, db_name, command):
     params = (command.summary or {}).get("params") or {}
     changes = {}
     interval, resistance = params.get("interval_sec"), params.get("pulldown_resistance")
-    if isinstance(interval, int) and not isinstance(interval, bool):
+    if isinstance(interval, int) and not isinstance(interval, bool) and 30 <= interval <= 86400:
         changes["data_interval"] = interval
-    if isinstance(resistance, int) and not isinstance(resistance, bool):
+    if (isinstance(resistance, int) and not isinstance(resistance, bool)
+            and resistance in ProgeoDevice.Resistance.values):
         changes["pull_resistance"] = resistance
     if changes:
         ProgeoDevice.objects.using(db_name).filter(pk=device.pk).update(**changes)

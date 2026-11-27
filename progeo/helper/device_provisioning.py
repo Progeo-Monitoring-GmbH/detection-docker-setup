@@ -41,6 +41,8 @@ PORTAL_URL = "http://192.168.16.1"
 # No upper limit on the sensors.
 SENSORS_RANGE = (1, None)
 INTERVAL_RANGE = (10, 86400)
+# The M5 takes 30..86400 s (firmware, set_params).
+M5_INTERVAL_RANGE = (30, 86400)
 DEFAULT_SENSORS = 32
 DEFAULT_INTERVAL_SEC = 1800
 
@@ -188,7 +190,8 @@ def parse_settings(data) -> dict:
         "config_format": config_format,
         "sensors": _int_field(data, "sensors", M5_DEFAULTS["sensors"] if m5 else DEFAULT_SENSORS, SENSORS_RANGE),
         "interval_sec": _int_field(
-            data, "interval_sec", M5_DEFAULTS["interval_sec"] if m5 else DEFAULT_INTERVAL_SEC, INTERVAL_RANGE
+            data, "interval_sec", M5_DEFAULTS["interval_sec"] if m5 else DEFAULT_INTERVAL_SEC,
+            M5_INTERVAL_RANGE if m5 else INTERVAL_RANGE,
         ),
         **extra,
         "pulldown_resistance": pulldown,
@@ -400,6 +403,7 @@ def create_device(plan, location, db_name, token_account, user=None):
             hardware=plan_model(plan),
             version=CONFIG_VERSION,
             data_interval=plan["interval_sec"],
+            **({"sensor_count": plan["sensors"]} if plan_model(plan) == M5_MODEL else {}),
             pull_resistance=plan["pulldown_resistance"],
         )
         token = LimitedToken.objects.using(DEFAULT_DB_ALIAS).create(

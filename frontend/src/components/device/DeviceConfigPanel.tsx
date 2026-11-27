@@ -7,7 +7,7 @@ import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
 import LabeledInput from '../ui/kit/LabeledInput';
 import SegmentedControl from '../ui/kit/SegmentedControl';
-import { INTERVAL_OPTIONS, RESISTANCE_OPTIONS } from './deviceParams';
+import { INTERVAL_OPTIONS, paramOptionsFor } from './deviceParams';
 import { childTestId } from '../../testIds';
 import './DeviceConfigPanel.css';
 
@@ -19,6 +19,9 @@ export type ConfigDevice = {
   device_ip?: string | null;
   data_interval?: number | null;
   pull_resistance?: number | null;
+  /** The model - "M5 AIN4" has no pulldown 8 (off). */
+  hardware?: string | null;
+  is_m5?: boolean;
 };
 
 type DeviceConfigForm = {
@@ -177,6 +180,11 @@ const DeviceConfigPanel = ({
   const [form, setForm] = useState<DeviceConfigForm>(() =>
     initialForm(device, peSwitched),
   );
+  const isM5 = device.is_m5 === true || device.hardware === 'M5 AIN4';
+  const resistanceOptions = paramOptionsFor('pulldown_resistance', isM5) as {
+    value: number;
+    labelKey: string;
+  }[];
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -360,14 +368,14 @@ const DeviceConfigPanel = ({
             data-testid={childTestId(testId, 'resistance')}
           >
             {/* A value on the device outside the known choices stays visible. */}
-            {!RESISTANCE_OPTIONS.some(
+            {!resistanceOptions.some(
               (option) => option.value === form.measurement_pulldown_resistance,
             ) && (
               <option value={form.measurement_pulldown_resistance}>
                 {form.measurement_pulldown_resistance}
               </option>
             )}
-            {RESISTANCE_OPTIONS.map((option) => (
+            {resistanceOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {t(option.labelKey)}
               </option>

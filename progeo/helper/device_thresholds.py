@@ -42,6 +42,8 @@ _BUNDLE = re.compile(r"^v?(\d+(?:\.\d+)*)_fw-v?(\d+(?:\.\d+)*)")
 
 # A switched-off sensor.
 DISABLED = -1
+# Highest input of an M5 (the firmware knows 1..16).
+M5_MAX_INPUT = 16
 # The controller reads at most 4 KB of a poll answer, with the other commands
 # (firmware_update.PAYLOAD_MAX_BYTES).
 PAYLOAD_MAX_BYTES = 3 * 1024
@@ -112,6 +114,9 @@ def threshold_payload(location, device, sensors, devices=()):
         position = sensor_map.pair_of(sensor_order)
         if position is not None:
             by_input[position] = threshold
+    if is_m5(device):
+        # The M5 has 4 inputs per module, 16 at most - nothing beyond.
+        by_input = {position: value for position, value in by_input.items() if position <= M5_MAX_INPUT}
     payload = {"project": _number(location.alarm_threshold)}
     payload.update({str(position): by_input[position] for position in sorted(by_input)})
     return payload

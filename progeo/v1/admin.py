@@ -45,6 +45,7 @@ from progeo.v1.models import (
     AlarmDailyReport,
     Backup,
     DemoSession,
+    DeviceSms,
     EMail,
     EmailSuppression,
     LimitedToken,
@@ -1140,6 +1141,15 @@ class OutboundMessageAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         return shorten(obj.error) or "-"
 
 
+class DeviceSmsAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """The SMS the M5 devices handed to the backend (helper/device_sms.py) -
+    written by the app, only viewed here."""
+    list_display = ("created", "device_hash", "kind", "to", "status_code", "sent")
+    list_filter = ("kind", "sent", "status_code", ("created", admin.DateFieldListFilter))
+    search_fields = ("device_hash", "to", "ref")
+    ordering = ("-created", "-pk")
+
+
 class EmailSuppressionAdmin(admin.ModelAdmin):
     """Addresses that bounced (helper/bounces.py): nothing is sent to an
     active one. Delete the row to lift the suppression."""
@@ -1584,6 +1594,7 @@ register_models = [
     {"model": EMail, "admin": EMailAdmin, "custom": True},
     {"model": SMS, "admin": SMSAdmin, "custom": True},
     {"model": OutboundMessage, "admin": OutboundMessageAdmin, "custom": True},
+    {"model": DeviceSms, "admin": DeviceSmsAdmin, "custom": True},
     {"model": EmailSuppression, "admin": EmailSuppressionAdmin, "custom": True},
     {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},
     {"model": NotificationCase, "admin": NotificationCaseAdmin, "custom": True},
