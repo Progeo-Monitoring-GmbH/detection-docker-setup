@@ -23,18 +23,30 @@ import re
 import uuid
 
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Q
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
-from progeo.helper.basics import elog, ilog
+from progeo.helper.basics import ilog
+from progeo.werk.common import (
+    DB,
+    ManuSensorError,
+    airtable_helper,
+    copy_failed,
+    formula_text,
+    integer,
+    invalid,
+    iso,
+    json_object,
+    parse_time,
+    queue_task,
+    sensors_table,
+    site_measurements_table,
+)
+from progeo.werk.models import FactorySensor, SiteMeasurement
 
-# Postgres integer columns - a bigger value would be a 500 instead of a 422.
-MAX_INT = 2_147_483_647
 # The hourly retry leaves a measurement this long to its own copy (queued at once).
 AIRTABLE_RETRY_AFTER = datetime.timedelta(minutes=10)
-
-DB = DEFAULT_DB_ALIAS
 
 IDENTIFICATIONS = ("nfc", "manuell")
 TRIGGERS = ("taster", "app")
@@ -49,29 +61,6 @@ _PROJECT = re.compile(r"[0-9]{1,9}")
 def tolerance_percent() -> float:
     """|ΔR| up to this is "ok" (SPEC: e.g. ±5 %)."""
     return float(getattr(settings, "MANUSENSOR_TOLERANCE_PERCENT", 5.0))
-
-
-class ManuSensorError(Exception):
-    """An answer other than success: HTTP status, error code, text, field."""
-
-    def __init__(self, status, code, message, field=None, extra=None):
-        super().__init__(message)
-        self.status = status
-        self.code = code
-        self.message = message
-        self.field = field
-        # More keys of the answer, e.g. the current sensor list of a sheet.
-        self.extra = extra or {}
-
-    def body(self):
-        body = {"fehler": self.code, "meldung": self.message}
-        if self.field:
-            body["feld"] = self.field
-        return {**body, **self.extra}
-
-
-def invalid(field, message):
-    return ManuSensorError(422, "ungueltig", message, field)
 
 
 # ---------------------------------------------------------------------------- numbers
@@ -97,8 +86,6 @@ def normalize_tag_uid(value):
 # ---------------------------------------------------------------------------- factory values
 
 def find_factory_sensor(project_id, sensor=None, tag_uid=None):
-    from progeo.werk.models import FactorySensor
-
     rows = FactorySensor.objects.using(DB).filter(project_id=project_id)
     if sensor is not None:
         return rows.filter(sensor=sensor).first()
@@ -127,9 +114,8 @@ def _factory_row(index, row):
     sensor = normalize_sensor(row.get("sensor"))
     if sensor is None:
         raise invalid(f"{prefix}.sensor", "Sensornummer muss aus 1-6 Ziffern bestehen.")
-    r_werk = row.get("r_werk_ohm")
-    if isinstance(r_werk, bool) or not isinstance(r_werk, int) or not 0 < r_werk <= MAX_INT:
-        raise invalid(f"{prefix}.r_werk_ohm", "R_Werk muss eine positive ganze Zahl (Ohm) sein.")
+    r_werk = integer(row.get("r_werk_ohm"), f"{prefix}.r_werk_ohm", minimum=1,
+                     message="R_Werk muss eine positive ganze Zahl (Ohm) sein.")
     tag_uid = None
     if row.get("tag_uid") not in (None, ""):
         tag_uid = normalize_tag_uid(row.get("tag_uid"))
@@ -140,7 +126,7 @@ def _factory_row(index, row):
         raise invalid(f"{prefix}.band", "Bandnummer: höchstens 32 Zeichen.")
     measured_at = None
     if row.get("gemessen_am") not in (None, ""):
-        measured_at = _aware(row.get("gemessen_am"))
+        measured_at = parse_time(row.get("gemessen_am"))
         if measured_at is None:
             raise invalid(f"{prefix}.gemessen_am", "Zeitstempel ISO 8601 erwartet.")
     values = {
@@ -157,8 +143,6 @@ def store_factory_sensors(rows, user=None):
     JSON: projekt, sensor, band, tag_uid, r_werk_ohm, gemessen_am) - all or
     none: the first invalid row raises ManuSensorError (422, its field).
     Returns {"angelegt": n, "aktualisiert": n}."""
-    from progeo.werk.models import FactorySensor
-
     if not isinstance(rows, list) or not rows:
         raise invalid("sensoren", "Liste der Sensoren fehlt.")
     parsed = [_factory_row(index, row) for index, row in enumerate(rows)]
@@ -183,28 +167,6 @@ def store_factory_sensors(rows, user=None):
 
 # ---------------------------------------------------------------------------- staff page
 
-def as_aware(value):
-    """A datetime from the database as an aware one. With USE_TZ = False (the
-    servers) Django returns naive local times of TIME_ZONE (Berlin), with
-    USE_TZ = True (the tests) aware ones - comparing them with the aware
-    times of a request, or converting them, needs this in both. None stays None."""
-    if value is None or timezone.is_aware(value):
-        return value
-    return timezone.make_aware(value, timezone.get_default_timezone())
-
-
-def now_aware():
-    """Now as an aware datetime (timezone.now() is naive with USE_TZ = False)."""
-    return datetime.datetime.now(datetime.UTC)
-
-
-def _iso(value):
-    """A datetime as "2026-11-24T09:41:12Z" (UTC), None stays None."""
-    if value is None:
-        return None
-    return as_aware(value).astimezone(datetime.UTC).isoformat().replace("+00:00", "Z")
-
-
 def measurement_row(measurement):
     """A site measurement as the staff page shows it."""
     payload = measurement.payload if isinstance(measurement.payload, dict) else {}
@@ -213,7 +175,7 @@ def measurement_row(measurement):
         "id": measurement.pk,
         "projekt": str(measurement.project_id),
         "sensor": measurement.sensor,
-        "zeit": _iso(measurement.measured_at),
+        "zeit": iso(measurement.measured_at),
         "r_ohm": measurement.r_ohm,
         "r_status": measurement.r_status,
         "r_werk_ohm": measurement.r_werk_ohm,
@@ -233,8 +195,6 @@ def _with_newest_measurement(sensors):
     queryset `sensors`, in its order - two queries. Each sensor carries the
     number of its site measurements (`measurements`)."""
     from django.db.models import Count, OuterRef, Subquery
-
-    from progeo.werk.models import SiteMeasurement
 
     newest = SiteMeasurement.objects.using(DB).filter(factory_sensor=OuterRef("pk")).order_by("-pk")
     sensors = list(sensors.annotate(
@@ -257,7 +217,7 @@ def factory_sensor_row(sensor, measurement):
         "band": sensor.band,
         "tag_uid": sensor.tag_uid,
         "r_werk_ohm": sensor.r_werk_ohm,
-        "gemessen_am": _iso(sensor.measured_at),
+        "gemessen_am": iso(sensor.measured_at),
         "airtable_id": sensor.airtable_record_id,
         "airtable_nr": sensor.airtable_nr,
         "produktionsauftrag": sensor.production_order,
@@ -271,8 +231,6 @@ def project_sensors(project_id):
     """GET /v1/werk/baustelle/<projekt>/sensor/ (the app, neither number nor tag):
     every factory sensor of the project with its newest site measurement, by
     number - the rows of the staff page. No paging."""
-    from progeo.werk.models import FactorySensor
-
     sensors = FactorySensor.objects.using(DB).filter(project_id=project_id).order_by("sensor")
     return {
         "projekt": str(project_id),
@@ -284,10 +242,6 @@ def project_sensors(project_id):
 def project_counts():
     """{project_id: (factory sensors, those with a site measurement)} of every
     project with factory sensors - one query (GET /v1/werk/projekte/)."""
-    from django.db.models import Count, Q
-
-    from progeo.werk.models import FactorySensor
-
     rows = (
         FactorySensor.objects.using(DB).values("project_id")
         .annotate(
@@ -305,8 +259,6 @@ def staff_overview(project_id=None):
     with its newest site measurement, the site measurements without factory
     values (no sensor, or one without R_Werk), the counts and the project
     numbers there are."""
-    from progeo.werk.models import FactorySensor, SiteMeasurement
-
     sensors = FactorySensor.objects.using(DB).order_by("project_id", "sensor")
     # Answered without R_Werk: an unknown sensor or one imported without it.
     unmatched = SiteMeasurement.objects.using(DB).filter(r_werk_ohm__isnull=True).select_related("user")
@@ -328,8 +280,8 @@ def staff_overview(project_id=None):
         project_id__in={m.project_id for m in unmatched}, r_werk_ohm__isnull=False,
     ).values_list("project_id", "sensor"))
     projects = sorted(
-        set(FactorySensor.objects.using(DB).values_list("project_id", flat=True))
-        | set(SiteMeasurement.objects.using(DB).values_list("project_id", flat=True))
+        set(FactorySensor.objects.using(DB).order_by().values_list("project_id", flat=True).distinct())
+        | set(SiteMeasurement.objects.using(DB).order_by().values_list("project_id", flat=True).distinct())
     )
     return {
         "sensoren": rows,
@@ -345,8 +297,6 @@ def staff_overview(project_id=None):
 def sensor_history(factory_pk):
     """GET /v1/werk/sensoren/<pk>/messungen/ (staff): the site measurements of
     a factory sensor, newest first - 404 for an unknown one."""
-    from progeo.werk.models import FactorySensor
-
     factory = FactorySensor.objects.using(DB).filter(pk=factory_pk).first()
     if factory is None:
         raise ManuSensorError(404, "sensor_unbekannt", "Sensor nicht gefunden")
@@ -356,27 +306,9 @@ def sensor_history(factory_pk):
 
 # ---------------------------------------------------------------------------- site measurements
 
-def _aware(value):
-    """An ISO 8601 timestamp as an aware datetime, else None."""
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = parse_datetime(value.strip())
-    except ValueError:  # well-formed but impossible, e.g. 2026-02-30 or 25:00
-        return None
-    if parsed is None or timezone.is_naive(parsed):
-        return None
-    return parsed
-
-
-def _optional_int(data, key, field, minimum=None):
+def _optional_int(data, key, field):
     value = data.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int) or (minimum is not None and value < minimum) \
-            or abs(value) > MAX_INT:
-        raise invalid(field, f"{field}: ganze Zahl erwartet.")
-    return value
+    return None if value is None else integer(value, field, message=f"{field}: ganze Zahl erwartet.")
 
 
 def _optional_text(data, key, field, length):
@@ -391,13 +323,12 @@ def _optional_text(data, key, field, length):
 def validate_measurement(data, project_id):
     """The body of POST /v1/werk/baustelle/<projekt>/messungen, checked against the
     SPEC - the cleaned values, or ManuSensorError (422 with the field)."""
-    if not isinstance(data, dict):
-        raise invalid(None, "JSON-Objekt erwartet.")
+    json_object(data)
     try:
         mess_id = uuid.UUID(str(data.get("mess_id")))
     except ValueError:
         raise invalid("mess_id", "mess_id muss eine UUID sein.") from None
-    measured_at = _aware(data.get("zeit"))
+    measured_at = parse_time(data.get("zeit"))
     if measured_at is None:
         raise invalid("zeit", "Zeitstempel ISO 8601 mit Zeitzone erwartet, z. B. 2026-11-24T09:41:12Z.")
     if parse_project(data.get("projekt")) != project_id:
@@ -412,7 +343,7 @@ def validate_measurement(data, project_id):
     r_status = data.get("r_status")
     if r_status not in R_STATUSES:
         raise invalid("r_status", "r_status: \"ok\", \"offen\" oder \"kurzschluss\".")
-    r_ohm = _optional_int(data, "r_ohm", "r_ohm", minimum=0)
+    r_ohm = _optional_int(data, "r_ohm", "r_ohm")
     if r_status == "ok" and r_ohm is None:
         raise invalid("r_ohm", "r_ohm fehlt (r_status ist \"ok\").")
     tag_uid = None
@@ -424,13 +355,13 @@ def validate_measurement(data, project_id):
     _optional_text(data, "tag_text", "tag_text", 100)
     _optional_text(data, "bereich", "bereich", 10)
     _optional_text(data, "benutzer", "benutzer", 150)
-    _optional_int(data, "u_adc_mv", "u_adc_mv", minimum=0)
+    _optional_int(data, "u_adc_mv", "u_adc_mv")
     device = data.get("geraet")
     if not isinstance(device, dict) or not isinstance(device.get("id"), str) or not 1 <= len(device["id"]) <= 16:
         raise invalid("geraet.id", "Geräte-ID des Messmoduls fehlt.")
     _optional_text(device, "fw", "geraet.fw", 32)
-    _optional_int(device, "seq", "geraet.seq", minimum=0)
-    _optional_int(device, "vbat_mv", "geraet.vbat_mv", minimum=0)
+    _optional_int(device, "seq", "geraet.seq")
+    _optional_int(device, "vbat_mv", "geraet.vbat_mv")
     app = data.get("app")
     if not isinstance(app, dict) or not isinstance(app.get("version"), str) or not isinstance(app.get("plattform"), str):
         raise invalid("app", "app.version und app.plattform fehlen.")
@@ -503,8 +434,6 @@ def record_measurement(data, project_id, location, user):
     (measurement, created). A measurement already stored under its mess_id
     with the same body is answered again (created False); with another body
     it is refused (409 mess_id_konflikt)."""
-    from progeo.werk.models import SiteMeasurement
-
     cleaned = validate_measurement(data, project_id)
     existing = SiteMeasurement.objects.using(DB).filter(mess_id=cleaned["mess_id"]).first()
     if existing is not None:
@@ -564,29 +493,17 @@ STATUS_LABELS = {"ok": "OK", "pruefen": "Prüfen", "defekt": "Defekt", "unbekann
 
 def queue_airtable_push(measurement_pk):
     """push_to_airtable in celery - nothing without Airtable configured."""
-    from progeo.helper.airtable import AirtableHelper
-
-    if not AirtableHelper().configured:
-        return
-    try:
-        from progeo.werk.tasks import push_site_measurement_to_airtable
-
-        push_site_measurement_to_airtable.delay(measurement_pk)
-    except Exception as error:  # noqa: BLE001 - the hourly retry picks it up
-        elog(f"Could not queue the Airtable copy of site measurement {measurement_pk}: {error}",
-             tag="[MANUSENSOR]")
+    queue_task("push_site_measurement_to_airtable", measurement_pk)
 
 
 def _dm_sensor_record_id(helper, project_id, sensor):
     """The "dm Sensoren" row of the sensor (Nr. without leading zeros, the
     project through its Produktionsauftrag), else None."""
-    table = helper.table(getattr(settings, "AIRTABLE_DM_SENSORS_TABLE", "dm Sensoren"))
-    number = str(int(sensor))
-    formula = (
-        f"AND({{Nr.}}='{number}', "
-        f"ARRAYJOIN({{P-Nummer (from Produktionsauftrag)}})='{int(project_id)}')"
-    )
-    records = table.all(formula=formula, max_records=2, fields=["Nr."])
+    from progeo.werk.airtable_dm_sensors import FIELD_NR, FIELD_PROJECT
+
+    formula = (f"AND({{{FIELD_NR}}}={formula_text(int(sensor))}, "
+               f"ARRAYJOIN({{{FIELD_PROJECT}}})={formula_text(int(project_id))})")
+    records = helper.table(sensors_table()).all(formula=formula, max_records=2, fields=[FIELD_NR])
     return records[0]["id"] if len(records) == 1 else None
 
 
@@ -597,7 +514,7 @@ def airtable_fields(measurement, dm_sensor_id):
         AIRTABLE_FIELDS["mess_id"]: str(measurement.mess_id),
         AIRTABLE_FIELDS["project"]: measurement.project_id,
         AIRTABLE_FIELDS["sensor"]: measurement.sensor,
-        AIRTABLE_FIELDS["time"]: _iso(measurement.measured_at),
+        AIRTABLE_FIELDS["time"]: iso(measurement.measured_at),
         AIRTABLE_FIELDS["r_ohm"]: measurement.r_ohm,
         AIRTABLE_FIELDS["r_werk"]: measurement.r_werk_ohm,
         AIRTABLE_FIELDS["delta"]: measurement.delta_percent,
@@ -619,18 +536,15 @@ def push_to_airtable(measurement_pk):
     """Copies the site measurement to Airtable (creates its row, or updates
     the one it has). Errors are kept on the measurement (airtable_error) -
     push_pending_to_airtable tries again. True when it arrived."""
-    from progeo.helper.airtable import AirtableHelper
-    from progeo.werk.models import SiteMeasurement
-
     measurement = (
         SiteMeasurement.objects.using(DB).select_related("user", "factory_sensor")
         .filter(pk=measurement_pk).first()
     )
-    helper = AirtableHelper()
-    if measurement is None or not helper.configured:
+    helper = airtable_helper()
+    if measurement is None or helper is None:
         return False
     try:
-        table = helper.table(getattr(settings, "AIRTABLE_SITE_MEASUREMENTS_TABLE", "Baustellenmessungen"))
+        table = helper.table(site_measurements_table())
         # Imported from "dm Sensoren": its row is known (its Nr. may be "51 H4").
         dm_sensor_id = getattr(measurement.factory_sensor, "airtable_record_id", None) \
             or _dm_sensor_record_id(helper, measurement.project_id, measurement.sensor)
@@ -640,8 +554,7 @@ def push_to_airtable(measurement_pk):
         else:
             record = table.create(fields, typecast=True)
     except Exception as error:  # noqa: BLE001 - kept for the next try
-        SiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(airtable_error=str(error)[:2000])
-        elog(f"Airtable copy of site measurement {measurement.pk} failed: {error}", tag="[MANUSENSOR]")
+        copy_failed(SiteMeasurement, [measurement.pk], error, f"site measurement {measurement.pk}")
         return False
     SiteMeasurement.objects.using(DB).filter(pk=measurement.pk).update(
         airtable_record_id=record["id"], airtable_synced_at=timezone.now(), airtable_error=None,
@@ -652,8 +565,6 @@ def push_to_airtable(measurement_pk):
 def push_pending_to_airtable(limit=200):
     """The site measurements not in Airtable yet (a failed or lost copy) -
     the oldest first. Returns how many arrived."""
-    from progeo.werk.models import SiteMeasurement
-
     # Not the ones whose own copy may still be queued or running - that would
     # create their row in Airtable twice.
     pending = (

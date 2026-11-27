@@ -196,10 +196,10 @@ class SiteMeasurementAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.action(description="Copy the selected measurements to Airtable (again)")
     def copy_to_airtable(self, request, queryset):
-        from progeo.helper.airtable import AirtableHelper
+        from progeo.werk.common import airtable_helper
         from progeo.werk.manusensor import queue_airtable_push
 
-        if not AirtableHelper().configured:
+        if airtable_helper() is None:
             self.message_user(request, "Airtable is not configured (AIRTABLE_API_KEY / AIRTABLE_BASE_ID).",
                               messages.WARNING)
             return

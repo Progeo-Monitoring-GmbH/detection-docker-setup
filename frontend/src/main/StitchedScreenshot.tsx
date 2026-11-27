@@ -21,6 +21,7 @@ import {
   type ScreenNote,
   type Slice,
 } from './screenReview';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import './StitchedScreenshot.css';
 
 type Point = { x: number; y: number };
@@ -127,10 +128,7 @@ const StitchedScreenshot = ({
   };
 
   // While drawing: the pointer anywhere (also over other parts) and its release.
-  const onDraftRef = useRef(onDraft);
-  useEffect(() => {
-    onDraftRef.current = onDraft;
-  });
+  const onDraftRef = useLatestRef(onDraft);
   useEffect(() => {
     if (!tool) {
       return undefined;

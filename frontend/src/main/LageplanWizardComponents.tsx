@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { CheckLg, FileEarmarkPdf } from 'react-bootstrap-icons';
@@ -15,6 +15,7 @@ import type {
   WizardLageplan,
 } from './lageplanWizardUtils';
 import { getFileExt, planLabel } from './lageplanWizardUtils';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 export const TargetStepContext = createContext<string | null>(null);
 
@@ -151,10 +152,7 @@ export const StepCard = ({
 
 export const LageplanThumb = ({ url }: { url?: string | null }) => {
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const isPdf = getFileExt(url ?? '') === 'pdf';
@@ -188,7 +186,7 @@ export const LageplanThumb = ({ url }: { url?: string | null }) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [url, isPdf]);
+  }, [url, isPdf, authRef]);
 
   return (
     <div className="lageplan-thumb">

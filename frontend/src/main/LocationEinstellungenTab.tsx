@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
@@ -25,6 +25,7 @@ import { getProjectTypeLabel } from './projectType';
 import { useProgeoRole } from './roleModel';
 import { staffFlags } from './access';
 import { repeatedTestId, testId } from '../testIds';
+import { useRequest } from '../hooks/useRequest';
 import './LocationEinstellungenTab.css';
 
 type Device = ConfigDevice & {
@@ -67,6 +68,44 @@ const LOCATION_LANGUAGES = [
   { value: 'en', label: 'English' },
 ];
 
+/**
+ * A location setting saved as soon as it is changed (PATCH /v1/location/<id>/):
+ * the last choice made here wins over the outlet's (possibly stale) location,
+ * keyed by locationId so switching objects drops it; a failed save goes back
+ * to the value before.
+ */
+const useLocationFieldDraft = <V,>(
+  locationId: PortalOutletContext['locationId'],
+  saved: V,
+  bodyOf: (value: V) => Record<string, unknown>,
+) => {
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<{
+    locationId: typeof locationId;
+    value: V;
+  } | null>(null);
+  const value = draft?.locationId === locationId ? draft.value : saved;
+
+  const save = (next: V) => {
+    const previous = value;
+    setDraft({ locationId, value: next });
+    void axiosConfig.perform_patch(
+      auth,
+      `/v1/location/${locationId}/`,
+      bodyOf(next),
+      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
+      (error) => {
+        setDraft({ locationId, value: previous });
+        showRequestError(enqueueSnackbar, 'Could not save', error);
+      },
+    );
+  };
+
+  return [value, save] as const;
+};
+
 const LocationEinstellungenTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
@@ -90,8 +129,16 @@ const LocationEinstellungenTab = () => {
   const canEditProduct = role === 'progeo-admin';
 
   // -- Systemeinstellungen ---------------------------------------------
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(true);
+  // A failed read just ends the spinner (no snackbar).
+  const {
+    data: loadedDevices,
+    loading: devicesLoading,
+    setData: setDevices,
+  } = useRequest<Device[]>(`/v1/location/${locationId}/devices/`, {
+    auth,
+    transform: (body) => (body?.devices || []) as Device[],
+  });
+  const devices = loadedDevices ?? [];
   // Device ids whose config/device_config.lua editor is expanded.
   const [configOpen, setConfigOpen] = useState<Record<number, boolean>>({});
   // Edited (and written into each device's config) inside DeviceConfigPanel.
@@ -99,60 +146,22 @@ const LocationEinstellungenTab = () => {
     Boolean(location?.pe_geschaltet),
   );
 
-  const loadDevices = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/devices/`,
-      (response) => {
-        setDevices((response?.data?.devices || []) as Device[]);
-        setDevicesLoading(false);
-      },
-      () => setDevicesLoading(false),
-    );
-  }, [auth, locationId]);
-
-  // Another object: loading from this render on - adjusted during render, so
-  // the effect below only fetches and sets no state itself.
-  const [devicesRequested, setDevicesRequested] = useState(() => loadDevices);
-  if (devicesRequested !== loadDevices) {
-    setDevicesRequested(() => loadDevices);
-    setDevicesLoading(true);
-  }
-
-  useEffect(() => {
-    loadDevices();
-  }, [loadDevices]);
-
   // Produkt = ProgeoLocation.project_type (PROJECT_TYPE_CHOICES), not a
   // device field; options come from the backend like on the Objekt tab.
-  // The last choice made here wins over the outlet's (possibly stale)
-  // location; keyed by locationId so switching objects drops it.
-  const [projectTypeDraft, setProjectTypeDraft] = useState<{
-    locationId: typeof locationId;
-    value: string;
-  } | null>(null);
-  const projectType =
-    projectTypeDraft?.locationId === locationId
-      ? projectTypeDraft.value
-      : String(location?.project_type ?? '');
-  const [projectTypeOptions, setProjectTypeOptions] = useState<
-    ProjectTypeOption[]
-  >([]);
-
-  useEffect(() => {
-    void axiosConfig.perform_get(
+  const [projectType, saveProjectType] = useLocationFieldDraft(
+    locationId,
+    String(location?.project_type ?? ''),
+    (value) => ({ project_type: value === '' ? null : Number(value) }),
+  );
+  // Failing is non-fatal: the read-only label below works without the options.
+  const { data: projectTypes } = useRequest<ProjectTypeOption[]>(
+    '/v1/location/project-types/',
+    {
       auth,
-      '/v1/location/project-types/',
-      (response) => {
-        setProjectTypeOptions(
-          (response?.data?.project_types || []) as ProjectTypeOption[],
-        );
-      },
-      () => {
-        // Non-fatal: the read-only label below works without the options.
-      },
-    );
-  }, [auth]);
+      transform: (body) => (body?.project_types || []) as ProjectTypeOption[],
+    },
+  );
+  const projectTypeOptions = projectTypes ?? [];
 
   const projectTypeLabel = (value: number | null) =>
     getProjectTypeLabel(
@@ -161,110 +170,52 @@ const LocationEinstellungenTab = () => {
       projectTypeOptions.find((option) => option.value === value)?.label,
     );
 
-  const saveProjectType = (value: string) => {
-    const previous = projectType;
-    setProjectTypeDraft({ locationId, value });
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/location/${locationId}/`,
-      { project_type: value === '' ? null : Number(value) },
-      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
-      (error) => {
-        setProjectTypeDraft({ locationId, value: previous });
-        showRequestError(enqueueSnackbar, 'Could not save', error);
-      },
-    );
-  };
-
   // -- Rain check (ProgeoLocation.rain_check_enabled) --------------------
-  // Like the product: the last choice made here wins over the outlet's
-  // location, keyed by locationId so switching objects drops it.
-  const [rainCheckDraft, setRainCheckDraft] = useState<{
-    locationId: typeof locationId;
-    value: boolean;
-  } | null>(null);
-  const rainCheck =
-    rainCheckDraft?.locationId === locationId
-      ? rainCheckDraft.value
-      : Boolean(location?.rain_check_enabled);
+  const [rainCheck, saveRainCheck] = useLocationFieldDraft(
+    locationId,
+    Boolean(location?.rain_check_enabled),
+    (value) => ({ rain_check_enabled: value }),
+  );
   const hasCoordinates =
     location?.latitude != null && location?.longitude != null;
 
-  const saveRainCheck = (value: boolean) => {
-    const previous = rainCheck;
-    setRainCheckDraft({ locationId, value });
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/location/${locationId}/`,
-      { rain_check_enabled: value },
-      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
-      (error) => {
-        setRainCheckDraft({ locationId, value: previous });
-        showRequestError(enqueueSnackbar, 'Could not save', error);
-      },
-    );
-  };
-
   // -- Language (ProgeoLocation.language): invitations to new users go out in it --
-  const [languageDraft, setLanguageDraft] = useState<{
-    locationId: typeof locationId;
-    value: string;
-  } | null>(null);
-  const language =
-    languageDraft?.locationId === locationId ? languageDraft.value : (location?.language || 'de');
-
-  const saveLanguage = (value: string) => {
-    const previous = language;
-    setLanguageDraft({ locationId, value });
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/location/${locationId}/`,
-      { language: value },
-      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
-      (error) => {
-        setLanguageDraft({ locationId, value: previous });
-        showRequestError(enqueueSnackbar, 'Could not save', error);
-      },
-    );
-  };
+  const [language, saveLanguage] = useLocationFieldDraft(
+    locationId,
+    location?.language || 'de',
+    (value) => ({ language: value }),
+  );
 
   // -- Objektleitung (staff access, reuses ProgeoAccess/access endpoints) --
-  const [staffRules, setStaffRules] = useState<AccessRule[]>([]);
-  const [staffCandidates, setStaffCandidates] = useState<StaffUser[]>([]);
-  const [staffLoading, setStaffLoading] = useState(true);
+  const {
+    data: staffAccess,
+    loading: staffLoading,
+    setData: setStaffAccess,
+  } = useRequest<{ rules: AccessRule[]; candidates: StaffUser[] }>(
+    `/v1/location/${locationId}/access/`,
+    {
+      auth,
+      transform: (body) => ({
+        // Only assigned Objektleitung - a staff member's own notification
+        // rule (set on the Rechte tab) is no assignment.
+        rules: ((body?.access || []) as AccessRule[]).filter((rule) => rule.objektleitung),
+        candidates: (body?.staff_users || []) as StaffUser[],
+      }),
+    },
+  );
+  const staffRules = staffAccess?.rules ?? [];
+  const staffCandidates = staffAccess?.candidates ?? [];
+  const setStaffRules = (update: (rules: AccessRule[]) => AccessRule[]) =>
+    setStaffAccess((prev) => ({
+      rules: update(prev?.rules ?? []),
+      candidates: prev?.candidates ?? [],
+    }));
   const [addStaffId, setAddStaffId] = useState('');
   const [addEmail, setAddEmail] = useState('');
   const [addingEmail, setAddingEmail] = useState(false);
   // The Objektleitung whose access waits for the confirmation to be revoked.
   const [removeTarget, setRemoveTarget] = useState<AccessRule | null>(null);
   const [removing, setRemoving] = useState(false);
-
-  const loadStaffAccess = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/access/`,
-      (response) => {
-        const rules = (response?.data?.access || []) as AccessRule[];
-        // Only assigned Objektleitung - a staff member's own notification
-        // rule (set on the Rechte tab) is no assignment.
-        setStaffRules(rules.filter((rule) => rule.objektleitung));
-        setStaffCandidates((response?.data?.staff_users || []) as StaffUser[]);
-        setStaffLoading(false);
-      },
-      () => setStaffLoading(false),
-    );
-  }, [auth, locationId]);
-
-  // Like the devices: loading set during render, not in the effect.
-  const [staffRequested, setStaffRequested] = useState(() => loadStaffAccess);
-  if (staffRequested !== loadStaffAccess) {
-    setStaffRequested(() => loadStaffAccess);
-    setStaffLoading(true);
-  }
-
-  useEffect(() => {
-    loadStaffAccess();
-  }, [loadStaffAccess]);
 
   const availableStaff = staffCandidates.filter(
     (staff) => !staffRules.some((rule) => rule.user === staff.id),
@@ -494,7 +445,7 @@ const LocationEinstellungenTab = () => {
                     peSwitched={peGeschaltet}
                     onPullResistanceSaved={(value) =>
                       setDevices((prev) =>
-                        prev.map((d) =>
+                        (prev ?? []).map((d) =>
                           d.id === device.id
                             ? { ...d, pull_resistance: value }
                             : d,

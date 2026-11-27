@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { getWsBaseUrl } from '../backendUrl';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 /** The socket of a location's status pages (backend LocationStatusConsumer). */
 const locationStatusSocketPath = (locationId: number) =>
@@ -101,10 +102,7 @@ export const useLocationLiveRevision = (
   const auth = useAuth();
   const [revision, setRevision] = useState(0);
   // The latest callback / auth, without opening the socket again when they change.
-  const latest = useRef({ onMeasurements, auth });
-  useEffect(() => {
-    latest.current = { onMeasurements, auth };
-  });
+  const latest = useLatestRef({ onMeasurements, auth });
 
   useEffect(() => {
     if (!enabled) {
@@ -268,7 +266,7 @@ export const useLocationLiveRevision = (
       document.removeEventListener('visibilitychange', onVisible);
       socket?.close();
     };
-  }, [enabled, locationId]);
+  }, [enabled, locationId, latest]);
 
   return revision;
 };

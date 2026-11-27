@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useParams, useSearchParams } from 'react-router';
 import { useSnackbar } from 'notistack';
@@ -13,6 +13,7 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import { useRequest } from '../hooks/useRequest';
 import './BackupView.css';
 import {
   type BackupProject,
@@ -81,15 +82,12 @@ const BackupView = () => {
   // Backend: delete/deleteAll require module_backup_delete.
   const canDelete = hasPermission('module_backup_delete');
 
-  const [backups, setBackups] = useState<BackupRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // A row's restore / delete, asked first: a restore overwrites a database.
   const [rowConfirm, setRowConfirm] = useState<{ action: 'restore' | 'delete'; backup: BackupRow } | null>(null);
   const [selectedRows, setSelectedRows] = useState<BackupRow[]>([]);
   const [clearSelectionToggle, setClearSelectionToggle] = useState(false);
-  const [projects, setProjects] = useState<BackupProjectOption[]>([]);
 
   // The filters live in the URL (?project=4711&date=2026-10-24&latest=1), so
   // a filtered view can be linked. The backend filters - list, reload and
@@ -101,6 +99,31 @@ const BackupView = () => {
   const latestOnly = searchParams.get('latest') === '1';
   const listQuery = backupListQuery({ project: projectFilter, date: dateFilter, latest: latestOnly });
   const hasFilter = Boolean(projectFilter || dateFilter || latestOnly);
+
+  // The list - read again when the filters or the account change.
+  const {
+    data: loadedBackups,
+    loading,
+    reload: reloadList,
+    setData: setBackups,
+  } = useRequest<BackupRow[]>(`/v1/${account}/backup/?${listQuery}`, {
+    auth,
+    transform: (body) => (body?.elements || []) as BackupRow[],
+    onError: (error) =>
+      showErrorBar(enqueueSnackbar, t('backup_load_error', { reason: errorReason(error) })),
+  });
+  const backups = useMemo(() => loadedBackups ?? [], [loadedBackups]);
+  const loadBackups = () => void reloadList();
+
+  // The project suggestions - none when they can't be read.
+  const { data: loadedProjects, error: projectsError } = useRequest<BackupProjectOption[]>(
+    `/v1/${account}/backup/projects/`,
+    { auth, transform: (body) => (body?.projects || []) as BackupProjectOption[] },
+  );
+  const projects = useMemo(
+    () => (projectsError ? [] : (loadedProjects ?? [])),
+    [loadedProjects, projectsError],
+  );
 
   // Typed text of the project field - applied on Enter/blur or when it
   // matches a project, so half-typed ids don't trigger requests.
@@ -158,51 +181,10 @@ const BackupView = () => {
     }
   };
 
+  // The actions answer with the (filtered) list.
   const applyResponse = (response: { data?: { elements?: BackupRow[] } }) => {
     setBackups((response?.data?.elements || []) as BackupRow[]);
   };
-
-  // Sets state only in the request callbacks; loading is set by the caller.
-  const requestBackups = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/${account}/backup/?${listQuery}`,
-      (response) => {
-        applyResponse(response);
-        setLoading(false);
-      },
-      (error) => {
-        showErrorBar(enqueueSnackbar, t('backup_load_error', { reason: errorReason(error) }));
-        setLoading(false);
-      },
-    );
-  }, [auth, account, listQuery, enqueueSnackbar, t]);
-
-  const loadBackups = useCallback(() => {
-    setLoading(true);
-    requestBackups();
-  }, [requestBackups]);
-
-  // A new request callback (filters/account changed) reloads: loading is set
-  // here during render (and starts true), the effect only sends the request.
-  const [requestedWith, setRequestedWith] = useState(() => requestBackups);
-  if (requestedWith !== requestBackups) {
-    setRequestedWith(() => requestBackups);
-    setLoading(true);
-  }
-
-  useEffect(() => {
-    requestBackups();
-  }, [requestBackups]);
-
-  useEffect(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/${account}/backup/projects/`,
-      (response) => setProjects((response?.data?.projects || []) as BackupProjectOption[]),
-      () => setProjects([]),
-    );
-  }, [auth, account]);
 
   const runAction = (
     key: string,

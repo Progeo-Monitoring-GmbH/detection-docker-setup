@@ -29,11 +29,11 @@ def push_production_sheet(sheet_pk: int):
 
 
 @shared_task
-def push_production_entry(entry_pk: int):
+def push_production_entries(entry_pks: list):
     """Production record dm: an entry changed after its sheet was released."""
-    from progeo.werk.production import push_entry
+    from progeo.werk.production import push_changed
 
-    return push_entry(entry_pk)
+    return push_changed(entry_pks)
 
 
 @shared_task

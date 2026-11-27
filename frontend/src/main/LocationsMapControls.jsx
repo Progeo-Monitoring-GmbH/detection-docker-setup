@@ -1,6 +1,8 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { useMap } from 'react-leaflet';
+import { isTypingTarget } from '../components/ui/keys';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { useZoomWheel } from '../components/ui/wheelZoom';
 
 /** Below this many pixels a press is a click (marker), not a frame. */
@@ -8,20 +10,8 @@ const MIN_FRAME_PX = 6;
 /** Wheel events closer together are one zoom step (trackpads send bursts). */
 const WHEEL_STEP_MS = 60;
 
-const useLatest = (value) => {
-  const ref = useRef(value);
-  useLayoutEffect(() => {
-    ref.current = value;
-  });
-  return ref;
-};
-
 /** The key that turns dragging into "zoom to this area". */
 const AREA_ZOOM_KEY = 'z';
-
-const isTypingTarget = (target) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
 /**
  * Hold Z and drag a frame over the map to zoom into it; without Z dragging
@@ -32,7 +22,7 @@ const isTypingTarget = (target) =>
  */
 export const AreaZoom = ({ onZoomed }) => {
   const map = useMap();
-  const zoomed = useLatest(onZoomed);
+  const zoomed = useLatestRef(onZoomed);
 
   useEffect(() => {
     const container = map.getContainer();

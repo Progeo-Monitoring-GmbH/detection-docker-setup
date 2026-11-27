@@ -3,7 +3,6 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -47,6 +46,7 @@ import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationVerwaltungView.css';
 import { announcePurgeableQa, type PurgeableQa } from './qaScoreboardData';
 import { locationPagePath } from './portalNav';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 type VerwaltungRow = {
   /** verwaltungRowKey - DataTable's keyField. */
@@ -196,10 +196,7 @@ const LocationVerwaltungView = () => {
   const [inviting, setInviting] = useState(false);
 
   // The chunks are requested one after the other - with the newest auth.
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
 
   // In chunks: the first VERWALTUNG_CHUNK_SIZE rows show at once (each
   // chunk's alarm rollup covers only its own locations), the rest follows.
@@ -257,7 +254,7 @@ const LocationVerwaltungView = () => {
     return () => {
       cancelled = true;
     };
-  }, [enqueueSnackbar, reloadKey]);
+  }, [enqueueSnackbar, reloadKey, authRef]);
 
   // The list has every location of every account (~1000 rows): typing
   // updates the field at once, the rows follow when React has time.
@@ -356,7 +353,7 @@ const LocationVerwaltungView = () => {
         },
       );
     },
-    [enqueueSnackbar, flagsOf, t],
+    [enqueueSnackbar, flagsOf, t, authRef],
   );
 
   const loadPerms = useCallback((row: VerwaltungRow) => {

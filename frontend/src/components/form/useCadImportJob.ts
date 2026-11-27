@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { getWsBaseUrl } from '../../backendUrl';
+import { useLatestRef } from '../ui/useLatestRef';
 
 /** A DWG/DXF import job of upload_cad (progeo/helper/cad_import.py). */
 export type CadImportJob = {
@@ -48,10 +49,7 @@ const useCadImportJob = (
   const [job, setJob] = useState<CadImportJob | null>(null);
   const [socketDown, setSocketDown] = useState(false);
 
-  const latest = useRef({ auth, onFinished });
-  useEffect(() => {
-    latest.current = { auth, onFinished };
-  });
+  const latest = useLatestRef({ auth, onFinished });
   const finishedRef = useRef<string | null>(null);
 
   const receiveJob = useCallback((next: CadImportJob) => {
@@ -60,7 +58,7 @@ const useCadImportJob = (
       finishedRef.current = next.job_id;
       latest.current.onFinished(next);
     }
-  }, []);
+  }, [latest]);
 
   const follow = useCallback((id: string) => {
     finishedRef.current = null;
@@ -154,7 +152,7 @@ const useCadImportJob = (
       poll();
     }, HTTP_POLL_MS);
     return () => clearInterval(timer);
-  }, [jobId, socketDown, receiveJob]);
+  }, [jobId, socketDown, receiveJob, latest]);
 
   return { job, follow, reset, running: !!job && !isFinished(job) };
 };

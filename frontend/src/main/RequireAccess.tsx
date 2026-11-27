@@ -30,12 +30,12 @@ const RequireAccess = ({
   // The permissions are loaded once per session token: a role granted since
   // (e.g. the customer admin) wouldn't count before the token rotates. Before
   // refusing, ask the backend once more.
-  const [rechecked, setRechecked] = useState<'no' | 'done'>('no');
+  const [rechecked, setRechecked] = useState(false);
   // The recheck in flight - a ref, so starting it needs no extra render.
   const recheckingRef = useRef(false);
   const settled = Boolean(auth.token && auth.user) && !isLoading;
   useEffect(() => {
-    if (!settled || allowed || rechecked !== 'no' || recheckingRef.current) {
+    if (!settled || allowed || rechecked || recheckingRef.current) {
       return;
     }
     recheckingRef.current = true;
@@ -43,7 +43,7 @@ const RequireAccess = ({
       .catch(() => undefined)
       .finally(() => {
         recheckingRef.current = false;
-        setRechecked('done');
+        setRechecked(true);
       });
   }, [settled, allowed, rechecked, refreshPermissions]);
 
@@ -53,7 +53,7 @@ const RequireAccess = ({
   }
 
   // The token is decoded into auth.user one render later.
-  if (isLoading || !auth.user || (!allowed && rechecked !== 'done')) {
+  if (isLoading || !auth.user || (!allowed && !rechecked)) {
     return (
       <Container fluid className="py-3" data-testid="require-access-loading">
         <div className="d-flex justify-content-center py-5 text-muted">
@@ -73,7 +73,7 @@ const RequireAccess = ({
             <Button
               variant="outline-primary"
               size="sm"
-              onClick={() => setRechecked('no')}
+              onClick={() => setRechecked(false)}
               data-testid="require-access-retry"
             >
               {t('page_permissions_retry')}

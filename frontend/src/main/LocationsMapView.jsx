@@ -495,12 +495,11 @@ const LocationsMapView = () => {
   const [purgeBusy, setPurgeBusy] = useState({});
   const [wheelHint, showWheelHint] = useWheelHint();
   const interactedRef = useRef(false);
-  // The websocket handler is set up once - it reads these through refs.
-  const rowsRef = useRef(rows);
+  // The websocket handler is set up once - it reads these through refs
+  // (the rows by id: one lookup per event instead of a search).
+  const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  const rowsByIdRef = useLatestRef(rowsById);
   const toastsMutedRef = useRef(toastsMuted);
-  useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
   useEffect(() => {
     toastsMutedRef.current = toastsMuted;
     storeToastsMuted(toastsMuted);
@@ -580,7 +579,7 @@ const LocationsMapView = () => {
         const known = [];
         const unknownProjects = [];
         message.events.forEach((item) => {
-          const location = rowsRef.current.find((row) => row.id === item?.location_id);
+          const location = rowsByIdRef.current.get(item?.location_id);
           if (location) {
             known.push(location);
           } else {
@@ -627,7 +626,7 @@ const LocationsMapView = () => {
     return () => {
       ws.close();
     };
-  }, [enqueueSnackbar]);
+  }, [enqueueSnackbar, rowsByIdRef]);
 
   const hasActiveFlash = Object.keys(flashMarkers).length > 0;
   useEffect(() => {
@@ -655,7 +654,8 @@ const LocationsMapView = () => {
 
   const mappableRows = useMemo(() => filteredRows.filter(hasCoordinates), [filteredRows]);
   // Notifications switched off (the purge mark is in the rows): the list's stripes.
-  const { flagsOf } = useLocationFlags(rows.map((row) => row.id));
+  const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const { flagsOf } = useLocationFlags(rowIds);
 
   const stateStats = useMemo(() => {
     const counts = { fresh_1h: 0, fresh_24h: 0, late_72h: 0, stale: 0, no_data: 0, purgeable: 0 };

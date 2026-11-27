@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { Spinner } from 'react-bootstrap';
@@ -23,6 +23,7 @@ import {
   type QaUser,
   type Scoreboard,
 } from './qaScoreboardData';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import './QaScoreboard.css';
 
 // Plotly only once the scoreboard is loaded - not with the checklist.
@@ -87,10 +88,7 @@ const QaScoreboard = () => {
   // Once loaded, it follows the points live (QaAwardToasts passes the
   // socket's changes on) - a burst of changes reloads it once.
   const loaded = board !== null;
-  const loadRef = useRef(load);
-  useEffect(() => {
-    loadRef.current = load;
-  });
+  const loadRef = useLatestRef(load);
   useEffect(() => {
     if (!loaded) {
       return undefined;
@@ -105,7 +103,7 @@ const QaScoreboard = () => {
       window.clearTimeout(timer);
       window.removeEventListener(QA_UPDATED_EVENT, onUpdate);
     };
-  }, [loaded]);
+  }, [loaded, loadRef]);
 
   const colors = useMemo(() => userColors(board?.users ?? []), [board]);
 

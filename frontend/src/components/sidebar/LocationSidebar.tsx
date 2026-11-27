@@ -1,8 +1,6 @@
 import {
   type ReactNode,
   useEffect,
-  useLayoutEffect,
-  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +34,7 @@ import { PORTAL_NAV_ITEMS, locationPagePath, openLocationId } from '../../main/p
 import type { LocationDetail } from '../../main/locationTypes';
 import { repeatedTestId } from '../../testIds';
 import SidebarShell from './SidebarShell';
+import { useLatestRef } from '../ui/useLatestRef';
 
 type LocationSidebarProps = {
   /** The open location (portal routes) - null everywhere else. */
@@ -101,10 +100,7 @@ const LocationSidebar = ({
   const role = useProgeoRole();
   const routerLocation = useRouterLocation();
   // The requests below run per location - `auth` changes with the path.
-  const authRef = useRef(auth);
-  useLayoutEffect(() => {
-    authRef.current = auth;
-  });
+  const authRef = useLatestRef(auth);
 
   // Outside the portal a page may still show one location by ?location=
   // (/device/overview?location=12, the checklist, the Lageplan wizard): its
@@ -125,7 +121,7 @@ const LocationSidebar = ({
       (response) => setQueryLocation((response?.data || null) as LocationDetail | null),
       () => setQueryLocation(null),
     );
-  }, [queryLocationId]);
+  }, [queryLocationId, authRef]);
   const location =
     portalLocation ??
     (queryLocationId != null && queryLocation?.id === queryLocationId ? queryLocation : null);
@@ -163,7 +159,7 @@ const LocationSidebar = ({
       },
       () => setClusterCount({ locationId, count: null }),
     );
-  }, [canSeeMeasurements, locationId]);
+  }, [canSeeMeasurements, locationId, authRef]);
 
   // The routes are guarded by the same rules (access.ts) - an item shows
   // exactly when its page opens.
@@ -196,7 +192,7 @@ const LocationSidebar = ({
         setLocationCount(((response?.data || []) as unknown[]).length),
       () => setLocationCount(null),
     );
-  }, [canListLocations]);
+  }, [canListLocations, authRef]);
   const showVerwaltung = showsVerwaltungLink(
     canCreateLocation,
     locationCount,

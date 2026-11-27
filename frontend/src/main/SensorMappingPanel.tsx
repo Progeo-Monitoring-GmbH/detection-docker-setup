@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import { Badge, Form, Spinner } from 'react-bootstrap';
 import { ArrowCounterclockwise, Diagram3, Save } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
@@ -6,8 +6,8 @@ import type { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import PillButton from '../components/ui/kit/PillButton';
 import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
-import { useLatestRef } from '../components/ui/useLatestRef';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { useRequest } from '../hooks/useRequest';
 import { formatDate } from './dateFormat';
 import './SensorMappingPanel.css';
 
@@ -112,47 +112,26 @@ const SensorMappingPanel = ({
   revision?: number;
 }) => {
   const { enqueueSnackbar } = useSnackbar();
-  // Read through a ref: loading must not depend on the snackbar function's identity.
-  const snackbar = useLatestRef(enqueueSnackbar);
   const [deviceId, setDeviceId] = useState<number | null>(devices[0]?.id ?? null);
-  const [answer, setAnswer] = useState<SensorMappingAnswer | null>(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   // Edited inputs: their new number as typed ('' = no sensor).
   const [draft, setDraft] = useState<Record<number, string>>({});
 
-  const load = useCallback(() => {
-    if (deviceId == null) {
-      return;
-    }
-    void axiosConfig.perform_get(
+  // Read again when the device or the revision changes; every answer drops the draft.
+  const {
+    data: answer,
+    loading,
+    setData: setAnswer,
+  } = useRequest<SensorMappingAnswer | null>(
+    deviceId == null ? null : `${URL}?location_id=${locationId}&device_id=${deviceId}`,
+    {
       auth,
-      `${URL}?location_id=${locationId}&device_id=${deviceId}`,
-      (response) => {
-        setAnswer(asAnswer(response?.data));
-        setDraft({});
-        setLoading(false);
-      },
-      (error) => {
-        setLoading(false);
-        showRequestError(snackbar.current, 'The sensor mapping could not be read', error);
-      },
-    );
-  }, [auth, deviceId, locationId, snackbar]);
-
-  // Loading from the render that (re)starts the read on, not after the effect
-  // ran - adjusted during render, so the effect itself sets no state.
-  const [requested, setRequested] = useState<{ load: typeof load; revision: number } | null>(null);
-  if (requested?.load !== load || requested.revision !== revision) {
-    setRequested({ load, revision });
-    if (deviceId != null) {
-      setLoading(true);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, [load, revision]);
+      transform: asAnswer,
+      revision,
+      onSuccess: () => setDraft({}),
+      onError: (error) => showRequestError(enqueueSnackbar, 'The sensor mapping could not be read', error),
+    },
+  );
 
   const post = (body: Record<string, unknown>, message: string) => {
     setSaving(true);

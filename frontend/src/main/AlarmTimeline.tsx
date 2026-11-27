@@ -43,6 +43,9 @@ type AlarmTimelineProps = {
 /** Close delay for the floating alarm tooltip after the mouse left it (ms). */
 const TOOLTIP_CLOSE_DELAY_MS = 250;
 
+/** Minimum horizontal movement (px) before a mousedown counts as a zoom drag rather than a click. */
+const DRAG_THRESHOLD_PX = 4;
+
 const formatClock = (ms: number): string => formatDate(ms, 'dayMonthTime');
 
 /** Short day label for the day header, e.g. "Mo 18.08.". */
@@ -301,9 +304,55 @@ const AlarmTimeline = ({
     return entries;
   }, [spans, sortBy]);
 
+  // Per lane, everything that depends on the data only (not on the zoom or
+  // the hover): the bars sorted by start with their keys, the rain overlays
+  // of the lane's location, the lane stats.
+  const lanes = useMemo(() => {
+    const rainByLane = new Map<string, RainEvent[]>();
+    for (const event of rainEvents ?? []) {
+      if (event.location == null) {
+        continue;
+      }
+      const key = `loc-${event.location}`;
+      const list = rainByLane.get(key);
+      if (list) {
+        list.push(event);
+      } else {
+        rainByLane.set(key, [event]);
+      }
+    }
+    return groups.map((group) => ({
+      ...group,
+      bars: group.spans
+        .slice()
+        .sort((a, b) => a.start - b.start)
+        .map((span) => ({
+          span,
+          key: alarmKey(span.alarm),
+          isActive: isAlarmActive(span.alarm),
+          heatColor: alarmHeatColor(span.alarm),
+        })),
+      rain: rainSpans(rainByLane.get(group.key) ?? []).sort(
+        (a, b) => a.start - b.start,
+      ),
+      durationSeconds: group.spans.reduce(
+        (sum, span) => sum + (span.end - span.start) / 1000,
+        0,
+      ),
+      activeCount: group.spans.filter((span) => isAlarmActive(span.alarm))
+        .length,
+    }));
+  }, [groups, rainEvents]);
+
   const axisSpan = Math.max(maxTime - minTime, 1);
-  const toLeft = (ms: number) => ((ms - minTime) / axisSpan) * 100;
-  const toWidth = (ms: number) => Math.max((ms / axisSpan) * 100, 0.35);
+  const toLeft = useCallback(
+    (ms: number) => ((ms - minTime) / axisSpan) * 100,
+    [minTime, axisSpan],
+  );
+  const toWidth = useCallback(
+    (ms: number) => Math.max((ms / axisSpan) * 100, 0.35),
+    [axisSpan],
+  );
 
   // Day boundaries (local midnight) inside the current axis range. Month
   // starts get a stronger grid line so the days read like a calendar.
@@ -340,7 +389,9 @@ const AlarmTimeline = ({
 
   // Map a mouse x-position (relative to the track) to a timestamp and keep
   // the x-offset relative to the timeline body for the hover indicator.
-  const handleTrackMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+  // The handlers below are stable (useCallback): the memoised lanes keep
+  // their elements while only the hover line / tooltips change.
+  const handleTrackMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const body = bodyRef.current;
     if (!body) {
       return;
@@ -352,22 +403,19 @@ const AlarmTimeline = ({
     const xInBody =
       trackRect.left - body.getBoundingClientRect().left + xInTrack;
     setHover({ ms, x: xInBody });
-  };
+  }, [minTime, maxTime]);
 
-  const handleTrackMouseLeave = () => {
+  const handleTrackMouseLeave = useCallback(() => {
     setHover(null);
     // The mouse left the whole timeline, so the alarm tooltip should go away
     // (after the usual grace period, in case it moved onto the tooltip).
     scheduleTooltipClose();
-  };
-
-  /** Minimum horizontal movement (px) before a mousedown counts as a zoom drag rather than a click. */
-  const DRAG_THRESHOLD_PX = 4;
+  }, [scheduleTooltipClose]);
 
   // Drag-to-zoom: dragging left/right on any track selects a time range and
   // zooms the whole axis to it on release. A plain click (no real movement)
   // is left alone so bar selection still works.
-  const handleTrackMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleTrackMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
       return;
     }
@@ -437,14 +485,14 @@ const AlarmTimeline = ({
       once: true,
       capture: true,
     });
-  };
+  }, [minTime, maxTime]);
 
   const resetZoom = () => setZoomRange(null);
 
   // Open/move the floating alarm tooltip for the bar under the cursor. A new
   // bar replaces the previous tooltip immediately ("closes when another
   // component is opened") and cancels any pending close timer.
-  const toBodyPosition = (
+  const toBodyPosition = useCallback((
     event: React.MouseEvent<HTMLDivElement>,
   ): { x: number; y: number; containerWidth: number; containerHeight: number } => {
     const body = bodyRef.current;
@@ -460,9 +508,9 @@ const AlarmTimeline = ({
       containerWidth,
       containerHeight,
     };
-  };
+  }, []);
 
-  const handleBarMouseEnter = (
+  const handleBarMouseEnter = useCallback((
     span: AlarmSpan,
     event: React.MouseEvent<HTMLDivElement>,
   ) => {
@@ -473,24 +521,22 @@ const AlarmTimeline = ({
       end: span.end,
       ...toBodyPosition(event),
     });
-  };
+  }, [clearCloseTimer, toBodyPosition]);
 
-  const handleBarMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleBarMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setTooltip((current) => {
       if (!current) {
         return current;
       }
       return { ...current, ...toBodyPosition(event) };
     });
-  };
+  }, [toBodyPosition]);
 
-  const handleBarMouseLeave = () => {
-    // Keep the tooltip visible for a short grace period so the user can move
-    // the mouse onto it (e.g. to click "Open alarm details").
-    scheduleTooltipClose();
-  };
+  // Keep the tooltip visible for a short grace period so the user can move
+  // the mouse onto it (e.g. to click "Open alarm details").
+  const handleBarMouseLeave = scheduleTooltipClose;
 
-  const handleRainMouseEnter = (
+  const handleRainMouseEnter = useCallback((
     rain: { start: number; end: number },
     amount: number | null | undefined,
     event: React.MouseEvent<HTMLDivElement>,
@@ -499,20 +545,18 @@ const AlarmTimeline = ({
     // A rain overlay hover shouldn't leave the alarm-bar tooltip lingering.
     scheduleTooltipClose();
     setRainTooltip({ start: rain.start, end: rain.end, amount, ...toBodyPosition(event) });
-  };
+  }, [clearRainCloseTimer, scheduleTooltipClose, toBodyPosition]);
 
-  const handleRainMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleRainMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setRainTooltip((current) => {
       if (!current) {
         return current;
       }
       return { ...current, ...toBodyPosition(event) };
     });
-  };
+  }, [toBodyPosition]);
 
-  const handleRainMouseLeave = () => {
-    scheduleRainTooltipClose();
-  };
+  const handleRainMouseLeave = scheduleRainTooltipClose;
 
   const totalDurationSeconds = useMemo(
     () => spans.reduce((sum, span) => sum + (span.end - span.start) / 1000, 0),
@@ -521,6 +565,126 @@ const AlarmTimeline = ({
   const activeCount = useMemo(
     () => alarms.filter((alarm) => isAlarmActive(alarm)).length,
     [alarms],
+  );
+
+  // The lanes don't depend on the hover: memoised, a mousemove re-renders
+  // only the hover line and the tooltips, not every bar.
+  const laneElements = useMemo(
+    () =>
+      lanes.map((lane) => (
+        <div
+          className="alarm-timeline-lane"
+          key={lane.key}
+          data-testid={childTestId(testId, 'lane')}
+          data-test-key={lane.key}
+        >
+          <div className="alarm-timeline-label">
+            <div
+              className="alarm-timeline-label-name"
+              title={lane.label}
+            >
+              {lane.label}
+            </div>
+            <div
+              className="alarm-timeline-label-stats small text-muted"
+              data-testid={childTestId(testId, 'lane-stats')}
+              data-test-key={lane.key}
+            >
+              {lane.spans.length} alarm(s) · {lane.activeCount} active ·{' '}
+              {formatDuration(lane.durationSeconds)}
+            </div>
+          </div>
+          <div
+            className="alarm-timeline-track"
+            ref={trackRef}
+            onMouseDown={handleTrackMouseDown}
+            onMouseMove={handleTrackMouseMove}
+            onMouseLeave={handleTrackMouseLeave}
+          >
+            {lane.rain.map((rain) => (
+              <div
+                key={`rain-${lane.key}-${rain.start}`}
+                className="alarm-timeline-rain"
+                data-testid={childTestId(testId, 'rain')}
+                data-test-key={`${lane.key}-${rain.start}`}
+                style={{
+                  left: `${toLeft(rain.start)}%`,
+                  width: `${toWidth(rain.end - rain.start)}%`,
+                }}
+                onMouseEnter={(event) =>
+                  handleRainMouseEnter(rain, rain.amount, event)
+                }
+                onMouseMove={handleRainMouseMove}
+                onMouseLeave={handleRainMouseLeave}
+              >
+                {rain.amount != null && (
+                  <span className="alarm-timeline-rain-label">
+                    💧{Math.round(rain.amount * 10) / 10}mm
+                  </span>
+                )}
+              </div>
+            ))}
+            {lane.bars.map(({ span, key, isActive, heatColor }) => {
+              const isSelected = key === selectedAlarmKey;
+              const barWidthPercent = toWidth(span.end - span.start);
+              const barWidthPx = (barWidthPercent / 100) * trackWidth;
+              const showLabel = barWidthPx >= 90;
+              return (
+                <div
+                  key={key}
+                  className={[
+                    'alarm-timeline-bar',
+                    isActive ? 'is-active' : 'is-normalized',
+                    isSelected ? 'is-selected' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={{
+                    left: `${toLeft(span.start)}%`,
+                    width: `${barWidthPercent}%`,
+                    background: heatColor,
+                  }}
+                  onMouseEnter={(event) => handleBarMouseEnter(span, event)}
+                  onMouseMove={handleBarMouseMove}
+                  onMouseLeave={handleBarMouseLeave}
+                  onClick={() => onSelectAlarm?.(span.alarm)}
+                  data-testid={childTestId(testId, 'bar')}
+                  data-test-key={key}
+                >
+                  {showLabel && (
+                    <span className="alarm-timeline-bar-label">
+                      {formatDuration((span.end - span.start) / 1000)}
+                      {/* Without a threshold there is no ratio (it showed "NaNx" / "Infinityx"). */}
+                      {span.alarm.max_value != null && span.alarm.threshold
+                        ? ` · ${span.alarm.max_value / span.alarm.threshold >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm.threshold) * 100) / 100}x`
+                        : ''}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )),
+    [
+      lanes,
+      testId,
+      trackRef,
+      handleTrackMouseDown,
+      handleTrackMouseMove,
+      handleTrackMouseLeave,
+      toLeft,
+      toWidth,
+      handleRainMouseEnter,
+      handleRainMouseMove,
+      handleRainMouseLeave,
+      selectedAlarmKey,
+      trackWidth,
+      handleBarMouseEnter,
+      handleBarMouseMove,
+      handleBarMouseLeave,
+      onSelectAlarm,
+    ],
   );
 
   if (spans.length === 0) {
@@ -628,125 +792,7 @@ const AlarmTimeline = ({
         )}
 
         <div className="alarm-timeline-scroll">
-          {groups.map((group) => {
-            const groupDurationSeconds = group.spans.reduce(
-              (sum, span) => sum + (span.end - span.start) / 1000,
-              0,
-            );
-            const groupActiveCount = group.spans.filter((span) =>
-              isAlarmActive(span.alarm),
-            ).length;
-            return (
-              <div
-                className="alarm-timeline-lane"
-                key={group.key}
-                data-testid={childTestId(testId, 'lane')}
-                data-test-key={group.key}
-              >
-                <div className="alarm-timeline-label">
-                  <div
-                    className="alarm-timeline-label-name"
-                    title={group.label}
-                  >
-                    {group.label}
-                  </div>
-                  <div
-                    className="alarm-timeline-label-stats small text-muted"
-                    data-testid={childTestId(testId, 'lane-stats')}
-                    data-test-key={group.key}
-                  >
-                    {group.spans.length} alarm(s) · {groupActiveCount} active ·{' '}
-                    {formatDuration(groupDurationSeconds)}
-                  </div>
-                </div>
-                <div
-                  className="alarm-timeline-track"
-                  ref={trackRef}
-                  onMouseDown={handleTrackMouseDown}
-                  onMouseMove={handleTrackMouseMove}
-                  onMouseLeave={handleTrackMouseLeave}
-                >
-                  {rainSpans(
-                    (rainEvents ?? []).filter(
-                      (event) =>
-                        event.location != null &&
-                        `loc-${event.location}` === group.key,
-                    ),
-                  )
-                    .sort((a, b) => a.start - b.start)
-                    .map((rain) => (
-                      <div
-                        key={`rain-${group.key}-${rain.start}`}
-                        className="alarm-timeline-rain"
-                        data-testid={childTestId(testId, 'rain')}
-                        data-test-key={`${group.key}-${rain.start}`}
-                        style={{
-                          left: `${toLeft(rain.start)}%`,
-                          width: `${toWidth(rain.end - rain.start)}%`,
-                        }}
-                        onMouseEnter={(event) =>
-                          handleRainMouseEnter(rain, rain.amount, event)
-                        }
-                        onMouseMove={handleRainMouseMove}
-                        onMouseLeave={handleRainMouseLeave}
-                      >
-                        {rain.amount != null && (
-                          <span className="alarm-timeline-rain-label">
-                            💧{Math.round(rain.amount * 10) / 10}mm
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  {group.spans
-                    .slice()
-                    .sort((a, b) => a.start - b.start)
-                    .map((span) => {
-                      const isSelected = alarmKey(span.alarm) === selectedAlarmKey;
-                      const isActive = isAlarmActive(span.alarm);
-                      const heatColor = alarmHeatColor(span.alarm);
-                      const barWidthPercent = toWidth(span.end - span.start);
-                      const barWidthPx = (barWidthPercent / 100) * trackWidth;
-                      const showLabel = barWidthPx >= 90;
-                      return (
-                        <div
-                          key={alarmKey(span.alarm)}
-                          className={[
-                            'alarm-timeline-bar',
-                            isActive ? 'is-active' : 'is-normalized',
-                            isSelected ? 'is-selected' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          style={{
-                            left: `${toLeft(span.start)}%`,
-                            width: `${barWidthPercent}%`,
-                            background: heatColor,
-                          }}
-                          onMouseEnter={(event) =>
-                            handleBarMouseEnter(span, event)
-                          }
-                          onMouseMove={handleBarMouseMove}
-                          onMouseLeave={handleBarMouseLeave}
-                          onClick={() => onSelectAlarm?.(span.alarm)}
-                          data-testid={childTestId(testId, 'bar')}
-                          data-test-key={alarmKey(span.alarm)}
-                        >
-                          {showLabel && (
-                            <span className="alarm-timeline-bar-label">
-                              {formatDuration((span.end - span.start) / 1000)}
-                              {/* Without a threshold there is no ratio (it showed "NaNx" / "Infinityx"). */}
-                              {span.alarm.max_value != null && span.alarm.threshold
-                                ? ` · ${span.alarm.max_value / span.alarm.threshold >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm.threshold) * 100) / 100}x`
-                                : ''}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            );
-          })}
+          {laneElements}
         </div>
 
         {hover && (

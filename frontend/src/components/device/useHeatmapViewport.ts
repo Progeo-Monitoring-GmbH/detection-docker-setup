@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +9,7 @@ import {
 import { fitView, MAX_ZOOM, MIN_ZOOM, panBy, zoomAt, type View, type WorldRect } from './heatmapCanvas';
 import { canvasHeightFor, COLORBAR_SPACE, compactCanvasWidth } from './heatmapChart';
 import { isZoomWheel, useTwoFingerTouch } from '../ui/wheelZoom';
+import { useLatestRef } from '../ui/useLatestRef';
 
 /**
  * Size and view of the heatmap canvas: its width follows the wrapper
@@ -279,10 +279,7 @@ export const usePanZoomGestures = ({
   };
 
   // The wheel listener stays registered; it reads the latest callbacks.
-  const wheelRef = useRef({ zoomBy, wheelZoomsAt, onPlainWheel });
-  useLayoutEffect(() => {
-    wheelRef.current = { zoomBy, wheelZoomsAt, onPlainWheel };
-  });
+  const wheelRef = useLatestRef({ zoomBy, wheelZoomsAt, onPlainWheel });
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!enabled || !canvas) {
@@ -305,7 +302,7 @@ export const usePanZoomGestures = ({
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [enabled]);
+  }, [enabled, wheelRef]);
 
   // Two fingers never scroll the page here; one does (and shows the hint).
   useTwoFingerTouch(canvasRef, onOneFingerTouch, enabled && !oneFingerPans);

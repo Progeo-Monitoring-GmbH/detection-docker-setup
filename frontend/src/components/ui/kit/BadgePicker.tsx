@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { XLg } from 'react-bootstrap-icons';
 import { childTestId, repeatedTestId } from '../../../testIds';
+import { useLatestRef } from '../useLatestRef';
 import './BadgePicker.css';
 
 /**
@@ -52,10 +53,7 @@ const BadgePicker = <T,>({
   const [searching, setSearching] = useState(false);
   const [active, setActive] = useState(0);
   const listId = useId();
-  const searchRef = useRef(search);
-  useEffect(() => {
-    searchRef.current = search;
-  });
+  const searchRef = useLatestRef(search);
 
   const selectedKeys = new Set(selected.map(keyOf));
   const shown = matches.filter((item) => !selectedKeys.has(keyOf(item)));
@@ -94,7 +92,7 @@ const BadgePicker = <T,>({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [text, delay]);
+  }, [text, delay, searchRef]);
 
   const add = (items: T[]) => {
     const fresh = items.filter((item) => !selectedKeys.has(keyOf(item)));

@@ -16,13 +16,23 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F
 
-from progeo.werk.manusensor import ManuSensorError, _iso, as_aware, invalid
-from progeo.werk.production import _device, _meters, _text, _timestamp
+from progeo.werk.common import (
+    DB,
+    ManuSensorError,
+    as_float,
+    invalid,
+    iso,
+    json_object,
+    meters,
+    text,
+    timestamp,
+)
+from progeo.werk.models import Roll, RollPhoto
+from progeo.werk.production import device_id
 
-DB = DEFAULT_DB_ALIAS
 TYPES = ("messband", "vorlauf")
 NOMINAL = {"messband": Decimal(200), "vorlauf": Decimal(1000)}
 PHOTO_TYPES = {"image/jpeg": ("JPEG", "jpg"), "image/png": ("PNG", "png")}
@@ -45,10 +55,6 @@ def photo_url(photo):
     return f"/v1/werk/rollen/fotos/{photo.foto_id}/"
 
 
-def _float(value):
-    return float(value) if value is not None else None
-
-
 def rest_m(roll):
     """Measuring band: as reported. Lead cable: start + nominal − metering."""
     if roll.typ == "vorlauf":
@@ -64,21 +70,33 @@ def roll_json(roll):
         "nummer": roll.nummer,
         "typ": roll.typ,
         "kabeltyp": roll.kabeltyp,
-        "nennlaenge_m": _float(roll.nennlaenge_m),
-        "start_metrierung_m": _float(roll.start_metrierung_m),
-        "metrierung_m": _float(roll.metrierung_m),
-        "rest_m": _float(rest_m(roll)),
+        "nennlaenge_m": as_float(roll.nennlaenge_m),
+        "start_metrierung_m": as_float(roll.start_metrierung_m),
+        "metrierung_m": as_float(roll.metrierung_m),
+        "rest_m": as_float(rest_m(roll)),
         "leer": roll.leer,
         "code": roll.code,
         "code_format": roll.code_format,
-        "fotos": [photo_url(photo) for photo in roll.fotos.using(DB).order_by("pk")],
+        # Sorted here: roll_list's prefetch_related("fotos") is used (a new queryset would query per roll).
+        "fotos": [photo_url(photo) for photo in sorted(roll.fotos.all(), key=lambda photo: photo.pk)],
         "zuletzt": {
             "geraet_id": roll.zuletzt_geraet_id,
             "benutzer": roll.zuletzt_benutzer,
             "auftrag_id": roll.zuletzt_auftrag_id,
-            "am": _iso(roll.zuletzt_am),
+            "am": iso(roll.zuletzt_am),
         } if roll.zuletzt_am else None,
     }
+
+
+def _typ(value):
+    if value not in TYPES:
+        raise invalid("typ", "typ: \"messband\" oder \"vorlauf\".")
+    return value
+
+
+def _exists(roll):
+    return ManuSensorError(409, "rolle_vorhanden", f"Rolle {roll.nummer} gibt es schon.",
+                           extra={"rolle": roll_json(roll)})
 
 
 def _unknown(nummer):
@@ -86,8 +104,6 @@ def _unknown(nummer):
 
 
 def get_roll(nummer):
-    from progeo.werk.models import Roll
-
     roll = Roll.objects.using(DB).filter(nummer=nummer).first()
     if roll is None:
         raise _unknown(nummer)
@@ -98,13 +114,9 @@ def get_roll(nummer):
 
 def roll_list(typ=None, leer=None):
     """GET /v1/werk/rollen/?typ=&leer=0|1 - the last used first."""
-    from progeo.werk.models import Roll
-
     rolls = Roll.objects.using(DB).prefetch_related("fotos")
     if typ:
-        if typ not in TYPES:
-            raise invalid("typ", "typ: \"messband\" oder \"vorlauf\".")
-        rolls = rolls.filter(typ=typ)
+        rolls = rolls.filter(typ=_typ(typ))
     if leer not in (None, ""):
         if leer not in ("0", "1"):
             raise invalid("leer", "leer: 0 oder 1.")
@@ -123,56 +135,45 @@ def _bool(data, key, default=False):
 def create(data, user):
     """POST /v1/werk/rollen/ - 409 rolle_vorhanden (with the roll) if the
     number or the scanned code exists."""
-    from progeo.werk.models import Roll
-
-    if not isinstance(data, dict):
-        raise invalid(None, "JSON-Objekt erwartet.")
-    nummer = _text(data.get("nummer"), "nummer", 32, required=True)
+    nummer = text(json_object(data).get("nummer"), "nummer", 32, required=True)
     if not _NUMBER.fullmatch(nummer):
         raise invalid("nummer", "nummer: höchstens 32 Zeichen, ohne / und \\.")
-    typ = data.get("typ")
-    if typ not in TYPES:
-        raise invalid("typ", "typ: \"messband\" oder \"vorlauf\".")
-    nominal = _meters(data.get("nennlaenge_m"), "nennlaenge_m")
-    if nominal is not None and not 0 < nominal <= MAX_NOMINAL_M:
+    typ = _typ(data.get("typ"))
+    nominal = meters(data.get("nennlaenge_m"), "nennlaenge_m", maximum=MAX_NOMINAL_M)
+    if nominal == 0:
         raise invalid("nennlaenge_m", "nennlaenge_m: größer als 0.")
     values = {
         "nummer": nummer, "typ": typ, "nennlaenge_m": nominal or NOMINAL[typ],
         "leer": _bool(data, "leer"),
-        "code": _text(data.get("code"), "code", 255),
-        "code_format": _text(data.get("code_format"), "code_format", 32),
+        "code": text(data.get("code"), "code", 255),
+        "code_format": text(data.get("code_format"), "code_format", 32),
         "angelegt_von": user,
     }
     if typ == "vorlauf":
-        start = _meters(data.get("start_metrierung_m"), "start_metrierung_m")
+        start = meters(data.get("start_metrierung_m"), "start_metrierung_m")
         if start is None:
             raise invalid("start_metrierung_m", "start_metrierung_m: Beschriftung am Rollenanfang fehlt.")
-        values["kabeltyp"] = _text(data.get("kabeltyp"), "kabeltyp", 64)
+        values["kabeltyp"] = text(data.get("kabeltyp"), "kabeltyp", 64)
         values["start_metrierung_m"] = start
-        values["metrierung_m"] = _meters(data.get("metrierung_m"), "metrierung_m")
+        values["metrierung_m"] = meters(data.get("metrierung_m"), "metrierung_m")
     else:
-        rest = _meters(data.get("rest_m"), "rest_m")
+        rest = meters(data.get("rest_m"), "rest_m")
         values["rest_m"] = rest if rest is not None else values["nennlaenge_m"]
     duplicate = Roll.objects.using(DB).filter(nummer=nummer).first()
     if duplicate is None and values["code"]:
         duplicate = Roll.objects.using(DB).filter(code=values["code"]).first()
     if duplicate is not None:
-        raise ManuSensorError(409, "rolle_vorhanden", f"Rolle {duplicate.nummer} gibt es schon.",
-                              extra={"rolle": roll_json(duplicate)})
+        raise _exists(duplicate)
     try:
         with transaction.atomic(using=DB):
             roll = Roll.objects.using(DB).create(**values)
     except IntegrityError:
-        duplicate = Roll.objects.using(DB).get(nummer=nummer)
-        raise ManuSensorError(409, "rolle_vorhanden", f"Rolle {nummer} gibt es schon.",
-                              extra={"rolle": roll_json(duplicate)}) from None
+        raise _exists(Roll.objects.using(DB).get(nummer=nummer)) from None
     return roll_json(roll)
 
 
 def find_by_code(code):
     """GET /v1/werk/rollen/suche/?code= - by the scanned code, else the number."""
-    from progeo.werk.models import Roll
-
     code = str(code or "").strip()
     if not code:
         raise invalid("code", "code fehlt.")
@@ -187,7 +188,7 @@ def find_by_code(code):
 
 def _apply(roll, values, device, user_name, order_id, moment):
     """The state of a report - False (unchanged) when an older one than the last."""
-    if roll.zuletzt_am is not None and moment < as_aware(roll.zuletzt_am):
+    if roll.zuletzt_am is not None and moment < roll.zuletzt_am:
         return False
     for field, value in values.items():
         setattr(roll, field, value)
@@ -204,11 +205,11 @@ def _state_values(roll, data, prefix=""):
     if "rest_m" in data:
         if roll.typ != "messband":
             raise invalid(f"{prefix}rest_m", "rest_m nur für Messband (Vorlauf: metrierung_m).")
-        values["rest_m"] = _meters(data["rest_m"], f"{prefix}rest_m")
+        values["rest_m"] = meters(data["rest_m"], f"{prefix}rest_m")
     if "metrierung_m" in data:
         if roll.typ != "vorlauf":
             raise invalid(f"{prefix}metrierung_m", "metrierung_m nur für Vorlauf (Messband: rest_m).")
-        values["metrierung_m"] = _meters(data["metrierung_m"], f"{prefix}metrierung_m")
+        values["metrierung_m"] = meters(data["metrierung_m"], f"{prefix}metrierung_m")
     if "leer" in data:
         values["leer"] = _bool(data, "leer")
     return values
@@ -217,19 +218,16 @@ def _state_values(roll, data, prefix=""):
 def patch(nummer, data):
     """PATCH /v1/werk/rollen/<nummer>/: rest_m / metrierung_m / leer - the
     newer report wins ("am"). Answer: the roll and "ergebnis"."""
-    from progeo.werk.models import Roll
-
-    if not isinstance(data, dict):
-        raise invalid(None, "JSON-Objekt erwartet.")
+    json_object(data)
     with transaction.atomic(using=DB):
         roll = Roll.objects.using(DB).select_for_update().filter(nummer=nummer).first()
         if roll is None:
             raise _unknown(nummer)
         values = _state_values(roll, data)
-        device = _device(data)
-        user_name = _text(data.get("benutzer"), "benutzer", 150)
-        order_id = _text(data.get("auftrag_id"), "auftrag_id", 100)
-        moment = _timestamp(data.get("am"), "am")
+        device = device_id(data)
+        user_name = text(data.get("benutzer"), "benutzer", 150)
+        order_id = text(data.get("auftrag_id"), "auftrag_id", 100)
+        moment = timestamp(data.get("am"), "am")
         saved = _apply(roll, values, device, user_name, order_id, moment)
     return {**roll_json(roll), "ergebnis": "gespeichert" if saved else "veraltet"}
 
@@ -237,8 +235,6 @@ def patch(nummer, data):
 def report_from_progress(row, progress, order_id):
     """A roll of a progress report: its state like PATCH; unknown or
     invalid ones are skipped (the report itself is fine)."""
-    from progeo.werk.models import Roll
-
     nummer = row.get("nummer")
     if not isinstance(nummer, str):
         return
@@ -260,11 +256,8 @@ def add_photo(nummer, data, user):
     foto_id. Stored at most 2000 px. Answer {"foto_url"}."""
     from PIL import Image, ImageOps, UnidentifiedImageError
 
-    from progeo.werk.models import RollPhoto
-
     roll = get_roll(nummer)
-    if not isinstance(data, dict):
-        raise invalid(None, "JSON-Objekt erwartet.")
+    json_object(data)
     try:
         photo_id = uuid.UUID(str(data.get("foto_id")))
     except ValueError:
@@ -319,8 +312,6 @@ def add_photo(nummer, data, user):
 
 def photo_file(photo_id):
     """(path, mime) of a photo - 404 if unknown."""
-    from progeo.werk.models import RollPhoto
-
     try:
         photo = RollPhoto.objects.using(DB).filter(foto_id=uuid.UUID(str(photo_id))).first()
     except ValueError:  # the route lets through 36 of [0-9a-f-] - not every one is a UUID

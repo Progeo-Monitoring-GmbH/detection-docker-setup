@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { getWsBaseUrl } from '../../backendUrl';
+import { useLatestRef } from '../../components/ui/useLatestRef';
 
 /** One file of the file list (log_files_helper.summarize_log_files). */
 type LogFileItem = {
@@ -176,10 +177,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
 
   const wsRef = useRef<WebSocket | null>(null);
   const selectedRef = useRef('');
-  const latest = useRef({ lines, auth });
-  useLayoutEffect(() => {
-    latest.current = { lines, auth };
-  });
+  const latest = useLatestRef({ lines, auth });
 
   const send = useCallback((payload: object) => {
     const ws = wsRef.current;
@@ -207,7 +205,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
         setError(String(requestError?.response?.data?.reason || requestError?.message || requestError));
       },
     );
-  }, []);
+  }, [latest]);
 
   const listOverHttp = useCallback(() => {
     void axiosConfig.perform_get(
@@ -216,7 +214,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
       (response) => setFiles((response?.data?.files || []) as LogFileItem[]),
       () => setFiles((current) => current ?? []),
     );
-  }, []);
+  }, [latest]);
 
   const select = useCallback(
     (file: string) => {
@@ -228,7 +226,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
         loadOverHttp(file);
       }
     },
-    [loadOverHttp, send],
+    [loadOverHttp, send, latest],
   );
 
   const refreshFiles = useCallback(() => {
@@ -285,7 +283,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
       },
       onMessage: (data, ws) => handlers[String(data.type)]?.(data, ws),
     });
-  }, []);
+  }, [latest]);
 
   // Socket down (or never up): the file list and the selected file over HTTP.
   const socketDown = status === 'reconnecting' || status === 'denied';

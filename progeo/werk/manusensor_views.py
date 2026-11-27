@@ -27,7 +27,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import has_module_permissions
 from progeo.werk import airtable_dm_sensors, dm_orders, manusensor, production
-from progeo.werk.manusensor import ManuSensorError
+from progeo.werk.common import ManuSensorError, invalid
+from progeo.werk.werk_users import is_factory_user
 
 PERMISSION = "module_manusensor_enabled"
 
@@ -40,11 +41,8 @@ def _staff(user):
     return user.is_staff or user.is_superuser
 
 
-def _factory(user):
-    """docs/fertigung.md 1a: staff, superuser or group "Werk" (werk/werk_users.py)."""
-    from progeo.werk.werk_users import is_factory_user
-
-    return is_factory_user(user)
+# docs/fertigung.md 1a: staff, superuser or group "Werk".
+_factory = is_factory_user
 
 
 class _ManuSensorView(APIView):
@@ -96,7 +94,7 @@ class _ManuSensorView(APIView):
 def _project_number(projekt):
     project_id = manusensor.parse_project(projekt)
     if not project_id:
-        raise manusensor.invalid("projekt", "Projektnummer ist keine Zahl.")
+        raise invalid("projekt", "Projektnummer ist keine Zahl.")
     return project_id
 
 
@@ -113,7 +111,7 @@ class ManuSensorSensorView(_ManuSensorView):
         elif "tag_uid" in request.query_params:
             tag_uid = manusensor.normalize_tag_uid(request.query_params.get("tag_uid"))
             if tag_uid is None:
-                raise manusensor.invalid("tag_uid", "Tag-UID muss Hex sein (8-20 Zeichen).")
+                raise invalid("tag_uid", "Tag-UID muss Hex sein (8-20 Zeichen).")
             factory = manusensor.find_factory_sensor(project_id, tag_uid=tag_uid)
         else:
             return Response(manusensor.project_sensors(project_id))

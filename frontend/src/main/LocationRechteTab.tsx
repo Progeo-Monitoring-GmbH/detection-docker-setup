@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +21,7 @@ import { formatDate } from './dateFormat';
 import { staffFlags } from './access';
 import { useProgeoRole } from './roleModel';
 import { repeatedTestId } from '../testIds';
+import { useRequest } from '../hooks/useRequest';
 import './LocationRechteTab.css';
 
 type AccessRule = {
@@ -63,6 +64,15 @@ type Scope = 'single' | 'account';
 type AccountInfo = { id: number; name: string; location_count: number };
 /** "staff" = ProGeo team: sees every object; managed in Einstellungen. */
 type Access = Scope | 'staff';
+
+/** GET access/: the people and what the viewer may do with them. */
+type AccessAnswer = {
+  members: Member[];
+  canGrantAccount: boolean;
+  canInvite: boolean;
+  canRevokeAccount: boolean;
+  account: AccountInfo | null;
+};
 
 const ACCESS_LABEL_KEYS: Record<Access, string> = {
   single: 'rechte_scope_single',
@@ -211,32 +221,60 @@ const LocationRechteTab = () => {
 
   const role = useProgeoRole();
   const canEdit = hasPermission('module_notifications_edit');
+  // Staff set their own and other staff's notifications here; customers
+  // only ever see staff assigned as Objektleitung (read-only for them).
+  const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
+
+  const {
+    data: access,
+    loading,
+    reload,
+    setData: setAccess,
+  } = useRequest<AccessAnswer>(`/v1/location/${locationId}/access/`, {
+    auth,
+    transform: (body) => ({
+      members: (body?.members || []) as Member[],
+      canGrantAccount: Boolean(body?.can_grant_account),
+      canInvite: Boolean(body?.can_invite),
+      canRevokeAccount: Boolean(body?.can_revoke_account),
+      account: (body?.account as AccountInfo | undefined) ?? null,
+    }),
+    onError: (error) => showRequestError(enqueueSnackbar, 'Could not load access rules', error),
+  });
+  // A reload after a change (invite, revoke).
+  const load = () => void reload();
+  // ProGeo staff are for staff eyes only (the backend sends them to nobody
+  // else - this keeps it so with an older backend, too).
+  const loadedMembers = access?.members;
+  const members = useMemo(
+    () =>
+      viewerIsStaff
+        ? (loadedMembers ?? [])
+        : (loadedMembers ?? []).filter((member) => member.access !== 'staff'),
+    [loadedMembers, viewerIsStaff],
+  );
+  const canGrantAccount = access?.canGrantAccount ?? false;
+  // Staff and customer admins of the account: take members out of it (Revoke) -
+  // never themselves, another customer admin only staff.
+  const canRevokeAccount = access?.canRevokeAccount ?? false;
+  const account = access?.account ?? null;
+
   // The backend decides (`can_invite`); the role check keeps the button
   // hidden in "view as normal user", where the backend still answers as staff.
-  const [canInvite, setCanInvite] = useState(false);
+  const canInvite = access?.canInvite ?? false;
   const canAdd =
     canInvite &&
     mayAddPeople({ role, isCustomerAdmin: hasPermission('module_customer_admin_enabled') }) &&
     hasPermission('module_notifications_add') &&
     hasPermission('module_user_invitable');
-  // Staff set their own and other staff's notifications here; customers
-  // only ever see staff assigned as Objektleitung (read-only for them).
-  const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   // Everyone sets their own notifications (the backend allows it without
   // module_notifications_edit) - only other people's need the permission.
   const viewerId = (auth?.user as { user_id?: number } | null)?.user_id ?? null;
 
-  const [members, setMembers] = useState<Member[]>([]);
-  const [canGrantAccount, setCanGrantAccount] = useState(false);
-  // Staff and customer admins of the account: take members out of it (Revoke) -
-  // never themselves, another customer admin only staff.
-  const [canRevokeAccount, setCanRevokeAccount] = useState(false);
-  const [account, setAccount] = useState<AccountInfo | null>(null);
   // Revoking at all needs module_user_revokable (the backend checks the
   // same) - which members it unlocks: mayRevoke.
   const revokable = hasPermission('module_user_revokable');
   const canRevoke = revokable && (canEdit || canRevokeAccount);
-  const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFirstName, setInviteFirstName] = useState('');
@@ -251,55 +289,12 @@ const LocationRechteTab = () => {
     value: string;
   } | null>(null);
 
-  const fetchMembers = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/access/`,
-      (response) => {
-        const loaded = (response?.data?.members || []) as Member[];
-        // ProGeo staff are for staff eyes only (the backend sends them to
-        // nobody else - this keeps it so with an older backend, too).
-        setMembers(
-          viewerIsStaff
-            ? loaded
-            : loaded.filter((member) => member.access !== 'staff'),
-        );
-        setCanGrantAccount(Boolean(response?.data?.can_grant_account));
-        setCanInvite(Boolean(response?.data?.can_invite));
-        setCanRevokeAccount(Boolean(response?.data?.can_revoke_account));
-        setAccount(
-          (response?.data?.account as AccountInfo | undefined) ?? null,
-        );
-        setLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load access rules', error);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar, locationId, viewerIsStaff]);
-
-  // A reload after a change (invite, revoke).
-  const load = () => {
-    setLoading(true);
-    fetchMembers();
-  };
-
-  // Another object: loading from this render on - adjusted during render, so
-  // the effect below only fetches and sets no state itself.
-  const [requested, setRequested] = useState(() => fetchMembers);
-  if (requested !== fetchMembers) {
-    setRequested(() => fetchMembers);
-    setLoading(true);
-  }
-
-  useEffect(() => {
-    fetchMembers();
-  }, [fetchMembers]);
-
   const updateMember = (userId: number, patch: Partial<Member>) =>
-    setMembers((prev) =>
-      prev.map((m) => (m.user_id === userId ? { ...m, ...patch } : m)),
+    setAccess((prev) =>
+      prev && {
+        ...prev,
+        members: prev.members.map((m) => (m.user_id === userId ? { ...m, ...patch } : m)),
+      },
     );
 
   // Updates the member's rule, or creates one (account members without a

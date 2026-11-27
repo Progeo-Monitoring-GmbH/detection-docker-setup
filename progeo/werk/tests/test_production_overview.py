@@ -10,7 +10,7 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.werk import production, production_overview
+from progeo.werk import common, production, production_overview
 from progeo.werk.models import ProductionEntry, Roll
 from progeo.werk.production_overview import BAD, NONE, OK, WARN
 from progeo.werk.tests.test_production import (  # noqa: F401 - the fixtures
@@ -126,8 +126,8 @@ def test_manager_decides_and_it_is_copied(api_client, worker, manager, queued, a
     decided = stored(3)
     assert (decided.qs_status, decided.qs_manuell, decided.qs_von) == ("Nacharbeit", True, manager)
     assert decided.airtable_synced_at is None
-    assert queued[-1] == ("push_production_entry", decided.pk)
-    assert production.push_entry(decided.pk) is True
+    assert queued[-1] == ("push_production_entries", [decided.pk])
+    assert production.push_changed([decided.pk]) is True
     fields = airtable.writes[-1][2][0]["fields"]
     assert (fields["QS-Prüfung"], fields["QS manuell"]) == ("Nacharbeit", True)
 
@@ -190,7 +190,7 @@ def test_only_staff_see_the_overview_and_decide(api_client, worker):
 # -- overview ---------------------------------------------------------------------------
 
 def today(hour=9):
-    return timezone.localtime(timezone.now(), production.BERLIN).replace(
+    return timezone.localtime(timezone.now(), common.BERLIN).replace(
         hour=hour, minute=0, second=0, microsecond=0)
 
 
@@ -252,10 +252,10 @@ def test_overview_without_airtable_shows_the_app_entries(api_client, worker, man
     put_entries(api_client, [entry(1, erfasst_am=iso(today()))])
 
     def down(*_args, **_kwargs):
-        raise production_overview.ManuSensorError(502, "airtable_fehler", "Airtable ist gerade nicht erreichbar.")
+        raise common.AirtableUnavailable(502, "airtable_fehler", "Airtable ist gerade nicht erreichbar.")
 
     monkeypatch.setattr(production_overview.dm_orders, "produced_sensors", down)
-    monkeypatch.setattr(production_overview.dm_orders, "load_order", down)
+    monkeypatch.setattr(production_overview.dm_orders, "produced_sensor_ids", down)
     monkeypatch.setattr(production_overview.dm_orders, "orders", down)
     api_client.force_authenticate(user=manager)
 
@@ -317,3 +317,17 @@ def test_overview_lists_the_rolls_with_their_sensors(api_client, worker, manager
 
     assert (rolls["MB-0141"]["sensoren"], rolls["MB-0141"]["rest_m"]) == (2, 52.5)
     assert rolls["VL-0031"]["sensoren"] == 3
+
+
+def test_overview_reads_no_order_with_all_its_sensors(api_client, worker, manager, monkeypatch):
+    """The orders' data comes from the cached order list - one order with all
+    its sensors cost ~19 Airtable requests (1800 sensors), per order."""
+    put_entries(api_client, [entry(1, erfasst_am=iso(today()))])
+    monkeypatch.setattr(production_overview.dm_orders, "load_order",
+                        lambda *args, **kwargs: pytest.fail("load_order on the overview"))
+    api_client.force_authenticate(user=manager)
+
+    order = api_client.get(OVERVIEW).json()["auftraege"][0]
+
+    assert (order["auftrag_id"], order["erfasst"], order["gesamt"]) == (ORDER_ID, 1, 45)
+

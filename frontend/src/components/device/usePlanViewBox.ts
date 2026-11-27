@@ -9,9 +9,10 @@
  * give it `touchAction` as style. `ready`: the SVG is mounted (e.g. once the
  * image loaded) - the wheel and touch listeners need the element.
  */
-import { type PointerEvent, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react';
 import { isZoomWheel, TWO_FINGER_TOUCH_ACTION, useTwoFingerTouch, useWheelHint } from '../ui/wheelZoom';
 import { fullBox, isFull, panBox, type ViewBox, zoomBox } from './planViewBox';
+import { useLatestRef } from '../ui/useLatestRef';
 
 /** A zoom button's step. */
 export const ZOOM_STEP = 1.5;
@@ -52,10 +53,7 @@ export const usePlanViewBox = (
   };
 
   // The latest handlers for the native wheel listener (registered once).
-  const zoomByRef = useRef(zoomBy);
-  useLayoutEffect(() => {
-    zoomByRef.current = zoomBy;
-  });
+  const zoomByRef = useLatestRef(zoomBy);
   const [wheelHint, showWheelHint] = useWheelHint();
   useEffect(() => {
     const svg = svgRef.current;
@@ -73,7 +71,7 @@ export const usePlanViewBox = (
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, [svgRef, showWheelHint, ready]);
+  }, [svgRef, showWheelHint, ready, zoomByRef]);
   useTwoFingerTouch(svgRef, () => showWheelHint('touch'), ready);
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>) => {

@@ -15,7 +15,8 @@ import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showSuccessBar } from '../../components/ui/Snackbar.jsx';
+import { useLatestRef } from '../../components/ui/useLatestRef';
 import DonutChart from '../../components/ui/kit/DonutChart';
 import KpiStrip from '../../components/ui/kit/KpiStrip';
 import PanelCard from '../../components/ui/kit/PanelCard';
@@ -66,9 +67,6 @@ const usageOf = (data: Record<string, unknown>): Usage => ({
   split_enabled: Boolean(data.split_enabled),
   default: (data.default ?? { database: '', size_bytes: null }) as Usage['default'],
 });
-
-const reasonOf = (error: unknown) =>
-  (error as { response?: { data?: { reason?: string } } })?.response?.data?.reason ?? (error as Error)?.message;
 
 const STATUS_ORDER: Status[] = ['active', 'stale', 'no_measurements', 'no_devices', 'error'];
 const DEAD: Status[] = ['no_measurements', 'no_devices'];
@@ -197,10 +195,7 @@ const DatabaseUsageView = () => {
   const [idsShown, setIdsShown] = useState<DatabaseRow[] | null>(null);
   const requestRef = useRef(0);
   const inFlight = useRef(false);
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
 
   const get = useCallback(
     (query: string) =>
@@ -212,7 +207,7 @@ const DatabaseUsageView = () => {
           reject,
         );
       }),
-    [],
+    [authRef],
   );
 
   /**
@@ -274,7 +269,7 @@ const DatabaseUsageView = () => {
         }
       } catch (requestError) {
         if (!stale()) {
-          setError(reasonOf(requestError) || 'Unknown error');
+          setError(errorReason(requestError) || 'Unknown error');
         }
       } finally {
         if (!stale()) {

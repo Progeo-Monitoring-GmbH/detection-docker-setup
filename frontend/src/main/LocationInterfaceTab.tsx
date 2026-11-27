@@ -7,6 +7,7 @@ import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import FoldPanel from '../components/ui/kit/FoldPanel';
 import { childTestId, repeatedTestId, testId } from '../testIds';
+import { useRequest } from '../hooks/useRequest';
 import './LocationInterfaceTab.css';
 
 const PASSWORD_MASK = '********';
@@ -160,47 +161,24 @@ type InterfaceKind = 'smtp' | 'modbus' | 'sms' | `messenger/${MessengerService}`
 const useInterfaceConfig = <T extends object>(kind: InterfaceKind, label: string) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const [config, setConfig] = useState<T | null>(null);
   const [form, setForm] = useState<T>({} as T);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  const fetchConfig = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/interface/${kind}/`,
-      (response) => {
-        const cfg = (response?.data?.config || {}) as T;
-        setConfig(cfg);
-        setForm({ ...cfg });
-        setLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, `Could not load ${label} config`, error);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar, kind, label]);
-
+  // Every answer (also the reload after saving) resets the form to it.
+  const {
+    data: config,
+    loading,
+    reload,
+  } = useRequest<T>(`/v1/interface/${kind}/`, {
+    auth,
+    transform: (body) => (body?.config || {}) as T,
+    onSuccess: (cfg) => setForm({ ...cfg }),
+    onError: (error) => showRequestError(enqueueSnackbar, `Could not load ${label} config`, error),
+  });
   // A reload after saving.
-  const load = () => {
-    setLoading(true);
-    fetchConfig();
-  };
-
-  // Another interface: loading from this render on - adjusted during render,
-  // so the effect below only fetches and sets no state itself.
-  const [requested, setRequested] = useState(() => fetchConfig);
-  if (requested !== fetchConfig) {
-    setRequested(() => fetchConfig);
-    setLoading(true);
-  }
-
-  useEffect(() => {
-    fetchConfig();
-  }, [fetchConfig]);
+  const load = () => void reload();
 
   const save = () => {
     setSaving(true);
@@ -719,27 +697,23 @@ type SignalLogin = { id?: string; name?: string | null; state?: string | null };
 const SignalLinkPanel = ({ canEdit }: { canEdit: boolean }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const [logins, setLogins] = useState<SignalLogin[] | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  // The bridge's answer: its logins, or why it couldn't tell.
+  const { data: status, error: statusRequestError, reload: reloadStatus } = useRequest<{
+    logins: SignalLogin[] | null;
+    error: string | null;
+  }>('/v1/interface/messenger/signal/status/', {
+    auth,
+    transform: (body) => ({
+      logins: (body?.status?.logins || null) as SignalLogin[] | null,
+      error: body?.error || null,
+    }),
+  });
+  const logins = status?.logins ?? null;
+  const statusError = statusRequestError ? errorReason(statusRequestError) : (status?.error ?? null);
+  const loadStatus = useCallback(() => void reloadStatus(), [reloadStatus]);
   const [link, setLink] = useState<{ login_id: string; qr: string; instructions?: string } | null>(null);
   const [linkState, setLinkState] = useState<{ state: string; error?: string } | null>(null);
   const [starting, setStarting] = useState(false);
-
-  const loadStatus = useCallback(() => {
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/interface/messenger/signal/status/',
-      (response) => {
-        setLogins((response?.data?.status?.logins || null) as SignalLogin[] | null);
-        setStatusError(response?.data?.error || null);
-      },
-      (error) => setStatusError(errorReason(error)),
-    );
-  }, [auth]);
-
-  useEffect(() => {
-    loadStatus();
-  }, [loadStatus]);
 
   // While a QR code is shown: ask every 3 s whether it was scanned.
   useEffect(() => {

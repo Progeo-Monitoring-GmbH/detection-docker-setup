@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
@@ -23,6 +23,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { useRequest } from '../hooks/useRequest';
 import { plotTheme } from '../styles/plotTheme';
 import { formatDate } from './dateFormat';
 import { childTestId, repeatedTestId, testId as makeTestId } from '../testIds';
@@ -301,131 +302,54 @@ const AlarmReportView = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
 
-  const [reports, setReports] = useState<AlarmDailyReport[]>([]);
-  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [report, setReport] = useState<AlarmDailyReport | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-
   // Comparison state: pick two dates from the available reports.
   const [compareA, setCompareA] = useState<string>('');
   const [compareB, setCompareB] = useState<string>('');
-  const [comparison, setComparison] = useState<{
+
+  const {
+    data: loadedReports,
+    loading,
+    reload: reloadReports,
+  } = useRequest<AlarmDailyReport[]>('/v1/alarm-report/', {
+    auth,
+    transform: (body) => (body?.reports || []) as AlarmDailyReport[],
+    onSuccess: (next) => {
+      // Default selection: most recent report.
+      if (next.length > 0) {
+        setSelectedDate((current) => current || next[0].date);
+      }
+    },
+    onError: (error) => showRequestError(enqueueSnackbar, 'Could not load reports', error),
+  });
+  const reports = useMemo(() => loadedReports ?? [], [loadedReports]);
+  const fetchReports = () => void reloadReports();
+
+  // The selected day's report (kept while the next day loads).
+  const { data: report, loading: reportLoading } = useRequest<AlarmDailyReport | null>(
+    selectedDate ? `/v1/alarm-report/?date=${selectedDate}` : null,
+    {
+      auth,
+      transform: (body) => ((body?.reports || []) as AlarmDailyReport[])[0] || null,
+      onError: (error) => showRequestError(enqueueSnackbar, 'Could not load report', error),
+    },
+  );
+  const { data: comparison, loading: compareLoading } = useRequest<{
     report_a: AlarmDailyReport | null;
     report_b: AlarmDailyReport | null;
-  } | null>(null);
-  const [compareLoading, setCompareLoading] = useState(false);
-
-  // The effects below only send the requests; when their inputs change, the
-  // loading flags (and the comparison reset) are set here during render.
-  const [requested, setRequested] = useState({ auth, selectedDate, compareA, compareB });
-  if (
-    requested.auth !== auth ||
-    requested.selectedDate !== selectedDate ||
-    requested.compareA !== compareA ||
-    requested.compareB !== compareB
-  ) {
-    const authChanged = requested.auth !== auth;
-    setRequested({ auth, selectedDate, compareA, compareB });
-    if (authChanged) {
-      setLoading(true);
-    }
-    if (selectedDate && (authChanged || requested.selectedDate !== selectedDate)) {
-      setReportLoading(true);
-    }
-    if (authChanged || requested.compareA !== compareA || requested.compareB !== compareB) {
-      if (compareA && compareB) {
-        setCompareLoading(true);
-      } else {
-        setComparison(null);
-      }
-    }
-  }
-
-  // Sets state only in the request callbacks; loading is set by the caller.
-  const requestReports = useCallback(() => {
-    void axiosConfig.perform_get(
+  }>(
+    // Without both dates there is no comparison (null drops the last one).
+    compareA && compareB ? `/v1/alarm-report/compare/?date_a=${compareA}&date_b=${compareB}` : null,
+    {
       auth,
-      '/v1/alarm-report/',
-      (response) => {
-        const next = (response?.data?.reports || []) as AlarmDailyReport[];
-        setReports(next);
-        setLoading(false);
-        // Default selection: most recent report.
-        if (next.length > 0) {
-          setSelectedDate((current) => current || next[0].date);
-        }
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load reports', error);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
-
-  const fetchReports = useCallback(() => {
-    setLoading(true);
-    requestReports();
-  }, [requestReports]);
-
-  // Loading starts as true; on auth changes it is set during render (above).
-  useEffect(() => {
-    requestReports();
-  }, [requestReports]);
-
-  const requestReport = useCallback(
-    (date: string) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/alarm-report/?date=${date}`,
-        (response) => {
-          const list = (response?.data?.reports || []) as AlarmDailyReport[];
-          setReport(list[0] || null);
-          setReportLoading(false);
-        },
-        (error) => {
-          showRequestError(enqueueSnackbar, 'Could not load report', error);
-          setReportLoading(false);
-        },
-      );
+      transform: (body) => ({
+        report_a: body?.report_a || null,
+        report_b: body?.report_b || null,
+      }),
+      onError: (error) => showRequestError(enqueueSnackbar, 'Could not compare reports', error),
     },
-    [auth, enqueueSnackbar],
   );
-
-  useEffect(() => {
-    if (selectedDate) {
-      requestReport(selectedDate);
-    }
-  }, [selectedDate, requestReport]);
-
-  const requestCompare = useCallback(
-    (dateA: string, dateB: string) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/alarm-report/compare/?date_a=${dateA}&date_b=${dateB}`,
-        (response) => {
-          setComparison({
-            report_a: response?.data?.report_a || null,
-            report_b: response?.data?.report_b || null,
-          });
-          setCompareLoading(false);
-        },
-        (error) => {
-          showRequestError(enqueueSnackbar, 'Could not compare reports', error);
-          setCompareLoading(false);
-        },
-      );
-    },
-    [auth, enqueueSnackbar],
-  );
-
-  useEffect(() => {
-    if (compareA && compareB) {
-      requestCompare(compareA, compareB);
-    }
-  }, [compareA, compareB, requestCompare]);
 
   const handleGenerate = () => {
     setGenerating(true);

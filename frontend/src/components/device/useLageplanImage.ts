@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
+import { useLatestRef } from '../ui/useLatestRef';
 
 type Auth = ReturnType<typeof useAuth>;
 
@@ -74,10 +75,7 @@ const loadLageplanImage = (auth: Auth, url: string): Promise<HTMLImageElement | 
  */
 export const useLageplanImageState = (url: string | null) => {
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
   const [settled, setSettled] = useState<{ url: string; image: HTMLImageElement | null } | null>(null);
   const cached = url ? (decoded.get(cacheKey(auth, url)) ?? null) : null;
 
@@ -94,7 +92,7 @@ export const useLageplanImageState = (url: string | null) => {
     return () => {
       cancelled = true;
     };
-  }, [url, cached]);
+  }, [url, cached, authRef]);
 
   if (!url) {
     return { image: null, pending: false };
@@ -109,15 +107,12 @@ export const useLageplanImageState = (url: string | null) => {
  * location), so switching to another plan shows it at once. */
 export const usePreloadLageplanImages = (urls: string[]) => {
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
   const key = urls.join('\n');
   useEffect(() => {
     if (!key) {
       return;
     }
     key.split('\n').forEach((url) => void loadLageplanImage(authRef.current, url));
-  }, [key]);
+  }, [key, authRef]);
 };

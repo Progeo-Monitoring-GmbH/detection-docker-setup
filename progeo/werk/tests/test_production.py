@@ -11,7 +11,7 @@ import pytest
 from django.contrib.auth.models import Group, User
 
 from progeo.tests import factories as f
-from progeo.werk import production, rolls, werk_users
+from progeo.werk import common, production, rolls, werk_users
 from progeo.werk.models import (
     FactorySensor,
     ProductionEntry,
@@ -94,7 +94,7 @@ def airtable(monkeypatch, settings, tmp_path):
 def queued(monkeypatch):
     """No celery: the tasks production would queue."""
     calls = []
-    monkeypatch.setattr(production, "_queue", lambda name, *args: calls.append((name, *args)))
+    monkeypatch.setattr(common, "queue_task", lambda name, *args: calls.append((name, *args)))
     return calls
 
 
@@ -155,6 +155,8 @@ def test_me_and_factory_check(api_client, worker):
     assert api_client.get("/v1/werk/ich/").json() == {
         "benutzer": "m.muster", "name": "Max Muster", "kuerzel": "MM", "werk": True}
     WerkUser.objects.using(f.DB).filter(user=worker).update(kuerzel="MXM")
+    # Each request loads its account anew (force_authenticate reuses the object and its cached profile).
+    worker.refresh_from_db(using=f.DB)
     assert api_client.get("/v1/werk/ich/").json()["kuerzel"] == "MXM"
     # Staff without a resource: name and initials from the account.
     staff = f.make_user(staff=True, first_name="Erika", last_name="Beispiel")
@@ -478,8 +480,8 @@ def test_change_after_release_is_marked_and_copied_again(api_client, worker, que
     assert answer.json()["ergebnisse"][0]["ergebnis"] == "gespeichert"
     changed = ProductionEntry.objects.using(f.DB).get(sensor_record_id=sensor_record(5))
     assert changed.nach_freigabe_geaendert and changed.airtable_synced_at is None
-    assert queued[-1] == ("push_production_entry", changed.pk)
-    assert production.push_entry(changed.pk) is True
+    assert queued[-1] == ("push_production_entries", [changed.pk])
+    assert production.push_changed([changed.pk]) is True
     assert airtable.writes[-1][2][0]["fields"]["R kurzgeschlossen [Ω]"] == 80
 
 
@@ -755,3 +757,22 @@ def test_a_photo_with_too_many_pixels_is_refused_unread(api_client, worker):
     huge = api_client.post("/v1/werk/rollen/MB-0141/foto/", {
         "foto_id": str(uuid.uuid4()), "mime": "image/png", "daten": image_base64("PNG", (8000, 6000))}, format="json")
     assert (huge.status_code, huge.json()["feld"]) == (422, "daten")
+
+
+def test_saving_costs_the_same_queries_for_5_or_40_entries(api_client, worker):
+    """Bulk: no queries per entry (1000 entries per PUT were ~5000 queries)."""
+    from django.db import connections
+    from django.test.utils import CaptureQueriesContext
+
+    def queries(numbers, erfasst_am):
+        with CaptureQueriesContext(connections[f.DB]) as captured:
+            assert put_entries(api_client, [entry(n, erfasst_am=erfasst_am) for n in numbers]).status_code == 200
+        return len(captured)
+
+    queries([1], "2026-11-26T08:00:00Z")  # warm-up: one-time lookups of the first request
+    # New entries, then changed ones.
+    assert queries(range(2, 7), "2026-11-26T09:00:00Z") == queries(range(7, 46), "2026-11-26T09:00:00Z")
+    assert queries(range(1, 6), "2026-11-26T10:00:00Z") == queries(range(6, 46), "2026-11-26T10:00:00Z")
+    assert ProductionEntry.objects.using(f.DB).count() == 45
+    assert FactorySensor.objects.using(f.DB).filter(project_id=24017).count() == 45
+

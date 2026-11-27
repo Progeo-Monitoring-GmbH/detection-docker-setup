@@ -1,4 +1,5 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, type RefObject } from 'react';
+import { useLatestRef } from './useLatestRef';
 
 /**
  * Moving through a page's items with the keyboard and, on touch screens,
@@ -73,10 +74,7 @@ export const useKeyNavigation = (
   { inDialog = false }: { inDialog?: boolean } = {},
 ) => {
   // The latest handlers - the listener is registered once.
-  const latest = useRef(handlers);
-  useEffect(() => {
-    latest.current = handlers;
-  });
+  const latest = useLatestRef(handlers);
   useEffect(() => {
     if (!enabled) {
       return undefined;
@@ -98,7 +96,7 @@ export const useKeyNavigation = (
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enabled, inDialog]);
+  }, [enabled, inDialog, latest]);
 };
 
 const ARROWS_BY_DIRECTION: Record<Direction, true> = {
@@ -141,10 +139,7 @@ export const useSwipeNavigation = (
   onSwipe: (direction: Direction, target: Element | null) => void,
   enabled = true,
 ) => {
-  const latest = useRef(onSwipe);
-  useEffect(() => {
-    latest.current = onSwipe;
-  });
+  const latest = useLatestRef(onSwipe);
   useEffect(() => {
     const element = ref.current;
     if (!element || !enabled) {
@@ -192,7 +187,7 @@ export const useSwipeNavigation = (
       element.removeEventListener('pointerup', up);
       element.removeEventListener('pointercancel', cancel);
     };
-  }, [ref, enabled]);
+  }, [ref, enabled, latest]);
 };
 
 /**
@@ -231,10 +226,7 @@ export const useTouchSwipe = (
   ) => void,
   enabled = true,
 ) => {
-  const latest = useRef(onSwipe);
-  useEffect(() => {
-    latest.current = onSwipe;
-  });
+  const latest = useLatestRef(onSwipe);
   useEffect(() => {
     if (!element || !enabled) {
       return undefined;
@@ -294,5 +286,5 @@ export const useTouchSwipe = (
       element.removeEventListener('touchend', end);
       element.removeEventListener('touchcancel', cancel);
     };
-  }, [element, enabled]);
+  }, [element, enabled, latest]);
 };

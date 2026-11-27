@@ -28,6 +28,7 @@ import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
 import { childTestId } from '../testIds';
 import { readJsonFile } from '../readJsonFile';
+import { useRequest } from '../hooks/useRequest';
 import './LocationClimatePanels.css';
 
 type LocationClimatePanelsProps = {
@@ -83,9 +84,28 @@ const LocationClimatePanels = ({
   );
   const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
   const range = controlledRange ?? effectiveTimeRange(selectedRange, availableRanges);
-  const [climate, setClimate] = useState<ClimateResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
+  // Only the answer for the current object and range lands (useRequest) - a
+  // slow (long-range, aggregated) one must not overwrite the range picked after it.
+  const {
+    data: climate,
+    loading,
+    error: climateError,
+    reload: reloadClimate,
+  } = useRequest<ClimateResponse | null>(
+    `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${TIME_RANGE_DAYS[range]}`,
+    {
+      auth,
+      transform: (body) => (body || null) as ClimateResponse | null,
+      onError: (error) => {
+        if (error?.response?.status !== 403) {
+          showRequestError(enqueueSnackbar, 'Could not load climate data', error);
+        }
+      },
+    },
+  );
+  const denied = climateError?.response?.status === 403;
+  // A reload after a change (clean, import, rename).
+  const loadClimate = () => void reloadClimate();
   const [ownHoveredDevice, setOwnHoveredDevice] = useState<number | null>(null);
   const hoveredDeviceId = onHoverDevice ? (controlledHoveredDevice ?? null) : ownHoveredDevice;
   const setHoveredDeviceId = onHoverDevice ?? setOwnHoveredDevice;
@@ -100,58 +120,6 @@ const LocationClimatePanels = ({
   );
   const importInputRef = useRef<HTMLInputElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
-  // Only the latest request may land - a slow (long-range, aggregated)
-  // response must not overwrite the range picked after it.
-  const latestRequest = useRef(0);
-
-  const fetchClimate = useCallback(() => {
-    const request = ++latestRequest.current;
-    void axiosConfig.perform_get(
-      auth,
-      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${TIME_RANGE_DAYS[range]}`,
-      (response) => {
-        if (request !== latestRequest.current) {
-          return;
-        }
-        setClimate((response?.data || null) as ClimateResponse | null);
-        setLoading(false);
-      },
-      (error) => {
-        if (request !== latestRequest.current) {
-          return;
-        }
-        if (error?.response?.status === 403) {
-          setDenied(true);
-        } else {
-          showRequestError(enqueueSnackbar, 'Could not load climate data', error);
-        }
-        setLoading(false);
-      },
-    );
-  }, [auth, demo, enqueueSnackbar, locationId, range]);
-
-  // A reload after a change (clean, import, rename).
-  const loadClimate = useCallback(() => {
-    setLoading(true);
-    setDenied(false);
-    fetchClimate();
-  }, [fetchClimate]);
-
-  // Another object or range: loading from this render on - adjusted during
-  // render, so the effect below only fetches and sets no state itself. Keyed
-  // by fetchClimate's dependencies (comparing the function itself reads as a
-  // ref access during render to oxlint).
-  const requestKey = [auth, demo, enqueueSnackbar, locationId, range] as const;
-  const [requested, setRequested] = useState(requestKey);
-  if (requestKey.some((value, index) => value !== requested[index])) {
-    setRequested(requestKey);
-    setLoading(true);
-    setDenied(false);
-  }
-
-  useEffect(() => {
-    fetchClimate();
-  }, [fetchClimate]);
 
   const devices = climate?.devices ?? [];
   const frames = useMemo(

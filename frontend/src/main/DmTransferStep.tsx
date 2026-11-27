@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Form, Spinner } from 'react-bootstrap';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { enqueueSnackbar } from 'notistack';
@@ -8,6 +8,8 @@ import { getBackendUrl } from '../backendUrl';
 import PillButton from '../components/ui/kit/PillButton';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
 import { repeatedTestId } from '../testIds';
+import { useLatestRef } from '../components/ui/useLatestRef';
+import { requestReason } from './lageplanWizardUtils';
 import './DmTransferStep.css';
 
 /**
@@ -66,17 +68,10 @@ export const countByStatus = (proposals: BandProposal[]) =>
     STATUSES.map((status) => [status, proposals.filter((proposal) => proposal.status === status).length]),
   ) as Record<BandStatus, number>;
 
-const requestReason = (requestError: unknown) =>
-  (requestError as { response?: { data?: { reason?: string } } })?.response?.data?.reason ??
-  (requestError as Error).message;
-
 /** The plan image - media needs the Authorization header, so it is fetched as blob. */
 export const usePlanImage = (url: string | null | undefined) => {
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -103,7 +98,7 @@ export const usePlanImage = (url: string | null | undefined) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [url]);
+  }, [url, authRef]);
   return src;
 };
 

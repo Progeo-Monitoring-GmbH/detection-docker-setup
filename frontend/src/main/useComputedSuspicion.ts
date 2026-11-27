@@ -8,6 +8,7 @@ import {
   computedSuspicionUrl,
   type ComputedSuspicionPoint,
 } from './computedSuspicion';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 /**
  * smartex® mx-PEEL: the computed suspicion points of a location over the
@@ -33,10 +34,7 @@ export const useComputedSuspicion = (
   const [denied, setDenied] = useState(false);
 
   // `auth` changes with the path - no reason to ask again.
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
   // Only the answer of the newest request counts (range switched meanwhile).
   const requestRef = useRef(0);
 
@@ -70,7 +68,7 @@ export const useComputedSuspicion = (
         setAnsweredKey(requestKey);
       },
     );
-  }, [days, demo, enqueueSnackbar, locationId]);
+  }, [days, demo, enqueueSnackbar, locationId, authRef]);
 
   useEffect(() => {
     if (enabled) {

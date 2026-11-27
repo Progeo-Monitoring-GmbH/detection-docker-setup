@@ -13,11 +13,13 @@ import unicodedata
 
 from django.conf import settings
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import DEFAULT_DB_ALIAS, transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from progeo.helper.basics import ilog, wlog
+from progeo.werk.models import WerkUser
 
 DB = DEFAULT_DB_ALIAS
 GROUP = "Werk"
@@ -36,9 +38,15 @@ def is_factory_user(user) -> bool:
 
 
 def factory_users_by_name(usernames):
-    """{username: User} of the active factory accounts among `usernames`."""
-    users = User.objects.using(DB).filter(username__in=set(usernames), is_active=True)
-    return {user.username: user for user in users if is_factory_user(user)}
+    """{username: User} of the active factory accounts among `usernames` - one
+    query (is_factory_user() as a filter), with their Werk profile."""
+    users = (
+        User.objects.using(DB)
+        .filter(Q(is_staff=True) | Q(is_superuser=True) | Q(groups__name=GROUP),
+                username__in=set(usernames), is_active=True)
+        .select_related("werk_user").distinct()
+    )
+    return {user.username: user for user in users}
 
 
 def initials(name) -> str:
@@ -51,9 +59,14 @@ def initials(name) -> str:
 
 
 def _werk_user(user):
-    from progeo.werk.models import WerkUser
-
-    return WerkUser.objects.using(DB).filter(user=user).first()
+    """The account's Werk profile, None without - read through the reverse
+    relation: free after select_related("werk_user"), one query once otherwise."""
+    if user is None:
+        return None
+    try:
+        return user.werk_user
+    except ObjectDoesNotExist:
+        return None
 
 
 def display_name(user) -> str:
@@ -70,7 +83,7 @@ def abbreviation(user) -> str:
 
 def resource_id(user):
     """The Airtable "Ressourcen" record of `user` ("Produziert von"), else None."""
-    werk = _werk_user(user) if user is not None else None
+    werk = _werk_user(user)
     return werk.airtable_resource_id if werk else None
 
 
@@ -210,7 +223,6 @@ def sync(helper=None, dry_run=False) -> dict:
     them by hand. `dry_run`: everything rolled back, the report stays.
     Returns the counts and "details" (one line per person)."""
     from progeo.helper.airtable import AirtableHelper
-    from progeo.werk.models import WerkUser
 
     helper = helper or AirtableHelper()
     if not helper.configured:
@@ -224,7 +236,7 @@ def sync(helper=None, dry_run=False) -> dict:
 
     try:
         with transaction.atomic(using=DB):
-            _sync(resources, report, note, WerkUser)
+            _sync(resources, report, note)
             if dry_run:
                 raise _DryRun
     except _DryRun:
@@ -234,7 +246,7 @@ def sync(helper=None, dry_run=False) -> dict:
     return report
 
 
-def _sync(resources, report, note, WerkUser):
+def _sync(resources, report, note):
     group, _created = Group.objects.using(DB).get_or_create(name=GROUP)
     now = timezone.now()
     for resource in resources:
@@ -244,7 +256,7 @@ def _sync(resources, report, note, WerkUser):
             continue
         link = WerkUser.objects.using(DB).select_related("user").filter(airtable_resource_id=resource["id"]).first()
         if link is not None:
-            user, action = link.user, "aktualisiert"
+            user, action, counter = link.user, "aktualisiert", "aktualisiert"
         else:
             user, how = find_account(resource)
             if user is None and how:
@@ -262,12 +274,11 @@ def _sync(resources, report, note, WerkUser):
                             email=resource["email"], first_name=first, last_name=last)
                 user.set_unusable_password()
                 user.save(using=DB)
-                action = "angelegt (ohne Passwort, Einladung von Hand)"
+                action, counter = "angelegt (ohne Passwort, Einladung von Hand)", "angelegt"
             else:
-                action = f"vorhandenes Konto verknüpft ({how})"
+                action, counter = f"vorhandenes Konto verknüpft ({how})", "verknuepft"
             link = WerkUser(user=user, airtable_resource_id=resource["id"])
-        report["angelegt" if action.startswith("angelegt") else
-               "verknuepft" if action.startswith("vorhanden") else "aktualisiert"] += 1
+        report[counter] += 1
         changed = []
         if link.deactivated_by_sync and not user.is_active:
             user.is_active = True

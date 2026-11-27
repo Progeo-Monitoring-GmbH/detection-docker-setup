@@ -24,9 +24,24 @@ from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
-from progeo.werk import dm_orders, production
-from progeo.werk.manusensor import ManuSensorError, _iso, invalid, now_aware
-from progeo.werk.production import BERLIN, DB, MEASURES, SHEET_SIZE
+from progeo.werk import common, dm_orders, production
+from progeo.werk.common import (
+    BERLIN,
+    DB,
+    RECORD_ID,
+    ManuSensorError,
+    invalid,
+    iso,
+    now_aware,
+    parse_time,
+)
+from progeo.werk.models import (
+    ProductionEntry,
+    ProductionProgress,
+    ProductionSheet,
+    Roll,
+)
+from progeo.werk.production import MEASURES, SHEET_SIZE, complete_q
 
 # The value checks (SheetRules.kt).
 NONE, OK, WARN, BAD = "none", "ok", "warn", "bad"
@@ -65,9 +80,13 @@ def _flags(entry):
     return {name: flag(name, getattr(entry, f"{name}_ohm"), getattr(entry, f"{name}_status")) for name in MEASURES}
 
 
+def _worst(flags):
+    return max(flags.values(), key=_RANK.get)
+
+
 def level(entry):
     """The worst flag of the entry's values."""
-    return max(_flags(entry).values(), key=_RANK.get)
+    return _worst(_flags(entry))
 
 
 def _flagged_q():
@@ -80,10 +99,6 @@ def _flagged_q():
         query |= Q(**{f"{name}_status": "ok", f"{name}_ohm__gt": BOARD_MAX_OHM})
     query |= Q(r_kurzschluss_status="ok", r_kurzschluss_ohm__gte=SHORT_MAX_OHM)
     return query
-
-
-def _complete_q():
-    return Q(**{f"{name}_status__isnull": False for name in MEASURES})
 
 
 def length(value):
@@ -118,16 +133,14 @@ def qs_json(entry):
         "status": entry.qs_status,
         "manuell": entry.qs_manuell,
         "von": entry.qs_von.username if entry.qs_von else None,
-        "am": _iso(entry.qs_am),
+        "am": iso(entry.qs_am),
     }
 
 
 def _clean_decision(data):
-    if not isinstance(data, dict):
-        raise invalid(None, "JSON-Objekt erwartet.")
-    ids = data.get("sensor_record_ids")
+    ids = common.json_object(data).get("sensor_record_ids")
     if (not isinstance(ids, list) or not ids or len(ids) > MAX_DECISIONS
-            or not all(isinstance(i, str) and production._RECORD_ID.fullmatch(i) for i in ids)):
+            or not all(isinstance(i, str) and RECORD_ID.fullmatch(i) for i in ids)):
         raise invalid("sensor_record_ids", f"Liste von 1-{MAX_DECISIONS} Sensor-Record-IDs erwartet.")
     status = data.get("qs")
     if status not in QS_VALUES:
@@ -139,8 +152,6 @@ def decide(data, user):
     """Staff decide the QS check of released sensors: "OK" / "Nacharbeit"
     (manual - the automatic check keeps it), "Prüfen" undecides. Copied to
     Airtable like a changed entry."""
-    from progeo.werk.models import ProductionEntry
-
     ids, status = _clean_decision(data)
     with transaction.atomic(using=DB):
         found = ProductionEntry.objects.using(DB).select_for_update().in_bulk(ids, field_name="sensor_record_id")
@@ -152,16 +163,16 @@ def decide(data, user):
         if drafts:
             raise ManuSensorError(409, "nicht_freigegeben", "Nur Sensoren freigegebener Blätter werden geprüft.",
                                   "sensor_record_ids", extra={"sensor_record_ids": drafts})
-        now = timezone.now()
-        for sensor_id in ids:
-            entry = found[sensor_id]
-            manual = status != QS_CHECK
+        now, manual = timezone.now(), status != QS_CHECK
+        decided = [found[sensor_id] for sensor_id in ids]
+        for entry in decided:
             entry.qs_status, entry.qs_manuell, entry.qs_am = status, manual, now
             entry.qs_von = user if manual else None
-            entry.airtable_synced_at = None
-            entry.save(using=DB, update_fields=[
-                "qs_status", "qs_manuell", "qs_von", "qs_am", "airtable_synced_at", "gespeichert_am"])
-            transaction.on_commit(lambda pk=entry.pk: production._queue("push_production_entry", pk), using=DB)
+            entry.airtable_synced_at, entry.gespeichert_am = None, now
+        ProductionEntry.objects.using(DB).bulk_update(decided, [
+            "qs_status", "qs_manuell", "qs_von", "qs_am", "airtable_synced_at", "gespeichert_am"], batch_size=200)
+        pks = [entry.pk for entry in decided]
+        transaction.on_commit(lambda: common.queue_task("push_production_entries", pks), using=DB)
     return {"eintraege": [
         {"sensor_record_id": sensor_id, "sensor": found[sensor_id].sensor, "qs": qs_json(found[sensor_id])}
         for sensor_id in ids
@@ -185,7 +196,7 @@ def _days(value):
 def _order_key(value):
     if value in (None, ""):
         return None
-    if not production._RECORD_ID.fullmatch(str(value)):
+    if not RECORD_ID.fullmatch(str(value)):
         raise invalid("auftrag", "auftrag: Airtable-Record-ID erwartet.")
     return str(value)
 
@@ -201,9 +212,7 @@ def _first_day(days):
 
 
 def _berlin_day(value):
-    from progeo.werk.manusensor import _aware
-
-    moment = _aware(value)
+    moment = parse_time(value)
     return moment.astimezone(BERLIN).date() if moment else None
 
 
@@ -214,7 +223,7 @@ def _per_day(entries, days, produced, app_ids):
     first = _first_day(days)
     start = datetime.datetime.combine(first, datetime.time.min, tzinfo=BERLIN)
     totals = {first + datetime.timedelta(days=offset): [0, 0.0, 0.0] for offset in range(days)}
-    rows = entries.filter(_complete_q(), erfasst_am__gte=start).annotate(
+    rows = entries.filter(complete_q(), erfasst_am__gte=start).annotate(
         day=TruncDate("erfasst_am", tzinfo=BERLIN)).values("day").annotate(
         sensoren=Count("pk"), messband=Sum("laenge_m"), vorlauf=Sum("vorlauf_m"))
     for row in rows:
@@ -259,8 +268,8 @@ def flagged_json(entry, initials):
         "projekt": entry.project_id,
         "werte": {name: {"ohm": getattr(entry, f"{name}_ohm"), "status": getattr(entry, f"{name}_status"),
                          "flag": flags[name]} for name in MEASURES},
-        "stufe": LEVEL_NAMES.get(max(flags.values(), key=_RANK.get)),
-        "erfasst_am": _iso(entry.erfasst_am),
+        "stufe": LEVEL_NAMES.get(_worst(flags)),
+        "erfasst_am": iso(entry.erfasst_am),
         "kuerzel": initials(entry.erfasst_von),
         "blatt": sheet.blatt if sheet else None,
         "bestaetigt": bool(sheet and entry.sensor_record_id in (sheet.auffaellig_bestaetigt or [])),
@@ -280,56 +289,59 @@ class _Airtable:
     def read(self, load, default):
         try:
             return load()
-        except ManuSensorError:
+        except common.AirtableUnavailable:
             self.failed = True
             return default
 
 
-def _orders(entries, flagged, order_key, airtable):
+def _orders(entries, flagged, order_key, airtable, app_ids):
     """The orders of the page: those with app entries or progress and those
     still to produce in "PA: dm". Recorded = the complete app entries plus
-    the sensors produced the old way (each sensor once)."""
-    from progeo.werk.models import ProductionProgress, ProductionSheet
-
+    the sensors produced the old way (each sensor once). The orders' own data
+    from the cached order list - not every order with all its sensors.
+    `app_ids`: {order record id: sensor record ids with a complete entry}."""
     stats = {row["order_record_id"]: row for row in entries.values("order_record_id").annotate(
         zuletzt=Max("erfasst_am"), auftrag_id=Max("order_id"))}
-    app_ids = {}
-    for record_id, sensor_id in entries.filter(_complete_q()).values_list("order_record_id", "sensor_record_id"):
-        app_ids.setdefault(record_id, set()).add(sensor_id)
     progress = ProductionProgress.objects.using(DB)
     sheets = ProductionSheet.objects.using(DB)
     if order_key:
         progress, sheets = progress.filter(order_record_id=order_key), sheets.filter(order_record_id=order_key)
-        open_ids = set()
-    else:
-        open_ids = {order["id"] for order in airtable.read(
-            lambda: dm_orders.orders(dm_orders.STATUS_TO_PRODUCE)["auftraege"], [])}
+    listed = {order["id"]: order for order in airtable.read(
+        lambda: dm_orders.orders(dm_orders.STATUS_ALL)["auftraege"], [])}
+    open_ids = set() if order_key else {
+        record_id for record_id, order in listed.items()
+        if order.get("produktionsstatus") == dm_orders.STATUS_TO_PRODUCE}
     reports = {report.order_record_id: report for report in progress}
     released = {row["order_record_id"]: row for row in sheets.values("order_record_id").annotate(
         freigegeben=Count("pk"), gesamt=Max("blaetter_gesamt"))}
+    record_ids = set(stats) | set(reports) | open_ids
+    paper = production.paper_produced([listed[i] for i in record_ids if i in listed], app_ids)
+    if paper is None:
+        airtable.failed, paper = True, {}
+    flagged_of = {}
+    for item in flagged:
+        flagged_of.setdefault(item["order_record_id"], []).append(item)
     result = []
-    for record_id in set(stats) | set(reports) | open_ids:
-        row, report = stats.get(record_id, {}), reports.get(record_id)
-        detail = airtable.read(lambda record_id=record_id: dm_orders.load_order(record_id), {})
-        sensors = detail.get("sensoren") or []
-        produced = {sensor["id"] for sensor in sensors if sensor.get("produktionsstatus") == dm_orders.STATUS_PRODUCED}
-        total = len(sensors) or detail.get("anzahl_sensoren") or (report.sensoren_gesamt if report else None)
-        mine = [item for item in flagged if item["order_record_id"] == record_id]
+    for record_id in record_ids:
+        row, report, order = stats.get(record_id, {}), reports.get(record_id), listed.get(record_id, {})
+        total = len(order.get("sensor_record_ids") or []) or order.get("anzahl_sensoren") or (
+            report.sensoren_gesamt if report else None)
+        mine = flagged_of.get(record_id, [])
         last = max(filter(None, [row.get("zuletzt"), report.zeitpunkt if report else None]), default=None)
         result.append({
             "id": record_id,
-            "auftrag_id": detail.get("auftrag_id") or row.get("auftrag_id") or (report.order_id if report else ""),
-            "nr": detail.get("nr"),
-            "projekt": detail.get("projekt"),
-            "objekt": detail.get("objekt"),
-            "erfasst": len(app_ids.get(record_id, set()) | produced),
+            "auftrag_id": order.get("auftrag_id") or row.get("auftrag_id") or (report.order_id if report else ""),
+            "nr": order.get("nr"),
+            "projekt": order.get("projekt"),
+            "objekt": order.get("objekt"),
+            "erfasst": len(app_ids.get(record_id, ())) + len(paper.get(record_id, ())),
             "gesamt": total,
             "blaetter_freigegeben": released.get(record_id, {}).get("freigegeben", 0),
             "blaetter": released.get(record_id, {}).get("gesamt") or (math.ceil(total / SHEET_SIZE) if total else None),
             "fehler": sum(item["stufe"] == "fehler" for item in mine),
             "warnungen": sum(item["stufe"] == "warnung" for item in mine),
             "qs_offen": sum(bool(item["qs"]) and item["qs"]["status"] == QS_CHECK for item in mine),
-            "zuletzt": _iso(last),
+            "zuletzt": iso(last),
         })
     result.sort(key=lambda order: order["zuletzt"] or "", reverse=True)
     return result
@@ -337,7 +349,6 @@ def _orders(entries, flagged, order_key, airtable):
 
 def _rolls(entries, order_key):
     from progeo.werk import rolls
-    from progeo.werk.models import Roll
 
     used = {}
     for field in ("messband_rolle", "vorlauf_rolle"):
@@ -352,20 +363,21 @@ def _rolls(entries, order_key):
 
 def overview(params):
     """GET /v1/werk/produktion/?tage=14&auftrag=<record id>."""
-    from progeo.werk.models import ProductionEntry
-
     days, order_key = _days(params.get("tage")), _order_key(params.get("auftrag"))
     entries = ProductionEntry.objects.using(DB)
     if order_key:
         entries = entries.filter(order_record_id=order_key)
     initials = _Initials()
     flagged = [flagged_json(entry, initials) for entry in entries.filter(_flagged_q()).select_related(
-        "erfasst_von", "sheet", "qs_von").order_by("-erfasst_am", "-pk")[:MAX_ROWS]]
+        "erfasst_von__werk_user", "sheet", "qs_von").order_by("-erfasst_am", "-pk")[:MAX_ROWS]]
     airtable = _Airtable()
     produced = airtable.read(lambda: dm_orders.produced_sensors(_first_day(days), order_key), [])
-    app_ids = set(entries.filter(_complete_q()).values_list("sensor_record_id", flat=True))
-    per_day = _per_day(entries, days, produced, app_ids)
-    orders = _orders(entries, flagged, order_key, airtable)
+    # The complete app entries, scanned once: per order and all together.
+    app_ids = {}
+    for record_id, sensor_id in entries.filter(complete_q()).values_list("order_record_id", "sensor_record_id"):
+        app_ids.setdefault(record_id, set()).add(sensor_id)
+    per_day = _per_day(entries, days, produced, set().union(*app_ids.values()))
+    orders = _orders(entries, flagged, order_key, airtable, app_ids)
     today = per_day[-1]
     return {
         "kennzahlen": {

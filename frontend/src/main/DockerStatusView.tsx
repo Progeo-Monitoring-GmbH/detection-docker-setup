@@ -12,6 +12,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { formatRelativeTime } from './dateFormat';
 import { repeatedTestId } from '../testIds';
 import './DockerStatusView.css';
@@ -69,8 +70,7 @@ const DockerStatusView = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
-  const authRef = useRef(auth);
-  authRef.current = auth;
+  const authRef = useLatestRef(auth);
 
   const [containers, setContainers] = useState<DockerContainer[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -96,7 +96,7 @@ const DockerStatusView = () => {
         setRefreshing(false);
       },
     );
-  }, []);
+  }, [authRef]);
 
   useEffect(() => {
     load();

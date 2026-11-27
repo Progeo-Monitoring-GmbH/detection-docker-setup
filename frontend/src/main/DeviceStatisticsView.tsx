@@ -25,6 +25,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import {
   errorReason,
   showRequestError,
@@ -696,8 +697,7 @@ const DeviceStatisticsView = () => {
   const [purgeBusy, setPurgeBusy] = useState<Record<number, boolean>>({});
   const requestRef = useRef(0);
   const inFlight = useRef(false);
-  const authRef = useRef(auth);
-  authRef.current = auth;
+  const authRef = useLatestRef(auth);
 
   // The running chunked build (null otherwise): progress and counts so far.
   const [progress, setProgress] = useState<BuildProgress | null>(null);
@@ -713,7 +713,7 @@ const DeviceStatisticsView = () => {
           reject,
         );
       }),
-    [],
+    [authRef],
   );
 
   /**

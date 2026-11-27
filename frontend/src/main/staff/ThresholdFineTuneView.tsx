@@ -3,9 +3,7 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
@@ -19,6 +17,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
+import { errorReason } from '../../components/ui/Snackbar.jsx';
+import { useLatestRef } from '../../components/ui/useLatestRef';
+import { useRequest } from '../../hooks/useRequest';
 import PanelCard from '../../components/ui/kit/PanelCard';
 import PillButton from '../../components/ui/kit/PillButton';
 import SearchableDataTable, {
@@ -206,10 +207,6 @@ const formatMargin = (margin: number | null) =>
   margin == null
     ? '–'
     : `${margin >= 0 ? '+' : ''}${margin.toFixed(margin > -10 && margin < 10 ? 1 : 0)} %`;
-
-const reasonOf = (error: unknown) =>
-  (error as { response?: { data?: { reason?: string } } })?.response?.data
-    ?.reason ?? (error as Error)?.message;
 
 /** The picked thresholds - read by the cells, so the columns stay stable while sliding. */
 type Choices = {
@@ -538,16 +535,12 @@ const ConfirmRemoveModal = ({
 const ThresholdFineTuneView = () => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
 
-  const [files, setFiles] = useState<FileInfo[] | null>(null);
   const [file, setFile] = useState('');
-  const [findings, setFindings] = useState<Findings | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const failed = (requestError: unknown) =>
+    setError(errorReason(requestError) || 'Unknown error');
   const [filter, setFilter] = useState<Filter>('all');
   const [chosen, setChosen] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -560,32 +553,67 @@ const ThresholdFineTuneView = () => {
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
-  // Another file drops the last apply result and starts loading its findings
-  // (adjusted during render; the effect below only fetches).
+  // Findings of another file start without the choices made for the last
+  // one; a reload of the same file keeps them.
+  const [choicesStale, setChoicesStale] = useState(false);
+  // Another file drops the last apply result and the error (adjusted during
+  // render); useRequest loads its findings.
   const [seenFile, setSeenFile] = useState(file);
   if (seenFile !== file) {
     setSeenFile(file);
     setResult(null);
     if (file) {
-      setLoading(true);
       setError(null);
-    } else {
-      setFindings(null);
+      setChoicesStale(true);
     }
   }
 
-  const get = useCallback(
-    (url: string) =>
-      new Promise<Record<string, unknown>>((resolve, reject) => {
-        void axiosConfig.perform_get(
-          authRef.current,
-          url,
-          (response) => resolve(response?.data ?? {}),
-          reject,
-        );
-      }),
-    [],
-  );
+  // The findings files, newest first; the picked one stays while it exists.
+  const {
+    data: files,
+    reload: loadFiles,
+    setData: setFiles,
+  } = useRequest<FileInfo[]>(URL, {
+    auth,
+    transform: (body) => (body?.files ?? []) as FileInfo[],
+    onSuccess: (list) =>
+      setFile((current) =>
+        current && list.some((item) => item.file === current)
+          ? current
+          : (list[0]?.file ?? ''),
+      ),
+    onError: (requestError) => {
+      setFiles([]);
+      failed(requestError);
+    },
+  });
+
+  const {
+    data: findings,
+    loading,
+    reload: reloadFindings,
+    setData: setFindings,
+  } = useRequest<Findings>(file ? `${URL}${encodeURIComponent(file)}/` : null, {
+    auth,
+    transform: (body) => body?.findings as Findings,
+    onSuccess: () => {
+      if (choicesStale) {
+        setChoicesStale(false);
+        setChosen({});
+        setSelected(new Set());
+      }
+    },
+    onError: (requestError) => {
+      setFindings(null);
+      failed(requestError);
+    },
+  });
+  // The same file again (after apply/remove, Reload): the choices stay.
+  const loadFindings = () => {
+    setError(null);
+    return reloadFindings();
+  };
+
   const post = useCallback(
     (url: string, body: unknown) =>
       new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -597,73 +625,8 @@ const ThresholdFineTuneView = () => {
           reject,
         );
       }),
-    [],
+    [authRef],
   );
-
-  // State is only set in the promise callbacks, so the mount effect may call it.
-  const loadFiles = useCallback(
-    () =>
-      get(URL).then(
-        (data) => {
-          const list = (data.files ?? []) as FileInfo[];
-          setFiles(list);
-          setFile((current) =>
-            current && list.some((item) => item.file === current)
-              ? current
-              : (list[0]?.file ?? ''),
-          );
-        },
-        (requestError) => {
-          setFiles([]);
-          setError(reasonOf(requestError) || 'Unknown error');
-        },
-      ),
-    [get],
-  );
-
-  // The fetch part of loadFindings (state only set in the promise callbacks).
-  const fetchFindings = useCallback(
-    (name: string, keepChoices = false) =>
-      get(`${URL}${encodeURIComponent(name)}/`)
-        .then(
-          (data) => {
-            setFindings(data.findings as Findings);
-            if (!keepChoices) {
-              setChosen({});
-              setSelected(new Set());
-            }
-          },
-          (requestError) => {
-            setFindings(null);
-            setError(reasonOf(requestError) || 'Unknown error');
-          },
-        )
-        .finally(() => setLoading(false)),
-    [get],
-  );
-
-  const loadFindings = useCallback(
-    async (name: string, keepChoices = false) => {
-      if (!name) {
-        setFindings(null);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      await fetchFindings(name, keepChoices);
-    },
-    [fetchFindings],
-  );
-
-  useEffect(() => {
-    void loadFiles();
-  }, [loadFiles]);
-  useEffect(() => {
-    // Loading/reset for the new file happened during render (see seenFile).
-    if (file) {
-      void fetchFindings(file);
-    }
-  }, [file, fetchFindings]);
 
   const choose = useCallback((entry: FineTuneEntry, value: number) => {
     setChosen((current) => ({ ...current, [entry.key]: value }));
@@ -734,10 +697,10 @@ const ThresholdFineTuneView = () => {
       setConfirmApply(null);
       setSelected(new Set());
       setChosen({});
-      await Promise.all([loadFindings(findings.file, true), loadFiles()]);
+      await Promise.all([loadFindings(), loadFiles()]);
     } catch (requestError) {
       setConfirmApply(null);
-      setError(reasonOf(requestError) || 'Unknown error');
+      failed(requestError);
     } finally {
       setBusy(false);
     }
@@ -754,10 +717,10 @@ const ThresholdFineTuneView = () => {
       });
       setConfirmRemove(null);
       setSelected(new Set());
-      await Promise.all([loadFindings(findings.file, true), loadFiles()]);
+      await Promise.all([loadFindings(), loadFiles()]);
     } catch (requestError) {
       setConfirmRemove(null);
-      setError(reasonOf(requestError) || 'Unknown error');
+      failed(requestError);
     } finally {
       setBusy(false);
     }
@@ -966,7 +929,7 @@ const ThresholdFineTuneView = () => {
               }
               onClick={() => {
                 void loadFiles();
-                void loadFindings(file, true);
+                void loadFindings();
               }}
               disabled={loading}
               variant="ghost"

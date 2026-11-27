@@ -19,6 +19,7 @@ import { viewBoxAttribute } from '../components/device/planViewBox';
 import { usePlanViewBox, ZOOM_STEP } from '../components/device/usePlanViewBox';
 import ZoomControls from '../components/device/ZoomControls';
 import PillButton from '../components/ui/kit/PillButton';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { WheelZoomHint } from '../components/ui/wheelZoom';
 import SearchableDataTable, {
   ROW_CLICK,
@@ -46,16 +47,12 @@ import {
   type ReviewedCable,
 } from './autoRepair';
 import { usePlanImage } from './DmTransferStep';
-import type { MeasurePoint } from './lageplanWizardUtils';
+import { requestReason, type MeasurePoint } from './lageplanWizardUtils';
 import '../components/ui/ImageCanvasStage.css';
 import './LageplanAutoRepair.css';
 
 /** How often the background Auto-Repair is asked for its state. */
 export const STATUS_POLL_MS = 3000;
-
-const requestReason = (requestError: unknown) =>
-  (requestError as { response?: { data?: { reason?: string } } })?.response?.data?.reason ??
-  (requestError as Error).message;
 
 type Status = 'read' | 'inferred' | 'unreadable';
 
@@ -439,10 +436,8 @@ const LageplanAutoRepair = ({
 
   // The Auto-Repair an mx-PEEL upload started in the background: followed
   // until it is done - placed (the points reload) or left for the review.
-  const onStoredRef = useRef(onStored);
-  onStoredRef.current = onStored;
-  const startReviewRef = useRef(startReview);
-  startReviewRef.current = startReview;
+  const onStoredRef = useLatestRef(onStored);
+  const startReviewRef = useLatestRef(startReview);
   useEffect(() => {
     if (locationId === null || planId === null) {
       return undefined;

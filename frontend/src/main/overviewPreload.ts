@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 /**
  * Background loading of per-row data in chunks (the locations overview's
@@ -64,10 +65,7 @@ export const useChunkedPreload = (
   load: (ids: number[], generation: number) => Promise<void>,
   { chunk = PRELOAD_CHUNK, concurrency = PRELOAD_CONCURRENCY } = {},
 ) => {
-  const loadRef = useRef(load);
-  useEffect(() => {
-    loadRef.current = load;
-  });
+  const loadRef = useLatestRef(load);
 
   // Built once: the queue and the functions working it (stable identities).
   const [engine] = useState(() => {

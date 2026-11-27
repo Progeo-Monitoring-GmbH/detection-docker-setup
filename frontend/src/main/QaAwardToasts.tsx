@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -13,6 +13,7 @@ import {
   type QaNotification,
   type QaUpdate,
 } from './qaScoreboardData';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 /** How often new points are looked for while the live socket is down. */
 const QA_POLL_MS = 60_000;
@@ -41,10 +42,7 @@ export const QaAwardToasts = () => {
   const active = Boolean(auth.token) && auth.canViewAsUser;
   const userId = (auth.user as { user_id?: number } | null)?.user_id ?? null;
   // The latest auth / t for the timer and listeners (registered once per activation).
-  const latest = useRef({ auth, t, enqueueSnackbar, userId });
-  useEffect(() => {
-    latest.current = { auth, t, enqueueSnackbar, userId };
-  });
+  const latest = useLatestRef({ auth, t, enqueueSnackbar, userId });
 
   useEffect(() => {
     if (!active) {
@@ -147,7 +145,7 @@ export const QaAwardToasts = () => {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener(QA_CHECKED_EVENT, onChecked);
     };
-  }, [active]);
+  }, [active, latest]);
 
   return null;
 };

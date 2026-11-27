@@ -47,7 +47,7 @@ class FakeHelper:
 @pytest.fixture
 def airtable(monkeypatch):
     helper = FakeHelper()
-    monkeypatch.setattr(dm, "_new_helper", lambda: helper)
+    monkeypatch.setattr("progeo.helper.airtable.AirtableHelper", lambda: helper)
     return helper
 
 
@@ -193,7 +193,7 @@ def test_import_is_staff_only_and_needs_airtable(api_client, monkeypatch):
     api_client.force_authenticate(user=f.make_user(staff=True))
     unconfigured = FakeHelper()
     unconfigured.configured = False
-    monkeypatch.setattr(dm, "_new_helper", lambda: unconfigured)
+    monkeypatch.setattr("progeo.helper.airtable.AirtableHelper", lambda: unconfigured)
     response = api_client.get(f"/v1/werk/sensoren/airtable/{PROJECT}/")
     assert (response.status_code, response.json()["fehler"]) == (503, "airtable_nicht_konfiguriert")
 
@@ -203,7 +203,7 @@ def test_airtable_failure_is_a_502(api_client, staff, monkeypatch):
         def table(self, name):
             raise RuntimeError("rate limited")
 
-    monkeypatch.setattr(dm, "_new_helper", Broken)
+    monkeypatch.setattr("progeo.helper.airtable.AirtableHelper", Broken)
     response = api_client.get(f"/v1/werk/sensoren/airtable/{PROJECT}/")
     assert (response.status_code, response.json()["fehler"]) == (502, "airtable_fehler")
 

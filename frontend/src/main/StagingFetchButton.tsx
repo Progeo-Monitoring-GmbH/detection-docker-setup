@@ -12,6 +12,7 @@ import {
 } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import { SCREEN_REVIEW_URL } from './screenReview';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 /** GET/POST /v1/screen-review/fetch/ (backend helper/screen_review_fetch.py). */
 type FetchState = {
@@ -43,10 +44,7 @@ const StagingFetchButton = ({ onFetched }: { onFetched: () => void }) => {
   const [state, setState] = useState<FetchState | null>(null);
   // Only a fetch started (or seen running) here reports its end.
   const watching = useRef(false);
-  const onFetchedRef = useRef(onFetched);
-  useEffect(() => {
-    onFetchedRef.current = onFetched;
-  });
+  const onFetchedRef = useLatestRef(onFetched);
 
   const url = `${SCREEN_REVIEW_URL}fetch/`;
   const fetching = isFetching(state);
@@ -71,10 +69,7 @@ const StagingFetchButton = ({ onFetched }: { onFetched: () => void }) => {
       onFetchedRef.current();
     }
   };
-  const settleRef = useRef(settle);
-  useEffect(() => {
-    settleRef.current = settle;
-  });
+  const settleRef = useLatestRef(settle);
 
   useEffect(() => {
     void axiosConfig.perform_get(auth, url, (response) => {
@@ -98,7 +93,7 @@ const StagingFetchButton = ({ onFetched }: { onFetched: () => void }) => {
       );
     }, POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [auth, fetching, state, url]);
+  }, [auth, fetching, state, url, settleRef]);
 
   if (!enabled) {
     return null;

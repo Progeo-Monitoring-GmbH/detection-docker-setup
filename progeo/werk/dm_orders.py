@@ -19,12 +19,24 @@ from urllib.parse import quote
 from django.conf import settings
 from django.core.cache import cache
 
-from progeo.helper.basics import elog
 from progeo.werk.airtable_dm_sensors import sensor_from_nr
-from progeo.werk.manusensor import ManuSensorError
+from progeo.werk.common import (
+    DB,
+    RECORD_ID,
+    ManuSensorError,
+    airtable_call,
+    airtable_helper,
+    formula_text,
+    invalid,
+    orders_table,
+    sensors_table,
+)
+from progeo.werk.manusensor import parse_project
+from progeo.werk.models import FactorySensor
 
 STATUS_TO_PRODUCE = "zu Produzieren"
 STATUS_ALL = "alle"
+STATUS_PRODUCED = "Produziert"
 
 # answer key -> Airtable field of "PA: dm"
 ORDER_FIELDS = {
@@ -84,35 +96,26 @@ SENSOR_ORDER_RECORD_ID = "Prod Auftr recID"
 
 # Lookups arrive as lists; these are one value per order.
 _SINGLE = {"projekt", "objekt", "auftrag_record_id", "besteller"}
-_RECORD_ID = re.compile(r"rec[A-Za-z0-9]{14}")
 # "PROD_dm-Breitband_24018_97" - letters, digits, "_", "-", spaces at most.
 _ORDER_ID = re.compile(r"[\w\- ]{1,100}")
-
-
-def orders_table_name():
-    return getattr(settings, "AIRTABLE_DM_ORDERS_TABLE", "PA: dm")
-
-
-def sensors_table_name():
-    return getattr(settings, "AIRTABLE_DM_SENSORS_TABLE", "dm Sensoren")
 
 
 def cache_seconds():
     return int(getattr(settings, "MANUSENSOR_ORDERS_CACHE_SECONDS", 60))
 
 
-def _quote(text):
-    """A text as an Airtable formula string literal."""
-    return "'" + str(text).replace("\\", "\\\\").replace("'", "\\'") + "'"
+# An order's own data (ID, number, sensor count) hardly changes: kept longer -
+# the progress reports (every 2 minutes per device) need it. forget() drops it.
+ORDER_CACHE_FACTOR = 15
 
 
 def _helper():
-    from progeo.helper.airtable import AirtableHelper
+    return airtable_helper(required=True)
 
-    helper = AirtableHelper()
-    if not helper.configured:
-        raise ManuSensorError(503, "airtable_nicht_konfiguriert", "Airtable ist im Backend nicht eingerichtet.")
-    return helper
+
+def _of_order(order_record_id):
+    """Airtable formula: a "dm Sensoren" row of the order."""
+    return f"FIND({formula_text(order_record_id)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))"
 
 
 def cache_key(key):
@@ -120,9 +123,9 @@ def cache_key(key):
     return f"manusensor:dm_orders:{quote(key, safe='')}"
 
 
-def _cached(key, load):
-    """load() - kept `cache_seconds()` in the cache (0: not cached)."""
-    seconds = cache_seconds()
+def _cached(key, load, factor=1):
+    """load() - kept `cache_seconds()` (times `factor`) in the cache (0: not cached)."""
+    seconds = cache_seconds() * factor
     if seconds <= 0:
         return load()
     key = cache_key(key)
@@ -134,12 +137,8 @@ def _cached(key, load):
 
 
 def _all(table, **options):
-    """table.all(), an Airtable failure as ManuSensorError 502."""
-    try:
-        return table.all(**options)
-    except Exception as error:  # requests/pyairtable errors alike
-        elog(f"Airtable read of {getattr(table, 'name', table)} failed: {error}", tag="[MANUSENSOR]")
-        raise ManuSensorError(502, "airtable_fehler", "Airtable ist gerade nicht erreichbar.") from error
+    """table.all(), an Airtable failure as AirtableUnavailable 502."""
+    return airtable_call(lambda: table.all(**options), f"read of {getattr(table, 'name', table)}")
 
 
 # ---------------------------------------------------------------------------- rows
@@ -197,8 +196,8 @@ def fetch_orders(status=STATUS_TO_PRODUCE, helper=None):
     helper = helper or _helper()
     options = {"fields": _order_fields()}
     if status != STATUS_ALL:
-        options["formula"] = f"{{{ORDER_FIELDS['produktionsstatus']}}}={_quote(status)}"
-    rows = [order_row(record) for record in _all(helper.table(orders_table_name()), **options)]
+        options["formula"] = f"{{{ORDER_FIELDS['produktionsstatus']}}}={formula_text(status)}"
+    rows = [order_row(record) for record in _all(helper.table(orders_table()), **options)]
     rows.sort(key=lambda row: row["nr"] or 0, reverse=True)
     return rows
 
@@ -206,11 +205,11 @@ def fetch_orders(status=STATUS_TO_PRODUCE, helper=None):
 def fetch_order(key, helper=None):
     """The "PA: dm" row of `key` (record id or its ID), None if there isn't one."""
     helper = helper or _helper()
-    table = helper.table(orders_table_name())
-    if _RECORD_ID.fullmatch(key):
-        formula = f"RECORD_ID()={_quote(key)}"
+    table = helper.table(orders_table())
+    if RECORD_ID.fullmatch(key):
+        formula = f"RECORD_ID()={formula_text(key)}"
     else:
-        formula = f"{{{ORDER_FIELDS['auftrag_id']}}}={_quote(key)}"
+        formula = f"{{{ORDER_FIELDS['auftrag_id']}}}={formula_text(key)}"
     records = _all(table, formula=formula, fields=_order_fields(), max_records=2)
     return order_row(records[0]) if len(records) == 1 else None
 
@@ -218,12 +217,11 @@ def fetch_order(key, helper=None):
 def fetch_order_sensors(order_record_id, helper=None):
     """The "dm Sensoren" rows of an order, by number."""
     helper = helper or _helper()
-    formula = f"FIND({_quote(order_record_id)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))"
-    records = _all(helper.table(sensors_table_name()), formula=formula, fields=list(SENSOR_FIELDS.values()))
+    records = _all(helper.table(sensors_table()), formula=_of_order(order_record_id),
+                   fields=list(SENSOR_FIELDS.values()))
     return sorted((sensor_row(record) for record in records), key=_sensor_sort_key)
 
 
-STATUS_PRODUCED = "Produziert"
 # What the staff page (werk/production_overview.py) needs of a produced sensor.
 _PRODUCED_FIELDS = ("Länge", "Vorlauf gesamt", "Produktionsstatus", "Produziert am", SENSOR_ORDER_RECORD_ID)
 
@@ -245,11 +243,11 @@ def produced_sensors(since, order_record_id=None):
     the old way (scanned protocol) - of one order or all; cached a little while."""
 
     def load():
-        parts = [f"{{Produktionsstatus}}={_quote(STATUS_PRODUCED)}",
-                 f"NOT(IS_BEFORE({{Produziert am}}, {_quote(since.isoformat())}))"]
+        parts = [f"{{Produktionsstatus}}={formula_text(STATUS_PRODUCED)}",
+                 f"NOT(IS_BEFORE({{Produziert am}}, {formula_text(since.isoformat())}))"]
         if order_record_id:
-            parts.append(f"FIND({_quote(order_record_id)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))")
-        records = _all(_helper().table(sensors_table_name()), formula=f"AND({', '.join(parts)})",
+            parts.append(_of_order(order_record_id))
+        records = _all(_helper().table(sensors_table()), formula=f"AND({', '.join(parts)})",
                        fields=list(_PRODUCED_FIELDS))
         return [produced_row(record) for record in records]
 
@@ -263,12 +261,12 @@ _ORDERS_PER_QUERY = 10
 def fetch_produced_sensor_ids(order_record_ids):
     """{order record id: [record ids of its "dm Sensoren" with Produktionsstatus
     "Produziert"]} - in the app or on paper, the caller tells them apart."""
-    table = _helper().table(sensors_table_name())
+    table = _helper().table(sensors_table())
     result = {order: set() for order in order_record_ids}
     for start in range(0, len(order_record_ids), _ORDERS_PER_QUERY):
         chunk = order_record_ids[start:start + _ORDERS_PER_QUERY]
-        links = ", ".join(f"FIND({_quote(order)}, ARRAYJOIN({{{SENSOR_ORDER_RECORD_ID}}}))" for order in chunk)
-        formula = f"AND({{Produktionsstatus}}={_quote(STATUS_PRODUCED)}, OR({links}))"
+        links = ", ".join(_of_order(order) for order in chunk)
+        formula = f"AND({{Produktionsstatus}}={formula_text(STATUS_PRODUCED)}, OR({links}))"
         for record in _all(table, formula=formula, fields=["Produktionsstatus", SENSOR_ORDER_RECORD_ID]):
             fields = record.get("fields") or {}
             if fields.get("Produktionsstatus") != STATUS_PRODUCED:
@@ -290,9 +288,6 @@ def produced_sensor_ids(order_record_ids):
 
 def _with_factory_values(order, sensors):
     """R_Werk of the sensors the factory app already stored (FactorySensor)."""
-    from progeo.werk.manusensor import DB, parse_project
-    from progeo.werk.models import FactorySensor
-
     project_id = parse_project(order.get("projekt"))
     known = {}
     if project_id is not None:
@@ -314,7 +309,7 @@ def parse_status(value):
     if text.lower() == STATUS_ALL:
         return STATUS_ALL
     if len(text) > 50:
-        raise ManuSensorError(422, "ungueltig", "status: höchstens 50 Zeichen.", "status")
+        raise invalid("status", "status: höchstens 50 Zeichen.")
     return text
 
 
@@ -327,7 +322,7 @@ def orders(status=STATUS_TO_PRODUCE):
 def _check_key(key):
     key = str(key or "").strip()
     if not _ORDER_ID.fullmatch(key):
-        raise ManuSensorError(422, "ungueltig", "Auftrags-ID oder Airtable-Record-ID erwartet.", "auftrag")
+        raise invalid("auftrag", "Auftrags-ID oder Airtable-Record-ID erwartet.")
     return key
 
 
@@ -362,7 +357,7 @@ def load_order(key, fresh=False):
 def resolve_order(key):
     """The order of `key` without its sensors (cached) - 404 if unknown."""
     key = _check_key(key)
-    order = _cached(f"order:{key}", lambda: fetch_order(key))
+    order = _cached(f"order:{key}", lambda: fetch_order(key), factor=ORDER_CACHE_FACTOR)
     if order is None:
         raise _unknown(key)
     return dict(order)
@@ -370,7 +365,7 @@ def resolve_order(key):
 
 def forget(*keys):
     """Drops the cached answers of an order (its ID and record id) and the lists."""
-    names = [f"list:{status}" for status in (STATUS_TO_PRODUCE, "Produziert", STATUS_ALL)]
+    names = [f"list:{status}" for status in (STATUS_TO_PRODUCE, STATUS_PRODUCED, STATUS_ALL)]
     for key in keys:
         if key:
             names += [f"detail:{key}", f"order:{key}"]

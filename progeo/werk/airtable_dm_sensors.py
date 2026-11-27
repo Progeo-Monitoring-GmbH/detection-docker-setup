@@ -26,17 +26,21 @@ Each row of the plan has an "aktion":
 
 import re
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 
 from progeo.helper.basics import ilog
-from progeo.werk.manusensor import (
+from progeo.werk.common import (
     DB,
     ManuSensorError,
-    normalize_sensor,
-    parse_project,
+    airtable_call,
+    airtable_helper,
+    formula_text,
+    orders_table,
+    sensors_table,
 )
+from progeo.werk.manusensor import normalize_sensor, parse_project
+from progeo.werk.models import FactorySensor
 
 FIELD_NR = "Nr."
 FIELD_PROJECT = "P-Nummer (from Produktionsauftrag)"
@@ -54,37 +58,6 @@ ACTIONS = ("neu", "verknuepfen", "vorhanden", "uebersprungen")
 REASONS = ("kein_projekt", "keine_nummer", "doppelt", "belegt", "nummer_geaendert")
 
 _DIGITS = re.compile(r"\d+")
-
-
-def _sensors_table():
-    return getattr(settings, "AIRTABLE_DM_SENSORS_TABLE", "") or "dm Sensoren"
-
-
-def _orders_table():
-    return getattr(settings, "AIRTABLE_DM_ORDERS_TABLE", "") or "PA: dm"
-
-
-def _new_helper():
-    from progeo.helper.airtable import AirtableHelper
-
-    return AirtableHelper()
-
-
-def _helper(helper=None):
-    helper = helper or _new_helper()
-    if not helper.configured:
-        raise ManuSensorError(503, "airtable_nicht_konfiguriert", "Airtable ist nicht konfiguriert.")
-    return helper
-
-
-def _airtable(call):
-    """Runs an Airtable request - its failure as a 502 for the page."""
-    try:
-        return call()
-    except ManuSensorError:
-        raise
-    except Exception as error:
-        raise ManuSensorError(502, "airtable_fehler", f"Airtable: {error}") from error
 
 
 # ---------------------------------------------------------------------------- one row
@@ -217,8 +190,6 @@ def _airtable_values(row):
 def apply(rows, user=None):
     """Carries out the plan `rows` - all or none. Returns the counts
     {"angelegt", "verknuepft", "aktualisiert", "unveraendert", "uebersprungen"}."""
-    from progeo.werk.models import FactorySensor
-
     user = user if getattr(user, "pk", None) else None
     result = {"angelegt": 0, "verknuepft": 0, "aktualisiert": 0, "unveraendert": 0, "uebersprungen": 0}
     new, changed = [], []
@@ -258,16 +229,14 @@ def apply(rows, user=None):
 
 def fetch_records(project_id=None, helper=None):
     """The "dm Sensoren" rows of `project_id` (None: every row - slow, ~20 s)."""
-    helper = _helper(helper)
+    helper = helper or airtable_helper(required=True)
     options = {"fields": FIELDS}
     if project_id is not None:
-        options["formula"] = f"ARRAYJOIN({{{FIELD_PROJECT}}})='{int(project_id)}'"
-    return _airtable(lambda: helper.table(_sensors_table()).all(**options))
+        options["formula"] = f"ARRAYJOIN({{{FIELD_PROJECT}}})={formula_text(int(project_id))}"
+    return airtable_call(lambda: helper.table(sensors_table()).all(**options), "read of dm Sensoren")
 
 
 def _existing(project_ids, record_ids):
-    from progeo.werk.models import FactorySensor
-
     query = Q(project_id__in=project_ids) | Q(airtable_record_id__in=record_ids)
     return list(FactorySensor.objects.using(DB).filter(query))
 
@@ -300,10 +269,9 @@ def import_project(project_id, user=None, helper=None):
 def projects(helper=None):
     """GET /v1/werk/sensoren/airtable/: the projects with production orders
     in Airtable ("PA: dm") - number, object, sensors there, sensors here."""
-    from progeo.werk.models import FactorySensor
-
-    helper = _helper(helper)
-    orders = _airtable(lambda: helper.table(_orders_table()).all(fields=[ORDER_PROJECT, ORDER_OBJECT, ORDER_SENSORS]))
+    helper = helper or airtable_helper(required=True)
+    orders = airtable_call(
+        lambda: helper.table(orders_table()).all(fields=[ORDER_PROJECT, ORDER_OBJECT, ORDER_SENSORS]), "read of PA: dm")
     found = {}
     for order in orders:
         fields = order.get("fields") or {}

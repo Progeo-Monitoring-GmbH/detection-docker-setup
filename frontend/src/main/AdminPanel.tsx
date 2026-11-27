@@ -1,6 +1,4 @@
 import {
-  useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,6 +31,7 @@ import useLogStream, { type LogStreamStatus } from './admin/useLogStream';
 import usePermissions from '../../hooks/usePermissions';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import { useRequest } from '../hooks/useRequest';
 import './AdminPanel.css';
 
 type DiskInfo = {
@@ -141,59 +140,33 @@ const usedPercent = (disk?: DiskInfo) => {
     : null;
 };
 
+const STORAGE_URL = '/v1/status/admin/storage_info/';
+
 const StorageSection = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
-  const [info, setInfo] = useState<StorageInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, reload } = useRequest<{
+    info: StorageInfo;
+    refreshTaskId?: string;
+  }>(STORAGE_URL, {
+    auth,
+    transform: (body) => ({
+      info: (body?.storage_info || {}) as StorageInfo,
+      refreshTaskId: body?.refresh_task_id,
+    }),
+    onError: (error) =>
+      showRequestError(enqueueSnackbar, 'Could not load storage info', error),
+  });
+  const info = data?.info ?? null;
 
-  // Sets state only in the request callbacks; loading is set by the caller.
-  const request = useCallback(
-    (refresh: boolean) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/status/admin/storage_info/${refresh ? '?refresh=true' : ''}`,
-        (response) => {
-          const data = response?.data || {};
-          setInfo((data.storage_info || {}) as StorageInfo);
-          setLoading(false);
-          if (refresh && data.refresh_task_id) {
-            showSuccessBar(enqueueSnackbar, t('admin_storage_queued'));
-          }
-        },
-        (error) => {
-          setLoading(false);
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load storage info',
-            error,
-          );
-        },
-      );
-    },
-    [auth, enqueueSnackbar, t],
-  );
-
-  const load = useCallback(
-    (refresh: boolean) => {
-      setLoading(true);
-      request(refresh);
-    },
-    [request],
-  );
-
-  // A new request callback (auth/language changed) reloads: loading is set
-  // here during render, the effect only sends the request.
-  const [requestedWith, setRequestedWith] = useState(() => request);
-  if (requestedWith !== request) {
-    setRequestedWith(() => request);
-    setLoading(true);
-  }
-
-  useEffect(() => {
-    request(false);
-  }, [request]);
+  // Refresh: the backend also queues collecting the numbers anew - said by a toast.
+  const refresh = async () => {
+    const answer = await reload(`${STORAGE_URL}?refresh=true`);
+    if (answer?.refreshTaskId) {
+      showSuccessBar(enqueueSnackbar, t('admin_storage_queued'));
+    }
+  };
 
   const storage = info?.storage || {};
   const root = storage.root || {};
@@ -231,7 +204,7 @@ const StorageSection = () => {
               )
             }
             disabled={loading}
-            onClick={() => load(true)}
+            onClick={() => void refresh()}
             testId="admin-storage-refresh"
           />
         </>

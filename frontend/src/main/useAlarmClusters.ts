@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import useAlarmAcknowledge from './useAlarmAcknowledge';
 import type { VerdachtsstelleCluster } from './locationStatusData';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 const ALARM_WINDOW_DAYS = 90;
 
@@ -29,10 +30,7 @@ export const useAlarmClusters = (
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   // Once per location (`auth` changes with the path, no reason to ask again).
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
 
   const fetchClusters = useCallback(() => {
     void axiosConfig.perform_get(
@@ -55,7 +53,7 @@ export const useAlarmClusters = (
         setLoading(false);
       },
     );
-  }, [demo, enqueueSnackbar, locationId]);
+  }, [demo, enqueueSnackbar, locationId, authRef]);
 
   useEffect(() => {
     if (enabled) {

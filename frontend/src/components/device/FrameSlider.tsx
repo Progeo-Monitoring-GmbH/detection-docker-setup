@@ -5,7 +5,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -17,6 +16,7 @@ import { announceKey } from '../ui/KeyHints';
 import { childTestId } from '../../testIds';
 import TimeAxis from './TimeAxis';
 import { frameTimeAt } from './timeTicks';
+import { useLatestRef } from '../ui/useLatestRef';
 import './FrameSlider.css';
 
 type FrameSliderProps = {
@@ -224,10 +224,7 @@ const useFramePlayback = ({
     setPlaying(false);
   }
   // The interval and the key handler read the latest values.
-  const latest = useRef({ playing, index, onChange });
-  useLayoutEffect(() => {
-    latest.current = { playing, index, onChange };
-  });
+  const latest = useLatestRef({ playing, index, onChange });
 
   const toggle = useCallback(() => {
     if (latest.current.playing) {
@@ -238,7 +235,7 @@ const useFramePlayback = ({
       latest.current.onChange(0); // at the end: play from the start
     }
     setPlaying(true);
-  }, [count]);
+  }, [count, latest]);
 
   useEffect(() => {
     if (!playing) {
@@ -257,7 +254,7 @@ const useFramePlayback = ({
       }
     }, ANIMATION_FRAME_MS);
     return () => window.clearInterval(timer);
-  }, [playing, count]);
+  }, [playing, count, latest]);
 
   useEffect(() => {
     if (!canPlay || !playKey) {

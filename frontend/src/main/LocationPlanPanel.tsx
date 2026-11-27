@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -41,6 +39,7 @@ import {
 } from './locationStatusData';
 import type { PlanVisualization } from './projectType';
 import { childTestId } from '../testIds';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import './LocationPlanPanel.css';
 
 type LocationPlanPanelProps = {
@@ -207,13 +206,10 @@ const LocationPlanPanel = ({
     heatmap && frameIndex != null
       ? (heatmap.timestamps[frameIndex] ?? null)
       : null;
-  const onFrameTimeRef = useRef(onFrameTimeChange);
-  useLayoutEffect(() => {
-    onFrameTimeRef.current = onFrameTimeChange;
-  });
+  const onFrameTimeRef = useLatestRef(onFrameTimeChange);
   useEffect(() => {
     onFrameTimeRef.current?.(frameTime != null ? frameTime * 1000 : null);
-  }, [frameTime]);
+  }, [frameTime, onFrameTimeRef]);
 
   const planViews = useMemo(() => planViewsOf(heatmap), [heatmap]);
   const shownPlan =

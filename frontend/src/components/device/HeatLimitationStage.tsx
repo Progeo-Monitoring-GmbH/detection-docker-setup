@@ -10,6 +10,7 @@ import { childTestId } from '../../testIds';
 import CanvasKeyLegend from '../ui/CanvasKeyLegend';
 import FloatingActionBar from '../ui/kit/FloatingActionBar';
 import { normalizedToImage } from '../ui/ImageCanvasStage';
+import { isTypingTarget } from '../ui/keys';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { sizedContext } from './heatmapScene';
@@ -206,11 +207,8 @@ const HeatLimitationStage = ({
     if (!drawing) {
       return undefined;
     }
-    const typing = (target: EventTarget | null) =>
-      target instanceof HTMLElement &&
-      (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'd' && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
+      if (event.key.toLowerCase() === 'd' && !event.ctrlKey && !event.metaKey && !event.altKey && !isTypingTarget(event.target)) {
         setDHeld(true);
       }
     };

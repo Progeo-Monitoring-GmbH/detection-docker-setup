@@ -3,7 +3,8 @@ import csv
 from django.core.management.base import CommandError
 
 from progeo.management.commands._base import BaseCommand
-from progeo.werk.manusensor import ManuSensorError, store_factory_sensors
+from progeo.werk.common import ManuSensorError
+from progeo.werk.manusensor import store_factory_sensors
 
 COLUMNS = ("projekt", "sensor", "band", "tag_uid", "r_werk_ohm", "gemessen_am")
 

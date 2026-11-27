@@ -1,5 +1,6 @@
-import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLatestRef } from './useLatestRef';
 import './wheelZoom.css';
 
 /**
@@ -51,10 +52,7 @@ export const useTwoFingerTouch = (
   onOneFinger?: () => void,
   enabled = true,
 ) => {
-  const latest = useRef(onOneFinger);
-  useLayoutEffect(() => {
-    latest.current = onOneFinger;
-  });
+  const latest = useLatestRef(onOneFinger);
   useEffect(() => {
     const element = ref.current;
     if (!element || !enabled) {
@@ -69,7 +67,7 @@ export const useTwoFingerTouch = (
     };
     element.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => element.removeEventListener('touchmove', onTouchMove);
-  }, [ref, enabled]);
+  }, [ref, enabled, latest]);
 };
 
 /**
@@ -113,10 +111,7 @@ export const useZoomWheel = (
   onPlain?: () => void,
   deps: unknown[] = [],
 ) => {
-  const latest = useRef({ onZoom, onPlain });
-  useLayoutEffect(() => {
-    latest.current = { onZoom, onPlain };
-  });
+  const latest = useLatestRef({ onZoom, onPlain });
   useEffect(() => {
     const element = ref.current;
     if (!element) {

@@ -10,7 +10,7 @@ import pytest
 
 from progeo.tests import factories as f
 from progeo.werk import production, production_overview
-from progeo.werk.manusensor import _iso, as_aware
+from progeo.werk.common import BERLIN, as_aware, iso
 from progeo.werk.models import ProductionEntry, ProductionProgress, Roll
 from progeo.werk.tests.test_production import (  # noqa: F401 - the fixtures
     BASE,
@@ -34,7 +34,7 @@ def test_naive_database_times_become_berlin(server_time):
     naive = datetime.datetime(2026, 11, 26, 10, 41, 12)  # Berlin, winter: UTC+1
 
     assert as_aware(naive).utcoffset() == datetime.timedelta(hours=1)
-    assert _iso(naive) == "2026-11-26T09:41:12Z"
+    assert iso(naive) == "2026-11-26T09:41:12Z"
     assert as_aware(None) is None
 
 
@@ -84,5 +84,5 @@ def test_staff_overview_with_naive_times(api_client, worker, server_time):
     answer = api_client.get("/v1/werk/produktion/")
 
     assert answer.status_code == 200
-    assert production_overview._first_day(1) == datetime.datetime.now(production.BERLIN).date()
+    assert production_overview._first_day(1) == datetime.datetime.now(BERLIN).date()
     assert ORDER_ID in str(answer.json())

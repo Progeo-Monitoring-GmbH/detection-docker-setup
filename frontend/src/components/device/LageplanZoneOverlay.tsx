@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -33,6 +32,7 @@ import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
 import { DISABLED_SENSOR_FILL } from './disabledSensors';
 import { childTestId } from '../../testIds';
+import { useLatestRef } from '../ui/useLatestRef';
 import './LageplanZoneOverlay.css';
 
 export type LageplanZonePoint = {
@@ -198,10 +198,7 @@ const LageplanZoneOverlay = ({
 
   // Media files need the Authorization header, which a plain <img> can't send.
   const auth = useAuth();
-  const authRef = useRef(auth);
-  useLayoutEffect(() => {
-    authRef.current = auth;
-  });
+  const authRef = useLatestRef(auth);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   // Natural size of the plan image - the overlay's coordinate system.
   const [imageSize, setImageSize] = useState<[number, number] | null>(null);
@@ -261,7 +258,7 @@ const LageplanZoneOverlay = ({
     return () => {
       cancelled = true;
     };
-  }, [resolvedUrl]);
+  }, [resolvedUrl, authRef]);
 
   // fitWidth: the card's width, for the height that fills it.
   const [containerWidth, setContainerWidth] = useState(0);
@@ -332,14 +329,9 @@ const LageplanZoneOverlay = ({
     });
   };
   // The latest handlers for the native listeners below (registered once).
-  const zoomByRef = useRef(zoomBy);
-  const toPlanRef = useRef(toPlan);
-  const onPlanRef = useRef(onPlan);
-  useLayoutEffect(() => {
-    zoomByRef.current = zoomBy;
-    toPlanRef.current = toPlan;
-    onPlanRef.current = onPlan;
-  });
+  const zoomByRef = useLatestRef(zoomBy);
+  const toPlanRef = useLatestRef(toPlan);
+  const onPlanRef = useLatestRef(onPlan);
 
   // Ctrl (or ⌘) + wheel zooms over the plan image (isZoomWheel) - the plain
   // wheel scrolls the page and shows how to zoom, elsewhere it just scrolls.
@@ -368,7 +360,7 @@ const LageplanZoneOverlay = ({
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, [showWheelHint]);
+  }, [showWheelHint, onPlanRef, toPlanRef, zoomByRef]);
 
   // Two fingers never scroll the page over the plan; one does (and shows the hint).
   useTwoFingerTouch(svgRef, () => showWheelHint('touch'));

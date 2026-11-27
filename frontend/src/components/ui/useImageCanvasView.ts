@@ -21,6 +21,7 @@ import {
   type PlanView,
 } from './imageCanvasGeometry';
 import { EDIT_KEYS, HELD_KEYS, VIEW_KEYS, type HeldKey, type ImageEdit } from './imageCanvasModes';
+import { isTypingTarget } from './keys';
 import { useLatestRef } from './useLatestRef';
 import { isZoomWheel, useWheelHint } from './wheelZoom';
 
@@ -289,16 +290,12 @@ export const useWindowPointer = (onMove: (event: MouseEvent) => void, onUp: () =
   }, [handlers]);
 };
 
-const isTyping = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
-
 /** A key's name for the canvas (lower case, ' ' is 'space'). */
 const keyName = (event: KeyboardEvent) => (event.key === ' ' ? 'space' : event.key.toLowerCase());
 
 /** The key a keydown means for the canvas - null with a modifier or while typing. */
 const canvasKeyOf = (event: KeyboardEvent) =>
-  event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) ? null : keyName(event);
+  event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target) ? null : keyName(event);
 
 const isHeldKey = (key: string | null): key is HeldKey => HELD_KEYS.includes(key as HeldKey);
 

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,7 @@ import {
   toggledId,
   type ZeitreiheSensor,
 } from './zeitreiheSensors';
+import { useLatestRef } from '../components/ui/useLatestRef';
 
 const MUTED = '#8B8383';
 /** Rows per page of each table. */
@@ -172,13 +173,10 @@ const ZeitreihePanel = ({
     selectedId,
   );
   const shownKey = shownIds.join(',');
-  const onShownRef = useRef(onShownChange);
-  useLayoutEffect(() => {
-    onShownRef.current = onShownChange;
-  });
+  const onShownRef = useLatestRef(onShownChange);
   useEffect(() => {
     onShownRef.current?.(shownKey ? shownKey.split(',') : []);
-  }, [shownKey]);
+  }, [shownKey, onShownRef]);
   // The first entry is the selected sensor.
   const primaryId = shownIds[0] ?? null;
   // A plotted disabled sensor is gray - the others keep their slot's colour.

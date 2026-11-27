@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import LabeledInput from '../components/ui/kit/LabeledInput';
 import PhoneInput from '../components/ui/PhoneInput';
 import { childTestId, repeatedTestId } from '../testIds';
 import { readJsonFile } from '../readJsonFile';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import './LocationAnlegenView.css';
 
 type AccountOption = { id: number; name: string };
@@ -217,10 +218,7 @@ const LocationAnlegenView = () => {
   const [nrHint, setNrHint] = useState<NrHint>({ kind: 'empty' });
   const [nrSuggestion, setNrSuggestion] = useState<number | null>(null);
 
-  const authRef = useRef(auth);
-  useEffect(() => {
-    authRef.current = auth;
-  }, [auth]);
+  const authRef = useLatestRef(auth);
 
   // Is the Objekt-Nr. still free? Asked while typing (debounced); an
   // answer for an older value is dropped.
@@ -260,7 +258,7 @@ const LocationAnlegenView = () => {
       current = false;
       clearTimeout(timer);
     };
-  }, [form.nr]);
+  }, [form.nr, authRef]);
 
   useEffect(() => {
     void axiosConfig.perform_get(auth, '/v1/location/accounts/', (response) => {

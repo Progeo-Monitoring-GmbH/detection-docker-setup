@@ -25,10 +25,7 @@ import {
   type RepairAction,
   type RepairTool,
 } from './sensorOrderRepair';
-
-const isTyping = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+import { isTypingTarget } from './keys';
 
 /** The modifiers of a drag: Shift adds an area, Alt / Ctrl takes points out. */
 export const areaOpOf = (event: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }): AreaOp =>
@@ -129,7 +126,7 @@ export const useSensorOrderRepair = (input: {
       return undefined;
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTyping(event.target) || event.altKey) {
+      if (isTypingTarget(event.target) || event.altKey) {
         return;
       }
       const key = event.key.toLowerCase();
