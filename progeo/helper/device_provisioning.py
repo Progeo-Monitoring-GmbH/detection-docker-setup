@@ -26,6 +26,7 @@ from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation
 # Below settings.DEVICE_SAMPLE_BASE_URL (default DEFAULT_SAMPLE_BASE_URL).
 DEFAULT_SAMPLE_BASE_URL = "https://api.progeo.com"
 SAMPLE_PATH = "/v1/device/{project_id}/sample/"
+RS485_PATH = "/v1/device/lorawan/{project_id}/"
 
 # device.model of the config if the location's type names no device.
 DEVICE_MODEL = "smartex mx"
@@ -48,7 +49,12 @@ DEFAULT_INTERVAL_SEC = 1800
 
 # "lua": config.lua of the smartex box; "m5": include/platform_config.h of the M5 AIN4.
 CONFIG_FORMATS = ("lua", "m5")
-M5_DEFAULTS = {"sensors": 4, "interval_sec": 300, "poll_sec": 300}
+M5_DEFAULTS = {
+    "sensors": 4, "interval_sec": 300, "poll_sec": 300,
+    "rs485_enabled": False, "rs485_interval_sec": 900,
+}
+# RS485 climate sensors (XY-MD04) send to the LoRaWAN ingest every 30..86400 s.
+RS485_INTERVAL_RANGE = (30, 86400)
 M5_THRESHOLD_DEFAULTS = {136: 891, 72: 450, 40: 76, 24: 8}
 # Pulldown value -> resistance in ohm (136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R).
 _PULLDOWN_OHM = {136: 100000, 72: 10000, 40: 1000, 24: 100}
@@ -179,11 +185,21 @@ def parse_settings(data) -> dict:
         raise ProvisionError(f"config_format m5 needs model {M5_MODEL}")
     extra = {}
     if m5:
+        rs485_enabled = _bool_field(data, "rs485_enabled", M5_DEFAULTS["rs485_enabled"])
+        rs485_project_id = None
+        if rs485_enabled:
+            if data.get("rs485_project_id") in (None, ""):
+                raise ProvisionError("rs485_project_id is required when RS485 is enabled")
+            rs485_project_id = _int_field(data, "rs485_project_id", None, (1, None))
         if pulldown not in _PULLDOWN_OHM:
             raise ProvisionError(f"pulldown_resistance must be one of {tuple(_PULLDOWN_OHM)} for m5")
         extra = {
             "threshold_mv": _int_field(data, "threshold_mv", default_threshold_mv(pulldown), THRESHOLD_MV_RANGE),
             "poll_sec": _int_field(data, "poll_sec", M5_DEFAULTS["poll_sec"], POLL_SEC_RANGE),
+            "rs485_enabled": rs485_enabled,
+            "rs485_project_id": rs485_project_id,
+            "rs485_interval_sec": _int_field(
+                data, "rs485_interval_sec", M5_DEFAULTS["rs485_interval_sec"], RS485_INTERVAL_RANGE),
         }
     return {
         "model": model,
@@ -247,6 +263,15 @@ def generate_token() -> str:
 def sample_url(project_id) -> str:
     base_url = (getattr(settings, "DEVICE_SAMPLE_BASE_URL", "") or DEFAULT_SAMPLE_BASE_URL).rstrip("/")
     return base_url + SAMPLE_PATH.format(project_id=project_id)
+
+
+def rs485_path(plan) -> str:
+    """The LoRaWAN ingest path of the RS485 climate project, below the same prefix as PLATFORM_PATH."""
+    # sample_url(): <base><SAMPLE_PATH>; everything before "/v1/device/" is the base prefix.
+    path = urlsplit(plan["url"]).path
+    prefix = path[:path.index("/v1/device/")] if "/v1/device/" in path else ""
+    project = plan.get("rs485_project_id") or plan["project_id"]
+    return f"{prefix}{RS485_PATH.format(project_id=project)}"
 
 
 def lua_string(value) -> str:
@@ -317,6 +342,11 @@ def _define(name, value, comment="") -> str:
     return f"{line}  // {comment}" if comment else line
 
 
+def _define_rs485(name, value, comment="") -> str:
+    line = f"#define {name:<27} {value}"
+    return f"{line}{comment}" if comment else line
+
+
 def render_platform_config(plan) -> str:
     """The M5's include/platform_config.h (plan: build_plan)."""
     url = urlsplit(plan["url"])
@@ -346,6 +376,28 @@ def render_platform_config(plan) -> str:
         _define("PLATFORM_PATH", c_string(url.path)),
         _define("PLATFORM_TOKEN", c_string(plan["token"])),
         "",
+        "// rs485: XY-MD04 Temperatur/Feuchte (Adressen 1..2) als eigene Sensoren, die",
+        "// sich im Backend wie LoRaWAN-Sensoren verhalten (ChirpStack-Format):",
+        "//   POST https://<RS485_HOST><RS485_PATH>, Authorization: Token <RS485_TOKEN>",
+        '//   {"deviceInfo":{"devEui":"<RS485_EUI_PREFIX><adresse>"},',
+        '//    "object":{"messages":[{"measurementId":4097,"measurementValue":<Grad C>},',
+        '//                          {"measurementId":4098,"measurementValue":<% rF>}]}}',
+        '// Jede Adresse ist ein eigenes Geraet im Backend (devEui = raw_hash, wird gross',
+        '// geschrieben; Name automatisch "<projekt>_S<n>"). Antwort 200 mit',
+        '// "measurement_id", 400 ohne gueltige Messwerte. Keine Alarme fuer Klimawerte.',
+        "// Eigenes Projekt verwenden: ein neues Projekt legt das Backend als LoRaWAN-",
+        "// Objekt an (Klima-Ansicht). Mit der Projektnummer der Leckage-Sensoren landen",
+        "// die Werte im Leckage-Objekt und werden dort nicht angezeigt.",
+        _define_rs485("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0,
+                      "       // 1 = Werte an das Backend senden"),
+        _define_rs485("PLATFORM_RS485_HOST", "PLATFORM_HOST"),
+        _define_rs485("PLATFORM_RS485_PATH", c_string(rs485_path(plan)),
+                      "   // <Projekt-ID> = Projekt der Klima-Sensoren"),
+        _define_rs485("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN", "               // jeder Transfer-Token mit Konto"),
+        _define_rs485("PLATFORM_RS485_INTERVAL_SEC", plan.get("rs485_interval_sec", M5_DEFAULTS["rs485_interval_sec"])),
+        _define_rs485("PLATFORM_RS485_EUI_PREFIX", 'PLATFORM_DEVICE_HASH "-RS"',
+                      '   // devEui z. B. "<geraet>-RS1"'),
+        "",
     ])
 
 
@@ -362,6 +414,8 @@ def build_plan(location, db_name, settings) -> dict:
     url = sample_url(project_id)
     if settings.get("config_format") == "m5" and urlsplit(url).scheme != "https":
         raise ProvisionError("The M5 needs an https sample URL (DEVICE_SAMPLE_BASE_URL)")
+    if settings.get("rs485_enabled") and settings.get("rs485_project_id") == project_id:
+        raise ProvisionError("rs485_project_id must differ from the leak project")
     return {
         **settings,
         "location": location.pk,

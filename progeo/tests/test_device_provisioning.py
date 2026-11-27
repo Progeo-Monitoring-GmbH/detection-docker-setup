@@ -525,6 +525,7 @@ def test_locations_report_alarm_threshold_and_m5_defaults(staff_client, location
     assert row["alarm_threshold"] == 100
     assert body["defaults"]["m5"] == {
         "sensors": 4, "interval_sec": 300, "poll_sec": 300,
+        "rs485_enabled": False, "rs485_interval_sec": 900,
         "threshold_mv": {"136": 891, "72": 450, "40": 76, "24": 8},
     }
     assert body["m5_model"] == "M5 AIN4"
@@ -556,3 +557,63 @@ def test_m5_preview_refuses_http_base_url(staff_client, location, settings):
 def test_m5_format_needs_the_m5_model():
     with pytest.raises(provisioning.ProvisionError, match="needs model M5 AIN4"):
         provisioning.parse_settings({"config_format": "m5", "model": "smartex mx"})
+
+
+# ------------------------------------------------------------------ M5 RS485 climate sensors
+
+def test_rs485_defaults_disabled():
+    settings = provisioning.parse_settings({"model": "M5 AIN4"})
+    assert settings["rs485_enabled"] is False
+    assert settings["rs485_project_id"] is None
+    assert settings["rs485_interval_sec"] == 900
+
+
+def test_rs485_enabled_needs_project_id_and_interval_range():
+    with pytest.raises(provisioning.ProvisionError, match="rs485_project_id is required when RS485 is enabled"):
+        provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True})
+    with pytest.raises(provisioning.ProvisionError):
+        provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True, "rs485_project_id": 0})
+    for bad in (29, 86401):
+        with pytest.raises(provisioning.ProvisionError):
+            provisioning.parse_settings({"model": "M5 AIN4", "rs485_interval_sec": bad})
+
+
+def test_rs485_project_must_differ_from_leak_project(staff_client, location):
+    response = staff_client.post("/v1/device/provision/preview/", {
+        "location": location.pk, "model": "M5 AIN4", "rs485_enabled": True,
+        "rs485_project_id": location.project_id}, format="json")
+    assert response.status_code == 400
+    assert "rs485_project_id must differ from the leak project" in response.content.decode()
+
+
+def test_rs485_enabled_renders_block(staff_client, location):
+    body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True,
+                    rs485_project_id=location.project_id + 1, rs485_interval_sec=600)
+    config = body["config"]
+    assert "#define PLATFORM_RS485_ENABLED      1" in config
+    assert f'#define PLATFORM_RS485_PATH         "/v1/device/lorawan/{location.project_id + 1}/"' in config
+    assert "#define PLATFORM_RS485_HOST         PLATFORM_HOST" in config
+    assert "#define PLATFORM_RS485_TOKEN        PLATFORM_TOKEN" in config
+    assert "#define PLATFORM_RS485_INTERVAL_SEC 600" in config
+    assert '#define PLATFORM_RS485_EUI_PREFIX   PLATFORM_DEVICE_HASH "-RS"' in config
+
+
+def test_rs485_path_keeps_base_prefix(staff_client, location, settings):
+    settings.DEVICE_SAMPLE_BASE_URL = "https://api.example.com:8443/base"
+    body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True,
+                    rs485_project_id=location.project_id + 1)
+    assert f'"/base/v1/device/lorawan/{location.project_id + 1}/"' in body["config"]
+
+
+def test_rs485_disabled_renders_zero_with_own_project(staff_client, location):
+    body = _preview(staff_client, location, model="M5 AIN4")
+    assert "#define PLATFORM_RS485_ENABLED      0" in body["config"]
+    assert f'"/v1/device/lorawan/{location.project_id}/"' in body["config"]
+
+
+def test_rs485_ignored_for_lua(staff_client, location):
+    settings = provisioning.parse_settings({"rs485_enabled": True, "rs485_project_id": 5})
+    assert not any(key.startswith("rs485") for key in settings)
+    body = _preview(staff_client, location, rs485_enabled=True, rs485_project_id=location.project_id + 1)
+    assert "RS485" not in body["config"]
+    assert not any(key.startswith("rs485") for key in body.get("plan", {}))
