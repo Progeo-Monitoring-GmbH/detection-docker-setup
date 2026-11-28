@@ -327,6 +327,29 @@ describe('anlageStatusOf', () => {
     expect(anlageStatusOf({ last: '2026-11-03T11:59:00Z' }, false, now).state).toBe('offline');
   });
 
+  it('is offline once three expected measurements are missing', () => {
+    // Every 5 min: newest 18 h 24 min ago, next overdue since 18 h 19 min.
+    const last = now - (18 * 60 + 24) * 60_000;
+    const range = {
+      last: new Date(last).toISOString(),
+      next: new Date(last + 5 * 60_000).toISOString(),
+      offline_after: new Date(last + 15 * 60_000).toISOString(),
+    };
+    expect(anlageStatusOf(range, false, now).state).toBe('offline');
+    // Two missed: still online.
+    expect(anlageStatusOf(range, false, last + 14 * 60_000).state).toBe('online');
+  });
+
+  it('follows the send interval, not 24 h, when it is known', () => {
+    // Every 12 h: 30 h after the newest the third one is not due yet.
+    const last = now - 30 * 60 * 60_000;
+    const range = {
+      last: new Date(last).toISOString(),
+      offline_after: new Date(last + 36 * 60 * 60_000).toISOString(),
+    };
+    expect(anlageStatusOf(range, false, now).state).toBe('online');
+  });
+
   it('is unknown without measurements or when the range failed, loading before', () => {
     expect(anlageStatusOf({ last: null }, false, now)).toEqual({ state: 'unknown', last: null, next: null });
     expect(anlageStatusOf(null, true, now).state).toBe('unknown');

@@ -314,3 +314,32 @@ def test_analyse_measurements_list_only_leak_devices(api_client, mixed_location)
     # The climate sensor measured last - the default is still the M5.
     assert body["device"] == m5.pk
     assert body["count"] == 2
+
+
+def test_the_installation_is_offline_after_three_missed_measurements(api_client):
+    """"offline_after": when the third expected measurement is missed - per
+    device its newest measurement plus three send intervals, the latest of
+    them (the installation reports while one device still does)."""
+    account = f.make_account()
+    location = f.make_location(account, project_id=4348)
+    now = timezone.now().replace(microsecond=0)
+    quick = f.make_device(location, raw_hash=f.unique("quick"), data_interval=300)
+    slow = f.make_device(location, raw_hash=f.unique("slow"), data_interval=3600)
+    f.make_measurement(quick, pairs=[1], fetched_at=now - timedelta(hours=18, minutes=24))
+    f.make_measurement(slow, pairs=[1], fetched_at=now - timedelta(hours=20))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.id}/measurement-range/").json()
+
+    # quick: 18 h 24 min ago + 3 x 5 min; slow: 20 h ago + 3 x 1 h -> 17 h ago (later).
+    assert datetime.datetime.fromisoformat(body["offline_after"]) == now - timedelta(hours=17)
+
+
+def test_no_offline_time_without_a_send_interval(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4349)
+    device = f.make_device(location, raw_hash=f.unique("no-interval"), data_interval=0)
+    f.make_measurement(device, pairs=[1], fetched_at=timezone.now())
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    assert api_client.get(f"/v1/location/{location.id}/measurement-range/").json()["offline_after"] is None

@@ -424,19 +424,22 @@ export const sensorRowsOf = ({
     }));
 };
 
-/** The installation counts as online with a measurement this recent. */
+/** Without a known send interval: online with a measurement this recent. */
 const ONLINE_WITHIN_MS = 24 * 60 * 60 * 1000;
 
 export type AnlageState = 'loading' | 'online' | 'offline' | 'unknown';
 
 /**
- * Whether the installation reports: online with a measurement in the last
- * ONLINE_WITHIN_MS, offline with an older one, unknown without any (or when
- * the newest measurement couldn't be loaded) - and that measurement's time
- * and the expected next one (epoch ms), if known.
+ * Whether the installation reports: offline once three expected
+ * measurements are missing (the backend's `offline_after`: per device its
+ * newest measurement plus three send intervals, the latest), else online;
+ * without a known interval online with a measurement in the last
+ * ONLINE_WITHIN_MS. Unknown without any measurement (or when the range
+ * couldn't be loaded) - and the newest measurement's time and the expected
+ * next one (epoch ms), if known.
  */
 export const anlageStatusOf = (
-  range: { last: string | null; next?: string | null } | null,
+  range: { last: string | null; next?: string | null; offline_after?: string | null } | null,
   failed: boolean,
   now: number,
 ): { state: AnlageState; last: number | null; next: number | null } => {
@@ -448,8 +451,10 @@ export const anlageStatusOf = (
     return { state: 'unknown', last: null, next: null };
   }
   const next = range.next ? Date.parse(range.next) : Number.NaN;
+  const offlineAfter = range.offline_after ? Date.parse(range.offline_after) : Number.NaN;
+  const online = Number.isFinite(offlineAfter) ? now <= offlineAfter : now - last <= ONLINE_WITHIN_MS;
   return {
-    state: now - last <= ONLINE_WITHIN_MS ? 'online' : 'offline',
+    state: online ? 'online' : 'offline',
     last,
     next: Number.isFinite(next) ? next : null,
   };

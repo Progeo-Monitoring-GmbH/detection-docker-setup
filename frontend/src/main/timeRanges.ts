@@ -60,6 +60,9 @@ export type MeasurementRange = {
   /** When the next measurement is expected (ISO; per device newest + send
    * interval, the earliest) - may be past (overdue); null if unknown. */
   next?: string | null;
+  /** When the installation counts as offline (ISO; three expected
+   * measurements missing, see anlageStatusOf); null if unknown. */
+  offline_after?: string | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;

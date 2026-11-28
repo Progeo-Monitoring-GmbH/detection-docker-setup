@@ -244,11 +244,15 @@ def _rounded(value, digits=2):
     return round(value, digits) if value is not None else None
 
 
-def next_measurement_of(location, account, user, kind=None):
-    """When the location's next measurement is expected: per device its
-    newest measurement plus its send interval (data_interval), the earliest
-    of them. None without a measured device with an interval. May lie in the
-    past (overdue). `kind`: only the devices of that kind (device_kinds.py)."""
+# The installation counts as offline once this many expected measurements are
+# missing (the status page's "Anlage online/offline").
+MISSED_FOR_OFFLINE = 3
+
+
+def _device_schedules(location, account, user, kind=None):
+    """[(newest measurement, send interval in s)] of the location's measured
+    devices with an interval (data_interval > 0). `kind`: only the devices of
+    that kind (device_kinds.py)."""
     db_name = location_db(location, account)
     newest = (
         ProgeoMeasurement.for_account(account, using=db_name, user=user)
@@ -263,8 +267,28 @@ def next_measurement_of(location, account, user, kind=None):
         .annotate(newest=Subquery(newest))
         .values_list("newest", "data_interval")
     )
-    expected = [newest + timedelta(seconds=interval) for newest, interval in devices if newest is not None]
-    return min(expected, default=None)
+    return [(newest, interval) for newest, interval in devices if newest is not None]
+
+
+def next_measurement_of(location, account, user, kind=None, schedules=None):
+    """When the location's next measurement is expected: per device its
+    newest measurement plus its send interval (data_interval), the earliest
+    of them. None without a measured device with an interval. May lie in the
+    past (overdue). `kind`: only the devices of that kind (device_kinds.py)."""
+    if schedules is None:
+        schedules = _device_schedules(location, account, user, kind)
+    return min((newest + timedelta(seconds=interval) for newest, interval in schedules), default=None)
+
+
+def offline_after_of(schedules):
+    """When the installation counts as offline: per device its newest
+    measurement plus MISSED_FOR_OFFLINE send intervals, the latest of them -
+    it reports while one of its devices still does. None without a measured
+    device with an interval."""
+    return max(
+        (newest + timedelta(seconds=MISSED_FOR_OFFLINE * interval) for newest, interval in schedules),
+        default=None,
+    )
 
 
 def latest_measurement_id_of(location, account, user, kind=None):
@@ -288,21 +312,26 @@ def latest_measurement_id_of(location, account, user, kind=None):
 
 
 def measurement_range_of(location, account, user, kind=None):
-    """{"first", "last", "count", "next"} of a location's measurements
-    (measurement time); "next" is the expected next one (next_measurement_of).
-    `kind`: only the measurements of that kind of device (device_kinds.py)."""
+    """{"first", "last", "count", "next", "offline_after"} of a location's
+    measurements (measurement time); "next" is the expected next one
+    (next_measurement_of), "offline_after" when the installation counts as
+    offline (offline_after_of). `kind`: only the measurements of that kind of
+    device (device_kinds.py)."""
     stats = (
         ProgeoMeasurement.for_account(account, using=location_db(location, account), user=user)
         .filter(kind_q(kind, "device__"), device__location=location)
         .annotate(measured=MEASURED_TIME)
         .aggregate(first=Min("measured"), last=Max("measured"), count=Count("id"))
     )
-    upcoming = next_measurement_of(location, account, user, kind) if stats["last"] else None
+    schedules = _device_schedules(location, account, user, kind) if stats["last"] else []
+    upcoming = next_measurement_of(location, account, user, kind, schedules)
+    offline_after = offline_after_of(schedules)
     return {
         "first": stats["first"].isoformat() if stats["first"] else None,
         "last": stats["last"].isoformat() if stats["last"] else None,
         "count": stats["count"],
         "next": upcoming.isoformat() if upcoming else None,
+        "offline_after": offline_after.isoformat() if offline_after else None,
     }
 
 
