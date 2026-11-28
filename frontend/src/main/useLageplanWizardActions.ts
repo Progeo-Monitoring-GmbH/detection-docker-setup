@@ -17,6 +17,7 @@ import {
 } from './lageplanWizardUtils';
 import {
   answerPoints,
+  type DmImport,
   deviceRangesPayload,
   imageEditedMessage,
   jsonImportMessage,
@@ -32,6 +33,7 @@ import {
   scaleSavedMessage,
   sensorsTiedTo,
   swappedPlans,
+  uploadMessage,
   withCutPoints,
   withPlacedSensor,
 } from './lageplanWizardLogic';
@@ -88,7 +90,13 @@ export const usePlanActions = (state: LageplanWizardState) => {
     setError('');
     setLageplans((current) => plansWithUpload(current, plan));
     selectPlan(plan.id);
-    toastSaved(`Lageplan "${planLabel(plan)}" uploaded and selected.`);
+    // A smartex dm plan PDF: its "dm NNN" bands became the measure points
+    // (backend helper/dm_plan_import.py) - shown on the new plan right away.
+    const dmImport = response?.dm_import as DmImport | undefined;
+    if (dmImport?.state === 'applied' && Array.isArray(response.points)) {
+      state.showStoredPoints(response.points as MeasurePoint[]);
+    }
+    toastSaved(uploadMessage(planLabel(plan), dmImport));
   };
 
   const handleSaveSliders = async (values: AlignmentValues) => {

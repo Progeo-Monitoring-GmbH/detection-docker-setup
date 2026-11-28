@@ -20,7 +20,7 @@ from progeo import consumer
 from progeo.docker_agent import ops
 from progeo.helper import cad_import, docker_helper
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoLageplan, ProgeoMeasurePoint
+from progeo.v1.models import Account, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint
 from progeo.v1.viewsets import status_viewset
 
 DEVICES = ("module_devices_enabled", "module_devices_edit")
@@ -283,6 +283,62 @@ def test_a_plan_pdf_crop_includes_straight_bands_and_the_misspelt_construction_l
     pixmap = pymupdf.Pixmap(str(png))
     assert (pixmap.width, pixmap.height) == (1001, 760)
     assert "cropped to 2 drawings on the plan layers DKS_Kostruktion, DKS_MPLE" in description
+
+
+def _dm_pdf(path):
+    """A dm plan PDF (pymupdf): a 400 x 200 plan (100..500, 100..300) with
+    orange bands on DKS_MPLE - one drawn from its far end, one vertical with a
+    rotated label, one labelled with "dm" and its number as two words, one
+    without a label - and a red lead on DKS_Vorlauf."""
+    pymupdf = pytest.importorskip("pymupdf")
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    page.draw_rect(pymupdf.Rect(10, 10, 832, 585))
+    page.draw_rect(pymupdf.Rect(100, 100, 500, 300), oc=doc.add_ocg("DKS_Konstruktion"))
+    mple, lead, orange = doc.add_ocg("DKS_MPLE"), doc.add_ocg("DKS_Vorlauf"), (1, 0.5, 0)
+    page.draw_line((300, 150), (120, 150), color=orange, oc=mple)  # dm 001, its label at x=300
+    page.draw_line((450, 120), (450, 280), color=orange, oc=mple)  # dm 002, its label at y=280
+    page.draw_line((120, 250), (300, 250), color=orange, oc=mple)  # dm 003, its label at x=120
+    page.draw_line((350, 200), (400, 200), color=orange, oc=mple)  # no label
+    page.draw_line((300, 150), (300, 250), color=(1, 0, 0), oc=lead)
+    page.insert_text((305, 147), "dm 001", fontsize=8)
+    page.insert_text((446, 278), "dm 002", fontsize=8, rotate=90)
+    page.insert_text((105, 247), "dm", fontsize=8)
+    page.insert_text((117, 247), "003", fontsize=8)
+    doc.save(path)
+    return str(path)
+
+
+def test_a_dm_plan_pdf_gives_each_label_its_band_starting_at_the_label(cad_reader, tmp_path, monkeypatch, capsys):
+    pdf, png = _dm_pdf(tmp_path / "plan.pdf"), tmp_path / "plan.png"
+    monkeypatch.setattr(sys, "argv", ["cad_reader.py", pdf, "--png-out", str(png)])
+
+    assert cad_reader.main() == 0
+
+    out, err = capsys.readouterr()
+    dm = json.loads(out)
+    # The plan with 2 % margin (8 pt): x 92..508, y 92..308 - fractions of that.
+    def fraction(x, y):
+        return pytest.approx((x - 92) / 416, abs=1e-4), pytest.approx((y - 92) / 216, abs=1e-4)
+
+    bands = {row["pos"]: row for row in dm["dm_bands"]}
+    assert sorted(bands) == [1, 2, 3]
+    for number, start, end in ((1, (300, 150), (120, 150)), (2, (450, 280), (450, 120)), (3, (120, 250), (300, 250))):
+        assert (bands[number]["sx"], bands[number]["sy"]) == fraction(*start), number
+        assert (bands[number]["ex"], bands[number]["ey"]) == fraction(*end), number
+    # The red lead is no band; the short orange line has no label.
+    assert (dm["labels"], dm["bands"], dm["unlabelled_bands"], dm["without_band"]) == (3, 4, 1, [])
+    assert "dm sensors: 3 labels, 4 orange bands" in err
+
+
+def test_a_plan_pdf_without_dm_labels_prints_nothing(cad_reader, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["cad_reader.py", _pdf(tmp_path / "plan.pdf", ["DKS_MPLE"]),
+                                      "--png-out", str(tmp_path / "plan.png")])
+
+    assert cad_reader.main() == 0
+
+    assert capsys.readouterr().out == ""
 
 
 def test_a_pdf_without_plan_layers_is_rendered_whole(cad_reader, tmp_path, monkeypatch, capsys):
@@ -580,6 +636,140 @@ def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monke
     assert job["log"][-1] == f"Stored Lageplan #{lageplan.pk}"
     # The rendered PNG is only handed over.
     assert list((tmp_path / cad_import.IMPORT_DIR).iterdir()) == []
+
+
+DM_READ = {
+    "dm_bands": [
+        {"pos": 1, "sx": 0.1, "sy": 0.2, "ex": 0.5, "ey": 0.2},
+        {"pos": 2, "sx": 0.6, "sy": 0.25, "ex": 0.6, "ey": 0.75},
+        {"pos": 2, "sx": 0.9, "sy": 0.9, "ex": 0.95, "ey": 0.9},  # read twice: the first counts
+    ],
+    "labels": 3, "bands": 4, "without_band": [], "unlabelled_bands": 1, "outside": [],
+}
+
+
+def _png(width=200, height=100) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _dm_lageplan_job(location, monkeypatch, tmp_path):
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
+    (tmp_path / cad_import.IMPORT_DIR).mkdir()
+    heat = []
+    monkeypatch.setattr("progeo.helper.auto_heat_limits.schedule_auto_heat_limitations",
+                        lambda db_name, lageplan_id: heat.append(lageplan_id))
+    _fake_run(monkeypatch, ["[10:00:01 +0.9s 74 MB] Done: Lageplan from page 1 of 1", json.dumps(DM_READ)],
+              png=_png(), stdout=json.dumps(DM_READ) + "\n")
+    job_id = cad_import.create_job(
+        user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.pdf",
+        source_name="EG.pdf", kind="lageplan",
+    )
+    cad_import.run_job(job_id)
+    return cad_import.get_job(job_id), heat
+
+
+def test_lageplan_job_places_the_dm_sensors_of_a_dm_location(events, tmp_path, monkeypatch):
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931002,
+                               project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM)
+    old_plan = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/old.png")
+    kept = f.make_measure_point(location, 2, name="Halle Nord", lageplan=old_plan, x=40, y=7, nx=0.3, ny=0.3)
+    other = f.make_measure_point(location, 9, name="Not on the plan", nx=0.7, ny=0.7)
+
+    job, heat = _dm_lageplan_job(location, monkeypatch, tmp_path)
+
+    assert job["status"] == "done", job["error"]
+    lageplan = ProgeoLageplan.objects.using(f.DB).get(pk=job["result"]["lageplan_id"])
+    dm_import = job["result"]["dm_import"]
+    assert (dm_import["state"], dm_import["sensors"], dm_import["moved"], dm_import["created"]) == ("applied", 2, 1, 1)
+    assert dm_import["duplicates"] == [2]
+    # The point of number 2 moved onto its band - its name stays; the new plan is
+    # flipped, so the stored ny runs up (1 - the image fraction).
+    kept.refresh_from_db(using=f.DB)
+    assert (kept.name, kept.lageplan_id, kept.x, kept.y) == ("Halle Nord", lageplan.pk, 40, 7)
+    assert (kept.nx, kept.ny, kept.nx_end, kept.ny_end) == pytest.approx((0.6, 0.75, 0.6, 0.25))
+    # Number 1 had no point: a new one, x/y the normalized position.
+    new = ProgeoMeasurePoint.objects.using(f.DB).get(location=location, sensor_order=1)
+    assert new.lageplan_id == lageplan.pk
+    assert (new.nx, new.ny, new.nx_end, new.ny_end) == pytest.approx((0.1, 0.8, 0.5, 0.8))
+    assert (new.x, new.y, new.x_end, new.y_end) == pytest.approx((0.1, 0.8, 0.5, 0.8))
+    # The location's other points stay.
+    other.refresh_from_db(using=f.DB)
+    assert (other.nx, other.lageplan_id) == (0.7, None)
+    # The answer carries all points for the wizard; the heat follows the new points.
+    assert sorted(point["sensor_order"] for point in job["result"]["points"]) == [1, 2, 9]
+    assert heat[-1] == lageplan.pk
+    assert "2 dm sensor(s) placed on the plan: 1 measure point(s) moved, 1 created; read twice" in " ".join(job["log"])
+    assert "dm sensors: 1 orange band(s) without a dm label" in job["log"]
+    # The dm JSON stays out of the log.
+    assert not any(line.startswith('{"dm_bands"') for line in job["log"])
+
+
+def _local_cad_factory(monkeypatch, pdf_path):
+    """run_cad_factory as the real cad_reader.py (a local subprocess instead of the container)."""
+    import subprocess
+
+    def run(on_line, png_out=None, **kwargs):
+        png = Path(django_settings.UPLOAD_DIR, cad_import.IMPORT_DIR, png_out)
+        done = subprocess.run([sys.executable, str(CAD_READER), str(pdf_path), "--png-out", str(png)],
+                              capture_output=True, text=True, timeout=120, check=False)
+        for line in done.stderr.splitlines():
+            on_line(line)
+        return {"exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr,
+                "oom_killed": False, "timed_out": False}
+
+    monkeypatch.setattr(docker_helper, "run_cad_factory", run)
+
+
+def test_a_dm_plan_pdf_upload_places_its_sensors_end_to_end(api_client, events, tmp_path, monkeypatch):
+    """Upload (from_pdf) -> job -> the real reader -> the Lageplan with its dm sensors on their bands."""
+    pytest.importorskip("pymupdf")
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(status_viewset.run_cad_import, "delay", lambda job_id: None)
+    monkeypatch.setattr("progeo.helper.auto_heat_limits.schedule_auto_heat_limitations", lambda *args: None)
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931003,
+                               project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_DM)
+    pdf = _dm_pdf(tmp_path / "EG.pdf")
+    _local_cad_factory(monkeypatch, pdf)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    with open(pdf, "rb") as handle:
+        response = api_client.post("/v1/status/measure_points/from_pdf/", {
+            "location_id": location.project_id, "files0": SimpleUploadedFile("EG.pdf", handle.read()),
+        })
+    assert response.status_code == 200, response.content
+    job_id = response.json()["job_id"]
+    cad_import.run_job(job_id)
+
+    job = api_client.get("/v1/status/measure_points/cad_job/", {"job_id": job_id}).json()["job"]
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["dm_import"]["state"] == "applied"
+    points = {point.sensor_order: point for point in ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)}
+    assert sorted(points) == [1, 2, 3]
+    assert {point.lageplan_id for point in points.values()} == {job["result"]["lageplan_id"]}
+    # dm 002: the vertical band, its rotated label at the lower end (y=280) - the
+    # start; the flipped plan stores ny upwards. Plan: x 92..508, y 92..308.
+    band = points[2]
+    assert (band.nx, band.ny) == pytest.approx(((450 - 92) / 416, 1 - (280 - 92) / 216), abs=1e-3)
+    assert (band.nx_end, band.ny_end) == pytest.approx(((450 - 92) / 416, 1 - (120 - 92) / 216), abs=1e-3)
+
+
+def test_lageplan_job_leaves_the_points_of_another_location_type(location, events, tmp_path, monkeypatch):
+    point = f.make_measure_point(location, 1, nx=0.4, ny=0.4)
+
+    job, _heat = _dm_lageplan_job(location, monkeypatch, tmp_path)
+
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["dm_import"]["state"] == "skipped"
+    assert "points" not in job["result"]
+    point.refresh_from_db(using=f.DB)
+    assert (point.nx, point.lageplan_id) == (0.4, None)
+    assert ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).count() == 1
 
 
 def test_lageplan_job_without_a_png_fails(location, events, tmp_path, monkeypatch):

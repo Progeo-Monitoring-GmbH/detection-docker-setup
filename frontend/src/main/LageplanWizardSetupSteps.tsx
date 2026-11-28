@@ -240,7 +240,8 @@ const PlanUpload = ({
           <div className="lageplan-muted lageplan-muted--small">
             Upload a PNG rendering of the plan - it is added to the existing
             ones and selected. A PDF export of the CAD plan is rendered as PNG,
-            cropped to the plan.
+            cropped to the plan. For a smartex dm location its &quot;dm NNN&quot;
+            bands become the measure points (start at the label, end, number).
           </div>
         </div>
         {planCount > 0 && (

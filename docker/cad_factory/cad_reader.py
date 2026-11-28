@@ -71,6 +71,11 @@ PDF_PLAN_LAYERS = (
 # Longer side of the rendered Lageplan; space around the plan, share of its longer side.
 PDF_MAX_PIXELS = 5000
 PDF_MARGIN = 0.02
+# The dm bands of a plan PDF are its orange strokes (RGB 0..1: e.g. 1/0.5/0) -
+# not the red leads (DKS_Vorlauf, 1/0/0) or anything else.
+PDF_ORANGE_MIN_RED = 0.8
+PDF_ORANGE_GREEN = (0.3, 0.75)
+PDF_ORANGE_MAX_BLUE = 0.3
 
 _DWG_TYPES = "INSERT LWPOLYLINE POLYLINE_2D POLYLINE_3D LINE MTEXT TEXT"
 _DXF_TYPES = ["INSERT", "LWPOLYLINE", "POLYLINE", "LINE", "MTEXT", "TEXT"]
@@ -421,9 +426,122 @@ def read_measure_points(path: str, coord_margin: float = 0.2, log=None) -> PlanP
     return PlanPoints(points=normalize_points(points, coord_margin, ends, numbers), description=description)
 
 
+def _is_pdf_orange(color) -> bool:
+    if not color or len(color) < 3:
+        return False
+    red, green, blue = color[:3]
+    return (red >= PDF_ORANGE_MIN_RED and PDF_ORANGE_GREEN[0] <= green <= PDF_ORANGE_GREEN[1]
+            and blue <= PDF_ORANGE_MAX_BLUE)
+
+
+def _pdf_bands(page) -> list[list[tuple[float, float]]]:
+    """The orange strokes of a PDF page as polylines (unrotated page
+    coordinates) - a drawing's connected line pieces are one band; a curve
+    counts from its start to its end."""
+    bands = []
+    for drawing in page.get_drawings():
+        if not _is_pdf_orange(drawing.get("color")):
+            continue
+        chain = []
+        for item in drawing["items"]:
+            if item[0] not in ("l", "c"):
+                continue
+            start, end = (item[1].x, item[1].y), (item[-1].x, item[-1].y)
+            if chain and math.dist(chain[-1], start) > 1e-3:
+                bands.append(chain)
+                chain = []
+            if not chain:
+                chain.append(start)
+            chain.append(end)
+        if chain:
+            bands.append(chain)
+    return [band for band in bands if len(band) >= 2 and math.dist(band[0], band[-1]) > 0]
+
+
+def _pdf_dm_labels(page) -> list[tuple[int, tuple[float, float], str]]:
+    """The "dm NNN" texts of a PDF page - also rotated ones: (NNN, centre in
+    unrotated page coordinates, text). "dm" and its number may be one word or
+    two following each other on a text line."""
+    lines: dict[tuple[int, int], list] = {}
+    for word in page.get_text("words"):
+        lines.setdefault((word[5], word[6]), []).append(word)
+    labels = []
+    for words in lines.values():
+        words.sort(key=lambda word: word[7])
+        index = 0
+        while index < len(words):
+            word = words[index]
+            parts = [word]
+            match = DM_LABEL_RE.match(word[4])
+            if not match and word[4].lower() == "dm" and index + 1 < len(words):
+                match = DM_LABEL_RE.match(f"dm {words[index + 1][4]}")
+                if match:
+                    parts.append(words[index + 1])
+            if match:
+                x0, y0 = min(part[0] for part in parts), min(part[1] for part in parts)
+                x1, y1 = max(part[2] for part in parts), max(part[3] for part in parts)
+                labels.append((int(match.group(1)), ((x0 + x1) / 2, (y0 + y1) / 2),
+                               " ".join(part[4] for part in parts)))
+            index += len(parts)
+    return labels
+
+
+def read_pdf_dm_bands(page, clip) -> dict | None:
+    """The dm sensors of a plan PDF page: per "dm NNN" label its orange band
+    (closest label/band pairs first, _dm_points) - the band's start is the end
+    at its label (the drawing's direction is arbitrary in a PDF export), the
+    red leads (DKS_Vorlauf) are ignored. Positions are fractions of the image
+    render_pdf_plan writes for `clip` (0..1, x right, y down).
+
+    {"dm_bands": [{"pos", "sx", "sy", "ex", "ey"}] by NNN (ex/ey None for a
+    label without a band), "labels", "bands", "without_band", "unlabelled_bands",
+    "outside"} - None without dm labels (no dm plan)."""
+    import pymupdf
+
+    labels = _pdf_dm_labels(page)
+    if not labels:
+        return None
+    bands = _pdf_bands(page)
+    label_shapes = [(number, Shape("text", MPLE_LAYER, [centre], text=text)) for number, centre, text in labels]
+    points, ends, numbers, without_band = _dm_points(label_shapes, [Shape("polyline", MPLE_LAYER, band) for band in bands])
+
+    matrix = page.rotation_matrix
+
+    def fraction(point):
+        turned = pymupdf.Point(point) * matrix
+        return round((turned.x - clip.x0) / clip.width, 6), round((turned.y - clip.y0) / clip.height, 6)
+
+    centres = [centre for _number, centre, _text in sorted(labels, key=lambda label: label[0])]
+    rows, outside = [], []
+    for number, start, end, centre in zip(numbers, points, ends, centres):
+        if end is not None and math.dist(centre, end) < math.dist(centre, start):
+            start, end = end, start
+        sx, sy = fraction(start)
+        ex, ey = fraction(end) if end is not None else (None, None)
+        if not (0 <= sx <= 1 and 0 <= sy <= 1):
+            outside.append(f"dm {number:03d}")
+            continue
+        rows.append({"pos": number, "sx": sx, "sy": sy, "ex": ex, "ey": ey})
+    return {
+        "dm_bands": rows,
+        "labels": len(labels),
+        "bands": len(bands),
+        "without_band": without_band,
+        "unlabelled_bands": len(bands) - (len(labels) - len(without_band)),
+        "outside": outside,
+    }
+
+
 def render_pdf_plan(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, log=None) -> str:
     """Renders a plan PDF as Lageplan PNG to png_out (see the module docstring);
     returns what was rendered. Raises CadReadError with a message for the user."""
+    description, _dm = render_pdf_plan_with_dm(path, png_out, max_pixels, log)
+    return description
+
+
+def render_pdf_plan_with_dm(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, log=None):
+    """render_pdf_plan, and the dm sensors of the rendered page
+    (read_pdf_dm_bands, None on a plan without dm labels): (description, dm)."""
     import pymupdf
 
     log = log or (lambda _text: None)
@@ -467,7 +585,15 @@ def render_pdf_plan(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, l
         zoom = max_pixels / max(clip.width, clip.height)
         pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip, alpha=False)
         pixmap.save(png_out)
-        return f"{what}: {pixmap.width} x {pixmap.height} px"
+        try:
+            dm = read_pdf_dm_bands(page, clip)
+        except Exception as exc:  # noqa: BLE001 - the Lageplan stands without its dm sensors
+            log(f"Warning: the dm sensors could not be read ({type(exc).__name__}: {exc})")
+            dm = None
+        if dm is not None:
+            log(f"dm sensors: {dm['labels']} labels, {dm['bands']} orange bands, "
+                f"{len(dm['without_band'])} label(s) without a band, {dm['unlabelled_bands']} band(s) without a label")
+        return f"{what}: {pixmap.width} x {pixmap.height} px", dm
 
 
 # -- command line ------------------------------------------------------------------
@@ -557,10 +683,14 @@ def main() -> int:
             parser.error("a PDF needs --png-out")
         try:
             with heartbeat("rendering the plan"):
-                description = render_pdf_plan(args.input, args.png_out, log=log)
+                description, dm = render_pdf_plan_with_dm(args.input, args.png_out, log=log)
         except CadReadError as exc:
             log(str(exc))
             return 2
+        if dm is not None:
+            # A dm plan: its sensors as one JSON object on stdout (the backend
+            # places them on the new Lageplan of a smartex dm location).
+            print(json.dumps(dm), flush=True)
         log(f"Done: Lageplan from {description}")
         return 0
     try:

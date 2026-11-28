@@ -159,6 +159,27 @@ export const jsonImportMessage = (response?: Record<string, unknown>) =>
     ? `${response.data.length} measure point(s) imported and saved.`
     : 'Measure points imported and saved.';
 
+/** The dm sensors of an uploaded plan PDF (backend cad_import.import_dm_sensors). */
+export type DmImport = {
+  state: 'applied' | 'skipped' | 'failed';
+  message: string;
+  moved?: number;
+  created?: number;
+  sensors?: number;
+};
+
+/** The toast after a plan upload - with what its dm sensors did. */
+export const uploadMessage = (label: string, dmImport?: DmImport) => {
+  const uploaded = `Lageplan "${label}" uploaded and selected.`;
+  if (dmImport?.state === 'applied') {
+    return `${uploaded} ${dmImport.sensors ?? 0} dm sensor(s) placed on their bands (${dmImport.moved ?? 0} moved, ${dmImport.created ?? 0} new).`;
+  }
+  if (dmImport?.state === 'failed') {
+    return `${uploaded} The dm sensors could not be placed: ${dmImport.message}`;
+  }
+  return uploaded;
+};
+
 /** The toast after storing the scale. */
 export const scaleSavedMessage = (metersPerPixel: number | null | undefined) =>
   metersPerPixel != null

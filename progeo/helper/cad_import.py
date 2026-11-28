@@ -284,6 +284,15 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
     }
 
 
+def _location_points(location, db_name: str) -> list:
+    """All measure points of the location, as upload_cad answers them."""
+    from progeo.v1.models import ProgeoMeasurePoint
+    from progeo.v1.serializers import ProgeoMeasurePointSerializer
+
+    points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order", "id")
+    return ProgeoMeasurePointSerializer(points, many=True, context={"reference_sensor_order": None}).data
+
+
 def lageplan_answer(lageplan) -> dict:
     """upload_png's answer for a stored Lageplan - also the result of a "lageplan" job."""
     from progeo.helper.auto_repair import status as auto_repair_status
@@ -311,9 +320,52 @@ def _finish(job: dict, status: str, *, result=None, error=None) -> None:
 
 
 def _is_points_output(line: str) -> bool:
-    """The points (or Klemmliste) JSON on stdout - big, it comes with the result instead."""
+    """The points (Klemmliste, dm sensors) JSON on stdout - big, it comes with the result instead."""
     text = line.strip()
-    return text.startswith(("[{", '{"rows"')) or text == "[]"
+    return text.startswith(("[{", '{"rows"', '{"dm_bands"')) or text == "[]"
+
+
+def import_dm_sensors(job: dict, location, lageplan, dm: dict) -> dict:
+    """The dm sensors a plan PDF's render read (cad_reader.read_pdf_dm_bands)
+    placed on its new Lageplan - for a smartex dm location only
+    (helper/dm_plan_import.py). Never raises: the Lageplan stands either way.
+    Returns the result's "dm_import": {state: "applied" | "skipped" | "failed",
+    message, moved, created, ...}."""
+    from progeo.helper import dm_plan_import
+    from progeo.helper.plan_meters import image_size
+
+    bands = dm.get("dm_bands") or []
+    notes = []
+    if dm.get("without_band"):
+        notes.append(f"{len(dm['without_band'])} label(s) without a band, not placed: "
+                     f"{', '.join(dm['without_band'][:20])}")
+    if dm.get("unlabelled_bands"):
+        notes.append(f"{dm['unlabelled_bands']} orange band(s) without a dm label")
+    if dm.get("outside"):
+        notes.append(f"{len(dm['outside'])} label(s) outside the plan: {', '.join(dm['outside'][:20])}")
+    for note in notes:
+        _append_log(job, f"dm sensors: {note}")
+    if not dm_plan_import.wants_dm_import(location):
+        _append_log(job, f"{len(bands)} dm sensor(s) read - not placed: the location is no smartex dm project")
+        return {"state": "skipped", "message": "The location is no smartex dm project", "sensors": len(bands)}
+    bands = [band for band in bands if band.get("ex") is not None]
+    if not bands:
+        return {"state": "skipped", "message": "No dm bands found on the plan", "sensors": 0}
+    size = image_size(lageplan)
+    if not size:
+        return {"state": "failed", "message": "The rendered plan image could not be read", "sensors": len(bands)}
+    try:
+        placed = dm_plan_import.place_dm_bands(location, job["db_name"], lageplan, bands, size)
+    except Exception as exc:  # noqa: BLE001 - the Lageplan stands, the wizard can place the points by hand
+        elog(f"CAD import {job['job_id']}: placing the dm sensors failed", exc, tag="[CAD-IMPORT]")
+        _append_log(job, f"dm sensors could not be placed: {type(exc).__name__}: {exc}")
+        return {"state": "failed", "message": f"{type(exc).__name__}: {exc}", "sensors": len(bands)}
+    message = (f"{placed['sensors']} dm sensor(s) placed on the plan: {placed['moved']} measure point(s) moved, "
+               f"{placed['created']} created")
+    if placed["duplicates"]:
+        message += f"; read twice (the first counts): {_number_ranges(placed['duplicates'])}"
+    _append_log(job, message)
+    return {"state": "applied", "message": message, "notes": notes, **placed}
 
 
 def extract_json_object(output: str):
@@ -419,7 +471,14 @@ def run_job(job_id: str) -> None:
             name = f"{os.path.splitext(job['source_name'])[0]}.png"
             lageplan = save_lageplan_upload(location, png_bytes, name, db=job["db_name"])
             _append_log(job, f"Stored Lageplan #{lageplan.pk}")
-            _finish(job, "done", result=lageplan_answer(lageplan))
+            result = lageplan_answer(lageplan)
+            # A dm plan: its sensors ("dm NNN" + band) become the measure points.
+            dm = extract_json_object(outcome["stdout"])
+            if dm and "dm_bands" in dm:
+                result["dm_import"] = import_dm_sensors(job, location, lageplan, dm)
+                if result["dm_import"]["state"] == "applied":
+                    result["points"] = _location_points(location, job["db_name"])
+            _finish(job, "done", result=result)
             return
         try:
             result = store_measure_points(

@@ -25,6 +25,7 @@ import {
   requestedPlanId,
   rotatedSensors,
   rotationOf,
+  uploadMessage,
   scaleSavedMessage,
   sensorsTiedTo,
   swappedPlans,
@@ -211,6 +212,22 @@ describe('messages', () => {
     );
     expect(jsonImportMessage(undefined)).toBe(
       'Measure points imported and saved.',
+    );
+  });
+
+  it('tells what a plan upload did with its dm sensors', () => {
+    expect(uploadMessage('EG')).toBe('Lageplan "EG" uploaded and selected.');
+    expect(
+      uploadMessage('EG', { state: 'applied', message: '', sensors: 572, moved: 1, created: 571 }),
+    ).toBe(
+      'Lageplan "EG" uploaded and selected. 572 dm sensor(s) placed on their bands (1 moved, 571 new).',
+    );
+    expect(uploadMessage('EG', { state: 'failed', message: 'Timeout' })).toBe(
+      'Lageplan "EG" uploaded and selected. The dm sensors could not be placed: Timeout',
+    );
+    // Not a dm location: the plan alone.
+    expect(uploadMessage('EG', { state: 'skipped', message: 'No dm project' })).toBe(
+      'Lageplan "EG" uploaded and selected.',
     );
   });
 
