@@ -8,6 +8,8 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
+from progeo.helper.firmware import list_bundles
+
 TOKEN = "s3cret"
 NAME = "lua-wlan-v1.3.0_fw-v1.2.0-tls-lua53.zip"
 ZIP = b"PK\x03\x04 bundle bytes"
@@ -173,3 +175,33 @@ def test_channel_names_are_letters_only(api_client, firmware_dir):
     response = _channel(api_client, _channel_file(channel="beta2"), channel="beta2")
     assert response.status_code == 400
     assert not (firmware_dir / "channels").exists()
+
+
+def test_m5_bundles_are_uploaded_but_never_listed_for_lua_devices(api_client, firmware_dir):
+    """The M5's MicroPython bundles go through the same upload into their own
+    channel ("mstack", "device": "m5-ain4"); provisioning and the Lua remote
+    update (both: list_bundles) must never offer them."""
+    m5_name, m5_zip = "m5-ain4-mpy-1.0.0.zip", b"PK\x03\x04 m5 bytes"
+    assert _bundle(api_client).status_code == 200
+    assert _bundle(api_client, content=m5_zip, name=m5_name).status_code == 200
+    m5_channel = json.loads(_channel_file(channel="mstack", content=m5_zip, name=m5_name, id="m5-ain4-mpy-1.0.0"))
+    m5_channel["device"] = "m5-ain4"
+    response = _channel(api_client, json.dumps(m5_channel).encode(), channel="mstack")
+    assert response.status_code == 200, response.content
+    # An M5 bundle listed in a Lua channel by mistake: skipped by its id.
+    lua_channel = json.loads(_channel_file())
+    lua_channel["bundles"].append(json.loads(_channel_file(content=m5_zip, name=m5_name, id="m5-ain4-mpy-1.0.0"))["bundles"][0])
+    assert _channel(api_client, json.dumps(lua_channel).encode()).status_code == 200
+
+    assert (firmware_dir / "channels" / "mstack.json").exists()
+    assert [bundle["id"] for bundle in list_bundles()] == ["v1.3.0_fw-v1.2.0-tls-lua53"]
+
+    # A Lua channel naming its device is still listed.
+    lua_channel["device"] = "lua-wlan"
+    assert _channel(api_client, json.dumps(lua_channel).encode(), channel="beta").status_code == 200
+    assert [bundle["id"] for bundle in list_bundles()] == ["v1.3.0_fw-v1.2.0-tls-lua53"]
+    # A channel of another device is skipped as a whole, whatever its ids.
+    other = json.loads(_channel_file(channel="other"))
+    other["device"] = "m5-ain4"
+    assert _channel(api_client, json.dumps(other).encode(), channel="other").status_code == 200
+    assert [bundle["channels"] for bundle in list_bundles()] == [["beta"]]

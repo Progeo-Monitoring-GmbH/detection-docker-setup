@@ -343,40 +343,45 @@ def _assign(name, value, comment="") -> str:
     return f"{line:<44}  # {comment}" if comment else line
 
 
-def render_m5_config(plan) -> str:
-    """The M5's config.py for its MicroPython firmware (plan: build_plan) -
-    every key the firmware checks at start (m5-stack mPy/device/config_keys.py,
-    template mPy/config/config_example.py)."""
+# First line of the M5 config QR code (render_m5_qr_payload): format marker and
+# version. A Python comment, so the payload stays a valid config.py.
+M5_QR_MARKER = "# progeo:m5-config:1"
+
+
+def _m5_config_entries(plan) -> list:
+    """The M5's config.py as a list: (name, value, comment) per assignment -
+    `value` already Python source - and str for comment and blank lines. The
+    one source of render_m5_config (full file) and render_m5_qr_payload."""
     url = urlsplit(plan["url"])
-    return "\n".join([
+    return [
         "# Geraete-Konfiguration fuer die MicroPython-Firmware des M5 -- vom Backend",
         "# (Geraete-Einrichtung) erzeugt. Als mPy/config/config.py ablegen; tools/upload.py",
         "# laedt sie als config.py aufs Geraet. Sie enthaelt den Geraete-Token und steht",
         "# deshalb in .gitignore.",
         "",
         "# Plattform: https://<HOST><PATH>, Authorization: Token <TOKEN>",
-        _assign("PLATFORM_PROJECT_ID", py_string(plan["project_id"])),
-        _assign("PLATFORM_DEVICE_HASH", py_string(plan["device_hash"])),
-        _assign("PLATFORM_HOST", py_string(url.netloc)),
-        _assign("PLATFORM_PATH", py_string(url.path), 'SMS-Pfad: "sample/" -> "sms/"'),
-        _assign("PLATFORM_TOKEN", py_string(plan["token"])),
+        ("PLATFORM_PROJECT_ID", py_string(plan["project_id"]), ""),
+        ("PLATFORM_DEVICE_HASH", py_string(plan["device_hash"]), ""),
+        ("PLATFORM_HOST", py_string(url.netloc), ""),
+        ("PLATFORM_PATH", py_string(url.path), 'SMS-Pfad: "sample/" -> "sms/"'),
+        ("PLATFORM_TOKEN", py_string(plan["token"]), ""),
         "",
         "# Startwert der Alarmnummer (international, z. B. \"+4917...\"); wird nur",
         "# uebernommen, solange am Geraet noch keine Nummer gespeichert ist",
-        _assign("ALARM_NUMBER", py_string("")),
+        ("ALARM_NUMBER", py_string(""), ""),
         "",
         "# APN der SIM: 1NCE \"iot.1nce.net\", Melita \"iot.melita.io\"",
-        _assign("APN", py_string(M5_APN)),
+        ("APN", py_string(M5_APN), ""),
         "",
         "# Geraet und Messung",
-        _assign("PLATFORM_MODEL", py_string(plan_model(plan))),
-        _assign("PLATFORM_DEVICE_VER", py_string(CONFIG_VERSION)),
-        _assign("PLATFORM_PULLDOWN", plan.get("pulldown_resistance", 136), "136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R"),
-        _assign("PLATFORM_INTERVAL_SEC", plan.get("interval_sec", M5_DEFAULTS["interval_sec"])),
-        _assign("PLATFORM_POLL_SEC", plan.get("poll_sec", M5_DEFAULTS["poll_sec"]), "Abfrage der Befehle (s)"),
-        _assign("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
-        _assign("PLATFORM_SENSORS", plan.get("sensors", M5_DEFAULTS["sensors"]), "gemeldete Sensoren"),
-        _assign("PLATFORM_PE", plan.get("protective_earth", 0), "protective_earth"),
+        ("PLATFORM_MODEL", py_string(plan_model(plan)), ""),
+        ("PLATFORM_DEVICE_VER", py_string(CONFIG_VERSION), ""),
+        ("PLATFORM_PULLDOWN", plan.get("pulldown_resistance", 136), "136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R"),
+        ("PLATFORM_INTERVAL_SEC", plan.get("interval_sec", M5_DEFAULTS["interval_sec"]), ""),
+        ("PLATFORM_POLL_SEC", plan.get("poll_sec", M5_DEFAULTS["poll_sec"]), "Abfrage der Befehle (s)"),
+        ("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
+        ("PLATFORM_SENSORS", plan.get("sensors", M5_DEFAULTS["sensors"]), "gemeldete Sensoren"),
+        ("PLATFORM_PE", plan.get("protective_earth", 0), "protective_earth"),
         "",
         "# RS485: XY-MD04 Temperatur/Feuchte als eigene smartex-io-Sensoren (Modell RS485)",
         "# im Backend, je Modbus-Adresse ein POST im ChirpStack-Format an",
@@ -384,23 +389,50 @@ def render_m5_config(plan) -> str:
         "# fuer Klimawerte.",
         "# Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab",
         "# des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt.",
-        _assign("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0, "1 = Werte an das Backend senden"),
-        _assign("PLATFORM_RS485_HOST", "PLATFORM_HOST"),
-        _assign("PLATFORM_RS485_PATH", py_string(rs485_path(plan)), "Standard: Projekt der M5"),
+        ("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0, "1 = Werte an das Backend senden"),
+        ("PLATFORM_RS485_HOST", "PLATFORM_HOST", ""),
+        ("PLATFORM_RS485_PATH", py_string(rs485_path(plan)), "Standard: Projekt der M5"),
         # "<M5 hash>-RS<address>": the backend tells RS485 sensors and their
         # M5 by it (device_overview.rs485_parent_hash).
-        _assign("PLATFORM_RS485_HASH", 'PLATFORM_DEVICE_HASH + "-RS"',
-                f"devEui je Sensor: Hash + Modbus-Adresse, z. B. {plan['device_hash']}-RS1"),
-        _assign("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN"),
+        ("PLATFORM_RS485_HASH", 'PLATFORM_DEVICE_HASH + "-RS"',
+         f"devEui je Sensor: Hash + Modbus-Adresse, z. B. {plan['device_hash']}-RS1"),
+        ("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN", ""),
         # The climate sensors send at the M5's interval (their offline case
         # follows it: executor._rs485_fields).
-        _assign("PLATFORM_RS485_INTERVAL_SEC", "PLATFORM_INTERVAL_SEC"),
+        ("PLATFORM_RS485_INTERVAL_SEC", "PLATFORM_INTERVAL_SEC", ""),
         "",
         "# Optional",
-        _assign("SERIAL_CLI", "True", "Einzelzeichen-Befehle auf der USB-Konsole (t, u, p, ...)"),
-        _assign("MODEM_DEBUG", "False", "True: jeden AT-Befehl und die HTTP-Antworten loggen"),
+        ("SERIAL_CLI", "True", "Einzelzeichen-Befehle auf der USB-Konsole (t, u, p, ...)"),
+        ("MODEM_DEBUG", "False", "True: jeden AT-Befehl und die HTTP-Antworten loggen"),
         "",
-    ])
+    ]
+
+
+def render_m5_config(plan) -> str:
+    """The M5's config.py for its MicroPython firmware (plan: build_plan) -
+    every key the firmware checks at start (m5-stack mPy/device/config_keys.py,
+    template mPy/config/config_example.py)."""
+    return "\n".join(
+        entry if isinstance(entry, str) else _assign(*entry) for entry in _m5_config_entries(plan)
+    )
+
+
+def render_m5_qr_payload(plan) -> str:
+    """The text of the M5 config QR code - the contract with the ProGeo flasher
+    app (android-lua-flasher), which writes it as config.py to the M5 over USB.
+
+    Format version 1:
+    - first line exactly M5_QR_MARKER ("# progeo:m5-config:1");
+    - then every assignment of render_m5_config in the same order as
+      "NAME = value" (single spaces, values exactly as in the full file), no
+      comments, no padding, no blank lines;
+    - lines joined with "\\n", a trailing "\\n", UTF-8.
+
+    Valid Python: exec'd it defines the same names and values as the full
+    config.py (~2.3 KB with its comments, too dense for one reliable QR code;
+    this is ~0.7 KB, QR version 22 at error correction M)."""
+    assignments = [entry for entry in _m5_config_entries(plan) if not isinstance(entry, str)]
+    return "\n".join([M5_QR_MARKER, *(f"{name} = {value}" for name, value, _comment in assignments)]) + "\n"
 
 
 def render_device_config(plan) -> tuple[str, str]:

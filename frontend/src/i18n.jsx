@@ -2983,6 +2983,8 @@ i18n
           provision_threshold_mismatch:
             'The device threshold ({{threshold}} mV) differs from the location threshold ({{location}} mV).',
           provision_download_config: 'Download config.py',
+          provision_m5_qr_caption:
+            'Scan with the ProGeo flasher app to write config.py to the M5 over USB. Contains the device token - do not share.',
           provision_generate_hint:
             'Device hash, token and URL are filled in when the config is generated.',
           provision_config_show: 'Show config',
@@ -6632,6 +6634,8 @@ i18n
           provision_threshold_mismatch:
             'Die Geräte-Schwelle ({{threshold}} mV) weicht von der Schwelle der Location ({{location}} mV) ab.',
           provision_download_config: 'config.py herunterladen',
+          provision_m5_qr_caption:
+            'Mit der ProGeo-Flasher-App scannen, um config.py per USB auf die M5 zu schreiben. Enthält den Geräte-Token – nicht weitergeben.',
           provision_generate_hint:
             'Device-Hash, Token und URL werden beim Erzeugen der Konfiguration eingetragen.',
           provision_config_show: 'Konfiguration anzeigen',

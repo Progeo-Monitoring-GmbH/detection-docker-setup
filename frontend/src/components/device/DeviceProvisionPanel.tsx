@@ -78,8 +78,11 @@ type ProvisionPreview = {
   /** 'lua' (default) or 'm5' (config.py of the M5's MicroPython firmware). */
   config_format?: 'lua' | 'm5';
   config_filename?: string;
-  /** The config as a PNG QR code (data URI); Lua only. */
+  /** The config as a PNG QR code (data URI). Lua: config.lua itself; M5: the
+   *  compact config.py ("# progeo:m5-config:1") for the ProGeo flasher app. */
   config_qr?: string;
+  /** M5 only: the text inside config_qr (the compact config.py). */
+  config_qr_text?: string;
   signed: string;
   /** Lua only. */
   portal?: {
@@ -854,6 +857,11 @@ const DeviceProvisionPanel = ({
                   />
                   <figcaption className="device-provision-caption">
                     <strong>Config</strong> <code>{preview.device_hash}</code>
+                    {preview.config_format === 'm5' && (
+                      <div className="small text-muted" data-testid="device-provision-config-qr-m5-hint">
+                        {t('provision_m5_qr_caption')}
+                      </div>
+                    )}
                   </figcaption>
                 </figure>
               )}

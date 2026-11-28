@@ -530,12 +530,72 @@ def test_render_m5_config_escapes_strings():
     assert "\r" not in text
 
 
-def test_preview_m5_has_config_py_and_no_qr(staff_client, location):
+# ------------------------------------------------------------------ M5 config QR code (render_m5_qr_payload)
+
+def test_m5_qr_payload_defines_the_same_config_as_config_py():
+    for plan in (M5_PLAN, {**M5_PLAN, "rs485_enabled": True, "rs485_project_id": 1400},
+                 {**M5_PLAN, "token": 'a"b\\c\nd\reä', "url": "https://x.example:8443/base/v1/device/1312/sample/"}):
+        full = provisioning.render_m5_config(plan)
+        compact = provisioning.render_m5_qr_payload(plan)
+        assert _run_config(compact) == _run_config(full)
+        # Same assignments in the same order - only comments, padding and blank lines dropped.
+        names = [line.split(" = ", 1)[0] for line in compact.splitlines()[1:]]
+        assert names == [line.split(" ", 1)[0] for line in full.splitlines() if line and not line.startswith("#")]
+
+
+def test_m5_qr_payload_format():
+    compact = provisioning.render_m5_qr_payload(M5_PLAN)
+    lines = compact.split("\n")
+    assert provisioning.M5_QR_MARKER == "# progeo:m5-config:1"
+    assert lines[0] == provisioning.M5_QR_MARKER
+    assert compact.endswith("\n") and lines[-1] == ""
+    body = lines[1:-1]
+    assert all(line and not line.startswith("#") and "  " not in line and line == line.strip() for line in body)
+    assert all(" = " in line and "#" not in line.split(" = ", 1)[1] for line in body)
+    assert "\r" not in compact
+    for line in ('PLATFORM_TOKEN = "abcDEF123"', "PLATFORM_PULLDOWN = 136",
+                 "PLATFORM_RS485_HOST = PLATFORM_HOST", 'PLATFORM_RS485_HASH = PLATFORM_DEVICE_HASH + "-RS"',
+                 "PLATFORM_RS485_TOKEN = PLATFORM_TOKEN", "PLATFORM_RS485_INTERVAL_SEC = PLATFORM_INTERVAL_SEC",
+                 "SERIAL_CLI = True", "MODEM_DEBUG = False"):
+        assert line in body
+    assert body[0] == 'PLATFORM_PROJECT_ID = "1312"' and body[-1] == "MODEM_DEBUG = False"
+
+
+def test_m5_qr_payload_stays_well_under_qr_capacity():
+    """A realistic plan with RS485 - six-digit projects, a full-length token -
+    stays far below one QR code's capacity (version 40-M: 2331 bytes)."""
+    import qrcode
+
+    plan = {**M5_PLAN, "project_id": 940001, "device_hash": "940001-01", "token": "x" * provisioning.TOKEN_LENGTH,
+            "rs485_enabled": True, "rs485_project_id": 940002,
+            "url": "https://api.progeo.com/v1/device/940001/sample/"}
+    compact = provisioning.render_m5_qr_payload(plan)
+    assert len(compact.encode("utf-8")) < 1200
+    code = qrcode.QRCode(border=2)
+    code.add_data(compact)
+    code.make(fit=True)
+    assert code.version <= 25
+
+
+def test_preview_m5_has_config_py_and_its_qr_but_no_portal(staff_client, location):
     body = _preview(staff_client, location, model="M5 AIN4")
     assert body["config_format"] == "m5"
     assert body["config_filename"] == "config.py"
-    assert "config_qr" not in body and "portal" not in body
+    assert "portal" not in body
     assert _run_config(body["config"])["PLATFORM_THRESHOLD_MV"] == 891
+    assert body["config_qr"].startswith("data:image/png;base64,")
+    assert body["config_qr_text"].startswith(provisioning.M5_QR_MARKER + "\n")
+    assert _run_config(body["config_qr_text"]) == _run_config(body["config"])
+    assert f'PLATFORM_TOKEN = "{body["token"]}"' in body["config_qr_text"].splitlines()
+
+
+def test_confirm_m5_returns_the_same_config_qr(staff_client, location):
+    preview = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True)
+    response = staff_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["config_qr_text"] == preview["config_qr_text"]
+    assert body["config_qr"] == preview["config_qr"]
 
 
 def test_confirm_m5_creates_device(staff_client, location):
@@ -558,6 +618,7 @@ def test_lua_preview_unchanged(staff_client, location):
     assert body["config_filename"] == "config.lua"
     assert body["config_qr"].startswith("data:image/png;base64,")
     assert "portal" in body
+    assert "config_qr_text" not in body  # the Lua QR code is config.lua itself
     confirm = staff_client.post("/v1/device/provision/confirm/", {"signed": body["signed"]}, format="json")
     assert confirm.json()["config_filename"] == "config.lua"
 

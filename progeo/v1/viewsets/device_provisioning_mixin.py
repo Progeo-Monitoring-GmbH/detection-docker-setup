@@ -153,6 +153,13 @@ class DeviceProvisioningMixin:
             return f"Provisioning {M5_MODEL} needs staff access"
         return None
 
+    @staticmethod
+    def _m5_config_qr(plan):
+        """config_qr (PNG data URI) and config_qr_text (its text) of an M5
+        plan: the compact config.py - format: render_m5_qr_payload."""
+        text = provisioning.render_m5_qr_payload(plan)
+        return {"config_qr": qr_code_data_uri(text), "config_qr_text": text}
+
     @require_module_permissions("module_devices_provision")
     @action(detail=False, url_path="provision/preview", methods=["POST"])
     def provision_preview(self, request, *args, **kwargs):
@@ -171,11 +178,14 @@ class DeviceProvisioningMixin:
             release_connection(db_name)
         config, config_filename = provisioning.render_device_config(plan)
         if plan["config_format"] == "m5":
-            # No setup portal and no QR code: the file goes into the firmware build.
+            # No setup portal (the Lua controller's Wi-Fi setup). The config QR carries
+            # the compact config.py (render_m5_qr_payload) for the ProGeo
+            # flasher app, which writes it to the M5 over USB.
             return RequestSuccess({
                 **plan,
                 "config": config,
                 "config_filename": config_filename,
+                **self._m5_config_qr(plan),
                 "signed": provisioning.sign_plan(plan),
             })
         # QR codes for the setup portal: join its network, then open the controller.
@@ -223,6 +233,8 @@ class DeviceProvisioningMixin:
             "token_id": token.pk,
             "config": config,
             "config_filename": config_filename,
+            # The M5's config QR code again, for the device just created.
+            **(self._m5_config_qr(plan) if plan.get("config_format") == "m5" else {}),
         })
 
     # ------------------------------------------------------------------ test measurements (helper/device_commands.py)

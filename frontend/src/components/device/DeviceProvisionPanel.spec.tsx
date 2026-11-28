@@ -43,7 +43,7 @@ vi.mock('../../axiosConfig', () => ({
         data: {
           ...(m5
             // No filename: the page names the M5's file itself (config.py).
-            ? { config_format: 'm5' }
+            ? { config_format: 'm5', config_qr: code.image, config_qr_text: '# progeo:m5-config:1\n' }
             : { config_format: 'lua', config_filename: 'config.lua', config_qr: code.image, portal: { wifi: { ...code, ssid: 'Helper' }, frontend: { ...code, url: 'http://192.168.16.1' } } }),
           device_hash: '1312-01',
           project_id: 1312,
@@ -231,7 +231,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
   describe('M5 AIN4', () => {
     const pickM5 = () => choose('device-provision-model', 'M5 AIN4');
 
-    it('shows the m5 config type, sends threshold and poll, hides wifi/portal/firmware/qr', () => {
+    it('shows the m5 config type, sends threshold and poll, hides wifi/portal/firmware', () => {
       pickM5();
 
       expect(one('device-provision-config-format')?.textContent).toContain('m5');
@@ -249,7 +249,15 @@ describe('the config sections of "Gerät hinzufügen"', () => {
         model: 'M5 AIN4',
       });
       expect(card('portal')).toBeNull();
-      expect(one('device-provision-show-config-qr')).toBeNull();
+    });
+
+    it('shows the m5 config QR code with the flasher app hint', () => {
+      pickM5();
+      click(one('device-provision-generate'));
+      click(one('device-provision-show-config-qr'));
+
+      expect(one('device-provision-config-qr')?.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,QQ==');
+      expect(one('device-provision-config-qr-m5-hint')?.textContent).toBe('provision_m5_qr_caption');
     });
 
     const selectValue = choose;

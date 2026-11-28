@@ -17,9 +17,16 @@ import tempfile
 
 from django.conf import settings
 
+from progeo.helper.m5_device import M5_BUNDLE_PREFIX
+
 # The names nginx serves. Temp files start with a dot, so nginx never serves them.
 BUNDLE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip")
 CHANNEL_NAME = re.compile(r"[a-z]+")
+# The top-level "device" of the channel files with Lua controller bundles: the
+# Lua channels name none. Other channels (e.g. "mstack", "device": "m5-ain4" -
+# the M5's MicroPython firmware) are stored and served, but list_bundles skips
+# them: provisioning and the Lua remote update must never offer them.
+LUA_CHANNEL_DEVICES = (None, "", "lua-wlan")
 # "<key id>:<base64 of the raw Ed25519 signature>" (STRATEGY.md section 5).
 SIGNATURE = re.compile(rb"[A-Za-z0-9._-]+:[A-Za-z0-9+/]+={0,2}\s*")
 
@@ -105,7 +112,9 @@ def list_bundles():
     same data nginx serves at /firmware/versions/<channel>): one entry per
     bundle id, newest first - {"id", "release", "firmware", "created",
     "channels": [...], "latest_in": [channels it is "latest" of]}. Entries
-    whose zip is gone are skipped; a broken channel file is ignored."""
+    whose zip is gone are skipped; a broken channel file is ignored. Lua
+    controller bundles only: channel files of another "device" and M5
+    bundles (M5_BUNDLE_PREFIX) are skipped (LUA_CHANNEL_DEVICES)."""
     directory = os.path.join(settings.FIRMWARE_DIR, "channels")
     try:
         names = sorted(os.listdir(directory))
@@ -123,8 +132,12 @@ def list_bundles():
             continue
         if not isinstance(data, dict) or not isinstance(data.get("bundles"), list):
             continue
+        if data.get("device") not in LUA_CHANNEL_DEVICES:
+            continue
         for entry in data["bundles"]:
             if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                continue
+            if entry["id"].startswith(M5_BUNDLE_PREFIX):
                 continue
             url = entry.get("url")
             name = url.removeprefix("bundles/") if isinstance(url, str) else ""
