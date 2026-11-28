@@ -590,3 +590,21 @@ def test_suppressed_addresses_still_count_as_not_reached(site, live):
 
     assert _case(location).unreachable_since is not None
     assert outbound.suppressed(["rudi.radau@progeo.com"]) == {"rudi.radau@progeo.com"}
+
+
+def test_offline_case_for_a_dead_rs485_sensor(site):
+    """A climate sensor on the M5 (RS485) that stops reporting is its own
+    outage - named as such, so nobody looks for a missing leak measurement."""
+    from progeo.v1.models import ProgeoDevice
+
+    location, device = site
+    sensor = f.make_device(location, raw_hash="4711-01-RS1", hardware="4711_S1", data_interval=900,
+                           type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    _seen(device, at(0, 40))  # the M5 itself is online
+    f.make_measurement(sensor, humidity=50.0, fetched_at=at(16, days=-1))
+
+    nc.detect_offline(f.DB, now=at(0, 50))
+
+    case = _case(location)
+    assert list(case.devices) == [str(sensor.pk)]
+    assert case.events.get(kind="opened").text == "Offline: RS485 · 4711-01-RS1"

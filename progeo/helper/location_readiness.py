@@ -433,6 +433,7 @@ def _notifications_disabled(location) -> bool:
 def collect_facts(location, account=None, now=None, parts=None) -> Facts:
     """The facts of the location - only the `parts` (FACT_PARTS) given, all
     without; the location's own fields are always there (no query)."""
+    from progeo.helper.device_kinds import LEAK, kind_q
     from progeo.helper.device_overview import device_label, is_online
     from progeo.helper.plan_meters import image_size, is_calibrated
     from progeo.helper.plan_resolution import plan_resolution
@@ -441,6 +442,7 @@ def collect_facts(location, account=None, now=None, parts=None) -> Facts:
         ProgeoAccess,
         ProgeoDevice,
         ProgeoLageplan,
+        ProgeoLocation,
         ProgeoMeasurement,
         ProgeoMeasurePoint,
     )
@@ -487,8 +489,12 @@ def collect_facts(location, account=None, now=None, parts=None) -> Facts:
         } for point in points]
 
         latest = ProgeoMeasurement.objects.using(db).filter(device=OuterRef("pk")).order_by("-pk")
+        # The leak devices - climate sensors on a leak location (RS485 on the
+        # M5) measure no points, and a dead one is its own offline case. A
+        # smartex io location (project type 10) has only those: all of them.
+        kind = None if location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO else LEAK
         devices = (
-            ProgeoDevice.objects.using(db).filter(location_id=location.pk)
+            ProgeoDevice.objects.using(db).filter(kind_q(kind), location_id=location.pk)
             .annotate(last_measurement_at=Subquery(latest.values("last_fetched")[:1]))
             .order_by("first_sensor_order", "id")
         ) if "devices" in parts else []

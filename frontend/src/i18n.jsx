@@ -670,6 +670,9 @@ i18n
           status_request_measurement_error:
             'Could not request measurement: {{reason}}',
           status_live_measurement: '{{count}} new measurement(s) received.',
+          status_tab_leak: 'Leak',
+          status_tab_climate: 'Climate',
+          status_tab_swipe_hint: 'Swipe to switch',
           status_live_measurement_alarm:
             '{{count}} new measurement(s) received - alarm reported.',
           status_live_measurement_new: 'New measurements received.',
@@ -1559,6 +1562,11 @@ i18n
           analyse_measurements_title: 'Measurements',
           analyse_heatmap_title: 'Heatmap',
           analyse_device: 'Device',
+          analyse_all_devices: 'All devices ({{count}})',
+          analyse_all_devices_title:
+            'Show the measurements of all devices of this location in the plots - their sensors one after another, each device separated by a line. Picking a single device in the list goes back to it.',
+          analyse_all_devices_selected: 'All {{count}} devices',
+          analyse_offline_span: 'Offline for over 24 h',
           analyse_resolution: 'Resolution',
           analyse_resolution_option: '{{count}} measurements',
           analyse_resolution_hint:
@@ -2968,7 +2976,8 @@ i18n
           provision_rs485_title: 'RS485 climate sensors',
           provision_rs485_enabled: 'Send RS485 climate sensors',
           provision_rs485_project_id: 'Climate project number',
-          provision_rs485_interval_sec: 'RS485 interval (s)',
+          provision_rs485_project_hint: "Leave empty: the climate values show in this object's Climate tab. An own number creates a separate smartex io object.",
+          provision_rs485_project_default: "The M5's object",
           provision_threshold_invalid: 'The threshold must be between 1 and 999 mV.',
           provision_threshold_location: 'Location alarm threshold: {{value}} mV',
           provision_threshold_mismatch:
@@ -4234,6 +4243,9 @@ i18n
           status_request_measurement_error:
             'Messung konnte nicht angefordert werden: {{reason}}',
           status_live_measurement: '{{count}} neue Messung(en) empfangen.',
+          status_tab_leak: 'Leckage',
+          status_tab_climate: 'Klima',
+          status_tab_swipe_hint: 'Wischen zum Wechseln',
           status_live_measurement_alarm:
             '{{count}} neue Messung(en) empfangen - Alarm gemeldet.',
           status_live_measurement_new: 'Neue Messungen empfangen.',
@@ -5155,6 +5167,11 @@ i18n
           analyse_measurements_title: 'Messungen',
           analyse_heatmap_title: 'Heatmap',
           analyse_device: 'Gerät',
+          analyse_all_devices: 'Alle Geräte ({{count}})',
+          analyse_all_devices_title:
+            'Zeigt die Messwerte aller Geräte dieses Standorts in den Diagrammen - ihre Sensoren hintereinander, jedes Gerät durch eine Linie getrennt. Ein einzelnes Gerät in der Liste wählt wieder nur dieses.',
+          analyse_all_devices_selected: 'Alle {{count}} Geräte',
+          analyse_offline_span: 'Über 24 h offline',
           analyse_resolution: 'Auflösung',
           analyse_resolution_option: '{{count}} Messungen',
           analyse_resolution_hint:
@@ -6608,7 +6625,8 @@ i18n
           provision_rs485_title: 'RS485-Klimasensoren',
           provision_rs485_enabled: 'RS485-Klimasensoren senden',
           provision_rs485_project_id: 'Projektnummer der Klima-Sensoren',
-          provision_rs485_interval_sec: 'RS485-Intervall (s)',
+          provision_rs485_project_hint: 'Leer lassen: die Klimawerte erscheinen im Klima-Tab dieses Objekts. Eine eigene Nummer legt ein eigenes smartex-io-Objekt an.',
+          provision_rs485_project_default: 'Objekt der M5',
           provision_threshold_invalid: 'Die Schwelle muss zwischen 1 und 999 mV liegen.',
           provision_threshold_location: 'Alarmschwelle der Location: {{value}} mV',
           provision_threshold_mismatch:

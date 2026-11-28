@@ -541,3 +541,31 @@ def test_the_command_recalculates_the_scores(ready_location):
     assert "1 location(s) checked" in out.getvalue()
     ready_location.refresh_from_db(using=f.DB)
     assert ready_location.readiness_score == 100
+
+
+def test_climate_sensors_do_not_make_points_ambiguous(ready_location, account):
+    """RS485 climate sensors on the M5 (smartex io, no first_sensor_order)
+    are no leak devices: they don't cover the points twice, and a dead one
+    is its own offline case (notification_cases), not a readiness finding."""
+    from progeo.v1.models import ProgeoDevice
+
+    f.make_device(ready_location, raw_hash=f.unique("950001-01-RS1"), type=ProgeoDevice.DeviceType.SMARTEX_IO,
+                  mac="Klima Keller")
+    f.make_device(ready_location, raw_hash=f.unique("950001-01-RS2"), type=ProgeoDevice.DeviceType.SMARTEX_IO)
+
+    result = lr.check_location(ready_location, account, save=False)
+
+    assert _failed(result) == set()
+
+
+def test_a_smartex_io_location_keeps_its_climate_devices(account):
+    """Climate-only objects (project type 10): their devices are the
+    location's devices, as before."""
+    from progeo.v1.models import ProgeoDevice
+
+    location = f.make_location(account, project_id=950002, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO)
+    f.make_device(location, type=ProgeoDevice.DeviceType.SMARTEX_IO)
+
+    facts = lr.collect_facts(location, account, parts={"devices"})
+
+    assert len(facts.devices) == 1

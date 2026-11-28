@@ -567,4 +567,6 @@ class LocationStatusConsumer(AsyncWebsocketConsumer):
             "reason": event.get("reason"),
             "alarm": bool(event.get("alarm")),
             "measurement_id": event.get("measurement_id"),
+            # helper/device_kinds.py; a sender without it (older code) is leak.
+            "kind": event.get("kind") or "leak",
         })

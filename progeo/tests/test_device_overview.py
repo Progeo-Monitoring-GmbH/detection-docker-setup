@@ -192,3 +192,29 @@ def test_location_devices_does_not_ping_for_customers(api_client, overview_world
 
     assert body["pinged"] is False
     assert body["stats"]["ping"] is None
+
+
+@pytest.mark.parametrize("raw_hash, parent", [
+    ("1312-01-RS1", "1312-01"),
+    ("1312-01-rs12", "1312-01"),
+    ("1312-01", None),
+    (None, None),
+])
+def test_rs485_parent_hash(raw_hash, parent):
+    from progeo.helper.device_overview import rs485_parent_hash
+
+    assert rs485_parent_hash(raw_hash) == parent
+
+
+def test_device_label_names_smartex_io_radio_sensors():
+    from types import SimpleNamespace
+
+    from progeo.helper.device_overview import device_label
+
+    radio = SimpleNamespace(pk=1, mac=None, hardware="1400_S1", raw_hash="2CF7F1C0", type="smartex io")
+    rs485 = SimpleNamespace(pk=2, mac=None, hardware="1312_S1", raw_hash="1312-01-RS1", type="smartex io")
+    untyped = SimpleNamespace(pk=3, mac=None, hardware="1400_S1", raw_hash="2CF7F1C1")
+
+    assert device_label(radio) == "smartex io · 2CF7F1C0"
+    assert device_label(rs485) == "RS485 · 1312-01-RS1"
+    assert device_label(untyped) == "1400_S1 · 2CF7F1C1"

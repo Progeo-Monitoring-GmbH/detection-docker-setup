@@ -81,10 +81,15 @@ export type MeasurementsLoad = {
   total: number;
   devices: { id: number; display_name: string }[];
   device: number | null;
+  /** Spans (ms) the device sent nothing for over 24 h. */
+  offline: { from: number; to: number }[];
 };
 
 /** The measurements from `fromMs` on. */
 export const cutMeasurements = (load: MeasurementsLoad, fromMs: number): MeasurementsLoad => {
   const rows = load.rows.filter((row) => (parseTimestamp(row.last_fetched) ?? Number.NEGATIVE_INFINITY) >= fromMs);
-  return { ...load, rows, total: rows.length };
+  const offline = load.offline.flatMap((span) =>
+    span.to > fromMs ? [{ from: Math.max(span.from, fromMs), to: span.to }] : [],
+  );
+  return { ...load, rows, total: rows.length, offline };
 };

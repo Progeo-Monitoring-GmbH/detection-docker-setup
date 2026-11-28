@@ -1,0 +1,83 @@
+/* The tabs "Leckage" / "Klima" (DeviceKindTabs.tsx). */
+.device-kind-tabs__nav {
+  margin-bottom: 0.75rem;
+}
+
+/* Touch devices, until the first switch: the other tab lights up for about
+   a second every 6 s. */
+.nav-tabs .nav-link.device-kind-tab--pulse {
+  animation: device-kind-tab-pulse 6s ease-in-out infinite;
+}
+
+@keyframes device-kind-tab-pulse {
+  0%,
+  17%,
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
+  8% {
+    background-color: var(--bs-primary-bg-subtle);
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.35);
+  }
+}
+
+/* Reduced motion: an arrow instead of the pulse. */
+.device-kind-tab__hint {
+  margin-left: 0.35rem;
+  color: var(--bs-primary);
+  vertical-align: -0.125em;
+}
+
+.device-kind-tabs__panel--slide-next {
+  animation: device-kind-slide-next 180ms ease-out;
+}
+
+.device-kind-tabs__panel--slide-prev {
+  animation: device-kind-slide-prev 180ms ease-out;
+}
+
+@keyframes device-kind-slide-next {
+  from {
+    opacity: 0.4;
+    transform: translateX(1.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes device-kind-slide-prev {
+  from {
+    opacity: 0.4;
+    transform: translateX(-1.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-tabs .nav-link.device-kind-tab--pulse,
+  .device-kind-tabs__panel--slide-next,
+  .device-kind-tabs__panel--slide-prev {
+    animation: none;
+  }
+}
+
+/* Phones: the tabs side by side over the full width. */
+@media (max-width: 640px) {
+  .nav-tabs.device-kind-tabs__nav .nav-item {
+    flex: 1 1 50%;
+  }
+
+  .nav-tabs.device-kind-tabs__nav .nav-link {
+    width: 100%;
+    text-align: center;
+  }
+}

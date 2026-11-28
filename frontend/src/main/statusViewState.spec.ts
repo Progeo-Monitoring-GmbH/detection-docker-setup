@@ -33,6 +33,17 @@ describe('the quick link', () => {
     expect(parseStatusView(params)).toEqual(rest);
   });
 
+  it('keeps the climate tab of a location with both kinds - read by the tabs, not the view', () => {
+    const path = statusViewPath({ id: 12, project_id: 4711 }, { range: '7d', tab: 'climate' });
+    const params = new URL(path, 'https://portal.progeo.com').searchParams;
+    expect(params.get('tab')).toBe('climate');
+    expect(parseStatusView(params)).toEqual({ range: '7d' });
+
+    updateStatusView(12, { range: '7d', tab: 'climate' });
+    expect(currentStatusView(12)).toEqual({ range: '7d', tab: 'climate' });
+    clearStatusView(12);
+  });
+
   it('is the plain status page without a view', () => {
     expect(statusViewPath({ id: 12, project_id: 4711 }, null)).toBe('/project/4711/status');
     // Without its number (rows that carry none): the old link, which redirects.

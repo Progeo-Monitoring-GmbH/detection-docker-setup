@@ -83,9 +83,15 @@ describe('cutMeasurements', () => {
       total: 3,
       devices: [],
       device: 1,
+      offline: [
+        { from: NOW - 4 * DAY, to: NOW - 3 * DAY },
+        { from: NOW - 3 * DAY, to: NOW - DAY },
+      ],
     };
     const result = cutMeasurements(measurements, NOW - 2 * DAY);
     expect(result.rows.map((entry) => entry.id)).toEqual([3, 2]);
     expect(result.total).toBe(2);
+    // The offline spans too: one before the start is gone, one into it cut.
+    expect(result.offline).toEqual([{ from: NOW - 2 * DAY, to: NOW - DAY }]);
   });
 });

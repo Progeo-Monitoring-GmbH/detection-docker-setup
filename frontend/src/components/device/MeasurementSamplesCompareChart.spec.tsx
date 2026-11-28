@@ -170,4 +170,36 @@ describe('MeasurementSamplesCompareChart', () => {
     });
     expect(columns().map((column) => column.getAttribute('data-test-key'))).toContain('4');
   });
+
+  it('names the sensors of several devices and divides their columns', () => {
+    const naming = {
+      name: (sensor: number) => (sensor < 2 ? `Box A · Sensor ${sensor + 1}` : `Box B · Sensor ${sensor - 1}`),
+      tick: (sensor: number) => String(sensor < 2 ? sensor + 1 : sensor - 1),
+      groups: [
+        { start: 0, label: 'Box A' },
+        { start: 2, label: 'Box B' },
+      ],
+    };
+    render({ sensors: [2], sensorNaming: naming });
+
+    const groups = [...container.querySelectorAll('[data-testid="measurement-compare-columns-group"]')];
+    expect(groups.map((group) => group.textContent)).toEqual(['Box A', 'Box B']);
+    // The first device needs no divider line, the second one starts with one.
+    expect(groups[0].querySelector('line')).toBeNull();
+    expect(groups[1].querySelector('line')).not.toBeNull();
+    expect(columns()[2].textContent).toBe('1');
+    expect(container.querySelector('[data-testid="measurement-compare-sensor-chip"]')?.textContent).toContain(
+      'Box B · Sensor 1',
+    );
+  });
+
+  it('shades the spans a device was offline gray on the third plot', () => {
+    const from = Date.parse('2026-10-28T00:00:00Z');
+    const to = Date.parse('2026-10-30T00:00:00Z');
+    render({ offlineSpans: [{ from, to }] });
+
+    const shapes = figure.layout.shapes as { xref?: string; x0?: number; x1?: number; fillcolor?: string }[];
+    const offline = shapes.filter((shape) => shape.fillcolor === 'rgba(108, 117, 125, 0.22)');
+    expect(offline).toEqual([expect.objectContaining({ xref: 'x2', x0: from, x1: to })]);
+  });
 });

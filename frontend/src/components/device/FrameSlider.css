@@ -271,3 +271,39 @@
 .frame-slider__selection-grip--end {
   right: -4px;
 }
+
+/* A device offline for over 24 h: gray behind the track (like the alarms). */
+.frame-slider__offline-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0.5rem;
+  right: 0.5rem;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.frame-slider__offline,
+.frame-slider__offline-swatch {
+  background: rgba(108, 117, 125, 0.22);
+  border-radius: 3px;
+}
+
+.frame-slider__offline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.frame-slider__offline-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.frame-slider__offline-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+}

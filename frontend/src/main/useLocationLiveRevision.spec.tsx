@@ -36,20 +36,25 @@ class FakeSocket {
 /** GET .../latest-measurement/: answers with `api.latest` (or fails with `api.status`). */
 const api = vi.hoisted(() => ({
   latest: null as number | null,
+  /** Per kind (?kind=...), when set - else `latest`. */
+  latestOf: {} as Record<string, number | null>,
   status: 200,
   calls: 0,
+  urls: [] as string[],
 }));
 vi.mock('../axiosConfig', () => ({
   default: {
     perform_get: (
       _auth: unknown,
-      _url: string,
+      url: string,
       ok: (response: unknown) => void,
       fail: (error: unknown) => void,
     ) => {
       api.calls += 1;
+      api.urls.push(url);
+      const kind = /[?&]kind=(\w+)/.exec(url)?.[1];
       if (api.status === 200) {
-        ok({ data: { id: api.latest } });
+        ok({ data: { id: kind && kind in api.latestOf ? api.latestOf[kind] : api.latest } });
       } else {
         fail({ response: { status: api.status } });
       }
@@ -71,25 +76,49 @@ const {
 /** What the toast was told - one entry per reload with news. */
 const toasts = vi.fn();
 
-const Probe = ({ locationId, enabled }: { locationId: number; enabled: boolean }) => (
-  <span data-testid="revision">
-    {useLocationLiveRevision(locationId, enabled, toasts)}
-  </span>
-);
+type Kind = 'leak' | 'climate';
+
+const Probe = ({ locationId, kinds }: { locationId: number; kinds: readonly Kind[] }) => {
+  const revisions = useLocationLiveRevision(locationId, kinds, toasts);
+  return (
+    <>
+      <span data-testid="revision">{revisions.leak}</span>
+      <span data-testid="climate">{revisions.climate}</span>
+    </>
+  );
+};
 
 let container: HTMLDivElement;
 let root: Root;
 
 const revision = () => container.querySelector('[data-testid="revision"]')?.textContent;
-const render = (locationId: number, enabled = true) =>
-  act(() => root.render(<Probe locationId={locationId} enabled={enabled} />));
-const measurement = (socket: FakeSocket, alarm = false, id = 1, locationId = 12) =>
+const climateRevision = () => container.querySelector('[data-testid="climate"]')?.textContent;
+const LEAK_ONLY: readonly Kind[] = ['leak'];
+const BOTH: readonly Kind[] = ['leak', 'climate'];
+const OFF: readonly Kind[] = [];
+const render = (locationId: number, enabled: boolean | readonly Kind[] = true) =>
+  act(() =>
+    root.render(
+      <Probe
+        locationId={locationId}
+        kinds={enabled === true ? LEAK_ONLY : enabled === false ? OFF : enabled}
+      />,
+    ),
+  );
+const measurement = (
+  socket: FakeSocket,
+  alarm = false,
+  id = 1,
+  locationId = 12,
+  kind?: Kind,
+) =>
   socket.emit({
     type: 'location_status',
     location_id: locationId,
     reason: 'measurement',
     alarm,
     measurement_id: id,
+    ...(kind ? { kind } : {}),
   });
 const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
 
@@ -101,8 +130,10 @@ beforeEach(() => {
   FakeSocket.instances = [];
   toasts.mockClear();
   api.latest = 100;
+  api.latestOf = {};
   api.status = 200;
   api.calls = 0;
+  api.urls = [];
   localStorage.setItem('authToken', 'jwt-token');
 });
 
@@ -132,7 +163,7 @@ describe('useLocationLiveRevision - socket', () => {
     act(() => measurement(socket, false, 101));
     wait(LIVE_COALESCE_MS);
     expect(revision()).toBe('1');
-    expect(toasts).toHaveBeenLastCalledWith({ count: 1, alarm: false });
+    expect(toasts).toHaveBeenLastCalledWith({ count: 1, alarm: false, kind: 'leak' });
   });
 
   it('reloads once for measurements close together - one toast, alarm if any had one', () => {
@@ -145,7 +176,7 @@ describe('useLocationLiveRevision - socket', () => {
     wait(LIVE_COALESCE_MS);
     expect(revision()).toBe('1');
     expect(toasts).toHaveBeenCalledTimes(1);
-    expect(toasts).toHaveBeenCalledWith({ count: 2, alarm: true });
+    expect(toasts).toHaveBeenCalledWith({ count: 2, alarm: true, kind: 'leak' });
   });
 
   it('ignores heartbeats and other locations', () => {
@@ -220,7 +251,7 @@ describe('useLocationLiveRevision - background check', () => {
     act(() => FakeSocket.instances[2].onopen?.());
     wait(LIVE_COALESCE_MS);
     expect(revision()).toBe('1');
-    expect(toasts).toHaveBeenLastCalledWith({ count: null, alarm: false });
+    expect(toasts).toHaveBeenLastCalledWith({ count: null, alarm: false, kind: 'leak' });
   });
 
   it('checks every minute while the socket is down', () => {
@@ -229,7 +260,7 @@ describe('useLocationLiveRevision - background check', () => {
     api.latest = 101;
     wait(LIVE_CHECK_MS + LIVE_COALESCE_MS);
     expect(revision()).toBe('1');
-    expect(toasts).toHaveBeenLastCalledWith({ count: null, alarm: false });
+    expect(toasts).toHaveBeenLastCalledWith({ count: null, alarm: false, kind: 'leak' });
   });
 
   it('checks rarely while the socket is up', () => {
@@ -285,14 +316,83 @@ describe('parseLocationStatusUpdate', () => {
         '{"type":"location_status","location_id":5,"alarm":true,"measurement_id":9}',
         5,
       ),
-    ).toEqual({ alarm: true, measurementId: 9 });
+    ).toEqual({ alarm: true, measurementId: 9, kind: 'leak' });
     expect(
       parseLocationStatusUpdate('{"type":"location_status","location_id":5}', 5),
-    ).toEqual({ alarm: false, measurementId: null });
+    ).toEqual({ alarm: false, measurementId: null, kind: 'leak' });
     expect(
       parseLocationStatusUpdate('{"type":"location_status","location_id":6}', 5),
     ).toBeNull();
     expect(parseLocationStatusUpdate('{"type":"heartbeat"}', 5)).toBeNull();
     expect(parseLocationStatusUpdate('not json', 5)).toBeNull();
+  });
+});
+
+describe('parseLocationStatusUpdate - kind', () => {
+  it('reads the kind - a message without one (older backend) is leak', () => {
+    expect(
+      parseLocationStatusUpdate(
+        '{"type":"location_status","location_id":5,"kind":"climate"}',
+        5,
+      )?.kind,
+    ).toBe('climate');
+    expect(
+      parseLocationStatusUpdate('{"type":"location_status","location_id":5}', 5)?.kind,
+    ).toBe('leak');
+    expect(
+      parseLocationStatusUpdate(
+        '{"type":"location_status","location_id":5,"kind":"wind"}',
+        5,
+      )?.kind,
+    ).toBe('leak');
+  });
+});
+
+describe('useLocationLiveRevision - leak and climate', () => {
+  it('counts each kind on its own - one reload and one toast per kind', () => {
+    render(12, BOTH);
+    const [socket] = FakeSocket.instances;
+    act(() => {
+      measurement(socket, false, 101, 12, 'leak');
+      measurement(socket, false, 102, 12, 'climate');
+    });
+    wait(LIVE_COALESCE_MS);
+    expect(revision()).toBe('1');
+    expect(climateRevision()).toBe('1');
+    expect(toasts).toHaveBeenCalledTimes(2);
+    expect(toasts).toHaveBeenCalledWith({ count: 1, alarm: false, kind: 'leak' });
+    expect(toasts).toHaveBeenCalledWith({ count: 1, alarm: false, kind: 'climate' });
+
+    act(() => measurement(socket, false, 103, 12, 'climate'));
+    wait(LIVE_COALESCE_MS);
+    expect(revision()).toBe('1');
+    expect(climateRevision()).toBe('2');
+  });
+
+  it('checks each kind of a mixed location - only the leak one alone without ?kind=', () => {
+    render(12, BOTH);
+    expect(api.urls).toEqual([
+      '/v1/location/12/latest-measurement/?kind=leak',
+      '/v1/location/12/latest-measurement/?kind=climate',
+    ]);
+
+    api.latestOf = { leak: 101, climate: 100 };
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    wait(LIVE_COALESCE_MS);
+    expect(revision()).toBe('1');
+    expect(climateRevision()).toBe('0');
+  });
+
+  it('a single kind checks as before, without ?kind=', () => {
+    render(12);
+    expect(api.urls).toEqual(['/v1/location/12/latest-measurement/']);
+  });
+
+  it('no kinds: no socket, no checks', () => {
+    render(12, OFF);
+    expect(FakeSocket.instances).toHaveLength(0);
+    expect(api.calls).toBe(0);
+    expect(revision()).toBe('0');
+    expect(climateRevision()).toBe('0');
   });
 });

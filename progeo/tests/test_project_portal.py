@@ -41,7 +41,7 @@ def test_the_detail_tells_whether_its_number_opens_it(api_client, duplicates):
     assert (main("empty"), main("later"), main("no_number")) == (False, False, False)
     # Lists leave it out - it would cost a query per row.
     rows = api_client.get(f"/v1/location/details/?ids={duplicates['real'].pk}").json()
-    assert rows[0]["project_main"] is None
+    assert rows[0].get("project_main") is None
 
 
 def test_mail_links_use_the_number_only_for_the_main_location(duplicates):

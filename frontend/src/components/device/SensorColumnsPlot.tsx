@@ -26,6 +26,7 @@ import {
   shownSensors,
 } from './sensorColumns';
 import useElementWidth from '../ui/useElementWidth';
+import type { SensorNaming } from './sensorNaming';
 import './SensorColumnsPlot.css';
 
 const PLOT_TOP = 10;
@@ -81,6 +82,8 @@ type SensorColumnsPlotProps = {
    * the second one includes WP + EP. Null: from the shown values. */
   yRange: [number, number] | null;
   yRangeWithSum?: [number, number] | null;
+  /** The sensors of several devices: their names and dividers (sensorNaming.ts). */
+  naming?: SensorNaming | null;
   testId?: string;
 };
 
@@ -111,6 +114,7 @@ const SensorColumnsPlot = ({
   onToggleSensor,
   yRange,
   yRangeWithSum = null,
+  naming = null,
   testId = 'sensor-columns',
 }: SensorColumnsPlotProps) => {
   const { t } = useTranslation();
@@ -254,12 +258,12 @@ const SensorColumnsPlot = ({
         : []),
     ];
     return {
-      title: `${t('measurement_compare_pair_label')} ${hovered + 1}`,
+      title: naming ? naming.name(hovered) : `${t('measurement_compare_pair_label')} ${hovered + 1}`,
       subtitle: currentLabel,
       rows,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- derived from the listed state
-  }, [hovered, parts, current, spread, masks, threshold, sensorThresholds, currentLabel, t]);
+  }, [hovered, parts, current, spread, masks, threshold, sensorThresholds, currentLabel, naming, t]);
 
   const legendEntry = (part: Part, label: string, swatch: ReactNode) => (
     <button
@@ -281,6 +285,11 @@ const SensorColumnsPlot = ({
   const every = labelEveryOf(column);
   const hidden = count - shown.length;
   const radius = Math.min(3, column / 12);
+  // Several devices: a divider where each one's shown columns start.
+  const dividers = (naming?.groups ?? []).flatMap((group) => {
+    const index = shown.findIndex((sensor) => sensor >= group.start);
+    return index < 0 ? [] : [{ ...group, x: index * column }];
+  });
 
   return (
     <div className="sensor-columns" data-testid={testId}>
@@ -434,6 +443,14 @@ const SensorColumnsPlot = ({
                 </g>
               )}
               <line x1={0} x2={plotWidth} y1={toY(0)} y2={toY(0)} stroke={COLORS.baseline} strokeWidth={1.5} />
+              {dividers.map(({ start, label, x }) => (
+                <g key={`group-${start}`} className="sensor-columns-group" {...repeatedTestId(`${testId}-group`, start)}>
+                  {x > 0 && <line x1={x} x2={x} y1={PLOT_TOP} y2={PLOT_TOP + PLOT_H} />}
+                  <text x={x + 4} y={PLOT_TOP + 11}>
+                    {label}
+                  </text>
+                </g>
+              ))}
 
               {shown.map((sensor, index) => {
                 const x = index * column;
@@ -529,7 +546,7 @@ const SensorColumnsPlot = ({
                         fill={off ? DISABLED_SENSOR_STROKE : COLORS.muted}
                         textDecoration={off ? 'line-through' : undefined}
                       >
-                        {sensor + 1}
+                        {naming ? naming.tick(sensor) : sensor + 1}
                       </text>
                     )}
                   </g>

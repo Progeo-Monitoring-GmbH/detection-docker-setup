@@ -36,6 +36,8 @@ type AnalyseFrameControlProps = {
   frameIndex: number;
   onTimeChange: (time: number | null) => void;
   chartZoom: { from: number; to: number } | null;
+  /** Spans a device sent nothing for over 24 h - gray on the slider. */
+  offlineSpans?: { from: number; to: number }[];
   selection: ProfileRange | null;
   onSelectionChange?: (selection: ProfileRange | null) => void;
   keyHints: KeyHint[];
@@ -62,6 +64,7 @@ const AnalyseFrameControl = ({
   frameIndex,
   onTimeChange,
   chartZoom,
+  offlineSpans,
   selection,
   onSelectionChange,
   keyHints,
@@ -177,6 +180,8 @@ const AnalyseFrameControl = ({
               : undefined
           }
           selectionLabel={t('noise_profile_range_band')}
+          offlineSpans={offlineSpans}
+          offlineLabel={t('analyse_offline_span')}
         />
       ) : (
         <div

@@ -69,6 +69,7 @@ from progeo.helper.cacher import (
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
 from progeo.helper.demo import DEMO_PERMISSION, demo_export_throttle, is_demo_user
+from progeo.helper.device_kinds import LEAK, device_kinds, kind_q, parse_kind
 from progeo.helper.legacy.geo import GeoHelper, has_position
 from progeo.helper.location_access import (
     can_see_location,
@@ -233,6 +234,8 @@ HEATMAP_VIDEO_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 # When a measurement was taken: its receive time - a plain column, so the
 # yearly partitions are pruned and the index is used.
 MEASURED_TIME = F("last_fetched")
+# ?kind= (helper/device_kinds.py) that is neither leak nor climate.
+KIND_REASON = "kind must be leak or climate"
 # Climate ranges up to this many days return every measurement, longer ones daily averages.
 CLIMATE_RAW_DAYS = 31
 
@@ -241,11 +244,11 @@ def _rounded(value, digits=2):
     return round(value, digits) if value is not None else None
 
 
-def next_measurement_of(location, account, user):
+def next_measurement_of(location, account, user, kind=None):
     """When the location's next measurement is expected: per device its
     newest measurement plus its send interval (data_interval), the earliest
     of them. None without a measured device with an interval. May lie in the
-    past (overdue)."""
+    past (overdue). `kind`: only the devices of that kind (device_kinds.py)."""
     db_name = location_db(location, account)
     newest = (
         ProgeoMeasurement.for_account(account, using=db_name, user=user)
@@ -256,7 +259,7 @@ def next_measurement_of(location, account, user):
     )
     devices = (
         ProgeoDevice.objects.using(db_name)
-        .filter(location=location, data_interval__gt=0)
+        .filter(kind_q(kind), location=location, data_interval__gt=0)
         .annotate(newest=Subquery(newest))
         .values_list("newest", "data_interval")
     )
@@ -264,10 +267,10 @@ def next_measurement_of(location, account, user):
     return min(expected, default=None)
 
 
-def latest_measurement_id_of(location, account, user):
+def latest_measurement_id_of(location, account, user, kind=None):
     """The id of the location's newest measurement (None without one) - the
     status page's cheap "is there new data?" check: one index lookup per
-    device, pk is chronological."""
+    device, pk is chronological. `kind`: only the devices of that kind."""
     db_name = location_db(location, account)
     newest = (
         ProgeoMeasurement.for_account(account, using=db_name, user=user)
@@ -277,23 +280,24 @@ def latest_measurement_id_of(location, account, user):
     )
     ids = (
         ProgeoDevice.objects.using(db_name)
-        .filter(location=location)
+        .filter(kind_q(kind), location=location)
         .annotate(newest=Subquery(newest))
         .values_list("newest", flat=True)
     )
     return max((newest_id for newest_id in ids if newest_id is not None), default=None)
 
 
-def measurement_range_of(location, account, user):
+def measurement_range_of(location, account, user, kind=None):
     """{"first", "last", "count", "next"} of a location's measurements
-    (measurement time); "next" is the expected next one (next_measurement_of)."""
+    (measurement time); "next" is the expected next one (next_measurement_of).
+    `kind`: only the measurements of that kind of device (device_kinds.py)."""
     stats = (
         ProgeoMeasurement.for_account(account, using=location_db(location, account), user=user)
-        .filter(device__location=location)
+        .filter(kind_q(kind, "device__"), device__location=location)
         .annotate(measured=MEASURED_TIME)
         .aggregate(first=Min("measured"), last=Max("measured"), count=Count("id"))
     )
-    upcoming = next_measurement_of(location, account, user) if stats["last"] else None
+    upcoming = next_measurement_of(location, account, user, kind) if stats["last"] else None
     return {
         "first": stats["first"].isoformat() if stats["first"] else None,
         "last": stats["last"].isoformat() if stats["last"] else None,
@@ -346,7 +350,7 @@ def _db_datetime(value):
     return timezone.make_naive(value) if timezone.is_aware(value) else value
 
 
-def _device_starts(location, db_name):
+def _device_starts(location, db_name, kind=None):
     """{device pk: SensorMap} of the location's devices: which sensor each
     pair of their measurements is - first_sensor_order + pair (the sensors of
     a location can be split over devices), or the sensor mapping valid when
@@ -354,7 +358,9 @@ def _device_starts(location, db_name):
     from progeo.helper.sensor_mapping import load_maps
 
     devices = list(
-        ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", "first_sensor_order")
+        ProgeoDevice.objects.using(db_name)
+        .filter(kind_q(kind), location=location)
+        .values_list("pk", "first_sensor_order")
     )
     return load_maps(db_name, devices)
 
@@ -446,6 +452,34 @@ def _spread_over_window(queryset, limit):
     if total > limit:
         ids = [ids[-1]] if limit == 1 else [ids[round(i * (total - 1) / (limit - 1))] for i in range(limit)]
     return list(queryset.filter(pk__in=ids).order_by("last_fetched", "pk")), total
+
+
+# A device without a measurement for longer than this is offline - the
+# Analyse tab shades such spans (frame slider, sum plot).
+OFFLINE_GAP = timedelta(hours=24)
+
+
+def _offline_spans(queryset, window_from, window_to):
+    """The spans of the window [window_from, window_to (None: now)] in which
+    the measurements of `queryset` (one device) are more than OFFLINE_GAP
+    apart - from all of them, not the spread shown (a year's spread is far
+    sparser than a day). The measurement before the window counts (a gap
+    reaching into it), and the end: a device silent since is offline until
+    then. A device without any measurement before the window's end has none."""
+    end = window_to or timezone.now()
+    inside = queryset.filter(last_fetched__gte=window_from, last_fetched__lte=end)
+    times = list(inside.order_by("last_fetched").values_list("last_fetched", flat=True))
+    before = (queryset.filter(last_fetched__lt=window_from)
+              .order_by("-last_fetched").values_list("last_fetched", flat=True).first())
+    if before is not None:
+        times.insert(0, before)
+    if not times:
+        return []
+    spans = []
+    for start, stop in zip(times, [*times[1:], end]):
+        if stop - start > OFFLINE_GAP:
+            spans.append({"from": max(start, window_from).isoformat(), "to": stop.isoformat()})
+    return spans
 
 
 def _sensor_points_data(points, location, db_name, names=None):
@@ -1014,12 +1048,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not split_enabled():
             location = self.get_object()
             location.first_measurement_at = first_measurement_at(location, location._state.db)
+            location.device_kinds = device_kinds(location, location._state.db)
             location.project_main = self._is_project_main(location)
             return cache_save_and_return(cache_key, self.get_serializer(location).data)
         location = self.get_object()
         account = self.object_account
         location = prepare_locations([location], account)[0]
         location.first_measurement_at = first_measurement_at(location, location_db(location, account))
+        location.device_kinds = device_kinds(location, location_db(location, account))
         location.project_main = self._is_project_main(location)
         return cache_save_and_return(cache_key, LocationSerializer(location, context={"request": request}).data)
 
@@ -2690,7 +2726,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             device__location=location, last_fetched__gte=time_from, last_fetched__lte=time_to
         )
         device_id = params.get("device")
-        if device_id not in (None, ""):
+        if device_id in (None, ""):
+            # The leak analysis archives its devices' measurements - not the
+            # climate sensors' of the location (helper/device_kinds.py).
+            queryset = queryset.filter(kind_q(LEAK, "device__"))
+        else:
             try:
                 device = ProgeoDevice.objects.using(db_name).filter(location=location, pk=int(device_id)).first()
             except (TypeError, ValueError):
@@ -2755,10 +2795,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if error:
             return error
 
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        # The leak devices only: climate sensors (smartex io) have their own
+        # tab (/climate/), their measurements carry no samples.
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(
+            kind_q(LEAK, "device__"), device__location=location
+        )
         # One device at a time (?device=) - measurements of several devices don't
         # compare; by default the one that measured last.
-        devices = list(ProgeoDevice.objects.using(db_name).filter(location=location).order_by("id"))
+        devices = list(ProgeoDevice.objects.using(db_name).filter(kind_q(LEAK), location=location).order_by("id"))
         if device_id is None:
             device_id = queryset.order_by("-pk").values_list("device_id", flat=True).first()
         elif device_id not in {device.pk for device in devices}:
@@ -2766,12 +2810,15 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if device_id is not None:
             queryset = queryset.filter(device_id=device_id)
         total = None
+        offline = []
         if year:
             queryset = queryset.select_related("device").filter(last_fetched__year=year).order_by("-id")
         elif days:
             # The last `days` days (up to ?to=), at most `limit` measurements
             # spread over them - newest first.
             window_from, window_to = _days_window(days, until)
+            if device_id is not None:
+                offline = _offline_spans(queryset, window_from, window_to)
             window = queryset.select_related("device").filter(last_fetched__gte=window_from)
             if window_to:
                 window = window.filter(last_fetched__lte=window_to)
@@ -2791,9 +2838,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 "count": len(serialized),
                 # Measurements in the window (?days=), of which `count` are shown.
                 "total": total if total is not None else len(serialized),
+                # ?days=: the spans the device sent nothing for over 24 h.
+                "offline": offline,
             }
         )
-    
+
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="request-measurement/devices", methods=["GET"])
     def request_measurement_devices(self, request, pk=None, *args, **kwargs):
@@ -2988,6 +3037,13 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if latest:
             time_from = time_to = days = step = None
 
+        # ?kind=leak: only the leak devices (a location with climate sensors
+        # too - their measurements are no frames). Without it every device.
+        try:
+            kind = parse_kind(request.query_params.get("kind"))
+        except ValueError:
+            return RequestFailed({"reason": KIND_REASON})
+
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
@@ -3011,14 +3067,16 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         with view:
             return self._heatmap_response(
                 request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan,
-                latest=latest,
+                latest=latest, kind=kind,
             )
 
     def _heatmap_response(
         self, request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan=None,
-        latest=False,
+        latest=False, kind=None,
     ):
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(
+            kind_q(kind, "device__"), device__location=location
+        )
         if lageplan is None:
             points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
             plan_sensors = None
@@ -3030,11 +3088,12 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             plan_sensors = {point.sensor_order for point in points}
             if all(point.device_id for point in points):
                 queryset = queryset.filter(device_id__in={point.device_id for point in points})
-        starts = _device_starts(location, db_name)
+        starts = _device_starts(location, db_name, kind)
         if latest:
             return self._latest_heatmap_response(location, account, db_name, queryset, starts, profile,
                                                  sensor_points=_sensor_points_data(points, location, db_name),
-                                                 plan_sensors=plan_sensors, lageplan=lageplan, limit=limit)
+                                                 plan_sensors=plan_sensors, lageplan=lageplan, limit=limit,
+                                                 kind=kind)
         stepped = None
         if step:
             stepped = _step_frames(queryset, time_from, time_to, step, starts, profile)
@@ -3092,7 +3151,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     @staticmethod
     def _latest_heatmap_response(location, account, db_name, queryset, starts, profile, sensor_points,
-                                 plan_sensors, lageplan, limit):
+                                 plan_sensors, lageplan, limit, kind=None):
         """?latest=1: the location's newest LATEST_MEASUREMENTS measurements
         (pk is chronological), one frame each, oldest -> newest - the plan
         shows the newest, the Zeitreihe and the sensor table all of them.
@@ -3107,7 +3166,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if newest:
             # The value each device had before the window - one index lookup
             # per device, not a scan of the location's history.
-            device_ids = ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", flat=True)
+            device_ids = (
+                ProgeoDevice.objects.using(db_name)
+                .filter(kind_q(kind), location=location)
+                .values_list("pk", flat=True)
+            )
             before = [
                 measurement
                 for device_id in device_ids
@@ -3333,10 +3396,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     def measurement_range(self, request, pk=None, *args, **kwargs):
         """Oldest/newest measurement time and the count of a location - the
         frontend only offers time ranges the data actually covers."""
+        try:
+            kind = parse_kind(request.query_params.get("kind"))
+        except ValueError:
+            return RequestFailed({"reason": KIND_REASON})
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        return RequestSuccess(measurement_range_of(location, account, request.user))
+        return RequestSuccess(measurement_range_of(location, account, request.user, kind))
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="latest-measurement", methods=["GET"])
@@ -3344,10 +3411,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         """{"id"}: the location's newest measurement (null without one) - the
         status page asks now and then whether there is new data and only
         reloads it then (useLocationLiveRevision.ts)."""
+        try:
+            kind = parse_kind(request.query_params.get("kind"))
+        except ValueError:
+            return RequestFailed({"reason": KIND_REASON})
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        return RequestSuccess({"id": latest_measurement_id_of(location, account, request.user)})
+        return RequestSuccess({"id": latest_measurement_id_of(location, account, request.user, kind)})
 
     # ------------------------------------------------------------------
     # Testleackage, CSV/PDF export, Verwaltung, Anlegen
@@ -3452,8 +3523,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         points = list(
             ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
         )
+        # Leak devices only - climate sensors have no sensor values. A
+        # climate-only object (smartex io) keeps its rows, as before.
+        kind = None if location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO else LEAK
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(
-            device__location=location
+            kind_q(kind, "device__"), device__location=location
         )
         if time_from:
             queryset = queryset.filter(last_fetched__gte=time_from)
@@ -3464,7 +3538,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         timestamps = [measurement.last_fetched for measurement in measurements]
         # By sensor_order (a device's pair 1 is its first_sensor_order); a
         # measurement of another device leaves the sensor empty.
-        starts = _device_starts(location, db_name)
+        starts = _device_starts(location, db_name, kind)
         series = _aligned_series([_sensor_values(measurement, starts) for measurement in measurements], carry=False)
         return points, timestamps, series
 

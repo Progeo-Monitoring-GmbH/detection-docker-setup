@@ -363,6 +363,9 @@ class LocationSerializer(ProgeoBaseSerializer):
     # /project/<project_id>/ opens this location - else the portal keeps the
     # pk URL. None in lists.
     project_main = serializers.SerializerMethodField("get_project_main")
+    # Only the detail view: the device kinds present ("leak", "climate" -
+    # helper/device_kinds.py), the tabs of the status and analysis pages.
+    device_kinds = serializers.SerializerMethodField("get_device_kinds")
 
     class Meta:
         model = ProgeoLocation
@@ -390,6 +393,23 @@ class LocationSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_project_main(obj):
         return getattr(obj, "project_main", None)
+
+    @staticmethod
+    def get_device_kinds(obj):
+        return getattr(obj, "device_kinds", None)
+
+    # Only the detail view computes them (LocationViewSet.retrieve).
+    DETAIL_ONLY = ("device_kinds", "project_main")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Not computed (lists, a save answer): left out - a null would
+        # overwrite what the portal loaded (the Objekt tab merges a save
+        # answer into it): the tabs would vanish, /project/<nr>/ links break.
+        for field in self.DETAIL_ONLY:
+            if not hasattr(instance, field):
+                data.pop(field, None)
+        return data
 
     def update(self, instance, validated_data):
         # The project id is set when the location is created and names its

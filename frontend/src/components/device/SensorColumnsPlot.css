@@ -121,3 +121,19 @@
   display: block;
   cursor: pointer;
 }
+
+/* Several devices ("all devices" on the Analyse tab): a divider where each
+   device's columns start, its name at the top. */
+.sensor-columns-group line {
+  stroke: var(--progeo-blue);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+
+.sensor-columns-group text {
+  fill: var(--progeo-blue);
+  font-size: 10.5px;
+  font-weight: 600;
+  pointer-events: none;
+}

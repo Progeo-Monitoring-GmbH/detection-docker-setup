@@ -51,10 +51,8 @@ DEFAULT_INTERVAL_SEC = 1800
 CONFIG_FORMATS = ("lua", "m5")
 M5_DEFAULTS = {
     "sensors": 4, "interval_sec": 300, "poll_sec": 300,
-    "rs485_enabled": False, "rs485_interval_sec": 900,
+    "rs485_enabled": False,
 }
-# RS485 climate sensors (XY-MD04) send to the smartex io ingest (RS485_PATH) every 30..86400 s.
-RS485_INTERVAL_RANGE = (30, 86400)
 M5_THRESHOLD_DEFAULTS = {136: 891, 72: 450, 40: 76, 24: 8}
 # Pulldown value -> resistance in ohm (136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R).
 _PULLDOWN_OHM = {136: 100000, 72: 10000, 40: 1000, 24: 100}
@@ -187,9 +185,10 @@ def parse_settings(data) -> dict:
     if m5:
         rs485_enabled = _bool_field(data, "rs485_enabled", M5_DEFAULTS["rs485_enabled"])
         rs485_project_id = None
-        if rs485_enabled:
-            if data.get("rs485_project_id") in (None, ""):
-                raise ProvisionError("rs485_project_id is required when RS485 is enabled")
+        # Optional: without a number of their own the climate sensors report
+        # to the M5's project (rs485_path) - its location shows them in a
+        # Klima tab next to the leak data.
+        if rs485_enabled and data.get("rs485_project_id") not in (None, ""):
             rs485_project_id = _int_field(data, "rs485_project_id", None, (1, None))
         if pulldown not in _PULLDOWN_OHM:
             raise ProvisionError(f"pulldown_resistance must be one of {tuple(_PULLDOWN_OHM)} for m5")
@@ -198,8 +197,6 @@ def parse_settings(data) -> dict:
             "poll_sec": _int_field(data, "poll_sec", M5_DEFAULTS["poll_sec"], POLL_SEC_RANGE),
             "rs485_enabled": rs485_enabled,
             "rs485_project_id": rs485_project_id,
-            "rs485_interval_sec": _int_field(
-                data, "rs485_interval_sec", M5_DEFAULTS["rs485_interval_sec"], RS485_INTERVAL_RANGE),
         }
     return {
         "model": model,
@@ -385,16 +382,16 @@ def render_platform_config(plan) -> str:
         '// Jede Adresse ist ein eigenes Geraet im Backend (devEui = raw_hash, wird gross',
         '// geschrieben; Name automatisch "<projekt>_S<n>"). Antwort 200 mit',
         '// "measurement_id", 400 ohne gueltige Messwerte. Keine Alarme fuer Klimawerte.',
-        "// Eigenes Projekt verwenden: ein neues Projekt legt das Backend als smartex-io-",
-        "// Objekt an (Klima-Ansicht). Mit der Projektnummer der Leckage-Sensoren landen",
-        "// die Werte im Leckage-Objekt und werden dort nicht angezeigt.",
+        "// Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab",
+        "// des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt.",
         _define_rs485("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0,
                       "       // 1 = Werte an das Backend senden"),
         _define_rs485("PLATFORM_RS485_HOST", "PLATFORM_HOST"),
         _define_rs485("PLATFORM_RS485_PATH", c_string(rs485_path(plan)),
-                      "   // <Projekt-ID> = Projekt der Klima-Sensoren"),
+                      "   // Standard: Projekt der M5"),
         _define_rs485("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN", "               // jeder Transfer-Token mit Konto"),
-        _define_rs485("PLATFORM_RS485_INTERVAL_SEC", plan.get("rs485_interval_sec", M5_DEFAULTS["rs485_interval_sec"])),
+        # The climate sensors send at the M5's own interval - no second one.
+        _define_rs485("PLATFORM_RS485_INTERVAL_SEC", "PLATFORM_INTERVAL_SEC"),
         _define_rs485("PLATFORM_RS485_EUI_PREFIX", 'PLATFORM_DEVICE_HASH "-RS"',
                       '   // devEui z. B. "<geraet>-RS1"'),
         "",
@@ -414,8 +411,6 @@ def build_plan(location, db_name, settings) -> dict:
     url = sample_url(project_id)
     if settings.get("config_format") == "m5" and urlsplit(url).scheme != "https":
         raise ProvisionError("The M5 needs an https sample URL (DEVICE_SAMPLE_BASE_URL)")
-    if settings.get("rs485_enabled") and settings.get("rs485_project_id") == project_id:
-        raise ProvisionError("rs485_project_id must differ from the leak project")
     return {
         **settings,
         "location": location.pk,

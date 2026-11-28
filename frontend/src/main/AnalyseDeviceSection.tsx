@@ -1,4 +1,5 @@
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
+import type { SensorNaming } from '../components/device/sensorNaming';
 import { toggledSensor } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
 import type { useFullscreen } from '../components/ui/kit/Fullscreen';
@@ -53,6 +54,11 @@ type AnalyseDeviceSectionProps = {
   profileRange: ProfileRange | null;
   onProfileRangeChange: (range: ProfileRange | null) => void;
   onDeviceChange: (id: number) => void;
+  /** Every device's measurements at once (analyseDevices.ts). */
+  allDevices: boolean;
+  onAllDevicesChange: (all: boolean) => void;
+  /** All devices: the plots name a sensor by its device. */
+  sensorNaming: SensorNaming | null;
   /** A profile or threshold changed: the heatmap loads again. */
   onNoiseChanged: () => void;
 };
@@ -95,6 +101,9 @@ const AnalyseDeviceSection = ({
   profileRange,
   onProfileRangeChange,
   onDeviceChange,
+  allDevices,
+  onAllDevicesChange,
+  sensorNaming,
   onNoiseChanged,
 }: AnalyseDeviceSectionProps) => {
   const { compare, compareLabel } = comparison;
@@ -142,7 +151,8 @@ const AnalyseDeviceSection = ({
         />
       )}
 
-      {offerNoiseProfiles && (
+      {/* A Störungsprofil is one device's - not with all of them. */}
+      {offerNoiseProfiles && !allDevices && (
         <AnalyseNoisePanel
           locationId={locationId}
           projectId={projectId}
@@ -165,6 +175,10 @@ const AnalyseDeviceSection = ({
         devices={loads.devices}
         shownDevice={loads.shownDevice}
         onDeviceChange={onDeviceChange}
+        allDevices={allDevices}
+        onAllDevicesChange={onAllDevicesChange}
+        sensorNaming={sensorNaming}
+        offlineSpans={loads.offline}
         canSwitchSensors={canSwitchSensors}
         sensors={sensors}
         selectedEnabled={sensorSwitch.selectedEnabled}

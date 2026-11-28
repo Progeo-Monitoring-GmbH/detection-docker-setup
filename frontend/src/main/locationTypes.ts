@@ -1,5 +1,9 @@
 import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
 
+/** Leak devices (samples) or smartex io climate sensors - the tabs of the
+ * status and analysis pages (backend helper/device_kinds.py). */
+export type DeviceKind = 'leak' | 'climate';
+
 export type LocationDetail = {
   id?: number | null;
   project_id?: number | null;
@@ -28,6 +32,8 @@ export type LocationDetail = {
   last_measurement_at?: string | null;
   /** First (non-archived) measurement - "Online seit". Only on the detail endpoint. */
   first_measurement_at?: string | null;
+  /** Detail answer only: the device kinds present, in tab order ("leak" first). */
+  device_kinds?: DeviceKind[] | null;
   last_updated?: string | null;
   pe_geschaltet?: boolean | null;
   /** "de" / "en" ("" = German): the language of the invitations to new users. */

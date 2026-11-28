@@ -102,13 +102,18 @@ def _warm_location(user, location_id, project_id):
     # The pages ask by the id of the location the portal opened (the
     # project's main location for /project/<nr>/).
     pk = answer.data["id"]
-    measured = _get(user, f"/v1/location/{pk}/measurement-range/")
+    # A location with leak devices and climate sensors opens on its leak tab,
+    # which asks for the leak range and heatmap only (?kind=leak); the others
+    # as before, without a kind.
+    mixed = len(answer.data.get("device_kinds") or ()) > 1
+    kind = {"kind": "leak"} if mixed else {}
+    measured = _get(user, f"/v1/location/{pk}/measurement-range/" + ("?kind=leak" if mixed else ""))
     _get(user, f"/v1/alarm/clusters/?location={pk}&days={CLUSTER_DAYS}")
     _get(user, f"/v1/alarm/computed-clusters/?location={pk}&days={COMPUTED_CLUSTER_DAYS}")
     window = history_window(measured.data if measured is not None else None)
     if window is not None:
         start, end, step = window
-        _get(user, f"/v1/location/{pk}/heatmap/", {"from": _iso(start), "to": _iso(end), "step": step})
+        _get(user, f"/v1/location/{pk}/heatmap/", {"from": _iso(start), "to": _iso(end), "step": step, **kind})
     return 1
 
 

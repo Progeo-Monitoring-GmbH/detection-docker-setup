@@ -24,8 +24,11 @@ import {
   timeRangeCandidates,
 } from './timeRanges';
 import { useLocationHistory } from './useLocationHistory';
+import type { DeviceKind } from './locationTypes';
 import {
   type LiveMeasurements,
+  type LiveRevisions,
+  NO_LIVE_REVISIONS,
   useLocationLiveRevision,
 } from './useLocationLiveRevision';
 import { useMeasurementRangeState } from './useMeasurementRange';
@@ -39,13 +42,16 @@ import { useMeasurementRangeState } from './useMeasurementRange';
  * Without `canSeeMeasurements` only the toast: the socket announces the
  * location's measurements to everyone who may see the location, but its
  * measurement data would be refused (403 - an error toast per measurement).
+ *
+ * Per device kind (`kinds` followed, empty: off): the revision of a kind
+ * goes up with its new data, `onNewData(kind)` names it.
  */
 export const useStatusLiveRevision = (
   locationId: number,
-  enabled: boolean,
+  kinds: readonly DeviceKind[],
   canSeeMeasurements: boolean,
-  onNewData?: () => void,
-) => {
+  onNewData?: (kind: DeviceKind) => void,
+): LiveRevisions => {
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const onLiveMeasurements = useCallback(
@@ -56,13 +62,13 @@ export const useStatusLiveRevision = (
         : t(toast.key);
       enqueueSnackbar(message, { variant: toast.variant });
       if (canSeeMeasurements) {
-        onNewData?.();
+        onNewData?.(measurements.kind);
       }
     },
     [canSeeMeasurements, enqueueSnackbar, onNewData, t],
   );
-  const revision = useLocationLiveRevision(locationId, enabled, onLiveMeasurements);
-  return canSeeMeasurements ? revision : 0;
+  const revisions = useLocationLiveRevision(locationId, kinds, onLiveMeasurements);
+  return canSeeMeasurements ? revisions : NO_LIVE_REVISIONS;
 };
 
 /**
@@ -77,6 +83,7 @@ export const useStatusRange = ({
   isStaff,
   selectedRange,
   liveRevision,
+  kind,
 }: {
   locationId: number;
   demo: boolean;
@@ -84,6 +91,8 @@ export const useStatusRange = ({
   isStaff: boolean;
   selectedRange: StatusRange;
   liveRevision: number;
+  /** Only the leak devices of a location with climate sensors too. */
+  kind?: DeviceKind;
 }) => {
   const {
     range: measurementRange,
@@ -91,7 +100,7 @@ export const useStatusRange = ({
     // The history follows once the range of the new data is there (its
     // window ends at the newest measurement).
     revision: rangeRevision,
-  } = useMeasurementRangeState(locationId, demo, !isSmartexIo, liveRevision);
+  } = useMeasurementRangeState(locationId, demo, !isSmartexIo, liveRevision, kind);
   const rangeOptions = useMemo(
     () =>
       availableTimeRanges(
@@ -128,6 +137,8 @@ type HistoryArgs = {
   pickedStep: number | null;
   rangeRevision: number;
   liveRevision: number;
+  /** Only the leak devices of a location with climate sensors too. */
+  kind?: DeviceKind;
 };
 
 /**
@@ -145,6 +156,7 @@ const useHistorySources = (
     heatProfile,
     rangeRevision,
     liveRevision,
+    kind,
   }: HistoryArgs,
   historySpec: HeatmapWindow | null,
 ) => {
@@ -157,6 +169,7 @@ const useHistorySources = (
     periodSpec,
     'diff',
     rangeRevision,
+    kind,
   );
   const periodProfile = useLocationHistory(
     locationId,
@@ -164,6 +177,7 @@ const useHistorySources = (
     withProfile ? periodSpec : null,
     heatProfile,
     rangeRevision,
+    kind,
   );
   const latest = useLocationHistory(
     locationId,
@@ -171,6 +185,7 @@ const useHistorySources = (
     latestSpec,
     'diff',
     liveRevision,
+    kind,
   );
   const latestProfile = useLocationHistory(
     locationId,
@@ -178,6 +193,7 @@ const useHistorySources = (
     withProfile ? latestSpec : null,
     heatProfile,
     liveRevision,
+    kind,
   );
   const profile = isLatest ? latestProfile : periodProfile;
   return {

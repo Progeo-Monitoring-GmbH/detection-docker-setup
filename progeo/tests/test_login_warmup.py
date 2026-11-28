@@ -144,3 +144,35 @@ def test_a_day_step_starts_at_midnight_in_berlin():
 def test_no_window_without_measurements():
     assert login_warmup.history_window({"first": None, "last": None}) is None
     assert login_warmup.history_window(None) is None
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_warmup_asks_for_the_leak_range_of_a_mixed_location(warmup, customer, monkeypatch):
+    """A location with leak devices and climate sensors: the status page asks
+    for the leak tab's range and heatmap (?kind=leak) - a pure leak location
+    as before, without it."""
+    from progeo.v1.models import ProgeoDevice
+
+    user, location = customer
+    asked = []
+    get = login_warmup._get
+
+    def recording(user, path, params=None):
+        asked.append((path, dict(params or {})))
+        return get(user, path, params)
+
+    monkeypatch.setattr(login_warmup, "_get", recording)
+    login_warmup.warm(user.pk)
+    plain = [entry for entry in asked if "measurement-range" in entry[0] or "heatmap" in entry[0]]
+    assert plain and all("kind" not in path and "kind" not in params for path, params in plain)
+
+    f.make_device(location, type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    cache.clear()
+    asked.clear()
+    login_warmup.warm(user.pk)
+    mixed = [entry for entry in asked if "measurement-range" in entry[0] or "heatmap" in entry[0]]
+    assert [path for path, _ in mixed] == [
+        f"/v1/location/{location.pk}/measurement-range/?kind=leak",
+        f"/v1/location/{location.pk}/heatmap/",
+    ]
+    assert mixed[1][1]["kind"] == "leak"

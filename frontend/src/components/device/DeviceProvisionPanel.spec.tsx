@@ -21,7 +21,7 @@ vi.mock('../../axiosConfig', () => ({
             interval_sec: 1800,
             pulldown_resistance: 136,
             firmware: null,
-            m5: { sensors: 4, interval_sec: 300, poll_sec: 300, rs485_enabled: false, rs485_interval_sec: 900, threshold_mv: { '136': 891, '72': 450, '40': 76, '24': 8 } },
+            m5: { sensors: 4, interval_sec: 300, poll_sec: 300, rs485_enabled: false, threshold_mv: { '136': 891, '72': 450, '40': 76, '24': 8 } },
           },
           m5_model: 'M5 AIN4',
           firmware_bundles: [],
@@ -253,7 +253,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
 
     const selectValue = choose;
 
-    it('shows the RS485 card for M5 only, the project field once enabled, and sends the three values', () => {
+    it('shows the RS485 card for M5 only, the project field once enabled, and sends both values', () => {
       expect(card('rs485')).toBeNull();
       pickM5();
 
@@ -263,22 +263,40 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       click(one('device-provision-rs485-enabled'));
       expect(one('device-provision-rs485-project')).not.toBeNull();
       type('device-provision-rs485-project', '2001');
-      type('device-provision-rs485-interval', '600');
+      // No interval of its own: the climate sensors send at the M5's.
+      expect(one('device-provision-rs485-interval')).toBeNull();
       save();
       click(one('device-provision-generate'));
 
       expect(api.previews[0]).toMatchObject({
         rs485_enabled: true,
         rs485_project_id: 2001,
-        rs485_interval_sec: 600,
       });
+      expect(api.previews[0]).not.toHaveProperty('rs485_interval_sec');
     });
 
-    it('sends RS485 disabled with the default interval and no project by default', () => {
+    it('RS485 without a project number: the M5 project, explained under the field', () => {
+      pickM5();
+      click(one('device-provision-sections-edit', 'rs485'));
+      click(one('device-provision-rs485-enabled'));
+      expect(document.body.textContent).toContain('provision_rs485_project_hint');
+      type('device-provision-rs485-project', '0');
+      expect((one('device-provision-sections-dialog-confirm') as HTMLButtonElement).disabled).toBe(true);
+      type('device-provision-rs485-project', '');
+      save();
+      // The card names where the values go instead of "–".
+      expect(card('rs485')?.textContent).toContain('provision_rs485_project_default');
+      click(one('device-provision-generate'));
+
+      expect(api.previews[0]).toMatchObject({ rs485_enabled: true });
+      expect(api.previews[0]).not.toHaveProperty('rs485_project_id');
+    });
+
+    it('sends RS485 disabled and no project by default', () => {
       pickM5();
       click(one('device-provision-generate'));
 
-      expect(api.previews[0]).toMatchObject({ rs485_enabled: false, rs485_interval_sec: 900 });
+      expect(api.previews[0]).toMatchObject({ rs485_enabled: false });
       expect(api.previews[0]).not.toHaveProperty('rs485_project_id');
     });
 

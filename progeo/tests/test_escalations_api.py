@@ -181,6 +181,7 @@ def test_an_escalation_without_a_view(api_client, world):
 @pytest.mark.parametrize("view_state", [
     "roof", {"view": "map"}, {"range": "5d"}, {"step": -1}, {"step": True}, {"at": "yesterday"},
     {"sensor": "3"}, {"sensors": ["sensor-3; drop table"]}, {"sensors": "sensor-3"}, {"profile": "max"},
+    {"tab": "wind"},
 ])
 def test_an_invalid_view_is_refused(api_client, world, view_state):
     response = api_client.post(URL, {"location": world["location"].pk, "title": "Leckage",
@@ -189,3 +190,12 @@ def test_an_invalid_view_is_refused(api_client, world, view_state):
     assert response.status_code == 400
     assert "view_state" in response.json()["reason"]
     assert not ProgeoEscalation.objects.using(f.DB).exists()
+
+
+@pytest.mark.parametrize("tab, kept", [("climate", {"tab": "climate"}), ("leak", None)])
+def test_an_escalation_keeps_the_climate_tab(api_client, world, tab, kept):
+    """A location with leak devices and climate sensors: the quick link opens
+    the tab that was shown - the leak tab is the default, not stored."""
+    escalation = _open(api_client, world["location"], view_state={"range": "7d", "tab": tab})
+
+    assert escalation["view_state"] == {"range": "7d", **(kept or {})}

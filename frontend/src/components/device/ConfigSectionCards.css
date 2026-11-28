@@ -167,3 +167,10 @@
   color: var(--bs-secondary-color);
   font-size: 11.5px;
 }
+
+/* An explanation under a dialog field (SectionField.hint). */
+.form-text.config-section-hint {
+  display: block;
+  margin-top: 2px;
+  line-height: 1.3;
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import {
   type HeatProfile,
@@ -15,6 +16,7 @@ import {
   cutMeasurements,
   type MeasurementsLoad,
 } from './analyseCache';
+import { combinedLoad, type DeviceSpan } from './analyseDevices';
 import {
   deviceQuery,
   heatmapComplete,
@@ -146,14 +148,32 @@ type MeasurementsOptions = {
   resolution: number;
   /** The picked device; null: the backend's default (measured last). */
   deviceId: number | null;
+  /** Every device of the location at once (analyseDevices.ts) - once
+   * there is more than one; the picked device is kept for later. */
+  allDevices: boolean;
   /** Staff: `&raw=1` - cleaned here (noiseProfiles.ts). */
   rawQuery: string;
 };
 
+type ShownLoad = MeasurementsLoad & {
+  /** All devices: where each one's pairs sit; null: one device. */
+  layout: DeviceSpan[] | null;
+};
+
+const EMPTY_LOAD: ShownLoad = {
+  rows: [],
+  total: 0,
+  devices: [],
+  device: null,
+  offline: [],
+  layout: null,
+};
+
 /**
  * The measurements of one device over the period, with the location's
- * devices and the one shown - kept by period like the heatmap. Switching
- * the device reloads only these.
+ * devices and the one shown - kept by period and device like the heatmap.
+ * Switching the device reloads only these. `allDevices`: every device's,
+ * one request each (from the same cache), as one set of rows.
  */
 export const useAnalyseMeasurements = ({
   locationId,
@@ -161,78 +181,131 @@ export const useAnalyseMeasurements = ({
   days,
   resolution,
   deviceId,
+  allDevices,
   rawQuery,
 }: MeasurementsOptions) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const [load, setLoad] = useState<MeasurementsLoad>({
-    rows: [],
-    total: 0,
-    devices: [],
-    device: null,
-  });
+  const [load, setLoad] = useState<ShownLoad>(EMPTY_LOAD);
   const [measurementsLoading, setMeasurementsLoading] = useState(true);
   const request = useRef(0);
   const cache = useRef<LoadCache<MeasurementsLoad>>(new Map());
+  // The devices to combine - known from the load before (the button is
+  // offered only then). A key, so a new load of them doesn't load again.
+  const devicesKey = load.devices.map((device) => device.id).join(',');
+  const combineKey = allDevices && load.devices.length > 1 ? devicesKey : '';
+  const devicesRef = useLatestRef(load.devices);
+
+  // One device's load: from the cache (at once), else requested.
+  const deviceLoad = useCallback(
+    (
+      device: number | null,
+      query: string,
+      done: (load: MeasurementsLoad) => void,
+      failed: (error: unknown) => void,
+    ) => {
+      const cacheKey = `${locationId}:${device ?? 'default'}:${query}`;
+      const cached = recallLoad(
+        cache.current,
+        cacheKey,
+        days,
+        resolution,
+        cutMeasurements,
+      );
+      if (cached) {
+        done(cached);
+        return;
+      }
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/location/${locationId}/measurements/?days=${days}&limit=${resolution}${deviceQuery(device)}${query}`,
+        (response) => {
+          const loaded = measurementsLoadOf(response?.data);
+          rememberLoad(cache.current, cacheKey, {
+            days,
+            limit: resolution,
+            complete: loaded.total <= loaded.rows.length,
+            value: loaded,
+          });
+          done(loaded);
+        },
+        failed,
+      );
+    },
+    [auth, days, locationId, resolution],
+  );
 
   const loadMeasurements = useCallback(() => {
     if (!enabled) {
       return;
     }
-    const show = (next: MeasurementsLoad) => {
-      setLoad(next);
-      setMeasurementsLoading(false);
-    };
-    const cacheKey = `${locationId}:${deviceId ?? 'default'}`;
-    const cached = recallLoad(
-      cache.current,
-      cacheKey,
-      days,
-      resolution,
-      cutMeasurements,
-    );
     const current = ++request.current;
-    if (cached) {
-      show(cached);
-      return;
-    }
-    setMeasurementsLoading(true);
     const isCurrent = () => current === request.current;
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/?days=${days}&limit=${resolution}${deviceQuery(deviceId)}${rawQuery}`,
-      (response) => {
-        const loaded = measurementsLoadOf(response?.data);
-        rememberLoad(cache.current, cacheKey, {
-          days,
-          limit: resolution,
-          complete: loaded.total <= loaded.rows.length,
-          value: loaded,
-        });
-        if (isCurrent()) {
-          show(loaded);
-        }
-      },
-      (error) => {
-        if (isCurrent()) {
-          showRequestError(
-            enqueueSnackbar,
-            'Could not load measurements',
-            error,
-          );
-          setMeasurementsLoading(false);
-        }
-      },
-    );
+    let settled = false;
+    const failed = (error: unknown) => {
+      if (isCurrent() && !settled) {
+        settled = true;
+        showRequestError(enqueueSnackbar, 'Could not load measurements', error);
+        setMeasurementsLoading(false);
+      }
+    };
+    const show = (next: ShownLoad) => {
+      if (isCurrent()) {
+        settled = true;
+        setLoad(next);
+        setMeasurementsLoading(false);
+      }
+    };
+    if (!combineKey) {
+      deviceLoad(
+        deviceId,
+        rawQuery,
+        (loaded) => show({ ...loaded, layout: null }),
+        failed,
+      );
+    } else {
+      // Every device's, cleaned by the backend (its active profiles) - a
+      // staff's draft or tried-out profile is one device's.
+      const devices = devicesRef.current;
+      const loads: (MeasurementsLoad | null)[] = devices.map(() => null);
+      let missing = devices.length;
+      devices.forEach((device, index) =>
+        deviceLoad(
+          device.id,
+          '',
+          (loaded) => {
+            loads[index] = loaded;
+            missing -= 1;
+            if (missing > 0) {
+              return;
+            }
+            const combined = combinedLoad(
+              devices.map((entry, slot) => ({
+                device: entry.id,
+                name: entry.display_name,
+                rows: loads[slot]?.rows ?? [],
+                total: loads[slot]?.total ?? 0,
+                offline: loads[slot]?.offline ?? [],
+              })),
+            );
+            show({ ...combined, devices, device: null });
+          },
+          failed,
+        ),
+      );
+    }
+    // Still waiting for a response (not all from the cache).
+    if (!settled && isCurrent()) {
+      setMeasurementsLoading(true);
+    }
   }, [
-    auth,
-    days,
-    deviceId,
     enabled,
     enqueueSnackbar,
-    locationId,
+    combineKey,
+    devicesRef,
+    deviceLoad,
+    deviceId,
     rawQuery,
-    resolution,
   ]);
 
   useEffect(() => {
@@ -249,6 +322,10 @@ export const useAnalyseMeasurements = ({
     shownDeviceName:
       load.devices.find((device) => device.id === load.device)?.display_name ??
       null,
+    /** All devices: where each one's pairs sit (analyseDevices.ts). */
+    layout: load.layout,
+    /** Spans without a measurement for over 24 h (all devices: of any). */
+    offline: load.offline,
     measurementsLoading,
     loadMeasurements,
     clearMeasurementsCache,

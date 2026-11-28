@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
-import type { LocationDetail } from './locationTypes';
-import { isSmartexIoProject } from './projectType';
+import type { DeviceKind, LocationDetail } from './locationTypes';
+import { deviceKindsOf, isSmartexIoProject } from './projectType';
 import { staffFlags } from './access';
 import {
   availableTimeRanges,
@@ -22,7 +22,8 @@ const DEFAULT_RESOLUTION = 300;
  * replace the heatmap and samples chart. Staff (and superusers): battery
  * charts and the Störungsprofile - their measurements are loaded raw
  * (?raw=1) and cleaned on the page; everyone else gets them cleaned by the
- * backend. Switching sensors off / on needs module_locations_edit.
+ * backend. Switching sensors off / on needs module_locations_edit. `kinds`:
+ * the device kinds of the location - with both, the page shows tabs.
  */
 export const useAnalyseAccess = (location: LocationDetail | null) => {
   const auth = useAuth();
@@ -30,9 +31,11 @@ export const useAnalyseAccess = (location: LocationDetail | null) => {
   const isSmartexIo = isSmartexIoProject(location?.project_type);
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   const offerNoiseProfiles = isStaff && !isSmartexIo;
+  const kinds = useMemo(() => deviceKindsOf(location), [location]);
   return {
     isSmartexIo,
     isStaff,
+    kinds,
     canSwitchSensors: hasPermission('module_locations_edit') && !isSmartexIo,
     offerNoiseProfiles,
     rawQuery: offerNoiseProfiles ? '&raw=1' : '',
@@ -45,9 +48,15 @@ export const useAnalyseAccess = (location: LocationDetail | null) => {
  * offered one. With it: how many measurements a period is loaded with, over
  * how many neighbouring ones every value is averaged (1: not - less noise)
  * and, for staff, the heatmap's value per sensor (|WP - EP|, WP, EP, WP + EP).
+ * `kind`: the tab shown in a location with both kinds - the periods follow
+ * its devices' data (the leak tab offers none only climate data reaches).
+ * Both kinds' ranges load at once: a switch must not reload the period.
  */
-export const useAnalysePeriod = (locationId: number, isStaff: boolean) => {
-  const measurementRange = useMeasurementRange(locationId, false);
+export const useAnalysePeriod = (locationId: number, isStaff: boolean, kind?: DeviceKind) => {
+  const mixed = kind !== undefined;
+  const leakRange = useMeasurementRange(locationId, false, true, mixed ? 'leak' : undefined);
+  const climateRange = useMeasurementRange(locationId, false, mixed, 'climate');
+  const measurementRange = kind === 'climate' ? climateRange : leakRange;
   const rangeOptions = useMemo(
     () =>
       availableTimeRanges(

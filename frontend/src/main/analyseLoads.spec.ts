@@ -28,12 +28,19 @@ describe('measurementsLoadOf', () => {
         total: '12',
         devices: [{ id: 3, display_name: 'A' }],
         device: 3,
+        offline: [{ from: '2026-11-02T00:00:00Z', to: '2026-11-03T12:00:00Z' }],
       }),
     ).toEqual({
       rows,
       total: 12,
       devices: [{ id: 3, display_name: 'A' }],
       device: 3,
+      offline: [
+        {
+          from: Date.parse('2026-11-02T00:00:00Z'),
+          to: Date.parse('2026-11-03T12:00:00Z'),
+        },
+      ],
     });
   });
 
@@ -43,12 +50,14 @@ describe('measurementsLoadOf', () => {
       total: 1,
       devices: [],
       device: null,
+      offline: [],
     });
     expect(measurementsLoadOf(undefined)).toEqual({
       rows: [],
       total: 0,
       devices: [],
       device: null,
+      offline: [],
     });
     expect(measurementRowsOf(null)).toEqual([]);
   });

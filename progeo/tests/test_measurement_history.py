@@ -248,3 +248,69 @@ def test_measurement_range_has_no_next_measurement_without_measurements(api_clie
     body = api_client.get(f"/v1/location/{location.id}/measurement-range/").json()
 
     assert (body["last"], body["next"]) == (None, None)
+
+
+# ---------------------------------------------------------------------------- ?kind= (leak / climate tabs)
+
+@pytest.fixture
+def mixed_location(api_client):
+    """An M5 with leak samples (newest 2 h ago, hourly) and an RS485 climate
+    sensor on it (newest 5 min ago, every 10 min)."""
+    account = f.make_account()
+    location = f.make_location(account, project_id=4347)
+    now = timezone.now().replace(microsecond=0)
+    m5 = f.make_device(location, raw_hash=f.unique("4347-01"), data_interval=3600, first_sensor_order=1)
+    climate = f.make_device(location, raw_hash=f.unique("4347-01-RS1"), data_interval=600,
+                            type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    f.make_measurement(m5, pairs=[1, 2], fetched_at=now - timedelta(hours=3))
+    f.make_measurement(m5, pairs=[3, 4], fetched_at=now - timedelta(hours=2))
+    f.make_measurement(climate, humidity=50.0, temperature=20.0, fetched_at=now - timedelta(minutes=5))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+    return location, now
+
+
+def test_measurement_range_by_kind(api_client, mixed_location):
+    location, now = mixed_location
+    url = f"/v1/location/{location.id}/measurement-range/"
+
+    leak = api_client.get(url + "?kind=leak").json()
+    climate = api_client.get(url + "?kind=climate").json()
+    everything = api_client.get(url).json()
+
+    assert datetime.datetime.fromisoformat(leak["last"]) == now - timedelta(hours=2)
+    assert leak["count"] == 2
+    # The climate sensor's 10-min interval does not move the leak forecast.
+    assert datetime.datetime.fromisoformat(leak["next"]) == now - timedelta(hours=1)
+    assert datetime.datetime.fromisoformat(climate["last"]) == now - timedelta(minutes=5)
+    assert climate["count"] == 1
+    assert everything["count"] == 3
+    assert datetime.datetime.fromisoformat(everything["last"]) == now - timedelta(minutes=5)
+
+
+def test_measurement_range_rejects_unknown_kind(api_client, mixed_location):
+    location, _ = mixed_location
+    assert api_client.get(f"/v1/location/{location.id}/measurement-range/?kind=wind").status_code == 400
+
+
+@pytest.mark.parametrize("query", ["", "days=7", "latest=1"])
+def test_heatmap_leaves_out_climate_devices(api_client, mixed_location, query):
+    location, now = mixed_location
+
+    body = api_client.get(f"/v1/location/{location.id}/heatmap/?kind=leak&{query}").json()
+
+    climate_ts = (now - timedelta(minutes=5)).timestamp()
+    assert body["timestamps"], body
+    assert all(abs(ts - climate_ts) > 1 for ts in body["timestamps"])
+    assert api_client.get(f"/v1/location/{location.id}/heatmap/?kind=wind&{query}").status_code == 400
+
+
+def test_analyse_measurements_list_only_leak_devices(api_client, mixed_location):
+    location, _ = mixed_location
+
+    body = api_client.get(f"/v1/location/{location.id}/measurements/?days=7").json()
+
+    m5 = ProgeoDevice.objects.using(f.DB).get(location=location, type__isnull=True)
+    assert [device["id"] for device in body["devices"]] == [m5.pk]
+    # The climate sensor measured last - the default is still the M5.
+    assert body["device"] == m5.pk
+    assert body["count"] == 2

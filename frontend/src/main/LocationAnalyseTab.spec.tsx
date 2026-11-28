@@ -54,8 +54,12 @@ vi.mock('../../hooks/usePermissions', () => ({
 vi.mock('../axiosConfig', () => ({
   default: { perform_get: perform.get, perform_post: perform.post },
 }));
+const rangeCalls = vi.hoisted(() => [] as unknown[][]);
 vi.mock('./useMeasurementRange', () => ({
-  default: () => measurementRange,
+  default: (...args: unknown[]) => {
+    rangeCalls.push(args);
+    return measurementRange;
+  },
 }));
 // Plotly needs a canvas - the stubbed parts draw nothing.
 vi.mock('react-plotly.js', () => ({ default: () => null }));
@@ -67,6 +71,10 @@ vi.mock('../components/device/useLageplanImage', () => ({
 const stub = (name: string) => ({
   default: (componentProps: Record<string, unknown>) => {
     props[name] = componentProps;
+    // The frame control of each tab apart (a location with both kinds).
+    if ('isSmartexIo' in componentProps) {
+      props[`${name}:${componentProps.isSmartexIo ? 'climate' : 'leak'}`] = componentProps;
+    }
     return <div data-testid={`stub-${name}`} />;
   },
 });
@@ -181,6 +189,84 @@ describe('LocationAnalyseTab', () => {
     expect(props.compare).toBeUndefined();
   });
 
+  it('shows all devices at once - and one again when picked', () => {
+    user.auth = { user: { is_staff: true } };
+    const devices = [
+      { id: 3, display_name: 'Box 3' },
+      { id: 4, display_name: 'Box 4' },
+    ];
+    const rowsOf: Record<string, unknown[]> = {
+      // Box 3: two pairs, box 4 one - measured a minute later.
+      '3': [{ id: 31, last_fetched: '2026-11-20T10:00:00Z', samples: [0, 1, 0, 2] }],
+      '4': [{ id: 41, last_fetched: '2026-11-20T10:01:00Z', samples: [0, 5] }],
+    };
+    perform.get.mockImplementation(
+      (_auth: unknown, url: string, done: (response: unknown) => void) => {
+        if (url.includes('/heatmap/')) {
+          done({
+            data: {
+              ...HEATMAP,
+              sensor_points: [
+                ...HEATMAP.sensor_points,
+                { pos: 9, x: 0, y: 0, device: 4, pair: 1 },
+              ],
+            },
+          });
+        } else if (url.includes('/measurements/')) {
+          const device = /&device=(\d+)/.exec(url)?.[1] ?? '3';
+          done({
+            data: {
+              measurements: rowsOf[device],
+              total: 1,
+              devices,
+              device: Number(device),
+              offline:
+                device === '4'
+                  ? [{ from: '2026-11-18T00:00:00Z', to: '2026-11-19T12:00:00Z' }]
+                  : [],
+            },
+          });
+        } else if (url.includes('/noise-profiles/')) {
+          done({ data: { profiles: [] } });
+        }
+        return Promise.resolve();
+      },
+    );
+    render();
+    expect(props.measurements.allDevices).toBe(false);
+    expect(props.noise).toBeDefined();
+
+    act(() =>
+      (props.measurements.onAllDevicesChange as (all: boolean) => void)(true),
+    );
+
+    // One request per device - cleaned by the backend, not raw.
+    expect(urls()).toContain('/v1/location/5/measurements/?days=7&limit=300&device=3');
+    expect(urls()).toContain('/v1/location/5/measurements/?days=7&limit=300&device=4');
+    expect(props.measurements.allDevices).toBe(true);
+    expect(props.measurements.shownDevice).toBeNull();
+    const rows = props.measurements.measurements as { id: number; pair_abs_values: number[] }[];
+    expect(rows.map((row) => [row.id, row.pair_abs_values])).toEqual([[41, [1, 2, 5]]]);
+    const naming = props.measurements.sensorNaming as { name: (sensor: number) => string };
+    expect(naming.name(2)).toBe('Box 4 · measurement_compare_pair_label 1');
+    expect(props.frames.offlineSpans).toEqual([
+      { from: Date.parse('2026-11-18T00:00:00Z'), to: Date.parse('2026-11-19T12:00:00Z') },
+    ]);
+    // Profiles and the history are one device's.
+    expect(container.querySelector('[data-testid="stub-noise"]')).toBeNull();
+    expect(props.measurements.offerSensorHistory).toBe(false);
+    // Box 4's sensor on the plan: its pair in the combined rows, no switch.
+    act(() => (props.heatmap.onSensorClick as (pos: number) => void)(9));
+    expect(props.measurements.sensors).toEqual([2]);
+    expect(props.heatmap.selectedPositions).toEqual([9]);
+
+    act(() => (props.measurements.onDeviceChange as (id: number) => void)(4));
+    expect(props.measurements.allDevices).toBe(false);
+    expect(props.measurements.shownDevice).toBe(4);
+    expect(props.measurements.sensorNaming).toBeNull();
+    expect(props.measurements.sensors).toEqual([]);
+  });
+
   it('selects sensors clicked on the plan for the second plot', () => {
     render();
     act(() => (props.heatmap.onSensorClick as (pos: number) => void)(2));
@@ -247,5 +333,94 @@ describe('LocationAnalyseTab', () => {
     );
     expect(props.frames.frameSeconds).toEqual([5, 6]);
     expect(props.climatePanels.frameTime).toBe(6000);
+  });
+});
+
+describe('LocationAnalyseTab - leak and climate in one object', () => {
+  const mixedLocation = {
+    project_id: 7003,
+    project_type: 1,
+    alarm_threshold: 30,
+    lageplans: [{ id: 11, name: 'EG' }],
+    device_kinds: ['leak', 'climate'],
+  };
+  const inPanel = (kind: string, stubName: string) =>
+    container.querySelector(
+      `[data-testid="analyse-tabs-panel-${kind}"] [data-testid="stub-${stubName}"]`,
+    );
+
+  it('shows the tabs - the leak controls only on the leak tab, no climate heatmap', () => {
+    outlet.value = { location: mixedLocation, locationId: 5 };
+    render();
+
+    expect(container.querySelector('[data-testid="analyse-tabs-tab-leak"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analyse-tabs-tab-climate"]')).not.toBeNull();
+    expect(inPanel('leak', 'actions')).not.toBeNull();
+    expect(inPanel('leak', 'heatmap')).not.toBeNull();
+    // The climate tab preloaded (hidden): its charts, no heatmap, no exports.
+    expect(inPanel('climate', 'climatePanels')).not.toBeNull();
+    expect(inPanel('climate', 'actions')).toBeNull();
+    expect(props.climateHeatmap).toBeUndefined();
+    // The leak heatmap of the leak devices only.
+    expect(urls()).toContain('/v1/location/5/heatmap/?days=7&limit=300&lageplan=11&kind=leak');
+  });
+
+  it('a new period: the hidden climate tab loads it after the leak tab', () => {
+    outlet.value = { location: mixedLocation, locationId: 5 };
+    const held: (() => void)[] = [];
+    let hold = false;
+    perform.get.mockImplementation(
+      (_auth: unknown, url: string, done: (response: unknown) => void) => {
+        const answer = () => {
+          if (url.includes('/heatmap/')) {
+            done({ data: HEATMAP });
+          } else if (url.includes('/measurements/')) {
+            done({ data: MEASUREMENTS });
+          }
+        };
+        if (hold) {
+          held.push(answer);
+        } else {
+          answer();
+        }
+        return Promise.resolve();
+      },
+    );
+    render();
+    expect(props.climatePanels.range).toBe('7d');
+
+    hold = true;
+    act(() => (props['frames:leak'].onRangeChange as (range: string) => void)('30d'));
+    expect(urls().some((url) => url.includes('heatmap/?days=30'))).toBe(true);
+    expect(props.climatePanels.range).toBe('7d');
+
+    act(() => held.splice(0).forEach((answer) => answer()));
+    expect(props.climatePanels.range).toBe('30d');
+  });
+
+  it('offers the periods the data of the shown tab reaches into', () => {
+    outlet.value = { location: mixedLocation, locationId: 5 };
+    // useMeasurementRange(locationId, demo, enabled, kind) - asked for:
+    const asked = () =>
+      rangeCalls.filter((call) => call[2] === true).map((call) => call[3] ?? 'all');
+    rangeCalls.length = 0;
+    render();
+    // Both kinds at once - a switch picks the other one, nothing reloads.
+    expect(new Set(asked())).toEqual(new Set(['leak', 'climate']));
+
+    outlet.value = { location: { ...mixedLocation, device_kinds: ['leak'] }, locationId: 5 };
+    rangeCalls.length = 0;
+    render();
+    expect(new Set(asked())).toEqual(new Set(['all']));
+  });
+
+  it('a pure leak object shows no tabs', () => {
+    outlet.value = {
+      location: { ...mixedLocation, device_kinds: ['leak'] },
+      locationId: 5,
+    };
+    render();
+    expect(container.querySelector('[data-testid="analyse-tabs-tab-leak"]')).toBeNull();
+    expect(urls().some((url) => url.includes('kind='))).toBe(false);
   });
 });

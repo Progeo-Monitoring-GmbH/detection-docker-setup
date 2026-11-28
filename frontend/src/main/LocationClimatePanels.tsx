@@ -25,6 +25,7 @@ import {
   type TimeRange,
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
+import type { DeviceKind } from './locationTypes';
 import { staffFlags } from './access';
 import { childTestId } from '../testIds';
 import { readJsonFile } from '../readJsonFile';
@@ -51,6 +52,15 @@ type LocationClimatePanelsProps = {
   onFramesChange?: (timestamps: number[]) => void;
   /** data-testid of the panels (default "climate-panels"); their parts derive from it. */
   testId?: string;
+  /** New climate data (a live update in a tab of a mixed location): reload
+   * quietly in the picked range - the charts stay until it is there. */
+  revision?: number;
+  /** Called whenever an answer arrived (also a refusal or an error) - the
+   * other tab of the page loads then (DeviceKindTabs). */
+  onReady?: () => void;
+  /** The device kind of these panels in a location with leak devices too:
+   * the offered ranges follow the climate sensors only. */
+  kind?: DeviceKind;
 };
 
 /**
@@ -68,6 +78,9 @@ const LocationClimatePanels = ({
   frameTime = null,
   onFramesChange,
   testId = 'climate-panels',
+  revision,
+  onReady,
+  kind,
 }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -77,7 +90,7 @@ const LocationClimatePanels = ({
 
   // Only ranges the data reaches into; an unavailable selection falls back
   // to the longest offered range.
-  const measurementRange = useMeasurementRange(locationId, demo, controlledRange == null);
+  const measurementRange = useMeasurementRange(locationId, demo, controlledRange == null, kind);
   const availableRanges = useMemo(
     () => availableTimeRanges(measurementRange, timeRangeCandidates({ long: true, staff: isStaff })),
     [isStaff, measurementRange],
@@ -95,6 +108,7 @@ const LocationClimatePanels = ({
     `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${TIME_RANGE_DAYS[range]}`,
     {
       auth,
+      revision,
       transform: (body) => (body || null) as ClimateResponse | null,
       onError: (error) => {
         if (error?.response?.status !== 403) {
@@ -104,6 +118,11 @@ const LocationClimatePanels = ({
     },
   );
   const denied = climateError?.response?.status === 403;
+  useEffect(() => {
+    if (!loading) {
+      onReady?.();
+    }
+  }, [loading, onReady]);
   // A reload after a change (clean, import, rename).
   const loadClimate = () => void reloadClimate();
   const [ownHoveredDevice, setOwnHoveredDevice] = useState<number | null>(null);
@@ -134,6 +153,10 @@ const LocationClimatePanels = ({
   const bucket = bucketLabel(bucketSeconds);
 
   const isSuperuser = !demo && flags.isSuperuser;
+  // Export, import and "delete all" act on every measurement of the
+  // location - in the Klima tab of a leak object (`kind` set) that is the
+  // leak history too: only in a pure climate object.
+  const offerMeasurementTools = isSuperuser && kind == null;
   const [busy, setBusy] = useState(false);
   // The confirmations: deleting every measurement, importing a read file.
   const [cleanOpen, setCleanOpen] = useState(false);
@@ -276,38 +299,42 @@ const LocationClimatePanels = ({
                 disabled={busy}
                 onClick={() => setRenameOpen(true)}
               />
-              <PillButton
-                testId={childTestId(testId, 'export')}
-                variant="ghost"
-                label={t('measurements_export')}
-                disabled={busy}
-                onClick={exportMeasurements}
-              />
-              <PillButton
-                testId={childTestId(testId, 'import')}
-                variant="ghost"
-                label={t('measurements_import')}
-                disabled={busy}
-                onClick={() => importInputRef.current?.click()}
-              />
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json"
-                className="climate-file-input"
-                data-testid={childTestId(testId, 'import-file')}
-                onChange={(event) => {
-                  readImport(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-              <PillButton
-                testId={childTestId(testId, 'clean')}
-                variant="ghost"
-                label={t('measurements_clean')}
-                disabled={busy}
-                onClick={() => setCleanOpen(true)}
-              />
+              {offerMeasurementTools && (
+                <>
+                  <PillButton
+                    testId={childTestId(testId, 'export')}
+                    variant="ghost"
+                    label={t('measurements_export')}
+                    disabled={busy}
+                    onClick={exportMeasurements}
+                  />
+                  <PillButton
+                    testId={childTestId(testId, 'import')}
+                    variant="ghost"
+                    label={t('measurements_import')}
+                    disabled={busy}
+                    onClick={() => importInputRef.current?.click()}
+                  />
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json"
+                    className="climate-file-input"
+                    data-testid={childTestId(testId, 'import-file')}
+                    onChange={(event) => {
+                      readImport(event.target.files);
+                      event.target.value = '';
+                    }}
+                  />
+                  <PillButton
+                    testId={childTestId(testId, 'clean')}
+                    variant="ghost"
+                    label={t('measurements_clean')}
+                    disabled={busy}
+                    onClick={() => setCleanOpen(true)}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>

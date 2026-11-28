@@ -3,6 +3,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
@@ -45,11 +46,16 @@ type FrameSliderProps = {
   onSelectionChange?: (selection: TimeSpan) => void;
   /** The selection band's tooltip, e.g. what it is for. */
   selectionLabel?: string;
+  /** Spans (ms) without data for long (a device offline over 24 h) - gray
+   * behind the track, named in the top row by `offlineLabel`. */
+  offlineSpans?: readonly TimeSpan[];
+  offlineLabel?: string;
   /** data-testid of the slider; its parts are "<testId>-play", "-input", "-time", "-selection", ... */
   testId?: string;
 };
 
 type TimeSpan = { from: number; to: number };
+const NO_SPANS: readonly TimeSpan[] = [];
 
 /** An alarm's period (ms); `to` is now while it is still active. */
 export type AlarmSpan = {
@@ -210,12 +216,16 @@ const useFramePlayback = ({
   onChange,
   canPlay,
   playKey,
+  rootRef,
 }: {
   count: number;
   index: number;
   onChange: (index: number) => void;
   canPlay: boolean;
   playKey: boolean;
+  /** The slider - inside a hidden part of the page (a preloaded tab) the
+   * space bar is not its. */
+  rootRef: RefObject<HTMLElement | null>;
 }) => {
   const [playing, setPlaying] = useState(false);
   // Stops with the export (disabled) or when there's nothing to play - while
@@ -261,7 +271,7 @@ const useFramePlayback = ({
       return undefined;
     }
     const onKey = (event: KeyboardEvent) => {
-      if (isPlayToggleKey(event)) {
+      if (isPlayToggleKey(event) && !rootRef.current?.closest('[hidden]')) {
         event.preventDefault(); // no page scroll
         toggle();
         announceKey('play');
@@ -269,7 +279,7 @@ const useFramePlayback = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canPlay, playKey, toggle]);
+  }, [canPlay, playKey, rootRef, toggle]);
 
   return { playing, toggle };
 };
@@ -334,6 +344,8 @@ const FrameSlider = ({
   selection = null,
   onSelectionChange,
   selectionLabel,
+  offlineSpans = NO_SPANS,
+  offlineLabel,
   testId = 'frame-slider',
 }: FrameSliderProps) => {
   const { t } = useTranslation();
@@ -343,12 +355,14 @@ const FrameSlider = ({
     [timestamps],
   );
   const canPlay = count > 1 && !disabled;
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const { playing, toggle } = useFramePlayback({
     count,
     index,
     onChange,
     canPlay,
     playKey,
+    rootRef,
   });
 
   const label = playing
@@ -362,6 +376,10 @@ const FrameSlider = ({
       ): mark is { alarm: AlarmSpan; at: { left: number; right: number } } =>
         mark.at != null,
     );
+  const offlineAt = offlineSpans.flatMap((span) => {
+    const at = alarmPosition(timestamps, { key: 'offline', label: '', ...span });
+    return at ? [{ key: `${span.from}-${span.to}`, at }] : [];
+  });
   const visibleAt = visibleRange
     ? alarmPosition(timestamps, { key: 'visible', label: '', ...visibleRange })
     : null;
@@ -485,7 +503,7 @@ const FrameSlider = ({
   });
 
   return (
-    <div className="frame-slider pb-2 pt-2" data-testid={testId}>
+    <div ref={rootRef} className="frame-slider pb-2 pt-2" data-testid={testId}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         <Button
           size="sm"
@@ -524,6 +542,15 @@ const FrameSlider = ({
             </span>
           </div>
         )}
+        {offlineAt.length > 0 && offlineLabel && (
+          <span
+            className="frame-slider__offline-legend small text-muted"
+            data-testid={childTestId(testId, 'offline-legend')}
+          >
+            <span className="frame-slider__offline-swatch" aria-hidden="true" />
+            {offlineLabel}
+          </span>
+        )}
         {end}
       </div>
       {/* The slider's body: the alarms as a transparent layer behind
@@ -534,6 +561,18 @@ const FrameSlider = ({
         onPointerMove={marks.length ? onBodyMove : undefined}
         onPointerLeave={() => setHoveredAlarm(null)}
       >
+        {offlineAt.length > 0 && (
+          <div className="frame-slider__offline-layer" aria-hidden="true">
+            {offlineAt.map(({ key, at }) => (
+              <span
+                key={key}
+                className="frame-slider__offline"
+                style={markStyle(at)}
+                data-testid={childTestId(testId, 'offline')}
+              />
+            ))}
+          </div>
+        )}
         {marks.length > 0 && (
           <div
             ref={alarmLayerRef}

@@ -131,6 +131,7 @@ def test_every_sample_reloads_only_the_status_pages_of_its_location(
             "reason": "measurement",
             "alarm": alarm,
             "measurement_id": answers[-1]["measurement_id"],
+            "kind": "leak",
         }
 
     async def run():
@@ -417,3 +418,83 @@ def test_our_thresholds_decide_not_the_controllers_flag(api_client, location, se
     assert not alarms.exists()
     _send_sample(api_client, location, device, token, samples="0,500", alarm=0)  # over 100
     assert alarms.count() == 1
+
+
+def test_latest_measurement_by_kind(api_client, location, account):
+    leak = f.make_measurement(f.make_device(location), pairs=[1, 2])
+    climate = f.make_measurement(f.make_device(location, type=ProgeoDevice.DeviceType.SMARTEX_IO), humidity=40.0)
+    api_client.force_authenticate(user=f.make_user(perms=STATUS_PERMS, accounts=[account]))
+    url = f"/v1/location/{location.pk}/latest-measurement/"
+
+    assert api_client.get(url + "?kind=leak").json()["id"] == leak.pk
+    assert api_client.get(url + "?kind=climate").json()["id"] == climate.pk
+    assert api_client.get(url).json()["id"] == climate.pk
+    assert api_client.get(url + "?kind=wind").status_code == 400
+
+
+@pytest.fixture
+def sent(monkeypatch):
+    """The group messages sent (instead of a channel layer)."""
+    messages = []
+
+    class Layer:
+        async def group_send(self, group, message):
+            messages.append((group, message))
+
+    monkeypatch.setattr("channels.layers.get_channel_layer", lambda *args, **kwargs: Layer())
+    return messages
+
+
+def test_status_message_carries_the_kind(location, sent, django_capture_on_commit_callbacks):
+    """The page reloads only the tab of that kind (leak / climate)."""
+    from progeo.helper.location_live import notify_location_status
+
+    leak = f.make_measurement(f.make_device(location), pairs=[1])
+    climate = f.make_measurement(f.make_device(location, type=ProgeoDevice.DeviceType.SMARTEX_IO), humidity=40.0)
+    with django_capture_on_commit_callbacks(execute=True):
+        notify_location_status(leak)
+        notify_location_status(climate)
+
+    assert [message["kind"] for _group, message in sent] == ["leak", "climate"]
+    assert [message["measurement_id"] for _group, message in sent] == [leak.pk, climate.pk]
+
+
+def test_the_socket_passes_the_kind_on(location):
+    from channels.layers import get_channel_layer
+
+    staff = f.make_user(staff=True)
+
+    async def run():
+        socket = await _logged_in(await _open(_status_socket(staff, location.pk)))
+        await get_channel_layer().group_send(location_status_group(f.DB, location.pk), {
+            "type": "location.status", "location_id": location.pk, "reason": "measurement", "kind": "climate"})
+        assert (await socket.receive_json_from(timeout=3))["kind"] == "climate"
+        await get_channel_layer().group_send(location_status_group(f.DB, location.pk), {
+            "type": "location.status", "location_id": location.pk, "reason": "measurement"})
+        assert (await socket.receive_json_from(timeout=3))["kind"] == "leak"
+        await socket.disconnect()
+
+    async_to_sync(run)()
+
+
+def test_lorawan_uplink_notifies_the_location(api_client, location, sent, django_capture_on_commit_callbacks):
+    """A climate reading (RS485 on the M5, or a radio sensor) reaches the open
+    status pages of its location too - as kind "climate"."""
+    from progeo.v1.models import LimitedToken
+
+    f.make_device(location, raw_hash=f"{location.project_id}-01")
+    token = LimitedToken.objects.using(f.DB).create(
+        raw_hash=f.unique("io-token"), raw_data={}, user_id=f.make_user().id, account=f.make_account())
+    uplink = {
+        "deviceInfo": {"devEui": f"{location.project_id}-01-RS1"},
+        "object": {"valid": True, "err": 0, "messages": [
+            {"type": "report_telemetry", "measurementId": 4097, "measurementValue": 21.5}]},
+    }
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = api_client.post(f"/v1/device/lorawan/{location.project_id}/?token={token.raw_hash}", uplink,
+                                   format="json")
+
+    assert response.status_code == 200, response.content
+    assert [(message["location_id"], message["kind"], message["measurement_id"]) for _group, message in sent] == [
+        (location.pk, "climate", response.json()["measurement_id"])]

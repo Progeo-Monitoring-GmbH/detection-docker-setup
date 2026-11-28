@@ -15,6 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import staff_permissions_denied
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.device_kinds import CLIMATE, KINDS
 from progeo.v1.models import ProgeoEscalation, ProgeoEscalationEntry, ProgeoLocation
 from progeo.v1.serializers import ProgeoEscalationSerializer, user_label
 
@@ -62,8 +63,8 @@ VIEW_SENSOR_ID = re.compile(r"^(sensor-\d{1,6}|\d{1,6}:\d{1,4})$")
 
 def clean_view_state(raw):
     """(state, error) - the status view of `raw` with only the known settings
-    (view, range, step, at, sensor, sensors, profile), each checked; None
-    for no view. Unknown keys are dropped, a wrong value is an error."""
+    (view, range, step, at, sensor, sensors, profile, tab), each checked;
+    None for no view. Unknown keys are dropped, a wrong value is an error."""
     if raw in (None, "", {}):
         return None, None
     if not isinstance(raw, dict):
@@ -106,6 +107,14 @@ def clean_view_state(raw):
         if profile not in VIEW_PROFILES:
             return None, "view_state.profile is unknown"
         state["profile"] = profile
+    # The tab of a location with leak devices and climate sensors
+    # (helper/device_kinds.py) - leak is the default, not stored.
+    tab = raw.get("tab")
+    if tab is not None:
+        if tab not in KINDS:
+            return None, "view_state.tab must be leak or climate"
+        if tab == CLIMATE:
+            state["tab"] = tab
     return state or None, None
 
 

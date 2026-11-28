@@ -14,7 +14,15 @@ export type SectionValues = Record<string, string | boolean>;
 /** One input of a section's dialog; `key` is the value's name in the config. */
 /** `label`: the translated name shown instead of `key`. */
 /** `showWhen`: the key of a switch in the same dialog - the field shows (and counts) only while it is on. */
-export type SectionField = { key: string; label?: string; testId?: string; showWhen?: string } & (
+/** `hint`: a translated explanation under the field; `optional`: a number field that may stay empty. */
+export type SectionField = {
+  key: string;
+  label?: string;
+  testId?: string;
+  showWhen?: string;
+  hint?: string;
+  optional?: boolean;
+} & (
   | { kind: 'text' | 'password' }
   | { kind: 'number'; min?: number; max?: number }
   | { kind: 'select'; options: { value: string; label: string; title?: string }[] }
@@ -50,6 +58,9 @@ const numberValid = (field: SectionField, value: string | boolean) => {
     return true;
   }
   const number = Number(value);
+  if (field.optional && String(value ?? '').trim() === '') {
+    return true;
+  }
   return (
     String(value).trim() !== '' &&
     Number.isInteger(number) &&
@@ -150,6 +161,7 @@ const ConfigSectionCards = ({
             data-testid={fieldTestId}
           />
         )}
+        {field.hint ? <Form.Text className="config-section-hint">{field.hint}</Form.Text> : null}
       </Form.Group>
     );
   };

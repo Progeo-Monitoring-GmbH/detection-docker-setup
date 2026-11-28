@@ -17,7 +17,7 @@ import { locationPagePath } from './portalNav';
  * plan's frame, the sensor picked on the plan, the Zeitreihe's sensors and
  * the heat profile. An escalation keeps it (ProgeoEscalation.view_state,
  * backend escalation_viewset.clean_view_state) and its quick link opens the
- * page like that: /location/<id>/status?view=…&range=…&step=…&at=…&sensor=…&sensors=…&profile=…
+ * page like that: /location/<id>/status?view=…&range=…&step=…&at=…&sensor=…&sensors=…&profile=…&tab=…
  */
 export type StatusViewState = {
   view?: 'roof' | 'zeitreihe';
@@ -31,6 +31,10 @@ export type StatusViewState = {
   /** The Zeitreihe's sensors (its entry ids: "sensor-3", "3:0"). */
   sensors?: string[];
   profile?: HeatProfile;
+  /** The climate tab of a location with both kinds of devices (leak is the
+   * default). The tabs read ?tab= themselves (useDeviceKindTab) - it is no
+   * view setting the page applies (parseStatusView leaves it out). */
+  tab?: 'climate';
 };
 
 const SENSOR_ID = /^(sensor-\d{1,6}|\d{1,6}:\d{1,4})$/;
@@ -113,6 +117,9 @@ const statusViewSearch = (
   }
   if (state?.profile) {
     params.set('profile', state.profile);
+  }
+  if (state?.tab) {
+    params.set('tab', state.tab);
   }
   return params.toString();
 };

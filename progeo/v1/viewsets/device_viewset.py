@@ -767,6 +767,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
             device_type=ProgeoDevice.DeviceType.SMARTEX_IO,
             project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO,
         )
+        # The open status pages of its location (a leak location with climate
+        # sensors reloads its climate tab; kind "climate").
+        notify_location_status(measure)
 
         return RequestSuccess({
             "project_id": project_id,

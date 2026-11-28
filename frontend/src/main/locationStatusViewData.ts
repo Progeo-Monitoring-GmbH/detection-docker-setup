@@ -130,7 +130,7 @@ export const anlageColor = (state: AnlageState) => ANLAGE_COLOR[state];
 export const liveMeasurementToast = ({
   count,
   alarm,
-}: LiveMeasurements): {
+}: Pick<LiveMeasurements, 'count' | 'alarm'>): {
   key: string;
   options?: { count: number };
   variant: 'warning' | 'info';

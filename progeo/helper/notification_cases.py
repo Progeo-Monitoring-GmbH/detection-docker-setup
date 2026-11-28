@@ -656,7 +656,7 @@ def _device_rows(db):
     return list(
         ProgeoDevice.objects.using(db).filter(location__isnull=False)
         .annotate(last_measurement_at=Subquery(newest.values("last_fetched")[:1]))
-        .values("id", "location_id", "mac", "hardware", "raw_hash", "data_interval",
+        .values("id", "location_id", "mac", "hardware", "raw_hash", "type", "data_interval",
                 "last_command_poll", "last_measurement_at")
     )
 

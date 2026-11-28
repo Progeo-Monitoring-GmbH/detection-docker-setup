@@ -92,6 +92,15 @@ describe('FrameSlider animation', () => {
     expect(current()).toBe(1);
   });
 
+  it('a hidden slider (a preloaded tab) leaves the space bar alone', () => {
+    container.hidden = true;
+    render(0);
+    space();
+    tick(2);
+    expect(current()).toBe(0);
+    container.hidden = false;
+  });
+
   it('leaves the space bar to text fields', () => {
     render(0);
     const field = document.createElement('input');
@@ -306,5 +315,41 @@ describe('focusFrameIndex', () => {
     expect(focusFrameIndex(timestamps, Number.NaN)).toBeNull();
     expect(focusFrameIndex([], 2000 * 1000)).toBeNull();
     expect(focusFrameIndex(timestamps, 500 * 1000)).toBeNull();
+  });
+});
+
+describe('FrameSlider offline spans', () => {
+  it('shades a span without data gray behind the track and names it', () => {
+    const first = TIMESTAMPS[0] * 1000;
+    act(() =>
+      root.render(
+        <FrameSlider
+          id="frames"
+          timestamps={TIMESTAMPS}
+          index={0}
+          onChange={() => {}}
+          offlineSpans={[
+            // Hours 1 to 3 of the four: the middle half.
+            { from: first + 3_600_000, to: first + 3 * 3_600_000 },
+            // Before the frames: not shown.
+            { from: first - 9e7, to: first - 8e7 },
+          ]}
+          offlineLabel="Offline for over 24 h"
+        />,
+      ),
+    );
+
+    const spans = container.querySelectorAll<HTMLElement>('[data-testid="frame-slider-offline"]');
+    expect(spans).toHaveLength(1);
+    expect(spans[0].style.left).toBe('25%');
+    expect(spans[0].style.width).toContain('50%');
+    expect(container.querySelector('[data-testid="frame-slider-offline-legend"]')?.textContent).toBe(
+      'Offline for over 24 h',
+    );
+  });
+
+  it('shows no legend without a span on the slider', () => {
+    act(() => root.render(<FrameSlider id="frames" timestamps={TIMESTAMPS} index={0} onChange={() => {}} offlineLabel="x" />));
+    expect(container.querySelector('[data-testid="frame-slider-offline-legend"]')).toBeNull();
   });
 });

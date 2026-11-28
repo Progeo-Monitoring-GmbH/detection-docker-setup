@@ -525,7 +525,7 @@ def test_locations_report_alarm_threshold_and_m5_defaults(staff_client, location
     assert row["alarm_threshold"] == 100
     assert body["defaults"]["m5"] == {
         "sensors": 4, "interval_sec": 300, "poll_sec": 300,
-        "rs485_enabled": False, "rs485_interval_sec": 900,
+        "rs485_enabled": False,
         "threshold_mv": {"136": 891, "72": 450, "40": 76, "24": 8},
     }
     assert body["m5_model"] == "M5 AIN4"
@@ -565,36 +565,48 @@ def test_rs485_defaults_disabled():
     settings = provisioning.parse_settings({"model": "M5 AIN4"})
     assert settings["rs485_enabled"] is False
     assert settings["rs485_project_id"] is None
-    assert settings["rs485_interval_sec"] == 900
+    assert "rs485_interval_sec" not in settings
 
 
-def test_rs485_enabled_needs_project_id_and_interval_range():
-    with pytest.raises(provisioning.ProvisionError, match="rs485_project_id is required when RS485 is enabled"):
-        provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True})
-    with pytest.raises(provisioning.ProvisionError):
-        provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True, "rs485_project_id": 0})
-    for bad in (29, 86401):
+def test_rs485_project_id_is_optional(staff_client, location):
+    """Without a number of their own the climate sensors report to the M5's
+    project - its location shows them in a Klima tab."""
+    settings = provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True})
+    assert settings["rs485_project_id"] is None
+    for bad in (0, "abc"):
         with pytest.raises(provisioning.ProvisionError):
-            provisioning.parse_settings({"model": "M5 AIN4", "rs485_interval_sec": bad})
+            provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True, "rs485_project_id": bad})
+
+    body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True)
+    assert f'#define PLATFORM_RS485_PATH         "/v1/device/lorawan/{location.project_id}/"' in body["config"]
 
 
-def test_rs485_project_must_differ_from_leak_project(staff_client, location):
-    response = staff_client.post("/v1/device/provision/preview/", {
-        "location": location.pk, "model": "M5 AIN4", "rs485_enabled": True,
-        "rs485_project_id": location.project_id}, format="json")
-    assert response.status_code == 400
-    assert "rs485_project_id must differ from the leak project" in response.content.decode()
+def test_rs485_may_use_the_leak_project(staff_client, location):
+    body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True,
+                    rs485_project_id=location.project_id)
+    assert f'"/v1/device/lorawan/{location.project_id}/"' in body["config"]
+
+
+def test_rs485_block_explains_the_default(staff_client, location):
+    config = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True)["config"]
+    assert "// Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab" in config
+    assert "// des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt." in config
+    path_line = next(line for line in config.splitlines() if line.startswith("#define PLATFORM_RS485_PATH"))
+    assert path_line.endswith("// Standard: Projekt der M5")
+    assert "werden dort nicht angezeigt" not in config
 
 
 def test_rs485_enabled_renders_block(staff_client, location):
     body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True,
-                    rs485_project_id=location.project_id + 1, rs485_interval_sec=600)
+                    rs485_project_id=location.project_id + 1, interval_sec=600)
     config = body["config"]
     assert "#define PLATFORM_RS485_ENABLED      1" in config
     assert f'#define PLATFORM_RS485_PATH         "/v1/device/lorawan/{location.project_id + 1}/"' in config
     assert "#define PLATFORM_RS485_HOST         PLATFORM_HOST" in config
     assert "#define PLATFORM_RS485_TOKEN        PLATFORM_TOKEN" in config
-    assert "#define PLATFORM_RS485_INTERVAL_SEC 600" in config
+    # The climate values go out at the M5's own interval - no second one.
+    assert "#define PLATFORM_INTERVAL_SEC 600" in config
+    assert "#define PLATFORM_RS485_INTERVAL_SEC PLATFORM_INTERVAL_SEC" in config
     assert '#define PLATFORM_RS485_EUI_PREFIX   PLATFORM_DEVICE_HASH "-RS"' in config
 
 

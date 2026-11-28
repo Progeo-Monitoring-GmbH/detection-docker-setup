@@ -259,3 +259,30 @@ def test_steps_with_days_count_from_now(api_client, stepped_location):
     body = api_client.get(f"/v1/location/{location.id}/heatmap/", {"days": 2, "step": 86400}).json()
     assert body["total"] == 4
     assert sum(1 for value in body["data"]["1"] if value is not None) == len(body["timestamps"])
+
+
+def test_csv_export_leaves_out_climate_rows(api_client, location_with_data):
+    from progeo.v1.models import ProgeoDevice
+
+    climate = f.make_device(location_with_data, type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    f.make_measurement(climate, humidity=50.0, temperature=20.0, fetched_at=timezone.now())
+
+    rows = _csv_rows(api_client, location_with_data)[1:]
+
+    assert [row[1:] for row in rows] == [["10", "", ""], ["20", "21", ""], ["30", "31", "32"]]
+
+
+def test_csv_export_of_a_smartex_io_object_keeps_its_rows(api_client):
+    """A climate-only object has nothing but climate sensors - its export
+    keeps one row per measurement as before (the leak filter is for leak
+    objects with climate sensors)."""
+    from progeo.v1.models import ProgeoDevice, ProgeoLocation
+
+    account = f.make_account()
+    location = f.make_location(account, project_id=4244, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO)
+    sensor = f.make_device(location, type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    f.make_measurement(sensor, humidity=50.0, fetched_at=timezone.now() - timedelta(minutes=2))
+    f.make_measurement(sensor, humidity=51.0, fetched_at=timezone.now() - timedelta(minutes=1))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    assert len(_csv_rows(api_client, location)) == 3  # header + two measurements

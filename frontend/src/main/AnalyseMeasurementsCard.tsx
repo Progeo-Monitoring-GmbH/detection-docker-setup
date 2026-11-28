@@ -4,13 +4,21 @@ import { useTranslation } from 'react-i18next';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
+import type { SensorNaming } from '../components/device/sensorNaming';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
 import type { ProfileRange } from './NoiseProfilePanel';
 
 type AnalyseMeasurementsCardProps = {
   devices: { id: number; display_name: string }[];
   shownDevice: number | null;
   onDeviceChange: (device: number) => void;
+  /** Every device's measurements at once - the select then shows none. */
+  allDevices: boolean;
+  onAllDevicesChange: (all: boolean) => void;
+  sensorNaming: SensorNaming | null;
+  /** Spans without a measurement for over 24 h - gray on the third plot. */
+  offlineSpans: { from: number; to: number }[];
   canSwitchSensors: boolean;
   sensors: number[];
   selectedEnabled: number[];
@@ -43,6 +51,10 @@ const AnalyseMeasurementsCard = ({
   devices,
   shownDevice,
   onDeviceChange,
+  allDevices,
+  onAllDevicesChange,
+  sensorNaming,
+  offlineSpans,
   canSwitchSensors,
   sensors,
   selectedEnabled,
@@ -79,21 +91,39 @@ const AnalyseMeasurementsCard = ({
       actions={
         <div className="d-flex flex-wrap align-items-center gap-3">
           {devices.length > 1 && (
-            <Form.Select
-              size="sm"
-              aria-label={t('analyse_device')}
-              title={t('analyse_device')}
-              value={shownDevice ?? ''}
-              onChange={(event) => onDeviceChange(Number(event.target.value))}
-              className="analyse-device-select"
-              data-testid="analyse-device-select"
-            >
-              {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.display_name}
-                </option>
-              ))}
-            </Form.Select>
+            <div className="d-flex align-items-center gap-2">
+              <Form.Select
+                size="sm"
+                aria-label={t('analyse_device')}
+                title={t('analyse_device')}
+                value={allDevices ? '' : (shownDevice ?? '')}
+                onChange={(event) =>
+                  onDeviceChange(Number(event.target.value))
+                }
+                className="analyse-device-select"
+                data-testid="analyse-device-select"
+              >
+                {allDevices && (
+                  <option value="" disabled>
+                    {t('analyse_all_devices_selected', {
+                      count: devices.length,
+                    })}
+                  </option>
+                )}
+                {devices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.display_name}
+                  </option>
+                ))}
+              </Form.Select>
+              <PillButton
+                testId="analyse-all-devices"
+                variant={allDevices ? 'accent' : 'ghost'}
+                label={t('analyse_all_devices', { count: devices.length })}
+                title={t('analyse_all_devices_title')}
+                onClick={() => onAllDevicesChange(!allDevices)}
+              />
+            </div>
           )}
           {canSwitchSensors && sensors.length > 0 && (
             <div
@@ -196,6 +226,8 @@ const AnalyseMeasurementsCard = ({
           maskLines={maskLines}
           selectedRange={offerNoiseProfiles ? profileRange : null}
           onRangeSelect={offerNoiseProfiles ? onProfileRangeChange : null}
+          sensorNaming={sensorNaming}
+          offlineSpans={offlineSpans}
         />
       )}
     </PanelCard>

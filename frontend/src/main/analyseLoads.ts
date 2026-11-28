@@ -10,6 +10,7 @@ import {
   type MeasurementsLoad,
   withLoad,
 } from './analyseCache';
+import { offlineSpansOf } from './analyseDevices';
 
 export type LoadCache<T> = Map<string, CachedLoad<T>[]>;
 
@@ -18,6 +19,7 @@ type MeasurementsData = {
   total?: number | string | null;
   devices?: MeasurementsLoad['devices'] | null;
   device?: number | null;
+  offline?: unknown;
 } | null;
 
 /** `&device=<id>` - nothing without a device (the backend's default). */
@@ -39,6 +41,7 @@ export const measurementsLoadOf = (
     total: Number(data?.total ?? rows.length),
     devices: data?.devices || [],
     device: data?.device ?? null,
+    offline: offlineSpansOf(data?.offline),
   };
 };
 

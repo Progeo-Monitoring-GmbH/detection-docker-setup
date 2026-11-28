@@ -26,6 +26,7 @@ import MeasurementCompareTooltip, {
   TOOLTIP_WIDTH,
 } from './MeasurementCompareTooltip';
 import { childTestId } from '../../testIds';
+import type { SensorNaming } from './sensorNaming';
 import './MeasurementSamplesCompareChart.css';
 
 export type MeasurementCompareRow = {
@@ -117,6 +118,10 @@ type MeasurementSamplesCompareChartProps = {
    */
   selectedRange?: { from: number; to: number } | null;
   onRangeSelect?: ((range: { from: number; to: number }) => void) | null;
+  /** The pairs of several devices: their names and dividers (sensorNaming.ts). */
+  sensorNaming?: SensorNaming | null;
+  /** Spans (ms) a device sent nothing for over 24 h - gray on the third plot. */
+  offlineSpans?: readonly { from: number; to: number }[];
   /** data-testid of the chart (its Card; with `hideChrome` only its parts
    * carry ids), e.g. "<testId>-figure", "<testId>-sensor-chip". */
   testId?: string;
@@ -158,6 +163,9 @@ const OPTIONAL_TRACES = new Set(['pair-sum-diff']);
 
 const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
 const PERIOD_COLOR = 'rgba(0, 0, 0, 0.06)';
+/** A device offline for over 24 h: gray on the third plot (and the slider). */
+const OFFLINE_COLOR = 'rgba(108, 117, 125, 0.22)';
+const NO_SPANS: readonly { from: number; to: number }[] = [];
 
 /** How many sensors the "most / least active" buttons add. */
 const ACTIVE_SENSOR_COUNT = 2;
@@ -372,9 +380,15 @@ const MeasurementSamplesCompareChart = (
     maskLines = null,
     selectedRange = null,
     onRangeSelect = null,
+    sensorNaming = null,
+    offlineSpans = NO_SPANS,
     testId = 'measurement-compare',
   } = props;
   const { t } = useTranslation();
+  const sensorTitle = (sensor: number) =>
+    sensorNaming
+      ? sensorNaming.name(sensor)
+      : `${t('measurement_compare_pair_label')} ${sensorNumber(sensor)}`;
   // Read once on mount - the clock is impure during render.
   const [currentYear] = React.useState(() => new Date().getFullYear());
 
@@ -590,7 +604,7 @@ const MeasurementSamplesCompareChart = (
         // Always solid lines; past the 4 hues a few markers tell them apart.
         mode: marker ? ('lines+markers' as const) : ('lines' as const),
         uid: `sensor-${sensor}`,
-        name: `${t('measurement_compare_pair_label')} ${sensorNumber(sensor)}`,
+        name: sensorTitle(sensor),
         x: sensorSeries.x,
         y: sensorSeries.pairs.map((values) => values[sensor] ?? null),
         xaxis: 'x3' as const,
@@ -602,7 +616,9 @@ const MeasurementSamplesCompareChart = (
         hoverinfo: 'none' as const,
       };
     });
-  }, [selectedSensors, sensorSeries, styleOf, t]);
+    // sensorTitle follows sensorNaming and t.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSensors, sensorSeries, styleOf, sensorNaming, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
   // shows them. Kept here, not by Plotly: they widen the locked y-axis or
@@ -793,6 +809,21 @@ const MeasurementSamplesCompareChart = (
         line: { width: 0 },
       });
     }
+    // Offline over 24 h: gray on the third plot - behind its line.
+    offlineSpans.forEach(({ from, to }) => {
+      result.push({
+        type: 'rect',
+        layer: 'below',
+        xref: 'x2',
+        yref: 'paper',
+        x0: from,
+        x1: to,
+        y0: geometry.sum[0],
+        y1: geometry.sum[1],
+        fillcolor: OFFLINE_COLOR,
+        line: { width: 0 },
+      });
+    });
     // The alarm and the slider's time on both time plots.
     const timePlots: [string, [number, number]][] = [
       ['x3', geometry.sensors],
@@ -851,6 +882,7 @@ const MeasurementSamplesCompareChart = (
     historySeries,
     frames,
     geometry,
+    offlineSpans,
     selectedRange,
     thresholdArea,
     thresholdLineColors,
@@ -931,7 +963,7 @@ const MeasurementSamplesCompareChart = (
       if (ep[sensor] == null || wp[sensor] == null) {
         return [];
       }
-      const of = `(${t('measurement_compare_pair_label')} ${sensorNumber(sensor)})`;
+      const of = `(${sensorTitle(sensor)})`;
       return [
         { key: `${uid}-ep`, name: `EP ${of}`, color: 'red', value: formatValue(ep[sensor]) },
         { key: `${uid}-wp`, name: `WP ${of}`, color: 'blue', value: formatValue(wp[sensor]) },
@@ -1245,6 +1277,7 @@ const MeasurementSamplesCompareChart = (
           onToggleSensor={toggleSensor}
           yRange={upperRanges.base}
           yRangeWithSum={upperRanges.withSum}
+          naming={sensorNaming}
           testId={childTestId(testId, 'columns')}
         />
       )}
@@ -1357,7 +1390,7 @@ const MeasurementSamplesCompareChart = (
                 onMouseLeave={() => setHighlighted(null)}
               >
                 <LineSwatch style={styleOf(sensor)} />
-                {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
+                {sensorTitle(sensor)}
                 <button
                   type="button"
                   className="measurement-samples-chip-remove btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"

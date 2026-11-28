@@ -292,3 +292,68 @@ def test_migration_turns_lorawan_projects_and_devices_into_smartex_io():
     lorawan.refresh_from_db(using=f.DB)
     assert sensor.type == "lorawan"
     assert lorawan.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IO
+
+
+# ------------------------------------------------------------------ RS485 sensors land in the M5's location
+
+def _rs485_uplink(api_client, project_id, dev_eui):
+    response = api_client.post(f"/v1/device/lorawan/{project_id}/?token={_make_token()}",
+                               _chirpstack_uplink(dev_eui), format="json")
+    assert response.status_code == 200, response.content
+    return ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"]).device
+
+
+def _location(project_id, **fields):
+    from progeo.tests.factories import make_location
+
+    return make_location(make_account(), project_id=project_id, **fields)
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_rs485_sensor_lands_in_the_m5_location_not_the_project(api_client):
+    """Merge case: an older (hidden) location keeps the number, the M5 sits in
+    the younger one - its climate sensors follow the M5."""
+    from progeo.tests.factories import make_device
+
+    _location(7081, name="Teil (versteckt)")
+    main = _location(7081, name="Hauptprojekt")
+    make_device(main, raw_hash="7081-01")
+
+    device = _rs485_uplink(api_client, 7081, "7081-01-RS1")
+
+    assert device.location_id == main.pk
+    assert device.type == ProgeoDevice.DeviceType.SMARTEX_IO
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_rs485_sensor_gets_the_m5_interval(api_client):
+    """The firmware sends the climate values at the M5's own interval."""
+    from progeo.tests.factories import make_device
+
+    location = _location(7082)
+    make_device(location, raw_hash="7082-01", data_interval=600)
+
+    assert _rs485_uplink(api_client, 7082, "7082-01-RS1").data_interval == 600
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_rs485_sensor_without_known_m5_uses_the_project_location(api_client):
+    location = _location(7083)
+
+    device = _rs485_uplink(api_client, 7083, "7083-07-RS1")
+
+    assert device.location_id == location.pk
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_known_rs485_sensor_keeps_its_location(api_client):
+    from progeo.tests.factories import make_device
+
+    first = _location(7084, name="A")
+    sensor = make_device(first, raw_hash="7084-01-RS1", type=ProgeoDevice.DeviceType.SMARTEX_IO)
+    later = _location(7085, name="B")
+    make_device(later, raw_hash="7084-01")
+
+    assert _rs485_uplink(api_client, 7084, "7084-01-RS1").pk == sensor.pk
+    sensor.refresh_from_db(using="default")
+    assert sensor.location_id == first.pk

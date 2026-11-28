@@ -275,6 +275,38 @@ def test_location_measurements_are_of_one_device(api_client, world):
     assert api_client.get(f"{path}&device={other.id}").json()["reason"] == "Device not found"
 
 
+def test_the_offline_spans_of_the_period_come_from_all_measurements(api_client, world):
+    """Gaps over 24 h between a device's measurements (not the spread shown):
+    one reaching into the period from before it, one inside, and the silence
+    up to now."""
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+    location = f.make_location(world["account"])
+    device = f.make_device(location)
+    now = timezone.now()
+    hours = (6 * 24, 3 * 24, 3 * 24 - 1, 3 * 24 - 2, 30)
+    rows = [f.make_measurement(device, fetched_at=now - f.minutes(60 * h)) for h in hours]
+    fetched = [ProgeoMeasurement.objects.using(f.DB).get(pk=row.pk).last_fetched for row in rows]
+
+    body = api_client.get(f"/v1/location/{location.id}/measurements/?days=5&limit=2&device={device.id}").json()
+
+    spans = [(datetime.fromisoformat(span["from"]), datetime.fromisoformat(span["to"])) for span in body["offline"]]
+    assert len(spans) == 3
+    # Cut to the period's start (5 days ago) - not the measurement 6 days ago.
+    assert abs((spans[0][0] - (now - f.minutes(5 * 24 * 60))).total_seconds()) < 60
+    assert spans[0][1] == fetched[1]
+    assert spans[1] == (fetched[3], fetched[4])
+    assert spans[2][0] == fetched[4] and abs((spans[2][1] - timezone.now()).total_seconds()) < 60
+    # Only the period's own measurements are shown (limit 2 of 4).
+    assert body["total"] == 4
+
+    # A device measuring right now has no span at the end.
+    f.make_measurement(device, fetched_at=timezone.now())
+    body = api_client.get(f"/v1/location/{location.id}/measurements/?days=1&device={device.id}").json()
+    assert len(body["offline"]) == 1
+
+
 def test_location_details_skip_lageplans(api_client, world):
     user = f.make_user(perms=READ_PERMS)
     world["account"].users.add(user)

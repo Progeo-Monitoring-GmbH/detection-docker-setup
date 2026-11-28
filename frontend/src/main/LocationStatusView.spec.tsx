@@ -29,6 +29,11 @@ const api = vi.hoisted(() => ({
   clusters: [] as unknown[],
   points: [] as unknown[],
   range: null as unknown,
+  // The history (heatmap): answered with this status - held back (`held`)
+  // while `hold` is on, to look at the page before it arrives.
+  heatmapStatus: 200,
+  hold: false,
+  held: [] as (() => void)[],
 }));
 const hooks = vi.hoisted(() => ({
   auth: { user: { is_demo: false } as unknown },
@@ -44,6 +49,7 @@ const hooks = vi.hoisted(() => ({
 const panels = vi.hoisted(() => ({
   plan: null as Record<string, unknown> | null,
   zeitreihe: null as Record<string, unknown> | null,
+  climate: null as Record<string, unknown> | null,
 }));
 
 const heatmap = (latest = false) => ({
@@ -59,14 +65,27 @@ const heatmap = (latest = false) => ({
 
 vi.mock('../axiosConfig', () => ({
   default: {
-    perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void) => {
+    perform_get: (
+      _auth: unknown,
+      url: string,
+      ok: (response: unknown) => void,
+      fail?: (error: unknown) => void,
+    ) => {
       api.get(url);
       if (url.includes('/request-measurement/devices/')) {
         ok({ data: { devices: api.devices } });
       } else if (url.includes('/measurement-range/')) {
         ok({ data: api.range });
       } else if (url.includes('/heatmap/')) {
-        ok({ data: heatmap(url.includes('latest=1')) });
+        const answer = () =>
+          api.heatmapStatus === 200
+            ? ok({ data: heatmap(url.includes('latest=1')) })
+            : fail?.({ response: { status: api.heatmapStatus } });
+        if (api.hold) {
+          api.held.push(answer);
+        } else {
+          answer();
+        }
       } else if (url.includes('/alarm/clusters/')) {
         ok({ data: { clusters: api.clusters } });
       } else if (url.includes('/alarm/computed-clusters/')) {
@@ -99,28 +118,33 @@ vi.mock('./access', () => ({
   }),
 }));
 // The socket: `arrive` announces new measurements as useLocationLiveRevision
-// does - its revision goes up and the page's callback runs.
+// does - the revision of their kind goes up and the page's callback runs.
+type LiveKind = 'leak' | 'climate';
+type LiveCallback = (m: { count: number | null; alarm: boolean; kind: LiveKind }) => void;
 const live = vi.hoisted(() => ({
-  revision: 0,
-  onMeasurements: null as null | ((m: { count: number | null; alarm: boolean }) => void),
+  revisions: { leak: 0, climate: 0 },
+  kinds: [] as readonly string[],
+  onMeasurements: null as null | LiveCallback,
 }));
 vi.mock('./useLocationLiveRevision', () => ({
+  NO_LIVE_REVISIONS: { leak: 0, climate: 0 },
   useLocationLiveRevision: (
     _locationId: number,
-    _enabled: boolean,
-    onMeasurements?: (m: { count: number | null; alarm: boolean }) => void,
+    kinds: readonly string[],
+    onMeasurements?: LiveCallback,
   ) => {
+    live.kinds = kinds;
     live.onMeasurements = onMeasurements ?? null;
-    return live.revision;
+    return live.revisions;
   },
 }));
 // The page last rendered - rendered again when the (mocked) revision goes up,
 // as the real hook's state update does.
 let rendered: (() => React.ReactElement) | null = null;
-const arrive = async (count: number | null = 1, alarm = false) => {
+const arrive = async (count: number | null = 1, alarm = false, kind: LiveKind = 'leak') => {
   await act(async () => {
-    live.revision += 1;
-    live.onMeasurements?.({ count, alarm });
+    live.revisions = { ...live.revisions, [kind]: live.revisions[kind] + 1 };
+    live.onMeasurements?.({ count, alarm, kind });
     if (rendered) {
       root.render(rendered());
     }
@@ -152,7 +176,10 @@ vi.mock('./LocationBatteryVoltagePanel', () => ({
   default: () => <div data-testid="stub-battery" />,
 }));
 vi.mock('./LocationClimatePanels', () => ({
-  default: () => <div data-testid="stub-climate" />,
+  default: (props: Record<string, unknown>) => {
+    panels.climate = props;
+    return <div data-testid="stub-climate" />;
+  },
 }));
 
 const { default: LocationStatusView } = await import('./LocationStatusView');
@@ -193,7 +220,8 @@ beforeEach(() => {
   hooks.staff = false;
   hooks.permissions = new Set();
   hooks.auth = { user: { is_demo: false } };
-  live.revision = 0;
+  live.revisions = { leak: 0, climate: 0 };
+  live.kinds = [];
   live.onMeasurements = null;
   rendered = null;
   api.devices = [];
@@ -207,6 +235,10 @@ beforeEach(() => {
   };
   panels.plan = null;
   panels.zeitreihe = null;
+  panels.climate = null;
+  api.heatmapStatus = 200;
+  api.hold = false;
+  api.held = [];
 });
 
 afterEach(() => {
@@ -372,6 +404,26 @@ describe('LocationStatusView', () => {
     expect(api.get.mock.calls.map(([url]) => String(url))).toEqual([]);
   });
 
+  it('shows a pure leak object without tabs, asking as before (no ?kind=)', async () => {
+    hooks.permissions = new Set(['module_locations_enabled', 'module_measurements_enabled']);
+    await render('/location/4/status', { location: location({ device_kinds: ['leak'] }) });
+
+    expect(byTestId('status-tabs-tab-leak')).toBeNull();
+    expect(byTestId('stub-climate')).toBeNull();
+    expect(api.get.mock.calls.some(([url]) => String(url).includes('kind='))).toBe(false);
+    expect(live.kinds).toEqual(['leak']);
+  });
+
+  it('a pure smartex io object: no tabs, no live updates', async () => {
+    await render('/location/4/status', {
+      location: location({ project_type: 10, device_kinds: ['climate'] }),
+    });
+
+    expect(byTestId('status-tabs-tab-climate')).toBeNull();
+    expect(byTestId('stub-climate')).not.toBeNull();
+    expect(live.kinds).toEqual([]);
+  });
+
   it('switches to the Zeitreihe and the range keeps going with it', async () => {
     hooks.staff = true;
     await render();
@@ -392,5 +444,95 @@ describe('LocationStatusView', () => {
       range.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(currentStatusView(4)).toMatchObject({ view: 'zeitreihe', range: '30d' });
+  });
+});
+
+describe('LocationStatusView - leak and climate in one object', () => {
+  const mixed = () => location({ device_kinds: ['leak', 'climate'] });
+  const PERMS = ['module_locations_enabled', 'module_measurements_enabled'];
+
+  it('shows the tabs, leak first - the climate tab loads hidden once the leak history is there', async () => {
+    hooks.permissions = new Set(PERMS);
+    api.hold = true;
+    await render('/location/4/status', { location: mixed() });
+
+    expect(byTestId('status-tabs-tab-leak')).not.toBeNull();
+    expect(byTestId('status-tabs-tab-climate')).not.toBeNull();
+    expect(byTestId('status-tabs-panel-leak')?.hidden).toBe(false);
+    expect(byTestId('stub-climate')).toBeNull();
+    // The leak tab asks for the leak devices only.
+    expect(api.get.mock.calls.some(([url]) => /measurement-range\/\?kind=leak/.test(String(url)))).toBe(true);
+
+    await act(async () => {
+      api.held.splice(0).forEach((answer) => answer());
+    });
+
+    expect(byTestId('stub-climate')).not.toBeNull();
+    expect(byTestId('status-tabs-panel-climate')?.hidden).toBe(true);
+    expect(panels.climate?.kind).toBe('climate');
+    expect(live.kinds).toEqual(['leak', 'climate']);
+  });
+
+  it('preloads the climate tab also when the leak history is refused', async () => {
+    hooks.permissions = new Set(PERMS);
+    api.heatmapStatus = 403;
+    await render('/location/4/status', { location: mixed() });
+
+    expect(byTestId('stub-climate')).not.toBeNull();
+  });
+
+  it('an escalation takes the shown tab along', async () => {
+    hooks.permissions = new Set(PERMS);
+    await render('/location/4/status', { location: mixed() });
+    expect(currentStatusView(4)?.tab).toBeUndefined();
+
+    await act(async () => {
+      byTestId('status-tabs-tab-climate')?.click();
+    });
+    expect(currentStatusView(4)?.tab).toBe('climate');
+  });
+
+  it('opens the tab the URL asks for', async () => {
+    hooks.permissions = new Set(PERMS);
+    await render('/location/4/status?tab=climate', { location: mixed() });
+
+    expect(byTestId('status-tabs-panel-climate')?.hidden).toBe(false);
+    // The leak tab waits until the climate one is there - nothing loaded yet.
+    expect(byTestId('status-tabs-panel-leak')).toBeNull();
+    expect(api.get.mock.calls.some(([url]) => String(url).includes('/heatmap/'))).toBe(false);
+
+    await act(async () => {
+      (panels.climate?.onReady as () => void)();
+    });
+    expect(byTestId('status-tabs-panel-leak')?.hidden).toBe(true);
+    expect(api.get.mock.calls.some(([url]) => String(url).includes('/heatmap/?'))).toBe(true);
+  });
+
+  it('climate news reload the climate tab only - leak news jump to "Letzte Messung"', async () => {
+    hooks.permissions = new Set(PERMS);
+    await render('/location/4/status?range=30d', { location: mixed() });
+    expect(panels.climate?.revision).toBe(0);
+
+    await arrive(1, false, 'climate');
+    expect(panels.climate?.revision).toBe(1);
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('30d');
+
+    await arrive(1, false, 'leak');
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('latest');
+    expect(panels.climate?.revision).toBe(1);
+  });
+
+  it('without the measurement permission: only toasts, in no tab a reload', async () => {
+    hooks.permissions = new Set(['module_locations_enabled']);
+    await render('/location/4/status', { location: mixed() });
+    api.get.mockClear();
+
+    await arrive(1, false, 'leak');
+    await arrive(1, false, 'climate');
+
+    expect(api.get).not.toHaveBeenCalled();
+    expect(panels.climate?.revision ?? 0).toBe(0);
+    expect((byTestId('status-range') as HTMLSelectElement).value).toBe('7d');
+    expect(hooks.snackbar.enqueueSnackbar).toHaveBeenCalledTimes(2);
   });
 });

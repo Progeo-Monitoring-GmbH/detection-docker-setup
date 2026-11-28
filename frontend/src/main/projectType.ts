@@ -1,3 +1,5 @@
+import type { DeviceKind, LocationDetail } from './locationTypes';
+
 // Mirrors ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
 // Django IntegerChoices enum, safe to hardcode client-side for display.
 // Brand/product names (smartex® dm/is/..., geologger) stay literal; the generic
@@ -29,6 +31,21 @@ const PROJECT_TYPE_SMARTEX_IO = 10;
 
 export const isSmartexIoProject = (value: number | null | undefined): boolean =>
   value === PROJECT_TYPE_SMARTEX_IO;
+
+const LEAK_ONLY: readonly DeviceKind[] = ['leak'];
+const CLIMATE_ONLY: readonly DeviceKind[] = ['climate'];
+
+/** The device kinds of a location - the tabs of its status and analysis
+ * pages: what the detail answer says (device_kinds), else by the product
+ * (smartex io: climate, everything else leak). */
+export const deviceKindsOf = (
+  location: Pick<LocationDetail, 'device_kinds' | 'project_type'> | null | undefined,
+): readonly DeviceKind[] => {
+  if (location?.device_kinds?.length) {
+    return location.device_kinds;
+  }
+  return isSmartexIoProject(location?.project_type) ? CLIMATE_ONLY : LEAK_ONLY;
+};
 
 /**
  * How the Status tab draws a product's sensors on the Lageplan: the

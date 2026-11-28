@@ -13,6 +13,7 @@ from rest_framework.parsers import BaseParser
 
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import elog, ilog, wlog
+from progeo.helper.device_overview import rs485_parent_hash
 from progeo.helper.safe_cache import cache_delete, cache_get, cache_set
 from progeo.v1.legacy import live_events
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
@@ -329,6 +330,10 @@ def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
     db_name = next(
         (db for db in candidates if ProgeoDevice.objects.using(db).filter(raw_hash=raw_hash).exists()), None
     ) or locate_device(raw_hash)
+    parent_hash = rs485_parent_hash(raw_hash)
+    if db_name is None and parent_hash:
+        # A new RS485 sensor goes where its M5 is (get_or_create_device).
+        db_name = locate_device(parent_hash)
     if db_name is None:
         # New device: the database of the location it will be filed under.
         location = project_location or _get_or_create_location(
@@ -381,6 +386,24 @@ def _mirror_location_now(location, db_name):
     transfer_rows(ProgeoLocation, sql.SQL("id = ANY(%s)"), [ids], db_name, upsert=True)
 
 
+def _rs485_fields(devices, raw_hash):
+    """A new RS485 sensor "<M5 hash>-RS<n>" of a known M5: the M5's location
+    (not the first one with the payload's project number - after a merge the
+    firmware still sends the old one) and its interval as the send interval
+    (the firmware sends the climate values at PLATFORM_INTERVAL_SEC too).
+    Nothing for other devices or an unknown M5 (the project's location, as
+    before)."""
+    parent_hash = rs485_parent_hash(raw_hash)
+    parent = devices.filter(raw_hash=parent_hash).only("location_id", "data_interval").first() \
+        if parent_hash else None
+    if parent is None:
+        return {}
+    fields = {"data_interval": parent.data_interval}
+    if parent.location_id is not None:
+        fields["location_id"] = parent.location_id
+    return fields
+
+
 def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, device_type=None,
                          account=None, project_type=None, db_name="default"):
     """The device a measurement belongs to, created on first contact.
@@ -402,7 +425,8 @@ def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, devic
 
     device = devices.filter(raw_hash=raw_hash).first()
     if device is None:
-        device = devices.create(raw_hash=raw_hash, project_id=location_project_id, type=device_type)
+        device = devices.create(raw_hash=raw_hash, project_id=location_project_id, type=device_type,
+                                **_rs485_fields(devices, raw_hash))
 
     backfill = {"project_id": location_project_id, "type": device_type}
     changed = [field for field, value in backfill.items() if value is not None and getattr(device, field) is None]

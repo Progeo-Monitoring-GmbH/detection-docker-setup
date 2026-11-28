@@ -21,6 +21,12 @@ import {
 import { smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { cleanRows, type NoiseMask } from './noiseProfiles';
 import { deviceQuery, measurementRowsOf } from './analyseLoads';
+import {
+  combinedRows,
+  type DeviceLoad,
+  type DeviceSpan,
+} from './analyseDevices';
+import { useLatestRef } from '../components/ui/useLatestRef';
 import type { MeasurementRange } from './timeRanges';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -41,6 +47,9 @@ type CompareQuery = {
   heatNoiseQuery: string;
   planQuery: string;
   rawQuery: string;
+  /** All devices (analyseDevices.ts): their past rows put together like
+   * the shown ones; null: the shown device's. */
+  layout?: DeviceSpan[] | null;
 };
 
 /** The heatmap and measurement URLs of the same period, ending `offsetDays` ago. */
@@ -92,6 +101,29 @@ const heatmapOf = (data: unknown) =>
 const rowsOf = (data: unknown) =>
   measurementRowsOf(data as Parameters<typeof measurementRowsOf>[0]);
 
+/** GET the rows of each device's `url` - put together by `layout`. */
+const fetchCombined = (
+  auth: AuthContextType,
+  url: (device: number) => string,
+  layout: DeviceSpan[],
+) =>
+  Promise.all(
+    layout.map(
+      (span) =>
+        new Promise<DeviceLoad>((resolve, reject) =>
+          void axiosConfig.perform_get(
+            auth,
+            url(span.device),
+            (response) => {
+              const rows = rowsOf(response?.data);
+              resolve({ ...span, rows, total: rows.length, offline: [] });
+            },
+            reject,
+          ),
+        ),
+    ),
+  ).then((loads) => combinedRows(loads, layout));
+
 /**
  * The comparison's heatmap and measurements for `compare` (none: nothing
  * loads), by the settings they were loaded with; only the newest request
@@ -107,11 +139,16 @@ const useCompareLoads = (
     useState<Keyed<SensorHeatmapResponse | null> | null>(null);
   const [rows, setRows] = useState<Keyed<MeasurementCompareRow[]> | null>(null);
   const request = useRef(0);
+  const { layout } = query;
+  const layoutKey = layout
+    ? layout.map((span) => `${span.device}+${span.pairs}`).join(',')
+    : '';
   const key = compare
-    ? `${query.locationId}:${compare.days}:${query.days}:${query.resolution}:${query.heatProfile}:${query.shownDevice}:${query.heatNoiseQuery}:${query.revision}:${query.planQuery}`
+    ? `${query.locationId}:${compare.days}:${query.days}:${query.resolution}:${query.heatProfile}:${query.shownDevice}:${query.heatNoiseQuery}:${query.revision}:${query.planQuery}:${layoutKey}`
     : null;
   const { enabled, locationId, days, resolution, heatProfile } = query;
   const { shownDevice, heatNoiseQuery, planQuery, rawQuery } = query;
+  const layoutRef = useLatestRef(layout ?? null);
 
   const loadCompare = useCallback(() => {
     if (!compare || !key || !enabled) {
@@ -121,20 +158,19 @@ const useCompareLoads = (
     const isCurrent = () => current === request.current;
     const failed = (error: unknown) =>
       showRequestError(enqueueSnackbar, 'Could not load the comparison', error);
-    const urls = compareUrls(
-      {
-        locationId,
-        days,
-        resolution,
-        heatProfile,
-        shownDevice,
-        heatNoiseQuery,
-        planQuery,
-        rawQuery,
-      },
-      compare.days,
-      Date.now(),
-    );
+    const now = Date.now();
+    const compareQuery = {
+      locationId,
+      days,
+      resolution,
+      heatProfile,
+      shownDevice,
+      heatNoiseQuery,
+      planQuery,
+      rawQuery,
+      layout: null,
+    };
+    const urls = compareUrls(compareQuery, compare.days, now);
     fetchCurrent(
       auth,
       urls.heatmap,
@@ -144,6 +180,29 @@ const useCompareLoads = (
       (value) => setHeatmap({ key, value }),
       failed,
     );
+    const combineBy = layoutRef.current;
+    if (combineBy) {
+      // Every device's, cleaned by the backend like the shown ones.
+      const deviceUrl = (device: number) =>
+        compareUrls(
+          { ...compareQuery, shownDevice: device, rawQuery: '' },
+          compare.days,
+          now,
+        ).measurements;
+      fetchCombined(auth, deviceUrl, combineBy)
+        .then((value) => {
+          if (isCurrent()) {
+            setRows({ key, value });
+          }
+        })
+        .catch((error: unknown) => {
+          if (isCurrent()) {
+            failed(error);
+            setRows({ key, value: [] });
+          }
+        });
+      return;
+    }
     fetchCurrent(
       auth,
       urls.measurements,
@@ -167,6 +226,7 @@ const useCompareLoads = (
     rawQuery,
     resolution,
     shownDevice,
+    layoutRef,
   ]);
 
   useEffect(() => {

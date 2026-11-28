@@ -44,6 +44,14 @@ RS485_HASH_RE = re.compile(r"-RS\d+$", re.IGNORECASE)
 RS485_MODEL = "RS485"
 
 
+def rs485_parent_hash(raw_hash):
+    """The hash of the M5 an RS485 sensor hangs on ("1312-01-RS2" ->
+    "1312-01"), None for any other device."""
+    raw_hash = (raw_hash or "").strip()
+    match = RS485_HASH_RE.search(raw_hash)
+    return raw_hash[: match.start()] if match else None
+
+
 def device_model_of(device):
     """device_model of a device row: "RS485" for an RS485 sensor of an M5 (a
     smartex io sensor, told apart from the LoRaWAN radio ones by its hash),
@@ -55,10 +63,15 @@ def device_model_of(device):
 
 def device_label(device) -> str:
     """The full name of a device for pickers: its custom name (mac) if set,
-    its model (device_model_of, else the hardware name) and its hash - e.g.
-    "Dach Nord · smartex dm · 1312-01" or "smartex dm · 1312-01". Parts that
-    repeat one another are left out."""
-    model = device_model_of(device) or (device.hardware or "").strip() or None
+    its model (device_model_of; a smartex io radio sensor "smartex io", else
+    the hardware name) and its hash - e.g. "Dach Nord · smartex dm · 1312-01"
+    or "smartex dm · 1312-01". Parts that repeat one another are left out."""
+    from progeo.v1.models import ProgeoDevice
+
+    model = device_model_of(device)
+    if model is None and getattr(device, "type", None) == ProgeoDevice.DeviceType.SMARTEX_IO:
+        model = ProgeoDevice.DeviceType.SMARTEX_IO.label
+    model = model or (device.hardware or "").strip() or None
     parts = []
     for part in ((device.mac or "").strip(), model, (device.raw_hash or "").strip()):
         if part and part.lower() not in (seen.lower() for seen in parts):

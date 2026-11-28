@@ -12,7 +12,8 @@ databases share it (same ids), an account with its own database has its own.
 The group name carries that space, so equal ids of two accounts never meet.
 
 Message: {"type": "location.status", "location_id", "reason": "measurement",
-"alarm": bool, "measurement_id"}.
+"alarm": bool, "measurement_id", "kind": "leak" | "climate"} - the kind of the
+device (helper/device_kinds.py): a location with both reloads only that tab.
 """
 import re
 
@@ -51,14 +52,15 @@ def notify_location_status(measure, alarm: bool = False, reason: str = "measurem
     new data is there - after the measurement is committed, so their reload
     sees it. A device without a location has no status page. Never raises:
     the measurement is stored, only the live update is lost."""
+    from progeo.helper.device_kinds import kind_of_type
     from progeo.v1.models import ProgeoDevice
 
     db_name = measure._state.db or DEFAULT_DB_ALIAS
     try:
-        location_id = (
+        location_id, device_type = (
             ProgeoDevice.objects.using(db_name).filter(pk=measure.device_id)
-            .values_list("location_id", flat=True).first()
-        )
+            .values_list("location_id", "type").first()
+        ) or (None, None)
     except Exception as exc:  # noqa: BLE001 - see docstring
         elog(f"location status update: device {measure.device_id} not readable: {exc!r}", tag="[LIVE]")
         return
@@ -71,6 +73,7 @@ def notify_location_status(measure, alarm: bool = False, reason: str = "measurem
         "reason": reason,
         "alarm": bool(alarm),
         "measurement_id": measure.pk,
+        "kind": kind_of_type(device_type),
     }
 
     def send():

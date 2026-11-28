@@ -9,6 +9,7 @@ import {
   type SensorHeatmapResponse,
 } from '../components/device/sensorHeatmapTypes';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import type { DeviceKind } from './locationTypes';
 
 type LocationHistory = {
   history: SensorHeatmapResponse | null;
@@ -36,6 +37,9 @@ export const useLocationHistory = (
   /** The value per sensor (?profile=) - |WP - EP| by default. */
   profile: HeatProfile = 'diff',
   revision = 0,
+  /** Only the devices of that kind (&kind=, a location with climate
+   * sensors too) - without it all of them. */
+  kind?: DeviceKind,
 ): LocationHistory => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -52,7 +56,7 @@ export const useLocationHistory = (
       return;
     }
     const query = spec === 'latest' ? 'latest=1' : heatmapQuery(spec);
-    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${query}${heatProfileQuery(profile)}`;
+    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${query}${heatProfileQuery(profile)}${kind ? `&kind=${kind}` : ''}`;
     const request = `${url}#${revision}`;
     if (requested.current === request) {
       return;
@@ -83,7 +87,7 @@ export const useLocationHistory = (
         setState((prev) => ({ ...prev, loading: false, denied }));
       },
     );
-  }, [auth, demo, enqueueSnackbar, locationId, profile, revision, spec]);
+  }, [auth, demo, enqueueSnackbar, kind, locationId, profile, revision, spec]);
 
   return state;
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import type { DeviceKind } from './locationTypes';
 import type { MeasurementRange } from './timeRanges';
 
 /**
@@ -10,16 +11,18 @@ import type { MeasurementRange } from './timeRanges';
  * is there. `range` is null while loading, on failure (`failed`, quietly -
  * the views then just offer the short ranges) or while `enabled` is false.
  * `revision` in the answer: the revision the shown range (or the failure)
- * belongs to.
+ * belongs to. `kind`: only the devices of that kind (a location with leak
+ * devices and climate sensors, ?kind=) - without it all of them.
  */
 export const useMeasurementRangeState = (
   locationId: number,
   demo: boolean,
   enabled = true,
   revision = 0,
+  kind?: DeviceKind,
 ): { range: MeasurementRange | null; failed: boolean; revision: number } => {
   const auth = useAuth();
-  const key = `${demo ? 'demo' : 'location'}:${locationId}`;
+  const key = `${demo ? 'demo' : 'location'}:${locationId}:${kind ?? ''}`;
   const requestKey = `${key}#${revision}`;
   const [result, setResult] = useState<{
     key: string;
@@ -36,7 +39,7 @@ export const useMeasurementRangeState = (
     requestedKey.current = requestKey;
     void axiosConfig.perform_get(
       auth,
-      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/measurement-range/`,
+      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/measurement-range/${kind ? `?kind=${kind}` : ''}`,
       (response) => {
         if (requestedKey.current !== requestKey) {
           return;
@@ -63,7 +66,7 @@ export const useMeasurementRangeState = (
         setFailed({ key, revision });
       },
     );
-  }, [auth, demo, enabled, key, locationId, requestKey, revision]);
+  }, [auth, demo, enabled, key, kind, locationId, requestKey, revision]);
 
   const range = result?.key === key ? result.range : null;
   const failedHere = failed?.key === key;
@@ -77,7 +80,11 @@ export const useMeasurementRangeState = (
   };
 };
 
-const useMeasurementRange = (locationId: number, demo: boolean, enabled = true): MeasurementRange | null =>
-  useMeasurementRangeState(locationId, demo, enabled).range;
+const useMeasurementRange = (
+  locationId: number,
+  demo: boolean,
+  enabled = true,
+  kind?: DeviceKind,
+): MeasurementRange | null => useMeasurementRangeState(locationId, demo, enabled, 0, kind).range;
 
 export default useMeasurementRange;
