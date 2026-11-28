@@ -75,7 +75,7 @@ type ProvisionPreview = {
   token: string;
   url: string;
   config: string;
-  /** 'lua' (default) or 'm5' (platform_config.h). */
+  /** 'lua' (default) or 'm5' (config.py of the M5's MicroPython firmware). */
   config_format?: 'lua' | 'm5';
   config_filename?: string;
   /** The config as a PNG QR code (data URI); Lua only. */
@@ -364,7 +364,7 @@ const DeviceProvisionPanel = ({
       .catch(() => showErrorBar(enqueueSnackbar, 'Could not copy the config.'));
   };
 
-  /** The M5 config is a file (platform_config.h) for the firmware build. */
+  /** The M5 config is a file (config.py) for its MicroPython firmware. */
   const downloadConfig = () => {
     if (!preview) {
       return;
@@ -372,7 +372,7 @@ const DeviceProvisionPanel = ({
     const url = URL.createObjectURL(new Blob([preview.config], { type: 'text/plain' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = preview.config_filename || 'platform_config.h';
+    link.download = preview.config_filename || 'config.py';
     document.body.appendChild(link);
     link.click();
     link.remove();

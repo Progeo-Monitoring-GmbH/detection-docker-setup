@@ -2970,7 +2970,7 @@ i18n
           provision_device_type_hint:
             "Preselected with the location's type - any other device can be added to the location too.",
           provision_config_format_lua: 'Lua (microBox)',
-          provision_config_format_m5: 'M5Stack (platform_config.h)',
+          provision_config_format_m5: 'M5Stack (config.py, MicroPython)',
           provision_threshold_mv: 'Start threshold (mV)',
           provision_poll_sec: 'Poll interval (s)',
           provision_rs485_title: 'RS485 climate sensors',
@@ -2982,7 +2982,7 @@ i18n
           provision_threshold_location: 'Location alarm threshold: {{value}} mV',
           provision_threshold_mismatch:
             'The device threshold ({{threshold}} mV) differs from the location threshold ({{location}} mV).',
-          provision_download_config: 'Download platform_config.h',
+          provision_download_config: 'Download config.py',
           provision_generate_hint:
             'Device hash, token and URL are filled in when the config is generated.',
           provision_config_show: 'Show config',
@@ -6619,7 +6619,7 @@ i18n
           provision_device_type_hint:
             'Vorausgewählt ist der Typ des Standorts – es lassen sich aber auch andere Geräte am Standort anlegen.',
           provision_config_format_lua: 'Lua (microBox)',
-          provision_config_format_m5: 'M5Stack (platform_config.h)',
+          provision_config_format_m5: 'M5Stack (config.py, MicroPython)',
           provision_threshold_mv: 'Start-Schwelle (mV)',
           provision_poll_sec: 'Abfrage-Intervall (s)',
           provision_rs485_title: 'RS485-Klimasensoren',
@@ -6631,7 +6631,7 @@ i18n
           provision_threshold_location: 'Alarmschwelle der Location: {{value}} mV',
           provision_threshold_mismatch:
             'Die Geräte-Schwelle ({{threshold}} mV) weicht von der Schwelle der Location ({{location}} mV) ab.',
-          provision_download_config: 'platform_config.h herunterladen',
+          provision_download_config: 'config.py herunterladen',
           provision_generate_hint:
             'Device-Hash, Token und URL werden beim Erzeugen der Konfiguration eingetragen.',
           provision_config_show: 'Konfiguration anzeigen',

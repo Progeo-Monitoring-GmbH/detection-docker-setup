@@ -39,7 +39,8 @@ def device_model(hardware):
 
 
 # devEui of an RS485 climate sensor at an M5: "<M5 hash>-RS<address>"
-# (PLATFORM_RS485_EUI_PREFIX in device_provisioning), stored upper-case as raw_hash.
+# (PLATFORM_RS485_HASH + address in the M5's config.py, device_provisioning), stored
+# upper-case as raw_hash.
 RS485_HASH_RE = re.compile(r"-RS\d+$", re.IGNORECASE)
 RS485_MODEL = "RS485"
 

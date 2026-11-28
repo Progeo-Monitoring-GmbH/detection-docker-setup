@@ -429,7 +429,32 @@ def test_users_need_the_permission_and_only_get_their_locations(api_client, loca
     assert _preview(api_client, own)["device_hash"] == f"{own.project_id}-01"
 
 
-# ------------------------------------------------------------------ M5 (platform_config.h)
+# ------------------------------------------------------------------ M5 (MicroPython config.py)
+
+# The keys the M5 firmware checks at start (m5-stack mPy/device/config_keys.py):
+# a config.py without one of them does not start.
+M5_REQUIRED = (
+    "PLATFORM_PROJECT_ID", "PLATFORM_DEVICE_HASH", "PLATFORM_HOST", "PLATFORM_PATH",
+    "PLATFORM_TOKEN", "PLATFORM_MODEL", "PLATFORM_DEVICE_VER", "PLATFORM_PULLDOWN",
+    "PLATFORM_INTERVAL_SEC", "PLATFORM_POLL_SEC", "PLATFORM_SENSORS", "PLATFORM_PE",
+)
+M5_REQUIRED_RS485 = (
+    "PLATFORM_RS485_HOST", "PLATFORM_RS485_PATH", "PLATFORM_RS485_HASH",
+    "PLATFORM_RS485_TOKEN", "PLATFORM_RS485_INTERVAL_SEC",
+)
+M5_OPTIONAL = ("ALARM_NUMBER", "APN", "PLATFORM_THRESHOLD_MV", "PLATFORM_RS485_ENABLED", "SERIAL_CLI",
+               "MODEM_DEBUG")
+M5_PLAN = {"project_id": 1312, "device_hash": "1312-01", "token": "abcDEF123", "threshold_mv": 891,
+           "model": "M5 AIN4", "config_format": "m5", "sensors": 4, "interval_sec": 300, "poll_sec": 300,
+           "pulldown_resistance": 136, "protective_earth": 0,
+           "url": "https://api.progeo.com/v1/device/1312/sample/"}
+
+
+def _run_config(text):
+    """The values of a config.py as the M5 imports it."""
+    values = {}
+    exec(compile(text, "config.py", "exec"), {}, values)  # noqa: S102 - our own generated file
+    return values
 
 def test_default_threshold_mv_matches_factory():
     assert provisioning.default_threshold_mv(136) == 891
@@ -460,46 +485,64 @@ def test_m5_threshold_and_poll_ranges():
             provisioning.parse_settings({"model": "M5 AIN4", **bad})
 
 
-def test_render_platform_config():
-    plan = {"project_id": 1312, "device_hash": "1312-01", "token": "abcDEF123", "threshold_mv": 891,
-            "model": "M5 AIN4", "config_format": "m5", "sensors": 4, "interval_sec": 300, "poll_sec": 300,
-            "pulldown_resistance": 136, "protective_earth": 0,
-            "url": "https://api.progeo.com/v1/device/1312/sample/"}
-    text = provisioning.render_platform_config(plan)
-    for line in (
-        '#define PLATFORM_DEVICE_HASH  "1312-01"',
-        '#define PLATFORM_HOST         "api.progeo.com"',
-        '#define PLATFORM_PATH         "/v1/device/1312/sample/"',
-        '#define PLATFORM_TOKEN        "abcDEF123"',
-        "#define PLATFORM_THRESHOLD_MV 891",
-        "#define PLATFORM_POLL_SEC     300",
-        '#define PLATFORM_MODEL        "M5 AIN4"',
-    ):
-        assert line in text
-    head, _, _ = text.partition("#pragma once")
-    assert head.startswith("//") and "#define" not in head
-    assert provisioning.render_device_config(plan) == (text, "platform_config.h")
+def test_render_m5_config_is_a_valid_micropython_config():
+    text = provisioning.render_m5_config(M5_PLAN)
+    config = _run_config(text)
+
+    assert [key for key in (*M5_REQUIRED, *M5_REQUIRED_RS485, *M5_OPTIONAL) if key not in config] == []
+    assert config["PLATFORM_PROJECT_ID"] == "1312"  # a string - the firmware calls int() on it
+    assert config["PLATFORM_DEVICE_HASH"] == "1312-01"
+    assert config["PLATFORM_HOST"] == "api.progeo.com"
+    assert config["PLATFORM_PATH"] == "/v1/device/1312/sample/"  # the SMS path: "sample/" -> "sms/"
+    assert config["PLATFORM_TOKEN"] == "abcDEF123"
+    assert config["PLATFORM_MODEL"] == "M5 AIN4"
+    assert config["PLATFORM_DEVICE_VER"] == provisioning.CONFIG_VERSION
+    assert (config["PLATFORM_PULLDOWN"], config["PLATFORM_INTERVAL_SEC"], config["PLATFORM_POLL_SEC"]) == (136, 300, 300)
+    assert (config["PLATFORM_THRESHOLD_MV"], config["PLATFORM_SENSORS"], config["PLATFORM_PE"]) == (891, 4, 0)
+    assert config["PLATFORM_RS485_ENABLED"] == 0
+    assert (config["APN"], config["ALARM_NUMBER"]) == ("iot.1nce.net", "")
+    assert (config["SERIAL_CLI"], config["MODEM_DEBUG"]) == (True, False)
+    assert "#define" not in text and "PLATFORM_RS485_EUI_PREFIX" not in text
+    assert text.startswith("#")
+    assert provisioning.render_device_config(M5_PLAN) == (text, "config.py")
 
 
-def test_render_platform_config_escapes_c_strings():
-    plan = {"project_id": 1, "device_hash": "1-01", "token": r'a"b\c', "threshold_mv": 5,
+def test_m5_rs485_sensors_keep_the_hash_the_backend_knows():
+    """devEui = PLATFORM_RS485_HASH + Modbus address: "<M5 hash>-RS1" - the
+    backend tells RS485 sensors and their M5 by it (device_overview)."""
+    from progeo.helper.device_overview import rs485_parent_hash
+
+    config = _run_config(provisioning.render_m5_config({**M5_PLAN, "rs485_enabled": True}))
+
+    assert config["PLATFORM_RS485_HASH"] == "1312-01-RS"
+    assert rs485_parent_hash(config["PLATFORM_RS485_HASH"] + "1") == "1312-01"
+    # The M5's host, token and interval.
+    assert config["PLATFORM_RS485_HOST"] == config["PLATFORM_HOST"]
+    assert config["PLATFORM_RS485_TOKEN"] == config["PLATFORM_TOKEN"]
+    assert config["PLATFORM_RS485_INTERVAL_SEC"] == config["PLATFORM_INTERVAL_SEC"] == 300
+
+
+def test_render_m5_config_escapes_strings():
+    plan = {"project_id": 1, "device_hash": "1-01", "token": 'a"b\\c\nd\re', "threshold_mv": 5,
             "url": "https://x.example/v1/device/1/sample/"}
-    assert r'#define PLATFORM_TOKEN        "a\"b\\c"' in provisioning.render_platform_config(plan)
+    text = provisioning.render_m5_config(plan)
+    assert _run_config(text)["PLATFORM_TOKEN"] == 'a"b\\c\nd\re'
+    assert "\r" not in text
 
 
-def test_preview_m5_has_header_and_no_qr(staff_client, location):
+def test_preview_m5_has_config_py_and_no_qr(staff_client, location):
     body = _preview(staff_client, location, model="M5 AIN4")
     assert body["config_format"] == "m5"
-    assert body["config_filename"] == "platform_config.h"
+    assert body["config_filename"] == "config.py"
     assert "config_qr" not in body and "portal" not in body
-    assert "#define PLATFORM_THRESHOLD_MV 891" in body["config"]
+    assert _run_config(body["config"])["PLATFORM_THRESHOLD_MV"] == 891
 
 
 def test_confirm_m5_creates_device(staff_client, location):
     preview = _preview(staff_client, location, model="M5 AIN4")
     response = staff_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
     assert response.status_code == 200, response.content
-    assert response.json()["config_filename"] == "platform_config.h"
+    assert response.json()["config_filename"] == "config.py"
     assert response.json()["config"] == preview["config"]
     device = ProgeoDevice.objects.using(f.DB).get(raw_hash=preview["device_hash"])
     assert device.hardware == "M5 AIN4"
@@ -531,19 +574,11 @@ def test_locations_report_alarm_threshold_and_m5_defaults(staff_client, location
     assert body["m5_model"] == "M5 AIN4"
 
 
-def test_render_platform_config_escapes_newlines():
-    plan = {"project_id": 1, "device_hash": "1-01", "token": "a\nb\rc", "threshold_mv": 5,
-            "url": "https://x.example/v1/device/1/sample/"}
-    text = provisioning.render_platform_config(plan)
-    assert r'#define PLATFORM_TOKEN        "a\nb\rc"' in text
-    assert "\r" not in text
-
-
-def test_render_platform_config_keeps_port_and_prefix(staff_client, location, settings):
+def test_render_m5_config_keeps_port_and_prefix(staff_client, location, settings):
     settings.DEVICE_SAMPLE_BASE_URL = "https://api.example.com:8443/base"
-    body = _preview(staff_client, location, model="M5 AIN4")
-    assert '#define PLATFORM_HOST         "api.example.com:8443"' in body["config"]
-    assert f'#define PLATFORM_PATH         "/base/v1/device/{location.project_id}/sample/"' in body["config"]
+    config = _run_config(_preview(staff_client, location, model="M5 AIN4")["config"])
+    assert config["PLATFORM_HOST"] == "api.example.com:8443"
+    assert config["PLATFORM_PATH"] == f"/base/v1/device/{location.project_id}/sample/"
 
 
 def test_m5_preview_refuses_http_base_url(staff_client, location, settings):
@@ -578,7 +613,7 @@ def test_rs485_project_id_is_optional(staff_client, location):
             provisioning.parse_settings({"model": "M5 AIN4", "rs485_enabled": True, "rs485_project_id": bad})
 
     body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True)
-    assert f'#define PLATFORM_RS485_PATH         "/v1/device/lorawan/{location.project_id}/"' in body["config"]
+    assert _run_config(body["config"])["PLATFORM_RS485_PATH"] == f"/v1/device/lorawan/{location.project_id}/"
 
 
 def test_rs485_may_use_the_leak_project(staff_client, location):
@@ -589,25 +624,24 @@ def test_rs485_may_use_the_leak_project(staff_client, location):
 
 def test_rs485_block_explains_the_default(staff_client, location):
     config = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True)["config"]
-    assert "// Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab" in config
-    assert "// des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt." in config
-    path_line = next(line for line in config.splitlines() if line.startswith("#define PLATFORM_RS485_PATH"))
-    assert path_line.endswith("// Standard: Projekt der M5")
+    assert "# Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab" in config
+    assert "# des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt." in config
+    path_line = next(line for line in config.splitlines() if line.startswith("PLATFORM_RS485_PATH"))
+    assert path_line.endswith("# Standard: Projekt der M5")
     assert "werden dort nicht angezeigt" not in config
 
 
 def test_rs485_enabled_renders_block(staff_client, location):
     body = _preview(staff_client, location, model="M5 AIN4", rs485_enabled=True,
                     rs485_project_id=location.project_id + 1, interval_sec=600)
-    config = body["config"]
-    assert "#define PLATFORM_RS485_ENABLED      1" in config
-    assert f'#define PLATFORM_RS485_PATH         "/v1/device/lorawan/{location.project_id + 1}/"' in config
-    assert "#define PLATFORM_RS485_HOST         PLATFORM_HOST" in config
-    assert "#define PLATFORM_RS485_TOKEN        PLATFORM_TOKEN" in config
-    # The climate values go out at the M5's own interval - no second one.
-    assert "#define PLATFORM_INTERVAL_SEC 600" in config
-    assert "#define PLATFORM_RS485_INTERVAL_SEC PLATFORM_INTERVAL_SEC" in config
-    assert '#define PLATFORM_RS485_EUI_PREFIX   PLATFORM_DEVICE_HASH "-RS"' in config
+    config = _run_config(body["config"])
+    assert config["PLATFORM_RS485_ENABLED"] == 1
+    assert config["PLATFORM_RS485_PATH"] == f"/v1/device/lorawan/{location.project_id + 1}/"
+    assert config["PLATFORM_RS485_HOST"] == config["PLATFORM_HOST"]
+    assert config["PLATFORM_RS485_TOKEN"] == config["PLATFORM_TOKEN"] == body["token"]
+    # The climate values go out at the M5's own interval.
+    assert config["PLATFORM_INTERVAL_SEC"] == config["PLATFORM_RS485_INTERVAL_SEC"] == 600
+    assert config["PLATFORM_RS485_HASH"] == body["device_hash"] + "-RS"
 
 
 def test_rs485_path_keeps_base_prefix(staff_client, location, settings):
@@ -619,8 +653,9 @@ def test_rs485_path_keeps_base_prefix(staff_client, location, settings):
 
 def test_rs485_disabled_renders_zero_with_own_project(staff_client, location):
     body = _preview(staff_client, location, model="M5 AIN4")
-    assert "#define PLATFORM_RS485_ENABLED      0" in body["config"]
-    assert f'"/v1/device/lorawan/{location.project_id}/"' in body["config"]
+    config = _run_config(body["config"])
+    assert config["PLATFORM_RS485_ENABLED"] == 0
+    assert config["PLATFORM_RS485_PATH"] == f"/v1/device/lorawan/{location.project_id}/"
 
 
 def test_rs485_ignored_for_lua(staff_client, location):

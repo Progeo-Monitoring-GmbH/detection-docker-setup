@@ -42,7 +42,8 @@ vi.mock('../../axiosConfig', () => ({
       ok({
         data: {
           ...(m5
-            ? { config_format: 'm5', config_filename: 'platform_config.h' }
+            // No filename: the page names the M5's file itself (config.py).
+            ? { config_format: 'm5' }
             : { config_format: 'lua', config_filename: 'config.lua', config_qr: code.image, portal: { wifi: { ...code, ssid: 'Helper' }, frontend: { ...code, url: 'http://192.168.16.1' } } }),
           device_hash: '1312-01',
           project_id: 1312,
@@ -415,7 +416,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       expect(api.previews[0]).toMatchObject({ pulldown_resistance: 72, threshold_mv: 450 });
     });
 
-    it('offers the config as a download named platform_config.h', () => {
+    it('offers the config as a download named config.py (MicroPython)', () => {
       pickM5();
       click(one('device-provision-generate'));
       const create = vi.fn(() => 'blob:x');
@@ -429,7 +430,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       click(one('device-provision-download-config'));
 
       expect(create).toHaveBeenCalled();
-      expect(names).toEqual(['platform_config.h']);
+      expect(names).toEqual(['config.py']);
       clickSpy.mockRestore();
     });
   });

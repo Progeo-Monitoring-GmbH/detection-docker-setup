@@ -8,6 +8,7 @@ is signed, so "confirm" creates exactly that device (filed under the
 location) and its LimitedToken; from then on the controller can POST its
 samples to /v1/device/<project_id>/sample/ (DeviceViewSet.catch_live_data).
 """
+import json
 import re
 import secrets
 import string
@@ -47,12 +48,14 @@ M5_INTERVAL_RANGE = (30, 86400)
 DEFAULT_SENSORS = 32
 DEFAULT_INTERVAL_SEC = 1800
 
-# "lua": config.lua of the smartex box; "m5": include/platform_config.h of the M5 AIN4.
+# "lua": config.lua of the smartex box; "m5": config.py of the M5 AIN4 (MicroPython).
 CONFIG_FORMATS = ("lua", "m5")
 M5_DEFAULTS = {
     "sensors": 4, "interval_sec": 300, "poll_sec": 300,
     "rs485_enabled": False,
 }
+# The SIM's APN in the M5 config (1NCE; Melita: "iot.melita.io").
+M5_APN = "iot.1nce.net"
 M5_THRESHOLD_DEFAULTS = {136: 891, 72: 450, 40: 76, 24: 8}
 # Pulldown value -> resistance in ohm (136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R).
 _PULLDOWN_OHM = {136: 100000, 72: 10000, 40: 1000, 24: 100}
@@ -329,79 +332,81 @@ def render_config(plan) -> str:
     ])
 
 
-def c_string(value) -> str:
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
-    return f'"{escaped}"'
+def py_string(value) -> str:
+    """`value` as a Python (MicroPython) string literal - JSON's escapes are
+    Python's (quotes, backslash, newlines, unicode escapes)."""
+    return json.dumps(str(value))
 
 
-def _define(name, value, comment="") -> str:
-    line = f"#define {name:<21} {value}"
-    return f"{line}  // {comment}" if comment else line
+def _assign(name, value, comment="") -> str:
+    line = f"{name} = {value}"
+    return f"{line:<44}  # {comment}" if comment else line
 
 
-def _define_rs485(name, value, comment="") -> str:
-    line = f"#define {name:<27} {value}"
-    return f"{line}{comment}" if comment else line
-
-
-def render_platform_config(plan) -> str:
-    """The M5's include/platform_config.h (plan: build_plan)."""
+def render_m5_config(plan) -> str:
+    """The M5's config.py for its MicroPython firmware (plan: build_plan) -
+    every key the firmware checks at start (m5-stack mPy/device/config_keys.py,
+    template mPy/config/config_example.py)."""
     url = urlsplit(plan["url"])
     return "\n".join([
-        "// Geraete-Konfiguration fuer include/platform_config.h -- vom Backend (Geraete-Einrichtung)",
-        "// erzeugt. Datei als include/platform_config.h ablegen und die Firmware bauen. Sie enthaelt",
-        "// den Geraete-Token und steht deshalb in .gitignore.",
-        "#pragma once",
+        "# Geraete-Konfiguration fuer die MicroPython-Firmware des M5 -- vom Backend",
+        "# (Geraete-Einrichtung) erzeugt. Als mPy/config/config.py ablegen; tools/upload.py",
+        "# laedt sie als config.py aufs Geraet. Sie enthaelt den Geraete-Token und steht",
+        "# deshalb in .gitignore.",
         "",
-        "// device",
-        _define("PLATFORM_MODEL", c_string(plan_model(plan))),
-        _define("PLATFORM_DEVICE_VER", c_string(CONFIG_VERSION)),
-        _define("PLATFORM_PROJECT_ID", c_string(plan["project_id"])),
-        _define("PLATFORM_DEVICE_HASH", c_string(plan["device_hash"])),
+        "# Plattform: https://<HOST><PATH>, Authorization: Token <TOKEN>",
+        _assign("PLATFORM_PROJECT_ID", py_string(plan["project_id"])),
+        _assign("PLATFORM_DEVICE_HASH", py_string(plan["device_hash"])),
+        _assign("PLATFORM_HOST", py_string(url.netloc)),
+        _assign("PLATFORM_PATH", py_string(url.path), 'SMS-Pfad: "sample/" -> "sms/"'),
+        _assign("PLATFORM_TOKEN", py_string(plan["token"])),
         "",
-        "// measurement",
-        _define("PLATFORM_PULLDOWN", plan.get("pulldown_resistance", 136),
-                "136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R"),
-        _define("PLATFORM_INTERVAL_SEC", plan.get("interval_sec", M5_DEFAULTS["interval_sec"])),
-        _define("PLATFORM_SENSORS", plan.get("sensors", M5_DEFAULTS["sensors"]), "gemeldete Sensoren"),
-        _define("PLATFORM_PE", plan.get("protective_earth", 0), "protective_earth"),
-        _define("PLATFORM_POLL_SEC", plan.get("poll_sec", M5_DEFAULTS["poll_sec"]), "Abfrage der Befehle (s)"),
-        _define("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
+        "# Startwert der Alarmnummer (international, z. B. \"+4917...\"); wird nur",
+        "# uebernommen, solange am Geraet noch keine Nummer gespeichert ist",
+        _assign("ALARM_NUMBER", py_string("")),
         "",
-        "// control: https://<HOST><PATH>, Authorization: Token <TOKEN>",
-        _define("PLATFORM_HOST", c_string(url.netloc)),
-        _define("PLATFORM_PATH", c_string(url.path)),
-        _define("PLATFORM_TOKEN", c_string(plan["token"])),
+        "# APN der SIM: 1NCE \"iot.1nce.net\", Melita \"iot.melita.io\"",
+        _assign("APN", py_string(M5_APN)),
         "",
-        "// rs485: XY-MD04 Temperatur/Feuchte (Adressen 1..2) als eigene smartex-io-",
-        "// Sensoren (Modell RS485) im Backend (ChirpStack-Format):",
-        "//   POST https://<RS485_HOST><RS485_PATH>, Authorization: Token <RS485_TOKEN>",
-        '//   {"deviceInfo":{"devEui":"<RS485_EUI_PREFIX><adresse>"},',
-        '//    "object":{"messages":[{"measurementId":4097,"measurementValue":<Grad C>},',
-        '//                          {"measurementId":4098,"measurementValue":<% rF>}]}}',
-        '// Jede Adresse ist ein eigenes Geraet im Backend (devEui = raw_hash, wird gross',
-        '// geschrieben; Name automatisch "<projekt>_S<n>"). Antwort 200 mit',
-        '// "measurement_id", 400 ohne gueltige Messwerte. Keine Alarme fuer Klimawerte.',
-        "// Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab",
-        "// des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt.",
-        _define_rs485("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0,
-                      "       // 1 = Werte an das Backend senden"),
-        _define_rs485("PLATFORM_RS485_HOST", "PLATFORM_HOST"),
-        _define_rs485("PLATFORM_RS485_PATH", c_string(rs485_path(plan)),
-                      "   // Standard: Projekt der M5"),
-        _define_rs485("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN", "               // jeder Transfer-Token mit Konto"),
-        # The climate sensors send at the M5's own interval - no second one.
-        _define_rs485("PLATFORM_RS485_INTERVAL_SEC", "PLATFORM_INTERVAL_SEC"),
-        _define_rs485("PLATFORM_RS485_EUI_PREFIX", 'PLATFORM_DEVICE_HASH "-RS"',
-                      '   // devEui z. B. "<geraet>-RS1"'),
+        "# Geraet und Messung",
+        _assign("PLATFORM_MODEL", py_string(plan_model(plan))),
+        _assign("PLATFORM_DEVICE_VER", py_string(CONFIG_VERSION)),
+        _assign("PLATFORM_PULLDOWN", plan.get("pulldown_resistance", 136), "136 = 100k, 72 = 10k, 40 = 1k, 24 = 100R"),
+        _assign("PLATFORM_INTERVAL_SEC", plan.get("interval_sec", M5_DEFAULTS["interval_sec"])),
+        _assign("PLATFORM_POLL_SEC", plan.get("poll_sec", M5_DEFAULTS["poll_sec"]), "Abfrage der Befehle (s)"),
+        _assign("PLATFORM_THRESHOLD_MV", plan["threshold_mv"], "Startschwelle in mV (1-999)"),
+        _assign("PLATFORM_SENSORS", plan.get("sensors", M5_DEFAULTS["sensors"]), "gemeldete Sensoren"),
+        _assign("PLATFORM_PE", plan.get("protective_earth", 0), "protective_earth"),
+        "",
+        "# RS485: XY-MD04 Temperatur/Feuchte als eigene smartex-io-Sensoren (Modell RS485)",
+        "# im Backend, je Modbus-Adresse ein POST im ChirpStack-Format an",
+        "# https://<RS485_HOST><RS485_PATH>, Authorization: Token <RS485_TOKEN>. Keine Alarme",
+        "# fuer Klimawerte.",
+        "# Ohne eigene Projektnummer (Standard): die Klimawerte erscheinen im Klima-Tab",
+        "# des Leckage-Objekts der M5. Mit eigener Nummer: ein eigenes smartex-io-Objekt.",
+        _assign("PLATFORM_RS485_ENABLED", 1 if plan.get("rs485_enabled") else 0, "1 = Werte an das Backend senden"),
+        _assign("PLATFORM_RS485_HOST", "PLATFORM_HOST"),
+        _assign("PLATFORM_RS485_PATH", py_string(rs485_path(plan)), "Standard: Projekt der M5"),
+        # "<M5 hash>-RS<address>": the backend tells RS485 sensors and their
+        # M5 by it (device_overview.rs485_parent_hash).
+        _assign("PLATFORM_RS485_HASH", 'PLATFORM_DEVICE_HASH + "-RS"',
+                f"devEui je Sensor: Hash + Modbus-Adresse, z. B. {plan['device_hash']}-RS1"),
+        _assign("PLATFORM_RS485_TOKEN", "PLATFORM_TOKEN"),
+        # The climate sensors send at the M5's interval (their offline case
+        # follows it: executor._rs485_fields).
+        _assign("PLATFORM_RS485_INTERVAL_SEC", "PLATFORM_INTERVAL_SEC"),
+        "",
+        "# Optional",
+        _assign("SERIAL_CLI", "True", "Einzelzeichen-Befehle auf der USB-Konsole (t, u, p, ...)"),
+        _assign("MODEM_DEBUG", "False", "True: jeden AT-Befehl und die HTTP-Antworten loggen"),
         "",
     ])
 
 
 def render_device_config(plan) -> tuple[str, str]:
-    """(text, filename) of the plan's config: config.lua or platform_config.h."""
+    """(text, filename) of the plan's config: config.lua or config.py (M5)."""
     if plan.get("config_format") == "m5":
-        return render_platform_config(plan), "platform_config.h"
+        return render_m5_config(plan), "config.py"
     return render_config(plan), "config.lua"
 
 

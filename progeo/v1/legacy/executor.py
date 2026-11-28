@@ -390,7 +390,7 @@ def _rs485_fields(devices, raw_hash):
     """A new RS485 sensor "<M5 hash>-RS<n>" of a known M5: the M5's location
     (not the first one with the payload's project number - after a merge the
     firmware still sends the old one) and its interval as the send interval
-    (the firmware sends the climate values at PLATFORM_INTERVAL_SEC too).
+    (the M5's config.py sets PLATFORM_RS485_INTERVAL_SEC = PLATFORM_INTERVAL_SEC).
     Nothing for other devices or an unknown M5 (the project's location, as
     before)."""
     parent_hash = rs485_parent_hash(raw_hash)
