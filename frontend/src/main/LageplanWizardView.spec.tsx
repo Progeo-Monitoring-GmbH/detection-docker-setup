@@ -45,6 +45,17 @@ vi.mock('../components/form/RedDropbox.tsx', () => ({ default: () => null }));
 vi.mock('./LageplanKlemmliste', () => ({ default: () => null }));
 vi.mock('./LageplanAutoRepair', () => ({ default: () => null }));
 vi.mock('./DmTransferStep', () => ({ default: () => null }));
+// Step 2 loads its own data (tested in DeviceInputsStep.spec.tsx) - here only its card.
+vi.mock('./DeviceInputsStep', async () => {
+  const { StepCard } = await import('./LageplanWizardComponents');
+  return {
+    default: () => (
+      <StepCard number={8} step="devices" title="Device">
+        <div />
+      </StepCard>
+    ),
+  };
+});
 
 const { default: LageplanWizardView } = await import('./LageplanWizardView');
 
@@ -153,7 +164,7 @@ describe('LageplanWizardView points import', () => {
   });
 });
 
-describe('LageplanWizardView step 6 by product', () => {
+describe('LageplanWizardView step 5 by product', () => {
   it('offers smartex dm the dm-Transfer, not the Auto-Repair', async () => {
     await render('/site-plan/wizard/?location=7');
 
@@ -167,7 +178,7 @@ describe('LageplanWizardView step 6 by product', () => {
 
     const step = container.querySelector('#wizard-auto-repair')!;
     expect(step).not.toBeNull();
-    expect(step.getAttribute('data-testid')).toBe('lageplan-wizard-step-6');
+    expect(step.getAttribute('data-testid')).toBe('lageplan-wizard-step-5');
     expect(container.querySelector('#wizard-dm-transfer')).toBeNull();
   });
 });

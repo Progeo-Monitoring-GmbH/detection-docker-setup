@@ -1420,7 +1420,7 @@ i18n
           readiness_detail_airtable: 'No Airtable link',
           readiness_detail_lageplan: 'No Lageplan uploaded',
           readiness_detail_lageplan_aligned:
-            '{{missing}} of {{total}} plan(s) in use not aligned (wizard step 5)',
+            '{{missing}} of {{total}} plan(s) in use not aligned (wizard step 4)',
           readiness_detail_lageplan_calibrated:
             '{{missing}} of {{total}} plan(s) in use without reference point and calibration',
           readiness_detail_lageplan_cropped:
@@ -1904,11 +1904,11 @@ i18n
           lageplan_wizard_hint_location:
             'The location whose Lageplan you set up - every later step works on it.',
           lageplan_wizard_hint_devices:
-            'Which controller each imported sensor belongs to: per device the range of its sensor pairs (from - to).',
+            'Which sensor each input of the controllers measures: per device in sections (inputs from - to, from which sensor on) - a Klemmliste fills them.',
           lageplan_wizard_hint_plans:
             'The site plan image or PDF the measure points are drawn on. Upload several and pick the main one; the selected plan is used in the next steps.',
           lageplan_wizard_hint_points:
-            'Where the sensors lie: import their positions from CAD (DWG/DXF), JSON or TXT - or select a sensor and place it by hand on the plan in step 5.',
+            'Where the sensors lie: import their positions from CAD (DWG/DXF), JSON or TXT - or select a sensor and place it by hand on the plan in step 4.',
           lageplan_wizard_hint_align:
             'Move, scale and rotate the imported points until they lie right on the plan, and set the plan scale (metres per pixel).',
           lageplan_wizard_hint_auto_repair:
@@ -5013,7 +5013,7 @@ i18n
           readiness_detail_airtable: 'Kein Airtable-Link',
           readiness_detail_lageplan: 'Kein Lageplan hochgeladen',
           readiness_detail_lageplan_aligned:
-            '{{missing}} von {{total}} genutzten Plänen nicht ausgerichtet (Wizard Schritt 5)',
+            '{{missing}} von {{total}} genutzten Plänen nicht ausgerichtet (Wizard Schritt 4)',
           readiness_detail_lageplan_calibrated:
             '{{missing}} von {{total}} genutzten Plänen ohne Referenzpunkt und Kalibrierung',
           readiness_detail_lageplan_cropped:
@@ -5510,11 +5510,11 @@ i18n
           lageplan_wizard_hint_location:
             'Das Objekt, dessen Lageplan Sie einrichten - alle weiteren Schritte beziehen sich darauf.',
           lageplan_wizard_hint_devices:
-            'Zu welchem Steuergerät jeder importierte Sensor gehört: je Gerät der Bereich seiner Sensorpaare (von - bis).',
+            'Welchen Sensor jeder Eingang der Steuergeräte misst: je Gerät in Abschnitten (Eingänge von - bis, ab welchem Sensor) - eine Klemmliste füllt sie aus.',
           lageplan_wizard_hint_plans:
             'Das Bild oder PDF des Lageplans, auf dem die Messpunkte liegen. Mehrere Pläne sind möglich, einer ist der Hauptplan; der gewählte Plan gilt für die nächsten Schritte.',
           lageplan_wizard_hint_points:
-            'Wo die Sensoren liegen: Positionen aus CAD (DWG/DXF), JSON oder TXT importieren - oder einen Sensor wählen und in Schritt 5 von Hand auf den Plan setzen.',
+            'Wo die Sensoren liegen: Positionen aus CAD (DWG/DXF), JSON oder TXT importieren - oder einen Sensor wählen und in Schritt 4 von Hand auf den Plan setzen.',
           lageplan_wizard_hint_align:
             'Die importierten Punkte verschieben, skalieren und drehen, bis sie richtig auf dem Plan liegen, und den Maßstab (Meter pro Pixel) festlegen.',
           lageplan_wizard_hint_auto_repair:

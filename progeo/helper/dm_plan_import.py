@@ -11,7 +11,8 @@ place_dm_bands puts them on the plan of a smartex dm location, by number:
 - a measure point with that number (sensor_order) is moved onto the band -
   its device, name, threshold and readings stay, whichever plan it was on;
 - a number without a point gets a new one (x/y the normalized position, like
-  points placed by hand; its device comes with the wizard's device ranges);
+  points placed by hand) on the device whose inputs measure it
+  (device_inputs.device_lookup - wizard step 2, the Klemmliste);
 - the location's other points stay as they are.
 
 Positions are stored under the plan's alignment (plan_cables.point_coordinates),
@@ -60,7 +61,11 @@ def place_dm_bands(location, db_name: str, lageplan, bands: list, size: tuple[in
     from progeo.helper.plan_detect import plan_alignment
     from progeo.v1.models import ProgeoMeasurePoint
 
+    from progeo.helper.device_inputs import device_lookup
+
     alignment = plan_alignment(lageplan)
+    # A new point gets the device whose inputs measure it (wizard step 2, Klemmliste).
+    device_for = device_lookup(db_name, location)
     by_number, duplicates = {}, []
     for band in bands:
         try:
@@ -96,6 +101,7 @@ def place_dm_bands(location, db_name: str, lageplan, bands: list, size: tuple[in
         new_points = [
             ProgeoMeasurePoint(
                 last_fetched=now, location=location, lageplan=lageplan, sensor_order=number,
+                device_id=device_for(number),
                 # As points placed by hand: x/y the normalized position, no grid.
                 x=_rounded(values["nx"]), y=_rounded(values["ny"]),
                 nx=_rounded(values["nx"]), ny=_rounded(values["ny"]),

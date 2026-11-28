@@ -955,6 +955,32 @@ export const mockAnswer = (
   if (path.endsWith('/status/device_statistics/')) {
     return deviceStatistics();
   }
+  // Wizard step 2: two dm controllers - the first one with a free input and
+  // a jump (bands added later), the second counting on linearly.
+  if (path.endsWith('/status/measure_points/device_inputs/')) {
+    const formula = (sensors) =>
+      sensors.map((sensor, index) => ({
+        position: index + 1,
+        sensor_order: sensor,
+        source: sensor == null ? 'manual' : 'formula',
+      }));
+    const range = (from, to) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
+    return {
+      sensors: range(1, 572),
+      devices: [
+        {
+          device_id: 1, label: '7025-01 · smartex dm', hardware: 'smartex dm', first_sensor_order: 1,
+          sensor_count: 293, measured_inputs: 293, mapped: true,
+          inputs: formula([...range(1, 16), null, ...range(17, 288), ...range(569, 572)]),
+        },
+        {
+          device_id: 2, label: '7025-02 · smartex dm', hardware: 'smartex dm', first_sensor_order: 289,
+          sensor_count: 280, measured_inputs: 280, mapped: false,
+          inputs: formula(range(289, 568)),
+        },
+      ],
+    };
+  }
   if (path.endsWith('/status/measure_points/')) {
     return {
       lageplans: [

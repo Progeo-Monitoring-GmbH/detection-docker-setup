@@ -205,13 +205,22 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
 
     device_ranges: [(device pk, first, last), ...] - the sensors (sensor_order)
     first..last (None: all from first on) are connected to that device, and
-    its pair 1 is sensor `first` (ProgeoDevice.first_sensor_order)."""
+    its pair 1 is sensor `first` (ProgeoDevice.first_sensor_order). Without
+    ranges each point gets the device whose inputs measure it
+    (device_inputs.device_lookup - wizard step 2, the Klemmliste)."""
     from django.db import transaction
 
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
     from progeo.v1.serializers import ProgeoMeasurePointSerializer
 
     lageplan = import_lageplan(location, db_name, lageplan_id)
+    if device_ranges:
+        device_for = lambda order: device_of(device_ranges, order)  # noqa: E731
+    else:
+        # Without ranges: the device whose inputs measure the sensor (wizard step 2).
+        from progeo.helper.device_inputs import device_lookup
+
+        device_for = device_lookup(db_name, location)
     bulk_points = []
     reference_sensor_order = None
     # bulk_create skips save(), which sets last_fetched.
@@ -228,7 +237,7 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
             last_fetched=now,
             location=location,
             lageplan=lageplan,
-            device_id=device_of(device_ranges, sensor_order),
+            device_id=device_for(sensor_order),
             sensor_order=sensor_order,
             x=point.get("x"),
             y=point.get("y"),
@@ -343,6 +352,12 @@ def import_dm_sensors(job: dict, location, lageplan, dm: dict) -> dict:
         notes.append(f"{dm['unlabelled_bands']} orange band(s) without a dm label")
     if dm.get("outside"):
         notes.append(f"{len(dm['outside'])} label(s) outside the plan: {', '.join(dm['outside'][:20])}")
+    if dm.get("joined"):
+        notes.append(f"drawn in pieces, joined: {', '.join(dm['joined'][:20])}")
+    outliers = dm.get("length_outliers") or []
+    if outliers:
+        notes.append("length unlike the neighbours - check: " + ", ".join(
+            f"dm {row['pos']:03d}" for row in outliers[:20]))
     for note in notes:
         _append_log(job, f"dm sensors: {note}")
     if not dm_plan_import.wants_dm_import(location):
@@ -365,7 +380,9 @@ def import_dm_sensors(job: dict, location, lageplan, dm: dict) -> dict:
     if placed["duplicates"]:
         message += f"; read twice (the first counts): {_number_ranges(placed['duplicates'])}"
     _append_log(job, message)
-    return {"state": "applied", "message": message, "notes": notes, **placed}
+    return {"state": "applied", "message": message, "notes": notes, **placed,
+            # Most off first - the wizard names them for a check (E + drag fixes an end).
+            "length_outliers": [row["pos"] for row in outliers]}
 
 
 def extract_json_object(output: str):

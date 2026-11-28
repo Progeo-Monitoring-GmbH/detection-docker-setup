@@ -5,7 +5,6 @@ import {
   bandCount,
   belongsToPlan,
   canvasTitle,
-  deviceRangesPayload,
   imageEditedMessage,
   importPayloadFor,
   jsonImportMessage,
@@ -222,6 +221,12 @@ describe('messages', () => {
     ).toBe(
       'Lageplan "EG" uploaded and selected. 572 dm sensor(s) placed on their bands (1 moved, 571 new).',
     );
+    expect(
+      uploadMessage('EG', { state: 'applied', message: '', sensors: 3, moved: 0, created: 3, length_outliers: [28, 4] }),
+    ).toBe(
+      'Lageplan "EG" uploaded and selected. 3 dm sensor(s) placed on their bands (0 moved, 3 new). '
+        + 'Check the length of dm 28, dm 4 - hold E and drag an end to fix it.',
+    );
     expect(uploadMessage('EG', { state: 'failed', message: 'Timeout' })).toBe(
       'Lageplan "EG" uploaded and selected. The dm sensors could not be placed: Timeout',
     );
@@ -283,47 +288,13 @@ describe('plans', () => {
   });
 });
 
-describe('deviceRangesPayload', () => {
-  it('saves the used ranges of step 2 as a list - an empty start is 1', () => {
-    expect(
-      deviceRangesPayload(7, [
-        { deviceId: 1, from: ' ', to: '8 ' },
-        { deviceId: null, from: '1', to: '' },
-        { deviceId: 2, from: '9', to: '' },
-      ]),
-    ).toEqual({
-      location_id: 7,
-      point_devices: [
-        { device_id: 1, from: 1, to: '8' },
-        { device_id: 2, from: '9', to: '' },
-      ],
-    });
-  });
-});
-
 describe('importPayloadFor', () => {
-  it('sends the used ranges - an empty start is 1', () => {
-    expect(
-      importPayloadFor(7, 3, [
-        { deviceId: 1, from: ' ', to: '8 ' },
-        { deviceId: null, from: '1', to: '' },
-        { deviceId: 2, from: '9', to: '' },
-      ]),
-    ).toEqual({
-      location_id: 7,
-      lageplan_id: 3,
-      point_devices: JSON.stringify([
-        { device_id: 1, from: 1, to: '8' },
-        { device_id: 2, from: '9', to: '' },
-      ]),
-    });
+  it('names the plan the points go onto - their devices come from step 2', () => {
+    expect(importPayloadFor(7, 3)).toEqual({ location_id: 7, lageplan_id: 3 });
   });
 
   it('leaves the plan out without one', () => {
-    expect(importPayloadFor(7, null, [])).toEqual({
-      location_id: 7,
-      point_devices: '[]',
-    });
+    expect(importPayloadFor(7, null)).toEqual({ location_id: 7 });
   });
 });
 

@@ -260,6 +260,9 @@ export const useImageCanvasActions = (input: ImageCanvasActionsInput) => {
       }
     },
 
+    /** E + drag let go: one end of a dm sensor moved, the other kept (measure_points/place). */
+    moveBandEnd: (item: CutItem) => placePoints([item], 'align', () => undefined),
+
     /** Group "Apply": the group's points where the pins put them. */
     storeGroup: () => {
       const { group } = groupAlign;

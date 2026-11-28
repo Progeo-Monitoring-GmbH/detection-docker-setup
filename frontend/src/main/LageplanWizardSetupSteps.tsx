@@ -1,11 +1,9 @@
-import type { Dispatch, SetStateAction } from 'react';
 import {
   CheckLg,
   ChevronLeft,
   ChevronRight,
   PencilSquare,
   PlusLg,
-  Save,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
@@ -22,9 +20,6 @@ import {
   StepCard,
 } from './LageplanWizardComponents';
 import type {
-  DeviceRange,
-  MeasurePoint,
-  WizardDevice,
   WizardLageplan,
   WizardLocation,
 } from './lageplanWizardUtils';
@@ -301,7 +296,7 @@ export const LageplanPlansStep = ({
   onSourceUpload,
 }: LageplanPlansStepProps) => (
   <StepCard
-    number={3}
+    number={2}
     step="plans"
     title="Lageplan"
     done={hasImage}
@@ -377,209 +372,3 @@ export const LageplanPlansStep = ({
     )}
   </StepCard>
 );
-
-type LageplanDeviceStepProps = {
-  locationId: number | null;
-  devices: WizardDevice[];
-  measurePoints: MeasurePoint[];
-  deviceRanges: DeviceRange[];
-  onDeviceRangesChange: Dispatch<SetStateAction<DeviceRange[]>>;
-  deviceRangesProblem: string | null;
-  isProcessing?: boolean;
-  /** Saves the ranges on their own (first sensors, points' devices) - without an import. */
-  onSave?: () => void;
-};
-
-export const LageplanDeviceStep = ({
-  locationId,
-  devices,
-  measurePoints,
-  deviceRanges,
-  onDeviceRangesChange,
-  deviceRangesProblem,
-  isProcessing = false,
-  onSave,
-}: LageplanDeviceStepProps) => {
-  const usedRanges = deviceRanges.filter((range) => range.deviceId != null);
-  const connectedCount = (deviceId: number) =>
-    measurePoints.filter((point) => Number(point.device) === deviceId).length;
-
-  return (
-    <StepCard
-      number={2}
-      step="devices"
-      title="Device"
-      done={usedRanges.length > 0 && !deviceRangesProblem}
-      actions={
-        locationId !== null && (
-          <>
-            <span
-              className="lageplan-muted"
-              data-testid="lageplan-wizard-device-count"
-            >
-              {devices.length} device(s) at this location
-            </span>
-            {onSave && devices.length > 0 && (
-              <PillButton
-                icon={<Save size={13} />}
-                label="Save ranges"
-                title="Save the devices' first sensors and connect their points - without importing"
-                onClick={onSave}
-                disabled={
-                  isProcessing || usedRanges.length === 0 || Boolean(deviceRangesProblem)
-                }
-                testId="lageplan-wizard-device-ranges-save"
-              />
-            )}
-          </>
-        )
-      }
-    >
-      {locationId === null ? (
-        <Notice tone="warning" testId="lageplan-wizard-devices-need-location">
-          Select a location in step 1 first.
-        </Notice>
-      ) : (
-        <div
-          className="d-flex flex-column gap-2"
-          data-testid="lageplan-wizard-device-ranges"
-        >
-          <div className="lageplan-muted lageplan-muted--small">
-            {devices.length === 0
-              ? 'No devices are connected to this location - the points are imported without device.'
-              : 'The sensors imported in step 4 (CAD/JSON/TXT) are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on. Placing sensors manually picks the device per sensor in step 4.'}
-          </div>
-          {deviceRanges.map((range, index) => (
-            <div
-              key={index}
-              className="d-flex flex-wrap align-items-center gap-2"
-              {...repeatedTestId('lageplan-wizard-device-range', index)}
-            >
-              <select
-                aria-label="Device"
-                className="form-select form-select-sm lageplan-range-field lageplan-range-field--device"
-                value={range.deviceId ?? ''}
-                {...repeatedTestId(
-                  'lageplan-wizard-device-range-device',
-                  index,
-                )}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  onDeviceRangesChange((current) =>
-                    current.map((item, position) =>
-                      position === index
-                        ? {
-                            ...item,
-                            deviceId: value ? Number(value) : null,
-                          }
-                        : item,
-                    ),
-                  );
-                }}
-              >
-                <option value="">choose a device</option>
-                {devices.map((device) => {
-                  const connected = connectedCount(device.id);
-                  return (
-                    <option key={device.id} value={device.id}>
-                      {device.raw_hash}
-                      {device.hardware ? ` · ${device.hardware}` : ''}
-                      {connected ? ` · ${connected} point(s) now` : ''}
-                    </option>
-                  );
-                })}
-              </select>
-              <span className="lageplan-muted lageplan-muted--small">
-                sensors
-              </span>
-              <input
-                aria-label="First sensor"
-                type="number"
-                min={1}
-                className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
-                placeholder="1"
-                value={range.from}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  onDeviceRangesChange((current) =>
-                    current.map((item, position) =>
-                      position === index ? { ...item, from: value } : item,
-                    ),
-                  );
-                }}
-                {...repeatedTestId('lageplan-wizard-device-range-from', index)}
-              />
-              <span className="lageplan-muted lageplan-muted--small">to</span>
-              <input
-                aria-label="Last sensor"
-                type="number"
-                min={1}
-                className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
-                placeholder="last"
-                value={range.to}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  onDeviceRangesChange((current) =>
-                    current.map((item, position) =>
-                      position === index ? { ...item, to: value } : item,
-                    ),
-                  );
-                }}
-                {...repeatedTestId('lageplan-wizard-device-range-to', index)}
-              />
-              <DeleteIconButton
-                label="Remove this device"
-                onClick={() =>
-                  onDeviceRangesChange((current) =>
-                    current.filter((_item, position) => position !== index),
-                  )
-                }
-                testId="lageplan-wizard-device-range-remove"
-                testKey={index}
-              />
-            </div>
-          ))}
-          {devices.length > deviceRanges.length && (
-            <div>
-              <PillButton
-                variant="ghost"
-                label={
-                  deviceRanges.length
-                    ? 'Add another device'
-                    : 'Connect a device'
-                }
-                testId="lageplan-wizard-device-range-add"
-                onClick={() =>
-                  onDeviceRangesChange((current) => {
-                    const last = current[current.length - 1];
-                    const next = last?.to.trim()
-                      ? String(Number(last.to) + 1)
-                      : current.length
-                        ? ''
-                        : '1';
-                    const unused = devices.find(
-                      (device) =>
-                        !current.some((range) => range.deviceId === device.id),
-                    );
-                    return [
-                      ...current,
-                      { deviceId: unused?.id ?? null, from: next, to: '' },
-                    ];
-                  })
-                }
-              />
-            </div>
-          )}
-          {deviceRangesProblem && (
-            <Notice
-              tone="warning"
-              testId="lageplan-wizard-device-ranges-problem"
-            >
-              {deviceRangesProblem}
-            </Notice>
-          )}
-        </div>
-      )}
-    </StepCard>
-  );
-};

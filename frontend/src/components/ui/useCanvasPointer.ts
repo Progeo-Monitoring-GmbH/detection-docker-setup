@@ -1,7 +1,7 @@
 /**
  * The mouse on the plan canvas (ImageCanvasStage): what a press does in the
- * mode in use (insert, drag a group point, select an area, drag a sensor to
- * align, set the reference / a calibration point, drag or place a sensor -
+ * mode in use (insert, drag a group point, select an area, drag a dm band's
+ * end, drag a sensor to align, set the reference / a calibration point, drag or place a sensor -
  * else pan), what moving and releasing do, and the hovered sensor. The
  * middle button and Space + drag pan in every mode, F + drag picks an area
  * to zoom to; the right button is the browser's.
@@ -18,6 +18,7 @@ import {
   grabbedPoint,
   HOVER_TOLERANCE,
   nearestItem,
+  normalizedToCanvas,
   normalizedToFraction,
   SENSOR_RADIUS,
   sensorAtPoint,
@@ -32,6 +33,7 @@ import {
 import {
   alignKeyOf,
   canSelect,
+  endKeyOf,
   insertingOf,
   pressSelectMode,
   type CanvasModes,
@@ -45,6 +47,9 @@ type CanvasMouseEvent = React.MouseEvent<HTMLCanvasElement>;
 type ClientPoint = { clientX: number; clientY: number };
 
 export type Hover = { index: number; x: number; y: number };
+
+/** E + drag: one end of a dm sensor (its index in the items) being moved - `at` normalized. */
+export type BandEndDrag = { index: number; which: 'start' | 'end'; at: ImagePoint };
 
 type CanvasPointerInput = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -78,6 +83,12 @@ type CanvasPointerInput = {
   insertCut: (at: ImagePoint) => void;
   /** "Repair order": while it is on, the mouse is its own (areas, clicks, lines). */
   repair?: SensorOrderRepair;
+  /** E + drag: the band end being moved, and what dropping it does. */
+  bandEnd: {
+    drag: BandEndDrag | null;
+    setDrag: (drag: BandEndDrag | null) => void;
+    drop: (drag: BandEndDrag) => void;
+  };
 };
 
 export const useCanvasPointer = (input: CanvasPointerInput) => {
@@ -183,6 +194,27 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     return true;
   };
 
+  // E held (dm plan): a press on a band drags its nearer end - start or end.
+  const pressBandEnd = (event: CanvasMouseEvent) => {
+    if (!endKeyOf(modes)) {
+      return false;
+    }
+    const index = itemAt(event);
+    const at = canvasPointAt(event);
+    const shown = index === null ? null : input.shownItems[index];
+    if (index === null || !at || !transform || !shown?.end) {
+      return false;
+    }
+    const distance = (point: ImagePoint) => {
+      const [x, y] = normalizedToCanvas(point, transform);
+      return Math.hypot(x - at[0], y - at[1]);
+    };
+    const which = distance(shown.start) <= distance(shown.end) ? 'start' : 'end';
+    input.bandEnd.setDrag({ index, which, at: canvasToNormalized(at, transform) });
+    setHover(null);
+    return true;
+  };
+
   // A held: a press on a sensor drags it to its place (elsewhere it pans).
   const pressAlign = (event: CanvasMouseEvent) => {
     const grabbed = alignKeyOf(modes) && !group && scale.tool !== 'reference' ? grabAt(event) : null;
@@ -226,8 +258,16 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
 
   // -- moving ----------------------------------------------------------------
 
-  /** A point being dragged onto its place (L, A) follows the mouse - true if one is. */
+  /** A point being dragged onto its place (L, A) or a band end (E) follows the mouse - true if one is. */
   const movePinDrag = (event: CanvasMouseEvent) => {
+    const { drag: endDrag } = input.bandEnd;
+    if (endDrag) {
+      const at = normalizedPointAt(event);
+      if (at) {
+        input.bandEnd.setDrag({ ...endDrag, at });
+      }
+      return true;
+    }
     const { alignDrag } = calibration;
     if (!groupDrag && !alignDrag) {
       return false;
@@ -317,6 +357,7 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
       area.endSelection();
       calibration.setAlignDrag(null);
       groupAlign.setGroupDrag(null);
+      input.bandEnd.setDrag(null);
       sensorDragRef.current = null;
     },
   );
@@ -333,7 +374,7 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
 
   return {
     /** Panning, or dragging a point onto its place. */
-    dragging: Boolean(panning || calibration.alignDrag || groupDrag),
+    dragging: Boolean(panning || calibration.alignDrag || groupDrag || input.bandEnd.drag),
     onMouseDown: (event: CanvasMouseEvent) => {
       pressRef.current = null;
       if (event.button > 1) {
@@ -373,7 +414,7 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
       }
       const presses = repair?.active
         ? []
-        : [pressInsert, pressGroupPoint, pressSelect, pressAlign, pressScale, pressPlacement];
+        : [pressInsert, pressGroupPoint, pressSelect, pressBandEnd, pressAlign, pressScale, pressPlacement];
       if (!presses.some((press) => press(event))) {
         startPan(event);
       }
@@ -396,6 +437,10 @@ export const useCanvasPointer = (input: CanvasPointerInput) => {
     },
     // A dragged sensor dropped on the plan: pinned there (again, if it was).
     onMouseUp: () => {
+      if (input.bandEnd.drag) {
+        input.bandEnd.drop(input.bandEnd.drag);
+        return;
+      }
       const drag = groupDrag ?? calibration.alignDrag;
       const target = drag && layout ? canvasToFraction(drag.at, layout) : null;
       if (groupDrag) {

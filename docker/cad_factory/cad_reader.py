@@ -76,6 +76,16 @@ PDF_MARGIN = 0.02
 PDF_ORANGE_MIN_RED = 0.8
 PDF_ORANGE_GREEN = (0.3, 0.75)
 PDF_ORANGE_MAX_BLUE = 0.3
+# A band drawn in pieces: an unlabelled piece in line with a band (sideways at
+# most PDF_JOIN_OFFSET pt) that starts at most PDF_JOIN_GAP pt after its end
+# continues it.
+PDF_JOIN_OFFSET = 0.5
+PDF_JOIN_GAP = 2.0
+# Lengths checked against the parallel neighbours: those starting within
+# PDF_NEIGHBOUR_SPAN times the usual distance between band starts; a band
+# PDF_LENGTH_TOLERANCE shorter or longer than their median is named.
+PDF_NEIGHBOUR_SPAN = 2.5
+PDF_LENGTH_TOLERANCE = 0.15
 
 _DWG_TYPES = "INSERT LWPOLYLINE POLYLINE_2D POLYLINE_3D LINE MTEXT TEXT"
 _DXF_TYPES = ["INSERT", "LWPOLYLINE", "POLYLINE", "LINE", "MTEXT", "TEXT"]
@@ -486,6 +496,67 @@ def _pdf_dm_labels(page) -> list[tuple[int, tuple[float, float], str]]:
     return labels
 
 
+def _unit(start, end):
+    length = math.dist(start, end)
+    return ((end[0] - start[0]) / length, (end[1] - start[1]) / length) if length else (0.0, 0.0)
+
+
+def _join_pieces(rows: list, pieces: list) -> list:
+    """Unlabelled orange pieces continuing a band (in line with it, right
+    after its end - a band the export drew in two) appended to it: its end
+    moves to the piece's far end. rows: [number, start, end] (changed in
+    place); returns the numbers that were joined."""
+    joined = []
+    remaining = list(pieces)
+    changed = True
+    while changed and remaining:
+        changed = False
+        for row in rows:
+            _number, start, end = row
+            if end is None:
+                continue
+            direction = _unit(start, end)
+            length = math.dist(start, end)
+            for piece in remaining:
+                near, far = sorted((piece[0], piece[-1]), key=lambda point: math.dist(point, end))
+                along = (far[0] - start[0]) * direction[0] + (far[1] - start[1]) * direction[1]
+                sideways = [abs((point[0] - start[0]) * direction[1] - (point[1] - start[1]) * direction[0])
+                            for point in (near, far)]
+                if (max(sideways) <= PDF_JOIN_OFFSET and math.dist(near, end) <= PDF_JOIN_GAP
+                        and along > length):
+                    row[2] = far
+                    joined.append(row[0])
+                    remaining.remove(piece)
+                    changed = True
+                    break
+    return joined
+
+
+def _length_outliers(rows: list) -> list:
+    """[{pos, length, expected}] of the bands whose length differs from the
+    median of their parallel neighbours (bands running the same way, starting
+    close by) by more than PDF_LENGTH_TOLERANCE - most off first."""
+    bands = [(number, start, end, math.dist(start, end), _unit(start, end))
+             for number, start, end in rows if end is not None and math.dist(start, end) > 0]
+    gaps = sorted(min((math.dist(a[1], b[1]) for b in bands if b is not a), default=0) for a in bands)
+    usual = gaps[len(gaps) // 2] if gaps else 0
+    if not usual:
+        return []
+    outliers = []
+    for number, start, _end, length, direction in bands:
+        neighbours = sorted(
+            other[3] for other in bands
+            if other[0] != number and math.dist(other[1], start) <= PDF_NEIGHBOUR_SPAN * usual
+            and other[4][0] * direction[0] + other[4][1] * direction[1] > 0.995
+        )
+        if len(neighbours) < 2:
+            continue
+        expected = neighbours[len(neighbours) // 2]
+        if expected and abs(length - expected) / expected > PDF_LENGTH_TOLERANCE:
+            outliers.append({"pos": number, "length": round(length, 1), "expected": round(expected, 1)})
+    return sorted(outliers, key=lambda row: -abs(row["length"] - row["expected"]) / row["expected"])
+
+
 def read_pdf_dm_bands(page, clip) -> dict | None:
     """The dm sensors of a plan PDF page: per "dm NNN" label its orange band
     (closest label/band pairs first, _dm_points) - the band's start is the end
@@ -493,9 +564,14 @@ def read_pdf_dm_bands(page, clip) -> dict | None:
     red leads (DKS_Vorlauf) are ignored. Positions are fractions of the image
     render_pdf_plan writes for `clip` (0..1, x right, y down).
 
+    A band the export drew in pieces gets its unlabelled continuation
+    appended (_join_pieces); bands much shorter or longer than their parallel
+    neighbours are named for a check (_length_outliers).
+
     {"dm_bands": [{"pos", "sx", "sy", "ex", "ey"}] by NNN (ex/ey None for a
     label without a band), "labels", "bands", "without_band", "unlabelled_bands",
-    "outside"} - None without dm labels (no dm plan)."""
+    "outside", "joined" (dm NNN), "length_outliers" ([{pos, length, expected}],
+    PDF points)} - None without dm labels (no dm plan)."""
     import pymupdf
 
     labels = _pdf_dm_labels(page)
@@ -512,10 +588,19 @@ def read_pdf_dm_bands(page, clip) -> dict | None:
         return round((turned.x - clip.x0) / clip.width, 6), round((turned.y - clip.y0) / clip.height, 6)
 
     centres = [centre for _number, centre, _text in sorted(labels, key=lambda label: label[0])]
-    rows, outside = [], []
+    oriented = []
     for number, start, end, centre in zip(numbers, points, ends, centres):
         if end is not None and math.dist(centre, end) < math.dist(centre, start):
             start, end = end, start
+        oriented.append([number, start, end])
+    # The bands no label took: pieces of a band drawn in two, or stray lines.
+    taken = {frozenset((tuple(start), tuple(end))) for _number, start, end in oriented if end is not None}
+    pieces = [band for band in bands if frozenset((tuple(band[0]), tuple(band[-1]))) not in taken]
+    joined = _join_pieces(oriented, pieces)
+    outliers = _length_outliers(oriented)
+
+    rows, outside = [], []
+    for number, start, end in oriented:
         sx, sy = fraction(start)
         ex, ey = fraction(end) if end is not None else (None, None)
         if not (0 <= sx <= 1 and 0 <= sy <= 1):
@@ -527,8 +612,10 @@ def read_pdf_dm_bands(page, clip) -> dict | None:
         "labels": len(labels),
         "bands": len(bands),
         "without_band": without_band,
-        "unlabelled_bands": len(bands) - (len(labels) - len(without_band)),
+        "unlabelled_bands": len(bands) - (len(labels) - len(without_band)) - len(joined),
         "outside": outside,
+        "joined": [f"dm {number:03d}" for number in sorted(joined)],
+        "length_outliers": outliers,
     }
 
 
@@ -593,6 +680,12 @@ def render_pdf_plan_with_dm(path: str, png_out: str, max_pixels: int = PDF_MAX_P
         if dm is not None:
             log(f"dm sensors: {dm['labels']} labels, {dm['bands']} orange bands, "
                 f"{len(dm['without_band'])} label(s) without a band, {dm['unlabelled_bands']} band(s) without a label")
+            if dm["joined"]:
+                log(f"dm sensors drawn in pieces, joined: {', '.join(dm['joined'])}")
+            if dm["length_outliers"]:
+                log("dm sensors unlike their neighbours in length: " + ", ".join(
+                    f"dm {row['pos']:03d} ({row['length']:.0f} instead of ~{row['expected']:.0f})"
+                    for row in dm["length_outliers"][:20]))
         return f"{what}: {pixmap.width} x {pixmap.height} px", dm
 
 

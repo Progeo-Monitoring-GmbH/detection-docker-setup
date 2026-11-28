@@ -11,11 +11,8 @@ import {
   LageplanWizardDialogs,
   LageplanWizardHead,
 } from './LageplanWizardComponents';
-import {
-  LageplanDeviceStep,
-  LageplanLocationStep,
-  LageplanPlansStep,
-} from './LageplanWizardSetupSteps';
+import { LageplanLocationStep, LageplanPlansStep } from './LageplanWizardSetupSteps';
+import DeviceInputsStep from './DeviceInputsStep';
 import {
   LageplanManualSensorPlacement,
   LageplanPointsStep,
@@ -59,7 +56,7 @@ const LageplanWizardView = () => {
   // requires module_locations_edit.
   const canEditDevices = hasPermission('module_devices_edit');
   const canEditLocation = hasPermission('module_locations_edit');
-  // Step 7 (heat limitations): staff and superusers, like the backend.
+  // Step 6 (heat limitations): staff and superusers, like the backend.
   const staff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const state = useLageplanWizardState(auth);
@@ -121,16 +118,6 @@ const LageplanWizardView = () => {
           loading={locationLoading}
           onChange={selectLocation}
         />
-        <LageplanDeviceStep
-          locationId={selectedLocationId}
-          devices={state.devices}
-          measurePoints={measurePoints}
-          deviceRanges={state.deviceRanges}
-          onDeviceRangesChange={state.setDeviceRanges}
-          deviceRangesProblem={derived.deviceRangesProblem}
-          isProcessing={state.isProcessing}
-          onSave={() => void points.saveDeviceRanges()}
-        />
         <LageplanPlansStep
           locationId={selectedLocationId}
           hasImage={hasPlanImage}
@@ -154,7 +141,6 @@ const LageplanWizardView = () => {
           isProcessing={state.isProcessing}
           pointSource={state.pointSource}
           onPointSourceChange={state.setPointSource}
-          deviceRangesProblem={derived.deviceRangesProblem}
           importPayload={derived.importPayload}
           onCadUpload={points.handleCadUpload}
           onJsonUpload={points.handleJsonUpload}
@@ -205,8 +191,8 @@ const LageplanWizardView = () => {
           onDiscardCut={onDiscardCut}
           placement={points.canvasPlacement}
         />
-        {/* Step 6 by product: the Auto-Repair for point sensors, the
-            dm-Transfer for smartex dm (its sensors are bands, step 6 finds their ends). */}
+        {/* Step 5 by product: the Auto-Repair for point sensors, the
+            dm-Transfer for smartex dm (its sensors are bands, step 5 finds their ends). */}
         {lineSensors ? (
           <LageplanDmTransferStep
             locationId={selectedLocationId}
@@ -217,7 +203,7 @@ const LageplanWizardView = () => {
             onStored={state.reload}
           />
         ) : (
-          <LageplanAutoRepairStep number={6} hasPlanImage={hasPlanImage}>
+          <LageplanAutoRepairStep number={5} hasPlanImage={hasPlanImage}>
             <LageplanAutoRepair
               key={selectedPlanId ?? 'none'}
               locationId={selectedLocationId}
@@ -246,6 +232,14 @@ const LageplanWizardView = () => {
           devices={state.devices}
           staff={staff}
           onNamesApplied={state.reload}
+        />
+        {/* Last: which sensor each device input measures - decided once the
+            points, the plan and the Klemmliste are in (a Klemmliste fills it). */}
+        <DeviceInputsStep
+          locationId={selectedLocationId}
+          // A reload (import, Klemmliste) can change the inputs too.
+          reloadKey={state.reloadKey}
+          onSaved={state.reload}
         />
 
         <LageplanWizardDialogs

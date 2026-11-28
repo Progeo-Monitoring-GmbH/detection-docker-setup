@@ -13,16 +13,13 @@ import { enqueueSnackbar } from 'notistack';
 import type { AuthContextType } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import {
-  defaultDeviceRanges,
   deviceLabel,
-  type DeviceRange,
   type ImportedCad,
   type MeasurePoint,
   type MeasurePointsResponse,
   planLabel,
   placedFromPoints,
   type PointSource,
-  rangesProblem,
   requestReason,
   type WizardConfirmAction,
   type WizardDevice,
@@ -74,7 +71,7 @@ const useWizardRequests = (auth: AuthContextType) => {
   return { isProcessing, setIsProcessing, error, setError, post };
 };
 
-/** Step 3: the location's Lageplans (active ones first, as the backend
+/** Step 2: the location's Lageplans (active ones first, as the backend
  * orders them), the one the next steps work on and the plan dialogs. */
 const usePlanState = () => {
   const [lageplans, setLageplans] = useState<WizardLageplan[]>([]);
@@ -104,21 +101,17 @@ const usePlanState = () => {
   };
 };
 
-/** Steps 2, 4 and 5: the devices, the sensors placed by hand, the import's
+/** Steps 8, 3 and 4: the devices, the sensors placed by hand, the import's
  * device ranges and the cut points. */
 const usePlacementState = () => {
-  // Step 4, "Manually set sensors": the location's devices and the points
+  // Step 3, "Manually set sensors": the location's devices and the points
   // placed on the plans - stored only with "Save manual sensors".
   const [pointSource, setPointSource] = useState<PointSource>('cad');
   const [devices, setDevices] = useState<WizardDevice[]>([]);
   const [placedSensors, setPlacedSensors] = useState<WizardSensor[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
   const [placementDirty, setPlacementDirty] = useState(false);
-  // Step 2 (for the CAD/JSON/TXT import of step 4): the devices the
-  // imported points are connected to,
-  // each with its sensors (a plan's sensors can be split over devices).
-  const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
-  // Step 5: measure points cut out (O + drag) - left off every plan until
+  // Step 4: measure points cut out (O + drag) - left off every plan until
   // inserted on one (I + click); nothing is stored before.
   const [cutPoints, setCutPoints] = useState<MeasurePoint[]>([]);
 
@@ -133,8 +126,6 @@ const usePlacementState = () => {
     setActiveDeviceId,
     placementDirty,
     setPlacementDirty,
-    deviceRanges,
-    setDeviceRanges,
     cutPoints,
     setCutPoints,
   };
@@ -171,7 +162,6 @@ export const useLageplanWizardState = (auth: AuthContextType) => {
     placement.setPlacedSensors([]);
     placement.setActiveDeviceId(null);
     placement.setPlacementDirty(false);
-    placement.setDeviceRanges([]);
     placement.setCutPoints([]);
     requests.setError('');
   };
@@ -351,7 +341,6 @@ const applyLoaded = (state: LageplanWizardState, data: unknown) => {
   state.setPlacedSensors(placed);
   state.setActiveDeviceId(null);
   state.setPlacementDirty(false);
-  state.setDeviceRanges(defaultDeviceRanges(points, devices));
   if (placed.length) {
     state.setPointSource('manual');
   }
@@ -395,7 +384,6 @@ export const useWizardDerived = (state: LageplanWizardState) => {
     placedSensors,
     cutPoints,
     devices,
-    deviceRanges,
     activeDeviceId,
     selectedLocationId,
     pointSource,
@@ -442,13 +430,13 @@ export const useWizardDerived = (state: LageplanWizardState) => {
   };
   const pointsOnPlan = (planId: number | null) =>
     measurePoints.filter((point) => belongsTo(point.lageplan, planId)).length;
-  // Sensors set by hand (step 4) are placed on the canvas (step 5).
+  // Sensors set by hand (step 3) are placed on the canvas (step 4).
   const manualPlacement =
     pointSource === 'manual' && selectedLocationId !== null;
 
   return {
     manualPlacement,
-    // What the heat limitations (step 7) show on the plan.
+    // What the heat limitations (step 6) show on the plan.
     heatPoints: manualPlacement
       ? planSensors.map((sensor) => ({ nx: sensor.nx, ny: sensor.ny }))
       : planPoints,
@@ -460,14 +448,9 @@ export const useWizardDerived = (state: LageplanWizardState) => {
     // Saving replaces every point of the location, also the imported ones.
     replacedPointCount:
       measurePoints.length - placedFromPoints(measurePoints, devices).length,
-    // Imported points (CAD/JSON/TXT) are connected to these devices
-    // (StatusViewSet._point_devices).
-    importPayload: importPayloadFor(
-      selectedLocationId,
-      selectedPlanId,
-      deviceRanges,
-    ),
-    deviceRangesProblem: rangesProblem(deviceRanges),
+    // Imported points (CAD/JSON/TXT) go to the device whose inputs measure
+    // them (step 8, backend helper/device_inputs.device_lookup).
+    importPayload: importPayloadFor(selectedLocationId, selectedPlanId),
     deviceLabels,
     devicePairStarts,
     planPoints,

@@ -18,7 +18,6 @@ import {
 import {
   answerPoints,
   type DmImport,
-  deviceRangesPayload,
   imageEditedMessage,
   jsonImportMessage,
   manualSensorsPayload,
@@ -51,7 +50,7 @@ type AlignmentValues = {
   flipY: boolean;
 };
 
-/** Steps 3 and 5: picking, uploading, renaming, ordering and removing
+/** Steps 2 and 4: picking, uploading, renaming, ordering and removing
  * Lageplans, and storing a plan's alignment and scale. */
 export const usePlanActions = (state: LageplanWizardState) => {
   const {
@@ -255,7 +254,7 @@ export const usePlanActions = (state: LageplanWizardState) => {
   };
 };
 
-/** Step 5's edits on the canvas: the plan image cleared, cropped or rotated,
+/** Step 4's edits on the canvas: the plan image cleared, cropped or rotated,
  * points removed, cut out, inserted or aligned. */
 export const useCanvasEdits = (
   state: LageplanWizardState,
@@ -264,7 +263,7 @@ export const useCanvasEdits = (
 ) => {
   const { measurePoints, placementDirty, devices } = state;
 
-  // Step 5 cleared, cropped or rotated the plan image
+  // Step 4 cleared, cropped or rotated the plan image
   // (measure_points/edit_lageplan): the stored plan - a new file, for a crop
   // or rotation also the moved alignment, reference point and heat
   // limitations; a rotation also turned the plan's measure points.
@@ -299,7 +298,7 @@ export const useCanvasEdits = (
     );
   };
 
-  // Step 5 removed measure points (D + drag, measure_points/remove): they
+  // Step 4 removed measure points (D + drag, measure_points/remove): they
   // leave the list; the rest keep their sensor_order.
   const handlePointsRemoved = (response: Record<string, unknown>) => {
     const removed = removedPointIds(response);
@@ -313,7 +312,7 @@ export const useCanvasEdits = (
     toastSaved(`${removed.size} measure point(s) removed.`);
   };
 
-  // Step 5 cut points out (O + drag): kept here, on every plan, until inserted.
+  // Step 4 cut points out (O + drag): kept here, on every plan, until inserted.
   const handleCut = (points: Array<Record<string, unknown>>) => {
     state.setCutPoints((current) => withCutPoints(current, points));
     enqueueSnackbar(
@@ -322,7 +321,7 @@ export const useCanvasEdits = (
     );
   };
 
-  // Step 5 inserted the cut points (I + click) or aligned a group (L) -
+  // Step 4 inserted the cut points (I + click) or aligned a group (L) -
   // measure_points/place answers with the moved points, now on this plan.
   const handlePointsPlaced = (
     response: Record<string, unknown>,
@@ -341,7 +340,7 @@ export const useCanvasEdits = (
     );
   };
 
-  // Step 5 "Repair order" - measure_points/reorder answers with the points
+  // Step 4 "Repair order" - measure_points/reorder answers with the points
   // whose dot changed (they keep their number and name, the dots moved).
   const handlePointsReordered = (response: Record<string, unknown>) => {
     const moved = answerPoints(response);
@@ -359,7 +358,7 @@ export const useCanvasEdits = (
   };
 };
 
-/** Step 4: importing the points (CAD/JSON/TXT), placing sensors by hand,
+/** Step 3: importing the points (CAD/JSON/TXT), placing sensors by hand,
  * clearing every point of the location. */
 export const usePointActions = (
   state: LageplanWizardState,
@@ -467,25 +466,6 @@ export const usePointActions = (
     setPlacementDirty(false);
   };
 
-  // Step 2 on its own: the devices' first sensors and their points.
-  const saveDeviceRanges = async () => {
-    if (selectedLocationId === null) {
-      return;
-    }
-    await post(
-      '/v1/status/measure_points/device_ranges/',
-      deviceRangesPayload(selectedLocationId, state.deviceRanges),
-      (response) => {
-        setIsProcessing(false);
-        state.reload();
-        toastSaved(
-          `Device ranges saved - ${Number(response?.data?.points ?? 0)} point(s) connected to their device.`,
-        );
-      },
-      'Could not save the device ranges',
-    );
-  };
-
   const handleSaveManualSensors = async () => {
     if (selectedLocationId === null) {
       return;
@@ -510,7 +490,7 @@ export const usePointActions = (
     );
   };
 
-  // The canvas' placement mode (step 5) while sensors are set by hand.
+  // The canvas' placement mode (step 4) while sensors are set by hand.
   const placement = {
     sensors: derived.planSensors,
     activeDeviceId,
@@ -528,7 +508,6 @@ export const usePointActions = (
     removeActiveSensor,
     discardPlacement,
     handleSaveManualSensors,
-    saveDeviceRanges,
     canvasPlacement: derived.manualPlacement ? placement : undefined,
   };
 };

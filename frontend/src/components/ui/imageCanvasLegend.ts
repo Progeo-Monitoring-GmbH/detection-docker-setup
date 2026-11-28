@@ -119,6 +119,12 @@ const POINT_KEYS: Array<{
     label: (_noun, modes) => `Hold I, click where the ${modes.cutCount} cut one(s) go - on any plan`,
   },
   {
+    cap: 'canMoveEnds',
+    key: 'e',
+    mouse: 'Drag',
+    label: () => 'Hold E, drag the start or end of a dm sensor - e.g. a band read too short',
+  },
+  {
     cap: 'canGroup',
     key: 'l',
     mouse: 'Drag',

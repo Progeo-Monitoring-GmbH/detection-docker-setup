@@ -290,7 +290,7 @@ const DmTransferStep = ({
   if (!plan?.url) {
     return (
       <div className="lageplan-notice lageplan-notice--warning" data-testid="dm-transfer-needs-plan">
-        Select or add a Lageplan in step 3 first.
+        Select or add a Lageplan in step 2 first.
       </div>
     );
   }
@@ -300,7 +300,7 @@ const DmTransferStep = ({
       <div className="lageplan-muted">
         Optional, for smartex dm plans whose sensors are points without their band end: follows the orange band
         each measure point lies on to both of its ends - the end nearer the point becomes the start. Uses the
-        alignment saved in step 5, so the points must lie on their bands there.
+        alignment saved in step 4, so the points must lie on their bands there.
       </div>
       <div className="dm-transfer-actions">
         <span className="lageplan-muted" data-testid="dm-transfer-point-count">

@@ -10,12 +10,13 @@ import { bandMeters, finite, type MarkerItem, type PlanImage } from './imageCanv
  * (picked only while M is held - plain presses still pan). */
 export type CanvasTool = 'pan' | 'reference' | 'calibrate';
 /** Held keys that change what a press on the plan does: A drags sensors to
- * align, R sets the reference point, M picks a calibration point; D / O / L
+ * align, E drags the start or end of a dm sensor, R sets the reference point,
+ * M picks a calibration point; D / O / L
  * + drag select measure points to remove / cut out / align as a group, and
  * I + click inserts the cut ones. F fits (tapped: the selection or the plan,
  * + drag: that area), Space + drag pans. */
-export type HeldKey = 'a' | 'r' | 'm' | 'd' | 'o' | 'l' | 'i' | 'f' | 'space';
-export const HELD_KEYS: HeldKey[] = ['a', 'r', 'm', 'd', 'o', 'l', 'i', 'f', 'space'];
+export type HeldKey = 'a' | 'e' | 'r' | 'm' | 'd' | 'o' | 'l' | 'i' | 'f' | 'space';
+export const HELD_KEYS: HeldKey[] = ['a', 'e', 'r', 'm', 'd', 'o', 'l', 'i', 'f', 'space'];
 /** The keys of the view (fit, pan) - they work in every mode, "Repair order" too. */
 export const VIEW_KEYS: HeldKey[] = ['f', 'space'];
 /** Edits of the plan image, switched on by a key press: C fills the selected
@@ -51,6 +52,7 @@ export type SensorPlacement = {
  * glow of the canvas' frame while it is held / its mode is on. */
 export const KEY_COLORS: Record<HeldKey | 'c' | 'x', string> = {
   a: '#0d6efd',
+  e: '#fd7e14',
   r: '#0aa2c0',
   m: '#198754',
   d: '#C44D26',
@@ -105,6 +107,8 @@ export type CanvasCaps = {
   canPlace: boolean;
   canGroup: boolean;
   canInsert: boolean;
+  /** dm sensors: the start or end of one dragged on its own (E), stored on this plan. */
+  canMoveEnds: boolean;
 };
 
 export const canvasCaps = (input: {
@@ -121,6 +125,8 @@ export const canvasCaps = (input: {
   onPointsRemoved?: unknown;
   onCut?: unknown;
   onPointsPlaced?: unknown;
+  /** dm plans: the sensors are bands (start - end). */
+  lineMode?: boolean;
 }): CanvasCaps => {
   const panel = input.withSliders && input.hasImage;
   const storedPlan = input.locationId != null && input.lageplanId != null;
@@ -139,6 +145,7 @@ export const canvasCaps = (input: {
     canPlace,
     canGroup: canPlace && hasItems,
     canInsert: canPlace && input.cutCount > 0,
+    canMoveEnds: canPlace && hasItems && Boolean(input.lineMode),
   };
 };
 
@@ -196,6 +203,9 @@ export const pressSelectMode = (modes: CanvasModes): SelectMode | null => {
 /** I held with cut points to insert. */
 export const insertingOf = (modes: CanvasModes) => modes.heldKey === 'i' && modes.caps.canInsert;
 
+/** E held on a dm plan: a press drags the start or end of a band. */
+export const endKeyOf = (modes: CanvasModes) => modes.heldKey === 'e' && modes.caps.canMoveEnds;
+
 /** A held, with a calibration possible. */
 export const alignKeyOf = (modes: CanvasModes) => modes.heldKey === 'a' && modes.caps.canAlign;
 
@@ -233,6 +243,9 @@ const heldKeyText = (modes: CanvasModes) => {
   }
   if (alignKeyOf(modes)) {
     return `Align: drag a ${modes.lineMode ? 'dm line' : 'sensor'} onto its right place`;
+  }
+  if (endKeyOf(modes)) {
+    return 'Band end: drag the start or the end of a dm sensor to where it really is';
   }
   if (!modes.caps.canScale) {
     return null;
@@ -303,7 +316,7 @@ export const canvasCursor = (
   if (hovered && pointer.groupIds?.has(Number(hovered.point.id))) {
     return 'grab';
   }
-  if (alignKeyOf(modes)) {
+  if (alignKeyOf(modes) || endKeyOf(modes)) {
     return hovered ? 'grab' : 'crosshair';
   }
   return hovered ? 'pointer' : 'grab';

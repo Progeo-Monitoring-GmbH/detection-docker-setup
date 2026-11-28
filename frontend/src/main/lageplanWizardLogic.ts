@@ -6,7 +6,6 @@
 import { getBackendUrl } from '../backendUrl';
 import { isSmartexIoProject } from './projectType';
 import {
-  type DeviceRange,
   type MeasurePoint,
   type MeasurePointsResponse,
   planLabel,
@@ -166,13 +165,19 @@ export type DmImport = {
   moved?: number;
   created?: number;
   sensors?: number;
+  /** dm numbers whose band is unlike its neighbours in length - most off first. */
+  length_outliers?: number[];
 };
 
 /** The toast after a plan upload - with what its dm sensors did. */
 export const uploadMessage = (label: string, dmImport?: DmImport) => {
   const uploaded = `Lageplan "${label}" uploaded and selected.`;
   if (dmImport?.state === 'applied') {
-    return `${uploaded} ${dmImport.sensors ?? 0} dm sensor(s) placed on their bands (${dmImport.moved ?? 0} moved, ${dmImport.created ?? 0} new).`;
+    const placed = `${uploaded} ${dmImport.sensors ?? 0} dm sensor(s) placed on their bands (${dmImport.moved ?? 0} moved, ${dmImport.created ?? 0} new).`;
+    const odd = dmImport.length_outliers ?? [];
+    return odd.length
+      ? `${placed} Check the length of ${odd.slice(0, 8).map((number) => `dm ${number}`).join(', ')}${odd.length > 8 ? ', …' : ''} - hold E and drag an end to fix it.`
+      : placed;
   }
   if (dmImport?.state === 'failed') {
     return `${uploaded} The dm sensors could not be placed: ${dmImport.message}`;
@@ -192,38 +197,12 @@ export const plansWithUpload = (
   plan: WizardLageplan,
 ) => [plan, ...current.filter((existing) => existing.id !== plan.id)];
 
-/** Points imported (CAD/JSON/TXT) go to the devices of the ranges and onto
- * the picked Lageplan, replacing only the points on it
- * (cad_import.store_measure_points) - without one, onto the main plan. */
-export const importPayloadFor = (
-  locationId: number | null,
-  planId: number | null,
-  ranges: DeviceRange[],
-) => ({
+/** Points imported (CAD/JSON/TXT) go onto the picked Lageplan, replacing
+ * only the points on it (cad_import.store_measure_points) - without one, onto
+ * the main plan - each on the device whose inputs measure it (step 8). */
+export const importPayloadFor = (locationId: number | null, planId: number | null) => ({
   location_id: locationId,
   ...(planId !== null ? { lageplan_id: planId } : {}),
-  point_devices: JSON.stringify(
-    ranges
-      .filter((range) => range.deviceId != null)
-      .map((range) => ({
-        device_id: range.deviceId,
-        from: range.from.trim() || 1,
-        to: range.to.trim(),
-      })),
-  ),
-});
-
-/** Step 2 saved on its own (measure_points/device_ranges): each device's
- * first sensor (and sensor count with "to"), the points of its range connected. */
-export const deviceRangesPayload = (locationId: number | null, ranges: DeviceRange[]) => ({
-  location_id: locationId,
-  point_devices: ranges
-    .filter((range) => range.deviceId != null)
-    .map((range) => ({
-      device_id: range.deviceId,
-      from: range.from.trim() || 1,
-      to: range.to.trim(),
-    })),
 });
 
 /** The canvas' heading: what it shows of the picked plan. */

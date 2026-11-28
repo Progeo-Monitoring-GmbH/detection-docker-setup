@@ -332,6 +332,34 @@ def test_a_dm_plan_pdf_gives_each_label_its_band_starting_at_the_label(cad_reade
     assert "dm sensors: 3 labels, 4 orange bands" in err
 
 
+def test_a_band_drawn_in_pieces_is_joined_and_a_short_one_named(cad_reader, tmp_path, monkeypatch, capsys):
+    """Four parallel bands (280 pt): dm 002 exported in two pieces - joined;
+    dm 004 read 80 pt long - named, its neighbours tell the length."""
+    pymupdf = pytest.importorskip("pymupdf")
+    path = tmp_path / "plan.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    page.draw_rect(pymupdf.Rect(100, 100, 500, 300), oc=doc.add_ocg("DKS_Konstruktion"))
+    mple, orange = doc.add_ocg("DKS_MPLE"), (1, 0.5, 0)
+    for y, pieces in ((120, [(120, 400)]), (130, [(120, 250), (250, 400)]), (140, [(120, 400)]), (150, [(120, 200)])):
+        for x0, x1 in pieces:
+            page.draw_line((x0, y), (x1, y), color=orange, oc=mple)
+        page.insert_text((100, y + 1), f"dm 00{(y - 110) // 10}", fontsize=5)
+    doc.save(path)
+    monkeypatch.setattr(sys, "argv", ["cad_reader.py", str(path), "--png-out", str(tmp_path / "plan.png")])
+
+    assert cad_reader.main() == 0
+
+    out, err = capsys.readouterr()
+    dm = json.loads(out)
+    bands = {row["pos"]: row for row in dm["dm_bands"]}
+    # dm 002 ends where its neighbours end (x=400), not at the piece's end (x=250).
+    assert bands[2]["ex"] == pytest.approx(bands[1]["ex"], abs=1e-4)
+    assert (dm["joined"], dm["unlabelled_bands"]) == (["dm 002"], 0)
+    assert dm["length_outliers"] == [{"pos": 4, "length": 80.0, "expected": 280.0}]
+    assert "joined: dm 002" in err and "dm 004 (80 instead of ~280)" in err
+
+
 def test_a_plan_pdf_without_dm_labels_prints_nothing(cad_reader, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["cad_reader.py", _pdf(tmp_path / "plan.pdf", ["DKS_MPLE"]),
                                       "--png-out", str(tmp_path / "plan.png")])
@@ -645,6 +673,7 @@ DM_READ = {
         {"pos": 2, "sx": 0.9, "sy": 0.9, "ex": 0.95, "ey": 0.9},  # read twice: the first counts
     ],
     "labels": 3, "bands": 4, "without_band": [], "unlabelled_bands": 1, "outside": [],
+    "joined": ["dm 001"], "length_outliers": [{"pos": 2, "length": 50.0, "expected": 75.0}],
 }
 
 
@@ -688,6 +717,10 @@ def test_lageplan_job_places_the_dm_sensors_of_a_dm_location(events, tmp_path, m
     dm_import = job["result"]["dm_import"]
     assert (dm_import["state"], dm_import["sensors"], dm_import["moved"], dm_import["created"]) == ("applied", 2, 1, 1)
     assert dm_import["duplicates"] == [2]
+    # Joined pieces and bands unlike their neighbours are named for a check.
+    assert dm_import["length_outliers"] == [2]
+    assert "dm sensors: drawn in pieces, joined: dm 001" in job["log"]
+    assert "dm sensors: length unlike the neighbours - check: dm 002" in job["log"]
     # The point of number 2 moved onto its band - its name stays; the new plan is
     # flipped, so the stored ny runs up (1 - the image fraction).
     kept.refresh_from_db(using=f.DB)

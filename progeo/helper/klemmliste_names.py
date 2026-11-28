@@ -22,10 +22,12 @@ keeps its threshold, disabled flag and device when it moves. preview() lists
 what apply() would do; nothing is written before.
 
 One list for several controllers: its rows name their measuring unit
-("Area A", ...) and count their positions per unit. The units go to the
-location's devices in order - the first unit of the list to the device with
-the lowest first_sensor_order (then the oldest), and so on - unless
-unit_devices says otherwise; a row's target is its device's
+("Area A", ...) and count their positions per unit - a list without units
+whose positions start again is split into "Unit 1", "Unit 2", ... The units
+go to the location's devices by size: each to the device whose number of
+MUX boards (16 inputs each - its sensor_count, else what its measurements
+report) fits the unit's inputs best, on a tie in list order by
+first_sensor_order - unless unit_devices says otherwise; a row's target is its device's
 first_sensor_order + position - 1, and its points get that device.
 
 The devices are aligned with the list, too: when their sensor ranges
@@ -37,6 +39,8 @@ these device_updates; apply() writes them with the points. Per unit it
 compares the list's sensors with the device's sensor_count, and in total
 with the location's measure points.
 """
+import itertools
+import math
 import re
 from itertools import pairwise
 
@@ -45,6 +49,10 @@ from django.db import transaction
 from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
 
 NAME_LENGTH = ProgeoMeasurePoint._meta.get_field("name").max_length
+# Inputs of one MUX board - a measuring unit's size is told by its boards.
+MUX_INPUTS = 16
+# Units are estimated onto at most this many devices (all orders are tried).
+ESTIMATE_MAX_DEVICES = 7
 _LAST_NUMBER_RE = re.compile(r"(\d+)\D*$")
 
 
@@ -81,7 +89,23 @@ def _valid_rows(rows) -> list:
         name = " ".join(str(row.get("sensor") or "").split())[:NAME_LENGTH]
         if position >= 1 and name:
             valid.append({**row, "position": position, "sensor": name})
-    return valid
+    return _implicit_units(valid)
+
+
+def _implicit_units(rows) -> list:
+    """A list without measuring units whose positions start again (the
+    controllers listed one after the other) gets one unit per run - "Unit 1",
+    "Unit 2", ... - so its rows go to several devices like a list with units."""
+    if any(row.get("unit") for row in rows):
+        return rows
+    units, seen, number = [], set(), 1
+    for row in rows:
+        if row["position"] in seen:
+            number += 1
+            seen = set()
+        seen.add(row["position"])
+        units.append({**row, "unit": f"Unit {number}"})
+    return units if number > 1 else rows
 
 
 def _mode(targeted, points) -> str:
@@ -102,12 +126,46 @@ def device_label(device) -> str:
     return f"{name} (#{device.pk})" if name else f"#{device.pk}"
 
 
-def _unit_devices(db_name, location, units, unit_devices) -> dict:
+def _device_inputs(db_name, device) -> int:
+    """How many inputs a device measures: its sensor_count, or what its newest
+    measurement / transfer token reports - 0 when nothing tells it."""
+    from progeo.helper.device_inputs import _measured_inputs
+
+    return max(device.sensor_count or 0, _measured_inputs(device, db_name))
+
+
+def _muxes(inputs) -> int | None:
+    return math.ceil(inputs / MUX_INPUTS) if inputs else None
+
+
+def _estimated_devices(db_name, units, devices, spans) -> dict:
+    """{unit: device}: the units on the devices whose number of MUX boards
+    (MUX_INPUTS inputs each) fits their inputs best - a device of unknown size
+    fits any; on a tie the list order follows first_sensor_order."""
+    sizes = [_muxes(_device_inputs(db_name, device)) for device in devices]
+    needed = [_muxes(spans[unit]) for unit in units]
+    best = None
+    for chosen in itertools.permutations(range(len(devices)), min(len(units), len(devices))):
+        cost = sum(abs(needed[index] - sizes[device]) for index, device in enumerate(chosen)
+                   if sizes[device] is not None and needed[index] is not None)
+        key = (cost, sum(abs(index - device) for index, device in enumerate(chosen)))
+        if best is None or key < best[0]:
+            best = (key, chosen)
+    return {unit: devices[device] for unit, device in zip(units, best[1] if best else ())}
+
+
+def _unit_devices(db_name, location, units, unit_devices, spans=None) -> dict:
     """{unit: device or None}: `unit_devices` ({unit: device id | None}) where
-    given, else the units in list order on the devices by first_sensor_order."""
+    given, else estimated by size (_estimated_devices: each unit on the device
+    whose MUX boards fit its inputs, `spans`) - without sizes, or for more
+    than ESTIMATE_MAX_DEVICES devices, the units in list order on the devices
+    by first_sensor_order."""
     devices = list(ProgeoDevice.objects.using(db_name).filter(location=location).order_by("first_sensor_order", "pk"))
     by_id = {device.pk: device for device in devices}
-    mapping = dict(zip(units, devices, strict=False))
+    if spans and len(units) > 1 and 1 < len(devices) <= ESTIMATE_MAX_DEVICES:
+        mapping = _estimated_devices(db_name, units, devices, spans)
+    else:
+        mapping = dict(zip(units, devices, strict=False))
     for unit in units:
         mapping.setdefault(unit, None)
     for unit, chosen in (unit_devices or {}).items():
@@ -216,8 +274,8 @@ def preview(db_name, location, rows, device_id=None, unit_devices=None) -> dict:
     units = list(dict.fromkeys(row["unit"] for row in rows if row.get("unit")))
     unit_summary, unit_warnings, unassigned, device_updates, unit_device = [], [], 0, [], {}
     if units:
-        mapping = _unit_devices(db_name, location, units, unit_devices)
         spans = _spans(units, rows)
+        mapping = _unit_devices(db_name, location, units, unit_devices, spans)
         firsts, device_updates = _plan_devices(units, spans, mapping)
         unit_summary, unit_warnings = _unit_summary(units, rows, mapping, firsts, spans)
         if any(update["first_sensor_order"][0] != update["first_sensor_order"][1] for update in device_updates):
@@ -339,7 +397,7 @@ def _map_devices(db_name, location, rows, device_id, unit_devices):
     needs one device: `device_id`, or the location's only one."""
     units = list(dict.fromkeys(row["unit"] for row in rows if row.get("unit")))
     if units:
-        return units, _unit_devices(db_name, location, units, unit_devices)
+        return units, _unit_devices(db_name, location, units, unit_devices, _spans(units, rows))
     devices = list(ProgeoDevice.objects.using(db_name).filter(location=location).order_by("pk"))
     if device_id not in (None, ""):
         try:

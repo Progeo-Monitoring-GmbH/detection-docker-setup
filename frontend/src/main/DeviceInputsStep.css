@@ -1,0 +1,170 @@
+/* Wizard step 2 (DeviceInputsStep.tsx): the overview of the devices' inputs
+   and their sections. Device colours come from deviceInputs.DEVICE_COLORS. */
+
+.device-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.device-inputs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.device-inputs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--progeo-track-soft);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.device-inputs-dot {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* -- the overview graphic ------------------------------------------------------ */
+
+.device-inputs-overview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 240px;
+  overflow: visible;
+}
+
+.device-inputs-strip {
+  fill: var(--progeo-track-soft);
+}
+
+.device-inputs-missing {
+  fill: #dc2626;
+}
+
+.device-inputs-tick {
+  font-size: 11px;
+  fill: #8b8383;
+}
+
+.device-inputs-band {
+  opacity: 0.3;
+}
+
+.device-inputs-band--jump {
+  opacity: 0.75;
+}
+
+.device-inputs-bar {
+  opacity: 0.25;
+}
+
+.device-inputs-free {
+  fill: #ffffff;
+  stroke: #8b8383;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.device-inputs-bar-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* -- the sections of a device --------------------------------------------------- */
+
+.device-inputs-device {
+  border-top: 1px solid var(--progeo-track-soft);
+  padding-top: 10px;
+}
+
+.device-inputs-device-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.device-inputs-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+.device-inputs-segment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f3f1f1;
+  font-size: 13px;
+}
+
+.device-inputs-segment--new {
+  border-bottom: none;
+}
+
+.device-inputs-word {
+  color: #5f5757;
+}
+
+.device-inputs .device-inputs-number {
+  width: 84px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.device-inputs .device-inputs-direction {
+  width: auto;
+}
+
+.device-inputs-last {
+  min-width: 70px;
+  font-weight: 700;
+}
+
+.device-inputs-tag {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.device-inputs-tag--count {
+  background: var(--progeo-track-soft);
+  color: #6e6868;
+}
+
+.device-inputs-tag--jump {
+  background: #fbeee9;
+  color: var(--progeo-orange);
+}
+
+.device-inputs-tag--free {
+  border: 1px dashed #cac4c4;
+  color: #8b8383;
+}
+
+.device-inputs-tag--doubled {
+  background: #fde8e8;
+  color: #b91c1c;
+}
+
+.device-inputs-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}

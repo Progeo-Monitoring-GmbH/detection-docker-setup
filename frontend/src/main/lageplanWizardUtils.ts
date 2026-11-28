@@ -21,7 +21,6 @@ export type WizardDevice = {
   sensor_count?: number | null;
 };
 
-export type DeviceRange = { deviceId: number | null; from: string; to: string };
 export type WizardLageplan = SensorHeatmapLageplanData & { id: number };
 export type MeasurePoint = Record<string, unknown>;
 
@@ -110,82 +109,6 @@ export const placedFromPoints = (
         lageplanId: point.lageplan == null ? null : Number(point.lageplan),
       };
     });
-};
-
-/** The device ranges step 2 shows: each device with imported points (more
- * than one - a single one is a hand-placed sensor) and each device whose
- * saved range starts behind sensor 1 (measure_points/device_ranges) - also
- * without points yet. A range ends at its saved sensor count (also beyond
- * its points: "to" saved as 618 stays 618 while the points reach 597), else
- * at its last point; the last range without a saved count is open-ended. */
-export const defaultDeviceRanges = (
-  points: MeasurePoint[],
-  devices: WizardDevice[],
-): DeviceRange[] => {
-  const counts = pointsPerDevice(points);
-  const ranges = devices
-    .flatMap((device) => {
-      const orders = points
-        .filter((point) => Number(point.device) === device.id)
-        .map((point) => Number(point.sensor_order));
-      const saved = (device.first_sensor_order ?? 1) > 1;
-      if ((counts.get(device.id) ?? 0) <= 1 && !saved) {
-        return [];
-      }
-      const from = device.first_sensor_order ?? Math.min(...orders);
-      // The saved end wins over the points; without one, a range without points stays open.
-      const savedEnd = device.sensor_count != null || orders.length === 0;
-      let to = '';
-      if (device.sensor_count != null) {
-        to = String(from + device.sensor_count - 1);
-      } else if (orders.length) {
-        to = String(Math.max(...orders));
-      }
-      return [{ range: { deviceId: device.id, from: String(from), to }, savedEnd }];
-    })
-    .sort((a, b) => Number(a.range.from) - Number(b.range.from));
-  if (ranges.length) {
-    const last = ranges[ranges.length - 1];
-    if (!last.savedEnd) {
-      last.range.to = '';
-    }
-    return ranges.map(({ range }) => range);
-  }
-  return devices.length === 1
-    ? [{ deviceId: devices[0].id, from: '1', to: '' }]
-    : [];
-};
-
-/** Why the ranges can't be imported, or null. */
-export const rangesProblem = (ranges: DeviceRange[]): string | null => {
-  const used = ranges.filter((range) => range.deviceId != null);
-  if (new Set(used.map((range) => range.deviceId)).size !== used.length) {
-    return 'Each device only once - its pair 1 is the first sensor of its range.';
-  }
-  const parsed = used
-    .map((range) => ({
-      from: range.from.trim() ? Number(range.from) : 1,
-      to: range.to.trim() ? Number(range.to) : Infinity,
-    }))
-    .sort((a, b) => a.from - b.from);
-  if (
-    parsed.some(
-      (range) =>
-        !Number.isInteger(range.from) ||
-        range.from < 1 ||
-        range.to < range.from,
-    )
-  ) {
-    return 'The sensors of a device run from 1 up (from <= to).';
-  }
-  if (
-    parsed.some(
-      (range, index) => index > 0 && parsed[index - 1].to >= range.from,
-    )
-  ) {
-    return 'The ranges of two devices overlap.';
-  }
-  return null;
 };
 
 export const requestReason = (requestError: unknown) =>

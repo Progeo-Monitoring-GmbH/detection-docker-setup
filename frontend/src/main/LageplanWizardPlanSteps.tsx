@@ -1,5 +1,5 @@
 /**
- * Steps 5-8 of the Lageplan wizard (LageplanWizardView.tsx): aligning the
+ * Steps 4-7 of the Lageplan wizard (LageplanWizardView.tsx): aligning the
  * points on the picked plan, the Auto-Repair (point sensors) or the
  * dm-Transfer (smartex dm), the heat limitations and the Klemmliste.
  */
@@ -53,11 +53,11 @@ type LageplanAlignStepProps = {
   edits: CanvasEditHandlers;
   cutPoints: MeasurePoint[];
   onDiscardCut: () => void;
-  /** Set while the sensors are placed by hand (step 4). */
+  /** Set while the sensors are placed by hand (step 3). */
   placement: CanvasProps['placement'];
 };
 
-/** Step 5: the picked plan on the canvas - aligned, scaled and edited there. */
+/** Step 4: the picked plan on the canvas - aligned, scaled and edited there. */
 export const LageplanAlignStep = ({
   sourceMeta,
   locationId,
@@ -73,10 +73,10 @@ export const LageplanAlignStep = ({
   onDiscardCut,
   placement,
 }: LageplanAlignStepProps) => (
-  <StepCard number={5} step="align" title="Align and inspect">
+  <StepCard number={4} step="align" title="Align and inspect">
     {!sourceMeta?.imageUrl ? (
       <Notice tone="warning" testId="lageplan-wizard-canvas-needs-plan">
-        Select or add a Lageplan in step 3 before using the canvas editor.
+        Select or add a Lageplan in step 2 before using the canvas editor.
       </Notice>
     ) : (
       <ImageCanvasStage
@@ -108,7 +108,7 @@ export const LageplanAlignStep = ({
   </StepCard>
 );
 
-/** Step 6 (optional, point sensors): the Auto-Repair - the plan's sensor
+/** Step 5 (optional, point sensors): the Auto-Repair - the plan's sensor
  * marks become its measure points, numbered along the MPLE lines. */
 export const LageplanAutoRepairStep = ({
   number,
@@ -125,13 +125,13 @@ export const LageplanAutoRepairStep = ({
       children
     ) : (
       <Notice tone="warning" testId="lageplan-wizard-auto-repair-needs-plan">
-        Select or add a Lageplan in step 3 first.
+        Select or add a Lageplan in step 2 first.
       </Notice>
     )}
   </StepCard>
 );
 
-/** Step 6 (optional): the band ends of dm sensors read from the plan. */
+/** Step 5 (optional): the band ends of dm sensors read from the plan. */
 export const LageplanDmTransferStep = ({
   locationId,
   planId,
@@ -150,7 +150,7 @@ export const LageplanDmTransferStep = ({
   const planBands = bandCount(planPoints);
   return (
     <StepCard
-      number={6}
+      number={5}
       step="dmTransfer"
       title="dm-Transfer (optional)"
       done={planPoints.length > 0 && planBands === planPoints.length}
@@ -169,7 +169,7 @@ export const LageplanDmTransferStep = ({
   );
 };
 
-/** Step 7: the areas the heatmap's heat field is limited to (staff). */
+/** Step 6: the areas the heatmap's heat field is limited to (staff). */
 export const LageplanHeatLimitsStep = ({
   plan,
   plans,
@@ -185,14 +185,14 @@ export const LageplanHeatLimitsStep = ({
   onChange: (planId: number, areas: HeatLimitation[]) => void;
 }) => (
   <StepCard
-    number={7}
+    number={6}
     step="heatLimits"
     title="Heat limitations"
     done={Boolean(plan?.heat_limitations?.length)}
   >
     {!plan?.url ? (
       <Notice tone="warning" testId="lageplan-wizard-heat-limits-need-plan">
-        Select or add a Lageplan in step 3 to draw its heat limitations.
+        Select or add a Lageplan in step 2 to draw its heat limitations.
       </Notice>
     ) : (
       <>
@@ -216,7 +216,7 @@ export const LageplanHeatLimitsStep = ({
   </StepCard>
 );
 
-/** Step 8: the MEA documents from Airtable and the Klemmliste's sensor names. */
+/** Step 7: the MEA documents from Airtable and the Klemmliste's sensor names. */
 export const LageplanKlemmlisteStep = ({
   auth,
   locationId,
@@ -231,7 +231,7 @@ export const LageplanKlemmlisteStep = ({
   onNamesApplied: () => void;
 }) => (
   <StepCard
-    number={8}
+    number={7}
     step="klemmliste"
     title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}
   >

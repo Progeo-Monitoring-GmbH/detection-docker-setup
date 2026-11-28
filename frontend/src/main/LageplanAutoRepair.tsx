@@ -1,5 +1,5 @@
 /**
- * "Auto-Repair", the optional step 6 of the Lageplan wizard for point sensors
+ * "Auto-Repair", the optional step 5 of the Lageplan wizard for point sensors
  * (autoRepair.ts; smartex dm has the dm-Transfer there): reads the
  * plan's MPLE lines (measure_points/auto_order), shows them over the plan and
  * as a table to review - numbers for lines whose label is unreadable, a

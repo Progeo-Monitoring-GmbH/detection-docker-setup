@@ -32,6 +32,7 @@ const allCaps: CanvasCaps = {
   canPlace: true,
   canGroup: true,
   canInsert: true,
+  canMoveEnds: true,
 };
 const noCaps = Object.fromEntries(Object.keys(allCaps).map((key) => [key, false])) as CanvasCaps;
 
@@ -72,7 +73,9 @@ describe('canvasCaps', () => {
   };
 
   it('offers everything with a stored plan, its callbacks and points', () => {
-    expect(canvasCaps(props)).toEqual({ ...allCaps, canInsert: false });
+    expect(canvasCaps({ ...props, lineMode: true })).toEqual({ ...allCaps, canInsert: false });
+    // Moving a band end: dm sensors only.
+    expect(canvasCaps(props).canMoveEnds).toBe(false);
     expect(canvasCaps({ ...props, cutCount: 2 }).canInsert).toBe(true);
   });
 
@@ -93,6 +96,18 @@ describe('canvasCaps', () => {
     expect(caps.canAutoAlign).toBe(false);
     expect(caps.canAlign).toBe(false);
     expect(caps.canRemovePoints).toBe(true);
+  });
+});
+
+describe('moving a dm band end (E)', () => {
+  it('tells it in the badge and the cursor - on a dm plan only', () => {
+    const modes = modesOf({ heldKey: 'e', lineMode: true });
+    expect(canvasBadge(modes)).toEqual({
+      text: 'Band end: drag the start or the end of a dm sensor to where it really is',
+      color: KEY_COLORS.e,
+    });
+    expect(canvasCursor(modes, { ...pointer, hovered: hoveredItem })).toBe('grab');
+    expect(canvasBadge(modesOf({ heldKey: 'e', caps: { ...allCaps, canMoveEnds: false } }))).toBeNull();
   });
 });
 

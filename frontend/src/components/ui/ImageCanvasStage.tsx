@@ -39,7 +39,7 @@ import {
 import { CanvasBadge, CanvasTooltip, RotateButtons } from './ImageCanvasOverlays';
 import { CanvasError, CanvasFooter, CutPanel, GroupPanel, NoLinesWarning, StageHeader } from './ImageCanvasPanels';
 import { ScalePanel } from './ImageCanvasScalePanel';
-import { useCanvasPointer, type Hover } from './useCanvasPointer';
+import { useCanvasPointer, type BandEndDrag, type Hover } from './useCanvasPointer';
 import { useImageCanvasActions, type PlanScaleValues, type SourceMeta } from './useImageCanvasActions';
 import {
   useAreaSelection,
@@ -183,6 +183,8 @@ const ImageCanvasStage = ({
   // F + drag: the area being dragged; fitDragged: F was used with a drag (no fit on its release).
   const [fitBox, setFitBox] = useState<[ImagePoint, ImagePoint] | null>(null);
   const fitDragged = useRef(false);
+  // E + drag: the dm band end being moved (shown there until it is stored).
+  const [bandEndDrag, setBandEndDrag] = useState<BandEndDrag | null>(null);
 
   const { items, lineCount, lineMode, cutItems, shownItems, pointSelect, selectedItems, selectedIds, rect, insertPlan } =
     useCanvasPoints({
@@ -211,6 +213,7 @@ const ImageCanvasStage = ({
     onPointsRemoved,
     onCut,
     onPointsPlaced,
+    lineMode,
   });
 
 
@@ -298,9 +301,19 @@ const ImageCanvasStage = ({
   };
 
   const { result: repairResult, preview: repairPreview, klemmliste, verdicts, lineStart, mouse, swapFirst, areaDrag } = repair;
+  // A band end being dragged (E) is drawn where the mouse is.
+  const movedItems = useMemo(
+    () =>
+      bandEndDrag
+        ? shownItems.map((item, index) =>
+            index === bandEndDrag.index ? { ...item, [bandEndDrag.which]: bandEndDrag.at } : item,
+          )
+        : shownItems,
+    [shownItems, bandEndDrag],
+  );
   const drawnItems = useMemo(
-    () => (repairing ? repairItems(shownItems, repairResult, repairPreview, klemmliste) : shownItems),
-    [repairing, shownItems, repairResult, repairPreview, klemmliste],
+    () => (repairing ? repairItems(movedItems, repairResult, repairPreview, klemmliste) : movedItems),
+    [repairing, movedItems, repairResult, repairPreview, klemmliste],
   );
   const repairOverlay = useMemo<RepairOverlay | null>(() => {
     if (!repairing) {
@@ -397,6 +410,21 @@ const ImageCanvasStage = ({
     setInsertAt,
     insertCut: actions.insertCut,
     repair: repairing ? repair : undefined,
+    bandEnd: {
+      drag: bandEndDrag,
+      setDrag: setBandEndDrag,
+      drop: (drag) => {
+        const item = items[drag.index];
+        setBandEndDrag(null);
+        if (item?.end) {
+          actions.moveBandEnd({
+            id: Number(item.point.id),
+            start: drag.which === 'start' ? drag.at : item.start,
+            end: drag.which === 'end' ? drag.at : item.end,
+          });
+        }
+      },
+    },
   });
   const startRepair = () => {
     area.leaveEdit();

@@ -75,7 +75,7 @@ export const LageplanManualSensorPlacement = ({
       data-testid="lageplan-wizard-manual-sensors"
     >
       <div className="lageplan-muted">
-        Select a sensor, then click its position on the plan in step 5. Placed
+        Select a sensor, then click its position on the plan in step 4. Placed
         points can be dragged. Nothing is stored until you save.
       </div>
 
@@ -194,7 +194,7 @@ export const LageplanManualSensorPlacement = ({
       )}
       {!hasPlanImage && (
         <Notice testId="lageplan-wizard-placement-needs-plan">
-          Select or add a Lageplan in step 3 to place the sensors.
+          Select or add a Lageplan in step 2 to place the sensors.
         </Notice>
       )}
       <ConfirmDialog
@@ -225,7 +225,6 @@ type LageplanPointsStepProps = {
   isProcessing: boolean;
   pointSource: PointSource;
   onPointSourceChange: (source: PointSource) => void;
-  deviceRangesProblem: string | null;
   importPayload: Record<string, unknown>;
   onCadUpload: (response: Record<string, unknown>) => void;
   onJsonUpload: (response?: Record<string, unknown>) => void;
@@ -250,7 +249,6 @@ export const LageplanPointsStep = ({
   isProcessing,
   pointSource,
   onPointSourceChange,
-  deviceRangesProblem,
   importPayload,
   onCadUpload,
   onJsonUpload,
@@ -278,7 +276,7 @@ export const LageplanPointsStep = ({
 
   return (
     <StepCard
-      number={4}
+      number={3}
       step="points"
       title="Measure points"
       done={measurePoints.length > 0 && !placementDirty}
@@ -321,12 +319,7 @@ export const LageplanPointsStep = ({
             </div>
           </div>
 
-          {pointSource !== 'manual' && deviceRangesProblem && (
-            <Notice tone="warning" testId="lageplan-wizard-import-blocked">
-              Fix the device ranges in step 2 before importing.
-            </Notice>
-          )}
-          {!deviceRangesProblem && pointSource === 'cad' && (
+          {pointSource === 'cad' && (
             <CadUploadDropbox
               auth={auth}
               url="/v1/status/measure_points/upload_cad/"
@@ -341,7 +334,7 @@ export const LageplanPointsStep = ({
               callBackProcessing={onCadUpload}
             />
           )}
-          {!deviceRangesProblem && pointSource === 'json' && (
+          {pointSource === 'json' && (
             <RedDropbox
               auth={auth}
               url="/v1/status/measure_points/from_json/"
@@ -355,7 +348,7 @@ export const LageplanPointsStep = ({
               callBackProcessing={onJsonUpload}
             />
           )}
-          {!deviceRangesProblem && pointSource === 'txt' && (
+          {pointSource === 'txt' && (
             <CadUploadDropbox
               auth={auth}
               url="/v1/status/measure_points/upload_cad/"

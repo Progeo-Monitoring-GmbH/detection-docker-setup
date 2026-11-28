@@ -899,6 +899,11 @@ class StatusViewSet(ProgeoModalViewSet):
 
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
+        # Without ranges: the device whose inputs measure the sensor (wizard step 2).
+        from progeo.helper.device_inputs import device_lookup
+
+        device_for = (lambda order: cad_import.device_of(device_ranges, order)) if device_ranges \
+            else device_lookup(db_name, location)
         for point in data:
             measure_point, _ = create_progeo_measure_point_safe(location=location, sensor_order=point.get('pos'),
                                                                 x=point.get('x'), y=point.get('y'),
@@ -909,8 +914,8 @@ class StatusViewSet(ProgeoModalViewSet):
             changed = {field: point[field] for field in cad_import.END_FIELDS if field in point}
             if measure_point and measure_point.lageplan_id != lageplan_id:
                 changed["lageplan_id"] = lageplan_id
-            if device_ranges and measure_point:
-                changed["device_id"] = cad_import.device_of(device_ranges, measure_point.sensor_order)
+            if measure_point and (device_ranges or (device_for(measure_point.sensor_order) is not None)):
+                changed["device_id"] = device_for(measure_point.sensor_order)
             if measure_point and changed:
                 for field, value in changed.items():
                     setattr(measure_point, field, value)
@@ -918,6 +923,44 @@ class StatusViewSet(ProgeoModalViewSet):
         for device_pk, first, _last in device_ranges:
             ProgeoDevice.objects.using(db_name).filter(pk=device_pk).update(first_sensor_order=first)
         return RequestSuccess({"data": data})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/device_inputs", methods=["GET", "POST"])
+    def device_inputs(self, request, *args, **kwargs):
+        """Wizard step 2: which sensor each input of the location's devices
+        measures (helper/device_inputs.py). GET ?location_id -> {devices:
+        [{device_id, label, first_sensor_order, sensor_count, measured_inputs,
+        mapped, inputs: [{position, sensor_order, source}]}], sensors: the
+        location's measure point numbers}. POST (staff) {location_id, devices:
+        [{device_id, inputs: [sensor | null per input], edited: [input]}]}:
+        written from now on, the points connected to their devices."""
+        from progeo.helper import device_inputs, sensor_mapping
+
+        location, db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        connected = None
+        if request.method == "POST":
+            if not is_staff_admin(request.user):
+                return RequestFailed({"reason": "Staff access required"})
+            data = request.data if hasattr(request.data, "get") else {}
+            try:
+                saved = device_inputs.save(db_name, location, data.get("devices"), user_id=request.user.pk)
+            except (device_inputs.DeviceInputsError, sensor_mapping.SensorMappingError) as exc:
+                return RequestFailed({"reason": str(exc)})
+            connected = saved["connected"]
+            forget_location_answers()  # update() sends no post_save
+            ilog(f"[wizard] device inputs of location {location.pk} saved by {request.user.username}: "
+                 f"{connected} point(s) connected")
+        sensors = sorted(set(
+            ProgeoMeasurePoint.objects.using(db_name).filter(location=location).values_list("sensor_order", flat=True)
+        ))
+        return RequestSuccess({
+            "devices": device_inputs.location_inputs(db_name, location),
+            "sensors": sensors,
+            **({"connected": connected} if connected is not None else {}),
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
