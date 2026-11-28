@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Spinner } from 'react-bootstrap';
+import { Alert, Button, Form, Spinner } from 'react-bootstrap';
 import { CheckCircle, Clipboard, Download, FileEarmarkCode, QrCode as QrCodeIcon } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -433,6 +433,17 @@ const DeviceProvisionPanel = ({
     onRemove: () => applySettings({ router: false, router_user: '', router_pwd: '' }),
   };
 
+  // The device types (models) on offer: the location's own first - even one
+  // the list lacks - then the others; the M5 for staff only.
+  const locationModel = asciiModel(location?.model || '');
+  const modelOptions = [
+    ...new Set([
+      ...(locationModel ? [locationModel] : []),
+      ...(settings.model ? [settings.model] : []),
+      ...models.filter((model) => isStaff || model !== m5Model),
+    ]),
+  ];
+
   const m5Resistances = resistances.filter((option) => option.value !== 8);
   const locationThreshold = location?.alarm_threshold ?? null;
   const thresholdInvalid = isM5 && !thresholdValid(settings.threshold_mv);
@@ -513,33 +524,20 @@ const DeviceProvisionPanel = ({
             ...(isStaff ? [{ value: 'm5', label: t('provision_config_format_m5') }] : []),
           ],
         },
-        {
-          key: 'model',
-          kind: 'select',
-          testId: 'device-provision-model',
-          // A default the list lacks stays selectable.
-          options: [
-            ...(settings.model && !models.includes(settings.model) ? [settings.model] : []),
-            ...models.filter((model) => isStaff || model !== m5Model),
-          ].map(
-            (model) => ({ value: model, label: model }),
-          ),
-        },
       ],
-      values: { model: settings.model, config_format: isM5 ? 'm5' : 'lua' },
+      // The model itself: the "Gerätetyp" select above the cards.
+      values: { config_format: isM5 ? 'm5' : 'lua' },
       onSave: (values) => {
-        let model = String(values.model);
         const format = String(values.config_format);
-        // The model decides; only an unchanged model follows the chosen type.
-        if (model === settings.model && format !== (isM5 ? 'm5' : 'lua')) {
-          if (format === 'm5') {
-            model = m5Model;
-          } else {
-            const own = asciiModel(location?.model || '');
-            model = own && own !== m5Model ? own : (models.find((name) => name !== m5Model) ?? own);
-          }
+        if (format === (isM5 ? 'm5' : 'lua')) {
+          return;
         }
-        applySettings({ model });
+        if (format === 'm5') {
+          applySettings({ model: m5Model });
+        } else {
+          const own = asciiModel(location?.model || '');
+          applySettings({ model: own && own !== m5Model ? own : (models.find((name) => name !== m5Model) ?? own) });
+        }
       },
     },
     {
@@ -723,6 +721,26 @@ const DeviceProvisionPanel = ({
         </Alert>
       ) : (
         <>
+          {/* Preselected with the location's type - any other device can be added too. */}
+          <Form.Group controlId="device-provision-model" className="device-provision-type">
+            <Form.Label className="device-provision-type-label">{t('provision_device_type')}</Form.Label>
+            <Form.Select
+              value={settings.model}
+              onChange={(event) => applySettings({ model: event.target.value })}
+              disabled={loading}
+              data-testid="device-provision-model"
+            >
+              {modelOptions.map((model) => (
+                <option key={model} value={model}>
+                  {model === locationModel ? t('provision_device_type_location', { model }) : model}
+                </option>
+              ))}
+            </Form.Select>
+            <Form.Text className="device-provision-type-hint">
+              {t('provision_device_type_hint')}
+            </Form.Text>
+          </Form.Group>
+
           <ConfigSectionCards
             testId="device-provision-sections"
             sections={sections}

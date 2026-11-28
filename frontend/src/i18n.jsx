@@ -2957,6 +2957,10 @@ i18n
           provision_section_cancel: 'Cancel',
           provision_generated_later: 'on generate',
           provision_config_format: 'Config type',
+          provision_device_type: 'Device type',
+          provision_device_type_location: '{{model}} (type of the location)',
+          provision_device_type_hint:
+            "Preselected with the location's type - any other device can be added to the location too.",
           provision_config_format_lua: 'Lua (microBox)',
           provision_config_format_m5: 'M5Stack (platform_config.h)',
           provision_threshold_mv: 'Start threshold (mV)',
@@ -6593,6 +6597,10 @@ i18n
           provision_section_cancel: 'Abbrechen',
           provision_generated_later: 'wird erzeugt',
           provision_config_format: 'Config-Typ',
+          provision_device_type: 'Gerätetyp',
+          provision_device_type_location: '{{model}} (Typ des Standorts)',
+          provision_device_type_hint:
+            'Vorausgewählt ist der Typ des Standorts – es lassen sich aber auch andere Geräte am Standort anlegen.',
           provision_config_format_lua: 'Lua (microBox)',
           provision_config_format_m5: 'M5Stack (platform_config.h)',
           provision_threshold_mv: 'Start-Schwelle (mV)',

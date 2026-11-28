@@ -97,6 +97,17 @@ const type = (id: string, value: string) => {
   });
 };
 const save = () => click(one('device-provision-sections-dialog-confirm'));
+const choose = (id: string, value: string) => {
+  const select = one(id) as HTMLSelectElement;
+  expect(select).not.toBeNull();
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+    setter.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
+const modelOptions = () =>
+  [...(one('device-provision-model') as HTMLSelectElement).options].map((option) => option.value);
 
 beforeEach(() => {
   hooks.auth = { user: { is_staff: true } };
@@ -184,6 +195,28 @@ describe('the config sections of "Gerät hinzufügen"', () => {
     expect(one('device-provision-sections-add', 'router')).not.toBeNull();
   });
 
+  it("preselects the location's device type and offers the others beside it", () => {
+    const select = one('device-provision-model') as HTMLSelectElement;
+
+    // Outside the cards' dialogs - visible at once.
+    expect(select.closest('[data-testid="device-provision-sections-dialog"]')).toBeNull();
+    expect(select.value).toBe('smartex mx');
+    expect(modelOptions()).toEqual(['smartex mx', 'smartex vt', 'M5 AIN4']);
+    expect(select.options[0].textContent).toBe('provision_device_type_location');
+  });
+
+  it('adds another device type than the location\'s', () => {
+    choose('device-provision-model', 'smartex vt');
+
+    expect(card('device')?.textContent).toContain('smartex vt');
+    click(one('device-provision-generate'));
+    expect(api.previews[0]).toMatchObject({ config_format: 'lua', model: 'smartex vt' });
+
+    // A config on screen is generated again for the new type.
+    choose('device-provision-model', 'smartex mx');
+    expect(api.previews[1]).toMatchObject({ model: 'smartex mx' });
+  });
+
   it('shows the whole config only on request', () => {
     click(one('device-provision-generate'));
 
@@ -195,16 +228,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
   });
 
   describe('M5 AIN4', () => {
-    const pickM5 = () => {
-      click(one('device-provision-sections-edit', 'device'));
-      const select = one('device-provision-model') as HTMLSelectElement;
-      act(() => {
-        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
-        setter.call(select, 'M5 AIN4');
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-      save();
-    };
+    const pickM5 = () => choose('device-provision-model', 'M5 AIN4');
 
     it('shows the m5 config type, sends threshold and poll, hides wifi/portal/firmware/qr', () => {
       pickM5();
@@ -227,14 +251,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       expect(one('device-provision-show-config-qr')).toBeNull();
     });
 
-    const selectValue = (id: string, value: string) => {
-      const select = one(id) as HTMLSelectElement;
-      act(() => {
-        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
-        setter.call(select, value);
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-    };
+    const selectValue = choose;
 
     it('shows the RS485 card for M5 only, the project field once enabled, and sends the three values', () => {
       expect(card('rs485')).toBeNull();
@@ -312,9 +329,7 @@ describe('the config sections of "Gerät hinzufügen"', () => {
 
     it('Lua after M5 by model keeps the location defaults too', () => {
       pickM5();
-      click(one('device-provision-sections-edit', 'device'));
       selectValue('device-provision-model', 'smartex vt');
-      save();
       click(one('device-provision-generate'));
 
       expect(api.previews[0]).toMatchObject({ config_format: 'lua', model: 'smartex vt', sensors: 32, interval_sec: 1800 });
@@ -324,8 +339,8 @@ describe('the config sections of "Gerät hinzufügen"', () => {
     });
 
     it('offers the M5 to staff only', () => {
+      expect(modelOptions()).toContain('M5 AIN4');
       click(one('device-provision-sections-edit', 'device'));
-      expect([...(one('device-provision-model') as HTMLSelectElement).options].map((o) => o.value)).toContain('M5 AIN4');
       expect([...(one('device-provision-config-format-select') as HTMLSelectElement).options].map((o) => o.value)).toContain('m5');
       click(one('device-provision-sections-dialog-cancel'));
 
@@ -333,9 +348,8 @@ describe('the config sections of "Gerät hinzufügen"', () => {
       hooks.auth = { user: { is_staff: false } };
       root = createRoot(container);
       act(() => root.render(<DeviceProvisionPanel locationId={7} onCreated={() => undefined} onClose={() => undefined} />));
+      expect(modelOptions()).not.toContain('M5 AIN4');
       click(one('device-provision-sections-edit', 'device'));
-
-      expect([...(one('device-provision-model') as HTMLSelectElement).options].map((o) => o.value)).not.toContain('M5 AIN4');
       expect([...(one('device-provision-config-format-select') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['lua']);
     });
 

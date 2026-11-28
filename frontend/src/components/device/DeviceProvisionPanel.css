@@ -9,6 +9,28 @@
   font-size: 11.5px;
 }
 
+/* "Gerätetyp": the model of the new device, above the cards - preselected
+   with the location's type. */
+.device-provision-type {
+  max-width: 420px;
+  margin-bottom: 12px;
+}
+
+.device-provision-type .device-provision-type-label {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device-provision-type .form-select {
+  font-weight: 600;
+}
+
+.device-provision-type .device-provision-type-hint {
+  display: block;
+  font-size: 12px;
+}
+
 /* device_hash, token, url: the backend's, once the config is generated. */
 .device-provision-pending {
   color: var(--bs-secondary-color);
